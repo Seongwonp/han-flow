@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useDocStore } from './store'
 
 function App(): JSX.Element {
   const { doc, updateParagraph, createNewDocument } = useDocStore()
-  const editorRef = useRef<HTMLDivElement>(null)
-
+  const [isComposing, setIsComposing] = useState(false)
+  
   // 초기 로드 시 새 문서 생성
   useEffect(() => {
     if (!doc || doc.metadata.id === "new-doc") {
@@ -12,9 +12,26 @@ function App(): JSX.Element {
     }
   }, [])
 
-  const handleInput = (sIdx: number, pIdx: number, e: React.FormEvent<HTMLParagraphElement>) => {
+  // 한글 조합 시작
+  const handleCompositionStart = () => {
+    setIsComposing(true)
+  }
+
+  // 한글 조합 종료
+  const handleCompositionEnd = (sIdx: number, pIdx: number, e: React.CompositionEvent<HTMLDivElement>) => {
+    setIsComposing(false)
+    // 조합이 끝난 시점에만 상태 업데이트
     const text = e.currentTarget.innerText
     updateParagraph(sIdx, pIdx, text)
+  }
+
+  // 일반 입력 (영문, 숫자 등)
+  const handleInput = (sIdx: number, pIdx: number, e: React.FormEvent<HTMLDivElement>) => {
+    // 한글 조합 중이 아닐 때만 즉시 업데이트
+    if (!isComposing) {
+      const text = e.currentTarget.innerText
+      updateParagraph(sIdx, pIdx, text)
+    }
   }
 
   const handleKeyDown = (sIdx: number, pIdx: number, e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -22,13 +39,35 @@ function App(): JSX.Element {
       e.preventDefault()
       // @ts-ignore
       useDocStore.getState().addParagraph(sIdx, pIdx)
-      // 다음 요소로 포커스 이동은 React의 리렌더링 이후 처리 필요
+    } else if (e.key === 'Backspace') {
+      const text = e.currentTarget.innerText
+      // 단락이 비어있고 첫 번째 단락이 아닐 때 삭제
+      if (text === '' && pIdx > 0) {
+        e.preventDefault()
+        // @ts-ignore
+        useDocStore.getState().removeParagraph(sIdx, pIdx)
+        
+        // 이전 단락으로 포커스 이동 (비동기 처리)
+        setTimeout(() => {
+          const paras = document.querySelectorAll('.editable-paragraph')
+          const prevPara = paras[pIdx - 1] as HTMLElement
+          if (prevPara) {
+            prevPara.focus()
+            // 커서를 끝으로 이동
+            const range = document.createRange()
+            const sel = window.getSelection()
+            range.selectNodeContents(prevPara)
+            range.collapse(false)
+            sel?.removeAllRanges()
+            sel?.addRange(range)
+          }
+        }, 0)
+      }
     }
   }
 
   return (
     <div className="app-container">
-      {/* macOS 스타일 상단 툴바 */}
       <header className="mac-toolbar">
         <div className="toolbar-left">
           <span className="doc-title">{doc.metadata.id}.hwpx</span>
@@ -43,24 +82,24 @@ function App(): JSX.Element {
         </div>
       </header>
 
-      {/* 메인 에디터 영역 */}
       <main className="editor-main">
         <div className="page-scroller">
           {doc.sections.map((section, sIdx) => (
             <div key={sIdx} className="a4-page">
               {section.paragraphs.map((p, pIdx) => (
                 <div
-                  key={pIdx}
+                  key={p.id} // ID를 key로 사용
                   className="editable-paragraph"
                   contentEditable
                   suppressContentEditableWarning
+                  onCompositionStart={handleCompositionStart}
+                  onCompositionEnd={(e) => handleCompositionEnd(sIdx, pIdx, e)}
                   onInput={(e) => handleInput(sIdx, pIdx, e)}
                   onKeyDown={(e) => handleKeyDown(sIdx, pIdx, e)}
                   data-placeholder="내용을 입력하세요..."
                 >
-                  {p.content.map((c, cIdx) => (
-                    c.type === 'text' ? (c as any).text : null
-                  ))}
+                  {/* 초기 렌더링 시에만 값을 넣어주고 이후에는 브라우저가 관리하게 함 */}
+                  {p.content.map((c) => (c.type === 'text' ? (c as any).text : null))}
                 </div>
               ))}
             </div>
@@ -68,7 +107,6 @@ function App(): JSX.Element {
         </div>
       </main>
 
-      {/* 하단 상태바 */}
       <footer className="status-bar">
         <span>쪽: 1 / 1</span>
         <span>글자 수: {doc.sections.reduce((acc, s) => acc + s.paragraphs.reduce((pAcc, p) => pAcc + (p.content[0] as any)?.text.length, 0), 0)}</span>

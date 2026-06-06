@@ -16,6 +16,10 @@ export const useDocStore = create<DocumentState>((set) => ({
   },
   setDoc: (doc) => set({ doc }),
   updateParagraph: (sIdx, pIdx, text) => set((state) => {
+    // 이전 텍스트와 동일하면 업데이트 스킵 (리렌더링 방지)
+    const currentText = (state.doc.sections[sIdx].paragraphs[pIdx].content[0] as any)?.text;
+    if (currentText === text) return state;
+
     const newSections = [...state.doc.sections];
     const newParagraphs = [...newSections[sIdx].paragraphs];
     newParagraphs[pIdx] = {
@@ -29,9 +33,20 @@ export const useDocStore = create<DocumentState>((set) => ({
     const newSections = [...state.doc.sections];
     const newParagraphs = [...newSections[sIdx].paragraphs];
     newParagraphs.splice(pIdx + 1, 0, {
-      id: "p" + Date.now(),
+      id: "p" + Math.random().toString(36).substr(2, 9),
       content: [{ type: "text", text: "", styleId: "0" }]
     });
+    newSections[sIdx] = { ...newSections[sIdx], paragraphs: newParagraphs };
+    return { doc: { ...state.doc, sections: newSections } };
+  }),
+  removeParagraph: (sIdx, pIdx) => set((state) => {
+    const newSections = [...state.doc.sections];
+    const newParagraphs = [...newSections[sIdx].paragraphs];
+    
+    // 최소 한 개의 단락은 유지
+    if (newParagraphs.length <= 1) return state;
+    
+    newParagraphs.splice(pIdx, 1);
     newSections[sIdx] = { ...newSections[sIdx], paragraphs: newParagraphs };
     return { doc: { ...state.doc, sections: newSections } };
   }),
