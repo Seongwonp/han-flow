@@ -1,119 +1,78 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import { NormalizedDocument } from '../../shared/types'
+import React, { useEffect, useRef } from 'react'
+import { useDocStore } from './store'
 
 function App(): JSX.Element {
-  const [doc, setDoc] = useState<NormalizedDocument | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [visibleParagraphs, setVisibleParagraphs] = useState(50) // 초기 표시할 단락 수
+  const { doc, updateParagraph, createNewDocument } = useDocStore()
+  const editorRef = useRef<HTMLDivElement>(null)
 
-  // 문서가 바뀌면 초기화
+  // 초기 로드 시 새 문서 생성
   useEffect(() => {
-    setVisibleParagraphs(50)
-  }, [doc])
+    if (!doc || doc.metadata.id === "new-doc") {
+      createNewDocument()
+    }
+  }, [])
 
-  const handleOpenFile = async () => {
-    try {
+  const handleInput = (sIdx: number, pIdx: number, e: React.FormEvent<HTMLParagraphElement>) => {
+    const text = e.currentTarget.innerText
+    updateParagraph(sIdx, pIdx, text)
+  }
+
+  const handleKeyDown = (sIdx: number, pIdx: number, e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
       // @ts-ignore
-      const filePath = await window.api.openFile()
-      if (filePath) await processFile(filePath)
-    } catch (error) {
-      console.error('Failed to open file:', error)
-      alert('파일을 여는 중 오류가 발생했습니다.')
+      useDocStore.getState().addParagraph(sIdx, pIdx)
+      // 다음 요소로 포커스 이동은 React의 리렌더링 이후 처리 필요
     }
   }
-
-  const processFile = async (filePath: string) => {
-    setIsLoading(true)
-    try {
-      // @ts-ignore
-      const parsedDoc = await window.api.parseHWPX(filePath)
-      setDoc(parsedDoc)
-    } catch (error) {
-      console.error('Parsing error:', error)
-      alert(`파싱 실패: ${error instanceof Error ? error.message : String(error)}`)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const files = e.dataTransfer.files
-    if (files && files.length > 0) {
-      const file = files[0]
-      const fileName = file.name.toLowerCase()
-      if (fileName.endsWith('.hwpx') || fileName.endsWith('.hwp')) {
-        // @ts-ignore
-        await processFile(file.path)
-      } else {
-        alert('HWPX 또는 HWP 파일만 열 수 있습니다.')
-      }
-    }
-  }
-
-  // 스크롤 시 추가 단락 로드 (간단한 무한 스크롤)
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
-    if (scrollHeight - scrollTop <= clientHeight + 500) {
-      setVisibleParagraphs(prev => prev + 50)
-    }
-  }
-
-  // 표시할 데이터 계산
-  const renderedContent = useMemo(() => {
-    if (!doc) return null
-    let count = 0
-    return doc.sections.map((section, sIdx) => {
-      if (count >= visibleParagraphs) return null
-      const paras = section.paragraphs.slice(0, visibleParagraphs - count)
-      count += paras.length
-      return (
-        <div key={sIdx} className="section">
-          {paras.map((p, pIdx) => (
-            <p key={pIdx} className="paragraph">
-              {p.content.map((c, cIdx) => {
-                if (c.type === 'text') return <span key={cIdx}>{(c as any).text}</span>
-                if (c.type === 'table') return <div key={cIdx} className="table-placeholder">[표]</div>
-                return null
-              })}
-            </p>
-          ))}
-        </div>
-      )
-    })
-  }, [doc, visibleParagraphs])
 
   return (
-    <div className="app-container" onDragOver={handleDragOver} onDrop={handleDrop}>
-      {!doc ? (
-        <div className="welcome-screen">
-          <h1>Han-Flow</h1>
-          <p>macOS Optimized HWPX Editor</p>
-          <button className="open-button" onClick={handleOpenFile} disabled={isLoading}>
-            {isLoading ? '로딩 중...' : 'HWPX 파일 열기'}
-          </button>
-          <div className="drop-zone">또는 파일을 여기로 드래그하세요</div>
+    <div className="app-container">
+      {/* macOS 스타일 상단 툴바 */}
+      <header className="mac-toolbar">
+        <div className="toolbar-left">
+          <span className="doc-title">{doc.metadata.id}.hwpx</span>
         </div>
-      ) : (
-        <div className="editor-container">
-          <header className="editor-header">
-            <button onClick={() => setDoc(null)}>닫기</button>
-            <span>{doc.metadata.id || '문서'}</span>
-          </header>
-          <div className="viewer-area" onScroll={handleScroll}>
-            {renderedContent}
-            {doc.sections.reduce((acc, s) => acc + s.paragraphs.length, 0) > visibleParagraphs && (
-              <div className="loading-more">나머지 내용을 불러오는 중...</div>
-            )}
-          </div>
+        <div className="toolbar-center">
+          <button className="tool-btn">글꼴</button>
+          <button className="tool-btn">크기</button>
+          <button className="tool-btn">정렬</button>
         </div>
-      )}
+        <div className="toolbar-right">
+          <button className="save-btn">저장</button>
+        </div>
+      </header>
+
+      {/* 메인 에디터 영역 */}
+      <main className="editor-main">
+        <div className="page-scroller">
+          {doc.sections.map((section, sIdx) => (
+            <div key={sIdx} className="a4-page">
+              {section.paragraphs.map((p, pIdx) => (
+                <div
+                  key={pIdx}
+                  className="editable-paragraph"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={(e) => handleInput(sIdx, pIdx, e)}
+                  onKeyDown={(e) => handleKeyDown(sIdx, pIdx, e)}
+                  data-placeholder="내용을 입력하세요..."
+                >
+                  {p.content.map((c, cIdx) => (
+                    c.type === 'text' ? (c as any).text : null
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </main>
+
+      {/* 하단 상태바 */}
+      <footer className="status-bar">
+        <span>쪽: 1 / 1</span>
+        <span>글자 수: {doc.sections.reduce((acc, s) => acc + s.paragraphs.reduce((pAcc, p) => pAcc + (p.content[0] as any)?.text.length, 0), 0)}</span>
+      </footer>
     </div>
   )
 }
