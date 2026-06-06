@@ -2,7 +2,12 @@
   "name": "han-flow",
   "version": "0.1.0",
   "description": "High-performance HWPX cross-platform editor for macOS",
-  "main": "dist/main/index.js",
+  "main": "./out/main/index.js",
+  "build": {
+    "directories": {
+      "output": "dist"
+    }
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
