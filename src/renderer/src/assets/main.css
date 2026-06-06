@@ -1,9 +1,18 @@
+:root {
+  --mac-bg: #f5f5f7;
+  --mac-border: #d2d2d7;
+  --mac-accent: #007aff;
+  --mac-text: #1d1d1f;
+  --mac-text-secondary: #86868b;
+}
+
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: #e0e0e0;
-  color: #1d1d1f;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Pretendard", sans-serif;
+  background-color: #f0f0f2;
+  color: var(--mac-text);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .app-container {
@@ -13,95 +22,131 @@ body {
   width: 100vw;
 }
 
-/* macOS Toolbar */
+/* macOS Premium Toolbar */
 .mac-toolbar {
   height: 52px;
-  background-color: rgba(245, 245, 247, 0.8);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid #d2d2d7;
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--mac-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  padding-left: 80px; /* macOS 창 버튼 공간 확보 */
+  z-index: 100;
   -webkit-app-region: drag;
 }
 
-.doc-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1d1d1f;
-}
-
-.tool-btn {
-  background: white;
-  border: 1px solid #d2d2d7;
-  border-radius: 4px;
-  padding: 4px 8px;
-  margin: 0 4px;
-  font-size: 12px;
+.window-controls {
+  display: flex;
+  gap: 8px;
+  margin-right: 16px;
   -webkit-app-region: no-drag;
 }
 
-.save-btn {
-  background: #007aff;
-  color: white;
+.control {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.close { background-color: #ff5f57; }
+.minimize { background-color: #febc2e; }
+.maximize { background-color: #28c840; }
+
+.toolbar-left { display: flex; align-items: center; }
+.doc-title { font-size: 13px; font-weight: 500; color: var(--mac-text); }
+
+.toolbar-center {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 4px;
+  border-radius: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.tool-group { display: flex; gap: 2px; }
+.divider { width: 1px; height: 16px; background: var(--mac-border); margin: 0 8px; }
+
+.tool-btn-icon, .tool-btn-text {
+  background: transparent;
   border: none;
   border-radius: 4px;
-  padding: 4px 12px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--mac-text);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.tool-btn-icon:hover, .tool-btn-text:hover { background: rgba(0, 0, 0, 0.05); }
+
+.action-btn {
+  border-radius: 6px;
+  padding: 5px 12px;
   font-size: 12px;
   font-weight: 500;
+  cursor: pointer;
   -webkit-app-region: no-drag;
+  margin-left: 8px;
 }
+
+.share { background: transparent; border: 0.5px solid var(--mac-border); }
+.save { background: var(--mac-accent); color: white; border: none; }
 
 /* Editor Area */
 .editor-main {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  justify-content: center;
   padding: 40px 0;
+  scroll-behavior: smooth;
 }
 
-.page-scroller {
+.a4-page-container {
   display: flex;
-  flex-direction: column;
-  align-items: center;
+  justify-content: center;
+  margin-bottom: 40px;
 }
 
 .a4-page {
   width: 210mm;
   min-height: 297mm;
-  background-color: white;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-  padding: 30mm 20mm;
-  margin-bottom: 30px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 30mm 25mm;
   box-sizing: border-box;
+  transition: transform 0.3s ease;
 }
 
 .editable-paragraph {
   outline: none;
   min-height: 1.6em;
-  line-height: 1.6;
+  line-height: 1.8;
   font-size: 11pt;
   margin-bottom: 0;
   white-space: pre-wrap;
+  color: #333;
 }
 
 .editable-paragraph:empty:before {
   content: attr(data-placeholder);
   color: #d2d2d7;
+  pointer-events: none;
 }
 
 /* Status Bar */
 .status-bar {
-  height: 24px;
-  background-color: #f5f5f7;
-  border-top: 1px solid #d2d2d7;
+  height: 28px;
+  background-color: var(--mac-bg);
+  border-top: 0.5px solid var(--mac-border);
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  justify-content: space-between;
+  padding: 0 16px;
   font-size: 11px;
-  color: #86868b;
-  gap: 20px;
+  color: var(--mac-text-secondary);
 }
+
+.status-left, .status-right { display: flex; align-items: center; gap: 12px; }
+.separator { color: var(--mac-border); }
+.zoom-level { font-weight: 500; }

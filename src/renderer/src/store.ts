@@ -29,16 +29,20 @@ export const useDocStore = create<DocumentState>((set) => ({
     newSections[sIdx] = { ...newSections[sIdx], paragraphs: newParagraphs };
     return { doc: { ...state.doc, sections: newSections } };
   }),
-  addParagraph: (sIdx, pIdx) => set((state) => {
-    const newSections = [...state.doc.sections];
-    const newParagraphs = [...newSections[sIdx].paragraphs];
-    newParagraphs.splice(pIdx + 1, 0, {
-      id: "p" + Math.random().toString(36).substr(2, 9),
-      content: [{ type: "text", text: "", styleId: "0" }]
+  addParagraph: (sIdx, pIdx) => {
+    const newId = "p" + Math.random().toString(36).substr(2, 9);
+    set((state) => {
+      const newSections = [...state.doc.sections];
+      const newParagraphs = [...newSections[sIdx].paragraphs];
+      newParagraphs.splice(pIdx + 1, 0, {
+        id: newId,
+        content: [{ type: "text", text: "", styleId: "0" }]
+      });
+      newSections[sIdx] = { ...newSections[sIdx], paragraphs: newParagraphs };
+      return { doc: { ...state.doc, sections: newSections } };
     });
-    newSections[sIdx] = { ...newSections[sIdx], paragraphs: newParagraphs };
-    return { doc: { ...state.doc, sections: newSections } };
-  }),
+    return newId;
+  },
   removeParagraph: (sIdx, pIdx) => set((state) => {
     const newSections = [...state.doc.sections];
     const newParagraphs = [...newSections[sIdx].paragraphs];
