@@ -67,3 +67,20 @@
 -   렌더링 엔진에 HWPX 스타일(글자 모양, 단락 모양 등)을 적용하는 로직을 구현합니다.
 -   테이블 및 컨트롤과 같은 복잡한 요소의 렌더링을 구체화합니다.
 -   개발 로그 및 AI 프롬프트 문서를 최종 업데이트하고, 전체 결과물을 사용자에게 전달합니다.
+
+
+## [2026-06-06] 빌드 오류 해결 및 Electron 보일러플레이트 구축
+
+### 완료된 작업
+1.  **빌드 오류 해결**: `electron-vite` 설정 부재로 인한 빌드 오류를 `electron.vite.config.ts` 파일을 생성하여 해결했습니다.
+2.  **Electron 보일러플레이트 구축**: Main Process(`src/main/index.ts`), Preload Script(`src/main/preload.ts`), Renderer Process(`src/renderer/index.html`, `src/renderer/src/main.tsx`)의 진입점과 기본 코드를 작성했습니다.
+3.  **macOS 최적화 설정**: Main Process에서 `titleBarStyle: 'hiddenInset'` 설정을 통해 macOS 네이티브 앱과 유사한 상단 바 스타일을 적용했습니다.
+4.  **빌드 검증**: `npm run build` 명령을 통해 Main, Preload, Renderer 프로세스가 모두 정상적으로 빌드됨을 확인했습니다.
+
+### 결정 사항
+-   의존성 문제로 인해 `@electron-toolkit/utils` 사용을 최소화하고, 필요한 기능은 직접 구현하거나 표준 Node.js/Electron API를 사용하도록 수정했습니다.
+-   Vite와 React를 사용하여 현대적이고 빠른 렌더러 개발 환경을 구축했습니다.
+
+### 다음 단계
+-   구현된 HWPX 파서와 렌더링 엔진을 Electron UI에 통합합니다.
+-   실제 HWPX 파일을 불러와 화면에 렌더링하는 기능을 구현합니다.
