@@ -6,14 +6,25 @@ import { NormalizedDocument } from "../../shared/types";
  * @param filePath 파싱할 HWP 파일의 경로
  * @returns 정규화된 문서 객체
  */
+import * as CFB from 'cfb';
+import * as zlib from 'zlib';
+
 export async function parseHWP(filePath: string): Promise<NormalizedDocument> {
   console.log(`Starting binary HWP parsing for: ${filePath}`);
   
-  // TODO: 
-  // 1. CFBF (Compound File Binary Format) 라이브러리 연동 (예: compound-file-js)
-  // 2. DocInfo, BodyText 스트림 추출
-  // 3. zlib 압축 해제
-  // 4. 바이너리 레코드 파싱 및 JSON 정규화
-  
-  throw new Error(".hwp 바이너리 파싱 기능은 현재 구현 중입니다. HWPX 형식을 권장합니다.");
+  try {
+    const cfb = CFB.read(filePath, { type: 'file' });
+    console.log("CFB streams:", cfb.FullPaths);
+    
+    // TODO: 
+    // 1. FileHeader 스트림 확인 (HWP 5.0 여부)
+    // 2. DocInfo 스트림 파싱 (스타일 정보)
+    // 3. BodyText/SectionN 스트림 추출 및 zlib 압축 해제
+    // 4. 레코드 단위 파싱
+    
+    throw new Error(".hwp 바이너리 파싱은 현재 스트림 추출 단계까지 구현되었습니다. 실제 내용 파싱은 개발 중입니다.");
+  } catch (error) {
+    console.error("HWP Binary parsing error:", error);
+    throw error;
+  }
 }

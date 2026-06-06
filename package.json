@@ -15,6 +15,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "cfb": "^1.2.2",
     "electron-updater": "^6.1.7",
     "fast-xml-parser": "^4.3.2",
     "react": "^18.2.0",

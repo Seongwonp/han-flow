@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { parseHWPX } from '../core/parser/parser'
+import { parseHWP } from '../core/parser/hwp_parser'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -58,8 +59,7 @@ app.whenReady().then(() => {
       if (filePath.toLowerCase().endsWith('.hwpx')) {
         return await parseHWPX(filePath)
       } else if (filePath.toLowerCase().endsWith('.hwp')) {
-        // TODO: .hwp 바이너리 파서 연동
-        throw new Error('.hwp 파일 지원은 현재 개발 중입니다.')
+        return await parseHWP(filePath)
       }
       throw new Error('지원하지 않는 파일 형식입니다.')
     } catch (error) {

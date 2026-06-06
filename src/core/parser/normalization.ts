@@ -87,14 +87,18 @@ export function normalizeDocument(headerData: any, sectionsData: any[]): Normali
   };
 
   // 2. 섹션 데이터 정규화
-  const normalizedSections: NormalizedSection[] = sectionsData.map(sectionBody => {
+  const normalizedSections: NormalizedSection[] = sectionsData.map((sectionBody, sIdx) => {
+    console.log(`Normalizing section ${sIdx + 1}...`);
     const paragraphs: NormalizedParagraph[] = [];
     const section = getVal(sectionBody, "section");
     if (section && getVal(section, "p")) {
       const rawParagraphs = getVal(section, "p");
       const pList = Array.isArray(rawParagraphs) ? rawParagraphs : [rawParagraphs];
       
-      pList.forEach((p: any, pIdx: number) => {
+      // 최대 10,000개 단락으로 제한 (안전장치)
+      const safePList = pList.slice(0, 10000);
+      
+      safePList.forEach((p: any, pIdx: number) => {
         const content: (NormalizedTextRun | NormalizedTable | NormalizedControl)[] = [];
         
         // 텍스트 런 처리
