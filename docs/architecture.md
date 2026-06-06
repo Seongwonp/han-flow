@@ -23,17 +23,13 @@ han-flow/
 ## 2. 핵심 모듈 설계 원칙
 
 ### 2.1 Parser Module (HWPX to Internal Model)
-- **역할**: ZIP 압축 해제 및 XML 스트림 파싱.
-- **특징**: `Worker Threads`를 사용하여 대용량 문서 파싱 시 UI 블로킹 방지.
-- **출처**: OWPML(KS X 6101) 표준 스키마 준수.
+Parser Module은 HWPX 파일의 ZIP 압축을 해제하고 내부의 XML 스트림을 파싱하는 역할을 담당합니다. 대용량 문서 파싱 시 UI 블로킹을 방지하기 위해 Worker Threads를 활용하며, OWPML(KS X 6101) 표준 스키마를 준수하여 정확한 파싱을 보장합니다.
 
 ### 2.2 Renderer Engine (Internal Model to View)
-- **역할**: 내부 JSON 모델을 시각적 요소로 변환.
-- **특징**: 레이아웃 깨짐 방지를 위해 `Virtual DOM` 또는 `Canvas-based rendering` 선택적 적용. macOS의 Retina 디스플레이에 최적화된 고해상도 렌더링 지원.
+Renderer Engine은 파싱된 내부 JSON 모델을 시각적 요소로 변환하는 역할을 수행합니다. 레이아웃 깨짐을 방지하기 위해 Virtual DOM 또는 Canvas-based rendering을 선택적으로 적용하며, macOS의 Retina 디스플레이에 최적화된 고해상도 렌더링을 지원하여 사용자에게 쾌적한 시각적 경험을 제공합니다.
 
 ### 2.3 State Manager (Document State)
-- **역할**: 문서의 편집 상태, 히스토리(Undo/Redo), 스타일 캐시 관리.
-- **특징**: 불필요한 리렌더링을 방지하기 위해 원자적(Atomic) 상태 업데이트 적용.
+State Manager는 문서의 편집 상태, 변경 이력(Undo/Redo), 그리고 스타일 캐시를 효율적으로 관리합니다. 불필요한 리렌더링을 방지하기 위해 원자적(Atomic) 상태 업데이트를 적용하여 성능을 최적화합니다.
 
 ## 3. 기술 스택 요약
 
@@ -44,3 +40,9 @@ han-flow/
 | **UI Library** | React | 컴포넌트 기반 UI 및 풍부한 에코시스템 |
 | **State** | Zustand / Jotai | 가볍고 성능 중심적인 상태 관리 |
 | **Build Tool** | Vite | 빠른 개발 피드백 및 빌드 속도 |
+
+
+## References
+
+- [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
+- [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)

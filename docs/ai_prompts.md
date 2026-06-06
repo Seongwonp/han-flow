@@ -18,3 +18,9 @@
 ## 3. UX 전략 구체화 프롬프트
 - **목적**: macOS 사용자에게 최적화된 경험 제공.
 - **지시어**: "기존 뷰어와 차별화되는 macOS 전용 기능을 포함한 3가지 핵심 UX 전략을 제안해줘."
+
+
+## References
+
+- [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
+- [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)

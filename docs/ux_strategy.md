@@ -21,18 +21,24 @@
 초기 프로젝트 구성에 필요한 핵심 라이브러리 리스트입니다.
 
 ### 2.1 Core Dependencies
-- `electron`: 데스크톱 앱 프레임워크
-- `typescript`: 정적 타입 시스템
-- `unzipper`: HWPX(ZIP) 압축 해제
-- `fast-xml-parser`: 고성능 XML 파싱
-- `react` & `react-dom`: UI 컴포넌트 라이브러리
-- `zustand`: 가벼운 상태 관리
+
+| 라이브러리 | 설명 |
+| :--------- | :--- |
+| `electron` | 데스크톱 앱 프레임워크 |
+| `typescript` | 정적 타입 시스템 |
+| `unzipper` | HWPX(ZIP) 압축 해제 |
+| `fast-xml-parser` | 고성능 XML 파싱 |
+| `react` & `react-dom` | UI 컴포넌트 라이브러리 |
+| `zustand` | 가벼운 상태 관리 |
 
 ### 2.2 Development Dependencies
-- `vite`: 초고속 빌드 및 HMR
-- `electron-vite`: Electron 전용 Vite 툴킷
-- `jest` & `ts-jest`: 단위 테스트 프레임워크
-- `eslint` & `prettier`: 코드 퀄리티 및 포맷팅
+
+| 라이브러리 | 설명 |
+| :--------- | :--- |
+| `vite` | 초고속 빌드 및 HMR |
+| `electron-vite` | Electron 전용 Vite 툴킷 |
+| `jest` & `ts-jest` | 단위 테스트 프레임워크 |
+| `eslint` & `prettier` | 코드 퀄리티 및 포맷팅 |
 
 ## 3. 초기화 명령어 예시
 ```bash
@@ -44,3 +50,9 @@ cd han-flow
 npm install electron unzipper fast-xml-parser zustand
 npm install -D electron-vite jest ts-jest @types/jest
 ```
+
+
+## References
+
+- [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
+- [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)

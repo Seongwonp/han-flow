@@ -70,6 +70,10 @@ HWPX의 스타일(단락, 표, 글꼴)을 렌더링 엔진이 이해하기 쉬�
 ```
 
 ## 3. 효율적인 맵핑 전략
-1.  **ID 기반 참조**: `header.xml`에 정의된 `CharShape`와 `ParaShape`를 ID 기반 Map 객체로 캐싱하여 `section.xml` 파싱 시 즉시 참조.
-2.  **Lazy Loading**: 대용량 문서의 경우 모든 섹션을 한 번에 파싱하지 않고, 사용자가 보고 있는 섹션부터 우선순위 파싱.
-3.  **Schema Validation**: Zod 또는 JSON Schema를 사용하여 파싱된 데이터의 무결성을 검증하고 레이아웃 깨짐의 원인을 사전에 차단.
+효율적인 맵핑 전략을 위해 `header.xml`에 정의된 `CharShape`와 `ParaShape`는 ID 기반 Map 객체로 캐싱되어 `section.xml` 파싱 시 즉시 참조됩니다. 대용량 문서의 경우 모든 섹션을 한 번에 파싱하는 대신, 사용자가 보고 있는 섹션부터 우선순위로 파싱하고 캐싱하는 Lazy Loading 방식을 적용하여 성능을 최적화합니다. 또한, Zod 또는 JSON Schema를 사용하여 파싱된 데이터의 무결성을 검증하고 레이아웃 깨짐의 잠재적 원인을 사전에 차단합니다.
+
+
+## References
+
+- [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
+- [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)
