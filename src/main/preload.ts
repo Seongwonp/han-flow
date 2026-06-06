@@ -2,7 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // Custom APIs for renderer
 const api = {
-  // 필요한 경우 여기에 IPC 통신 함수 추가
+  openFile: () => ipcRenderer.invoke('dialog:openFile'),
+  parseHWPX: (filePath: string) => ipcRenderer.invoke('hwpx:parse', filePath)
 }
 
 if (process.contextIsolated) {

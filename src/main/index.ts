@@ -1,5 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
+import { parseHWPX } from '../core/parser/parser'
+
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function createWindow(): void {
@@ -36,6 +38,26 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // 파일 열기 대화상자 핸들러
+  ipcMain.handle('dialog:openFile', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'HWPX Files', extensions: ['hwpx'] }]
+    })
+    if (canceled) return null
+    return filePaths[0]
+  })
+
+  // HWPX 파싱 핸들러
+  ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
+    try {
+      return await parseHWPX(filePath)
+    } catch (error) {
+      console.error('Parsing error:', error)
+      throw error
+    }
+  })
+
   createWindow()
 
   app.on('activate', function () {
