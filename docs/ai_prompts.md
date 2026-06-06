@@ -24,3 +24,18 @@
 
 - [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
 - [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)
+
+
+## 4. GitHub 저장소 연결 프롬프트
+- **일시**: 2026-06-06
+- **내용**: 사용자 제공 GitHub 저장소(`https://github.com/Seongwonp/han-flow.git`)에 프로젝트를 연결하고 초기 코드를 푸시하도록 요청.
+
+## 5. HWPX 파서 및 정규화 모듈 구현 프롬프트
+- **일시**: 2026-06-06
+- **내용**: HWPX 파일의 ZIP 압축 해제, XML 파싱, 그리고 내부 데이터 모델로의 정규화 로직 구현 요청.
+- **핵심 지시어**: "`parser.ts`에 `parseHWPX` 함수를 구현하고, `normalization.ts`로 정규화 로직을 분리하여 스타일 정보 및 본문 내용을 맵핑해줘. 테이블 셀 내부 단락 및 텍스트 런의 탭/줄바꿈 처리도 포함해줘."
+
+## 6. 기본 렌더링 엔진 프로토타입 구현 프롬프트
+- **일시**: 2026-06-06
+- **내용**: 정규화된 HWPX 문서를 HTML/SVG/Canvas 요소로 렌더링하는 기본 프로토타입 구현 요청.
+- **핵심 지시어**: "`renderer.ts` 파일에 `renderDocument` 함수를 구현하여 문서의 섹션, 단락, 텍스트 런을 HTML 요소로 렌더링하는 초기 로직을 작성해줘."
