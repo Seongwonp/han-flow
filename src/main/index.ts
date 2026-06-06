@@ -42,16 +42,26 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'HWPX Files', extensions: ['hwpx'] }]
+      filters: [
+        { name: 'Hancom Office Files', extensions: ['hwpx', 'hwp'] },
+        { name: 'HWPX Files', extensions: ['hwpx'] },
+        { name: 'HWP Files', extensions: ['hwp'] }
+      ]
     })
     if (canceled) return null
     return filePaths[0]
   })
 
-  // HWPX 파싱 핸들러
+  // 문서 파싱 핸들러 (HWPX 및 HWP 지원)
   ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
     try {
-      return await parseHWPX(filePath)
+      if (filePath.toLowerCase().endsWith('.hwpx')) {
+        return await parseHWPX(filePath)
+      } else if (filePath.toLowerCase().endsWith('.hwp')) {
+        // TODO: .hwp 바이너리 파서 연동
+        throw new Error('.hwp 파일 지원은 현재 개발 중입니다.')
+      }
+      throw new Error('지원하지 않는 파일 형식입니다.')
     } catch (error) {
       console.error('Parsing error:', error)
       throw error

@@ -45,11 +45,12 @@ function App(): JSX.Element {
     const files = e.dataTransfer.files
     if (files && files.length > 0) {
       const file = files[0]
-      if (file.name.endsWith('.hwpx')) {
+      const fileName = file.name.toLowerCase()
+      if (fileName.endsWith('.hwpx') || fileName.endsWith('.hwp')) {
         // @ts-ignore (electron file path)
         await processFile(file.path)
       } else {
-        alert('HWPX 파일만 열 수 있습니다.')
+        alert('HWPX 또는 HWP 파일만 열 수 있습니다.')
       }
     }
   }

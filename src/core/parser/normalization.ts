@@ -7,49 +7,72 @@ import { HWPXDocument, OWPMLHead, OWPMLBody, NormalizedDocument, FontFace, Borde
  * @param sectionsData sectionN.xml에서 파싱된 데이터 배열
  * @returns 정규화된 문서 객체
  */
-export function normalizeDocument(headerData: OWPMLHead, sectionsData: OWPMLBody[]): NormalizedDocument {
+export function normalizeDocument(headerData: any, sectionsData: any[]): NormalizedDocument {
   console.log("Normalizing document data...");
+  
+  // 데이터가 없는 경우 빈 객체로 초기화
+  if (!headerData) headerData = {};
+
+  // 네임스페이스(hp:)가 있을 수도 있고 없을 수도 있으므로 유연하게 접근하는 헬퍼 함수
+  const getVal = (obj: any, key: string) => {
+    if (!obj) return undefined;
+    return obj[key] || obj[`hp:${key}`] || obj[`hh:${key}`] || obj[`hs:${key}`];
+  };
 
   // 1. 스타일 정보 추출 및 맵핑
   const fontFaces: { [id: string]: FontFace } = {};
-  if (headerData["hp:fontFaces"] && headerData["hp:fontFaces"]["hp:fontFace"]) {
-    (Array.isArray(headerData["hp:fontFaces"]["hp:fontFace"]) ? headerData["hp:fontFaces"]["hp:fontFace"] : [headerData["hp:fontFaces"]["hp:fontFace"]])
+  const rawFontFaces = getVal(headerData, "fontFaces");
+  if (rawFontFaces && getVal(rawFontFaces, "fontFace")) {
+    const ffList = getVal(rawFontFaces, "fontFace");
+    (Array.isArray(ffList) ? ffList : [ffList])
       .forEach(ff => fontFaces[ff["@_id"]] = ff);
   }
 
   const borderFills: { [id: string]: BorderFill } = {};
-  if (headerData["hp:borderFills"] && headerData["hp:borderFills"]["hp:borderFill"]) {
-    (Array.isArray(headerData["hp:borderFills"]["hp:borderFill"]) ? headerData["hp:borderFills"]["hp:borderFill"] : [headerData["hp:borderFills"]["hp:borderFill"]])
+  const rawBorderFills = getVal(headerData, "borderFills");
+  if (rawBorderFills && getVal(rawBorderFills, "borderFill")) {
+    const bfList = getVal(rawBorderFills, "borderFill");
+    (Array.isArray(bfList) ? bfList : [bfList])
       .forEach(bf => borderFills[bf["@_id"]] = bf);
   }
 
   const charProperties: { [id: string]: CharPr } = {};
-  if (headerData["hp:charProperties"] && headerData["hp:charProperties"]["hp:charPr"]) {
-    (Array.isArray(headerData["hp:charProperties"]["hp:charPr"]) ? headerData["hp:charProperties"]["hp:charPr"] : [headerData["hp:charProperties"]["hp:charPr"]])
+  const rawCharPr = getVal(headerData, "charProperties");
+  if (rawCharPr && getVal(rawCharPr, "charPr")) {
+    const cpList = getVal(rawCharPr, "charPr");
+    (Array.isArray(cpList) ? cpList : [cpList])
       .forEach(cp => charProperties[cp["@_id"]] = cp);
   }
 
   const paraProperties: { [id: string]: ParaPr } = {};
-  if (headerData["hp:paraProperties"] && headerData["hp:paraProperties"]["hp:paraPr"]) {
-    (Array.isArray(headerData["hp:paraProperties"]["hp:paraPr"]) ? headerData["hp:paraProperties"]["hp:paraPr"] : [headerData["hp:paraProperties"]["hp:paraPr"]])
+  const rawParaPr = getVal(headerData, "paraProperties");
+  if (rawParaPr && getVal(rawParaPr, "paraPr")) {
+    const ppList = getVal(rawParaPr, "paraPr");
+    (Array.isArray(ppList) ? ppList : [ppList])
       .forEach(pp => paraProperties[pp["@_id"]] = pp);
   }
 
   const tabProperties: { [id: string]: TabPr } = {};
-  if (headerData["hp:tabProperties"] && headerData["hp:tabProperties"]["hp:tabPr"]) {
-    (Array.isArray(headerData["hp:tabProperties"]["hp:tabPr"]) ? headerData["hp:tabProperties"]["hp:tabPr"] : [headerData["hp:tabProperties"]["hp:tabPr"]])
+  const rawTabPr = getVal(headerData, "tabProperties");
+  if (rawTabPr && getVal(rawTabPr, "tabPr")) {
+    const tpList = getVal(rawTabPr, "tabPr");
+    (Array.isArray(tpList) ? tpList : [tpList])
       .forEach(tp => tabProperties[tp["@_id"]] = tp);
   }
 
   const numberingPeriods: { [id: string]: Numbering } = {};
-  if (headerData["hp:numberingPeriods"] && headerData["hp:numberingPeriods"]["hp:numbering"]) {
-    (Array.isArray(headerData["hp:numberingPeriods"]["hp:numbering"]) ? headerData["hp:numberingPeriods"]["hp:numbering"] : [headerData["hp:numberingPeriods"]["hp:numbering"]])
+  const rawNumbering = getVal(headerData, "numberingPeriods");
+  if (rawNumbering && getVal(rawNumbering, "numbering")) {
+    const npList = getVal(rawNumbering, "numbering");
+    (Array.isArray(npList) ? npList : [npList])
       .forEach(np => numberingPeriods[np["@_id"]] = np);
   }
 
   const bullets: { [id: string]: Bullet } = {};
-  if (headerData["hp:bullets"] && headerData["hp:bullets"]["hp:bullet"]) {
-    (Array.isArray(headerData["hp:bullets"]["hp:bullet"]) ? headerData["hp:bullets"]["hp:bullet"] : [headerData["hp:bullets"]["hp:bullet"]])
+  const rawBullets = getVal(headerData, "bullets");
+  if (rawBullets && getVal(rawBullets, "bullet")) {
+    const bList = getVal(rawBullets, "bullet");
+    (Array.isArray(bList) ? bList : [bList])
       .forEach(b => bullets[b["@_id"]] = b);
   }
 
@@ -66,55 +89,62 @@ export function normalizeDocument(headerData: OWPMLHead, sectionsData: OWPMLBody
   // 2. 섹션 데이터 정규화
   const normalizedSections: NormalizedSection[] = sectionsData.map(sectionBody => {
     const paragraphs: NormalizedParagraph[] = [];
-    if (sectionBody["hp:section"] && sectionBody["hp:section"]["hp:p"]) {
-      const rawParagraphs = Array.isArray(sectionBody["hp:section"]["hp:p"]) ? sectionBody["hp:section"]["hp:p"] : [sectionBody["hp:section"]["hp:p"]];
-      rawParagraphs.forEach((p: Paragraph, pIdx: number) => {
+    const section = getVal(sectionBody, "section");
+    if (section && getVal(section, "p")) {
+      const rawParagraphs = getVal(section, "p");
+      const pList = Array.isArray(rawParagraphs) ? rawParagraphs : [rawParagraphs];
+      
+      pList.forEach((p: any, pIdx: number) => {
         const content: (NormalizedTextRun | NormalizedTable | NormalizedControl)[] = [];
         
         // 텍스트 런 처리
-        if (p["hp:run"]) {
-          const runs = Array.isArray(p["hp:run"]) ? p["hp:run"] : [p["hp:run"]];
-          runs.forEach((run: Run) => {
-            if (run["hp:t"] && run["hp:t"]["#text"]) {
+        const rawRuns = getVal(p, "run");
+        if (rawRuns) {
+          const runs = Array.isArray(rawRuns) ? rawRuns : [rawRuns];
+          runs.forEach((run: any) => {
+            const t = getVal(run, "t");
+            if (t && t["#text"]) {
               content.push({
                 type: "text",
-                text: run["hp:t"]["#text"],
-                styleId: run["@_charPrRef"] || p["@_charPrRef"] // 런에 스타일이 없으면 단락 기본 스타일 사용
+                text: t["#text"],
+                styleId: run["@_charPrRef"] || p["@_charPrRef"]
               });
             }
-            // TODO: 탭, 줄바꿈 등 다른 런 요소 처리
-            if (run["hp:tab"]) {
+            if (getVal(run, "tab")) {
               content.push({ type: "text", text: "\t", styleId: run["@_charPrRef"] || p["@_charPrRef"] });
             }
-            if (run["hp:lineBreak"]) {
+            if (getVal(run, "lineBreak")) {
               content.push({ type: "text", text: "\n", styleId: run["@_charPrRef"] || p["@_charPrRef"] });
             }
           });
         }
 
         // 테이블 처리
-        if (p["hp:tbl"]) {
-          const tables = Array.isArray(p["hp:tbl"]) ? p["hp:tbl"] : [p["hp:tbl"]];
-          tables.forEach((tbl: Table) => {
-            // TODO: 테이블의 상세 속성 및 셀 내용 재귀적으로 처리
-            const tableRows = Array.isArray(tbl["hp:tr"]) ? tbl["hp:tr"] : [tbl["hp:tr"]];
+        const rawTbls = getVal(p, "tbl");
+        if (rawTbls) {
+          const tables = Array.isArray(rawTbls) ? rawTbls : [rawTbls];
+          tables.forEach((tbl: any) => {
+            const rawRows = getVal(tbl, "tr");
+            const tableRows = Array.isArray(rawRows) ? rawRows : [rawRows];
             const normalizedCells: NormalizedParagraph[][] = [];
 
             tableRows.forEach(row => {
               const rowCells: NormalizedParagraph[] = [];
-              const cells = Array.isArray(row["hp:tc"]) ? row["hp:tc"] : [row["hp:tc"]];
-              cells.forEach((cell: TableCell) => {
-                // 셀 내부에 단락이 있을 수 있으므로 재귀적으로 처리
-                if (cell["hp:p"]) {
-                  const cellParagraphs = Array.isArray(cell["hp:p"]) ? cell["hp:p"] : [cell["hp:p"]];
+              const rawTcs = getVal(row, "tc");
+              const cells = Array.isArray(rawTcs) ? rawTcs : [rawTcs];
+              cells.forEach((cell: any) => {
+                const cellRawPs = getVal(cell, "p");
+                if (cellRawPs) {
+                  const cellParagraphs = Array.isArray(cellRawPs) ? cellRawPs : [cellRawPs];
                   cellParagraphs.forEach(cp => {
-                    // 셀 내부 단락도 정규화해야 함. 여기서는 간단히 텍스트만 추출
                     const cellContent: (NormalizedTextRun | NormalizedTable | NormalizedControl)[] = [];
-                    if (cp["hp:run"]) {
-                      const cellRuns = Array.isArray(cp["hp:run"]) ? cp["hp:run"] : [cp["hp:run"]];
+                    const cpRawRuns = getVal(cp, "run");
+                    if (cpRawRuns) {
+                      const cellRuns = Array.isArray(cpRawRuns) ? cpRawRuns : [cpRawRuns];
                       cellRuns.forEach(cr => {
-                        if (cr["hp:t"] && cr["hp:t"]["#text"]) {
-                          cellContent.push({ type: "text", text: cr["hp:t"]["#text"], styleId: cr["@_charPrRef"] || cp["@_charPrRef"] });
+                        const crT = getVal(cr, "t");
+                        if (crT && crT["#text"]) {
+                          cellContent.push({ type: "text", text: crT["#text"], styleId: cr["@_charPrRef"] || cp["@_charPrRef"] });
                         }
                       });
                     }
@@ -136,19 +166,19 @@ export function normalizeDocument(headerData: OWPMLHead, sectionsData: OWPMLBody
               height: tbl["@_height"],
               colCount: parseInt(tbl["@_colCount"]),
               rowCount: parseInt(tbl["@_rowCount"]),
-              cells: normalizedCells // 정규화된 셀 내용 추가
+              cells: normalizedCells
             });
           });
         }
 
         // 컨트롤 처리
-        if (p["hp:ctrl"]) {
-          const controls = Array.isArray(p["hp:ctrl"]) ? p["hp:ctrl"] : [p["hp:ctrl"]];
-          controls.forEach((ctrl: Control) => {
+        const rawCtrls = getVal(p, "ctrl");
+        if (rawCtrls) {
+          const controls = Array.isArray(rawCtrls) ? rawCtrls : [rawCtrls];
+          controls.forEach((ctrl: any) => {
             content.push({
               type: "control",
               id: ctrl["@_id"],
-              // TODO: 컨트롤의 상세 속성 처리
             });
           });
         }
@@ -164,10 +194,13 @@ export function normalizeDocument(headerData: OWPMLHead, sectionsData: OWPMLBody
   });
 
   // 최종 정규화된 문서 객체 반환
+  const docData = getVal(headerData, "docData");
+  const docOption = docData ? getVal(docData, "docOption") : undefined;
+  
   return {
     metadata: {
-      version: headerData["hp:docData"]["hp:docOption"]["@_lineWrap"], // 임시로 docOption의 한 속성 사용
-      id: "document-id-1" // 임시 ID
+      version: docOption ? docOption["@_lineWrap"] : "1.0",
+      id: "document-id-1"
     },
     styles: normalizedStyles,
     sections: normalizedSections
