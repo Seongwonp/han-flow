@@ -1,10 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
-import { parseHWPX } from '../core/parser/parser'
 import { parseHWP } from '../core/parser/hwp_parser'
 import { serializeToHWPX } from '../core/parser/serialization'
 import AdmZip from 'adm-zip'
 import fontList from 'font-list'
+import { HwpxPackageReader } from '../core/parser/package_reader'
+import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -135,7 +136,7 @@ app.whenReady().then(() => {
   ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
     try {
       if (filePath.toLowerCase().endsWith('.hwpx')) {
-        return await parseHWPX(filePath)
+        return await decodeViewerDocument(await HwpxPackageReader.open(filePath))
       } else if (filePath.toLowerCase().endsWith('.hwp')) {
         return await parseHWP(filePath)
       }
