@@ -2,8 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // Custom APIs for renderer
 const api = {
+  getFonts: () => ipcRenderer.invoke('system:getFonts'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  parseHWPX: (filePath: string) => ipcRenderer.invoke('hwpx:parse', filePath)
+  saveFile: () => ipcRenderer.invoke('dialog:saveFile'),
+  confirmSave: () => ipcRenderer.invoke('dialog:confirmSave'),
+  askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
+  openNewWindow: () => ipcRenderer.invoke('window:openNew'),
+  openImage: () => ipcRenderer.invoke('dialog:openImage'),
+  parseHWPX: (filePath: string) => ipcRenderer.invoke('hwpx:parse', filePath),
+  saveHWPX: (filePath: string, doc: any) => ipcRenderer.invoke('hwpx:save', { filePath, doc })
 }
 
 if (process.contextIsolated) {
