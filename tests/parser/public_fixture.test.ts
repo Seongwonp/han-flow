@@ -1,0 +1,42 @@
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { paginateDocument } from '../../src/core/layout/pagination'
+import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
+import { HwpxPackageReader } from '../../src/core/parser/package_reader'
+import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
+import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+
+describe('공개 synthetic HWPX 회귀 fixture', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
+  const fixture = createSyntheticHwpx(directory)
+
+  afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  test('section 순서와 그림·텍스트 혼합 순서를 보존한다', async () => {
+    const reader = await HwpxPackageReader.open(fixture)
+    expect(await reader.index()).toEqual({
+      mimetype: 'application/hwp+zip',
+      headerPath: 'Contents/header.xml',
+      sectionPaths: ['Contents/section0.xml', 'Contents/section1.xml'],
+      resourcePaths: ['BinData/image1.png']
+    })
+    const section = walkOrderedXml(await reader.readOrderedXml('Contents/section1.xml'))
+    const run = section.find((node) => node.name === 'hp:run')
+    expect(run?.children.map((node) => node.name)).toEqual(['hp:pic', 'hp:t'])
+  })
+
+  test('스타일·표·이미지를 해석하고 표를 반복 헤더와 함께 나눈다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
+    expect(document.page).toEqual({ width: 10000, height: 10000, margin: { left: 1000, right: 1000, top: 1000, bottom: 1000 } })
+    expect(document.charStyles['0']).toMatchObject({ fontFamily: 'HanFlow Test Sans', bold: true, color: '#123456' })
+    expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })
+
+    const pages = paginateDocument(document)
+    expect(pages).toHaveLength(3)
+    const fragments = pages.flat().filter((block) => block.id.includes(':fragment'))
+    expect(fragments).toHaveLength(2)
+    const secondTable = fragments[1].content.find((content) => content.type === 'table')
+    expect(secondTable?.type === 'table' ? secondTable.rows[0].cells[0].header : false).toBe(true)
+  })
+})

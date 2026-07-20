@@ -157,3 +157,5 @@ node_modules/
 /han-flow/dist
 /han-flow/node_modules
 tests/fixtures/private/
+!tests/fixtures/public/
+!tests/fixtures/public/**

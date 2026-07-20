@@ -15,7 +15,10 @@ Git에 커밋하지 않는다.
 - reference PDF를 만든 앱과 버전
 - 기대되는 known limitation
 
-공개 CI fixture는 직접 생성했거나 재배포 허가가 명확한 파일만 `public/`에 추가한다.
+공개 CI fixture는 `public/create_synthetic_hwpx.ts`가 테스트 전용 HWPX ZIP을 결정적으로
+생성한다. 직접 작성한 최소 XML과 1×1 PNG만 사용하므로 개인정보나 제3자 문서 저작권에
+의존하지 않는다. section 숫자 정렬, 혼합 콘텐츠 순서, 스타일, 이미지 resource, 표의
+행 분할과 반복 header를 private 파일 없이 항상 검증한다.
 
 ## 현재 M1 기준
 
