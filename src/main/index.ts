@@ -1,7 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { writeFile } from 'fs/promises'
-import { parseHWP } from '../core/parser/hwp_parser'
 import { serializeToHWPX } from '../core/parser/serialization'
 import AdmZip from 'adm-zip'
 import fontList from 'font-list'
@@ -9,11 +8,45 @@ import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+let mainWindow: BrowserWindow | null = null
+let pendingOpenPath: string | null = null
 
-function createWindow(): void {
+function isHwpxPath(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.hwpx')
+}
+
+function pathFromArguments(arguments_: string[]): string | undefined {
+  return arguments_.find(isHwpxPath)
+}
+
+function captureVisualState(window: BrowserWindow): void {
+  const capturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
+  if (!capturePath) return
+  setTimeout(async () => {
+    const image = await window.webContents.capturePage()
+    await writeFile(capturePath, image.toPNG())
+    const imageState = await window.webContents.executeJavaScript(`Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length }))`)
+    console.log('Visual test image state:', imageState)
+  }, 2500)
+}
+
+function deliverOpenPath(filePath: string): void {
+  if (!isHwpxPath(filePath)) return
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    pendingOpenPath = filePath
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  mainWindow.webContents.send('file:open', filePath)
+  captureVisualState(mainWindow)
+}
+
+function createWindow(initialOpenPath?: string): void {
   const visualCapturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: visualCapturePath ? 1500 : 800,
     show: false,
@@ -26,18 +59,15 @@ function createWindow(): void {
     }
   })
 
+  mainWindow.on('closed', () => { mainWindow = null })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
 
   if (visualCapturePath) {
     mainWindow.webContents.once('did-finish-load', () => {
-      setTimeout(async () => {
-        const image = await mainWindow.webContents.capturePage()
-        await writeFile(visualCapturePath, image.toPNG())
-        const imageState = await mainWindow.webContents.executeJavaScript(`Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length }))`)
-        console.log('Visual test image state:', imageState)
-      }, 2500)
+      if (mainWindow) captureVisualState(mainWindow)
     })
   }
 
@@ -49,13 +79,30 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   const visualTestFile = isDev ? process.env['HAN_FLOW_VISUAL_TEST_FILE'] : undefined
+  const openPath = visualTestFile ?? initialOpenPath
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
-    if (visualTestFile) rendererUrl.searchParams.set('open', visualTestFile)
+    if (openPath) rendererUrl.searchParams.set('open', openPath)
     mainWindow.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), visualTestFile ? { query: { open: visualTestFile } } : undefined)
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath } } : undefined)
   }
+}
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, arguments_) => {
+    const filePath = pathFromArguments(arguments_)
+    if (filePath) deliverOpenPath(filePath)
+    else if (mainWindow) { mainWindow.show(); mainWindow.focus() }
+  })
+
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault()
+    deliverOpenPath(filePath)
+  })
 }
 
 app.whenReady().then(() => {
@@ -75,7 +122,7 @@ app.whenReady().then(() => {
       title: '문서 열기',
       properties: ['openFile'],
       filters: [
-        { name: 'Hancom Office Files', extensions: ['hwpx', 'hwp'] }
+        { name: 'HWPX 문서', extensions: ['hwpx'] }
       ]
     })
     if (canceled) return null
@@ -148,15 +195,11 @@ app.whenReady().then(() => {
     }
   })
 
-  // 문서 파싱 핸들러 (HWPX 및 HWP 지원)
+  // v1은 HWPX 읽기 전용 파싱만 지원한다.
   ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
     try {
-      if (filePath.toLowerCase().endsWith('.hwpx')) {
-        return await decodeViewerDocument(await HwpxPackageReader.open(filePath))
-      } else if (filePath.toLowerCase().endsWith('.hwp')) {
-        return await parseHWP(filePath)
-      }
-      throw new Error('지원하지 않는 파일 형식입니다.')
+      if (!isHwpxPath(filePath)) throw new Error('HWPX 파일만 열 수 있습니다.')
+      return await decodeViewerDocument(await HwpxPackageReader.open(filePath))
     } catch (error) {
       console.error('Parsing error:', error)
       throw error
@@ -185,7 +228,9 @@ app.whenReady().then(() => {
     }
   })
 
-  createWindow()
+  const commandLinePath = pathFromArguments(process.argv)
+  createWindow(pendingOpenPath ?? commandLinePath)
+  pendingOpenPath = null
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

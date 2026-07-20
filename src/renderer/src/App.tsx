@@ -87,6 +87,8 @@ export default function App() {
   useEffect(() => {
     const initialPath = new URLSearchParams(window.location.search).get('open')
     if (initialPath) void openPath(initialPath)
+    const unsubscribe = api().onOpenFile((filePath: string) => { void openPath(filePath) })
+    return unsubscribe
   }, [])
   useEffect(() => {
     if (!document) return
