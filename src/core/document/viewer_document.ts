@@ -19,7 +19,7 @@ export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
 export interface ViewerSection { id: string; blocks: ViewerParagraph[] }
-export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; content: ViewerContent[] }
+export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutHeight: HwpUnit; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerText { type: 'text'; text: string; charStyleId: string }
 export interface ViewerImage { type: 'image'; resourceId?: string; width?: HwpUnit; height?: HwpUnit }

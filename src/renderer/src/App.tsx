@@ -1,20 +1,13 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useState } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerParagraph, ViewerTable } from '../../core/document/viewer_document'
 import { hwpUnitToCssPx } from '../../core/layout/hwp_unit'
+import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
+import { paginateDocument } from '../../core/layout/pagination'
 
 const api = () => (window as any).api
 
 function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
-}
-
-function splitPages(document: ViewerDocument): ViewerParagraph[][] {
-  const pages: ViewerParagraph[][] = [[]]
-  document.sections.forEach((section) => section.blocks.forEach((block) => {
-    if (block.pageBreak && pages[pages.length - 1].length) pages.push([])
-    pages[pages.length - 1].push(block)
-  }))
-  return pages.filter((page) => page.length)
 }
 
 function Content({ item, document }: { item: ViewerContent; document: ViewerDocument }) {
@@ -73,7 +66,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [zoom, setZoom] = useState(1)
-  const pages = useMemo(() => document ? splitPages(document) : [], [document])
+  const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
+  const [overflowPages, setOverflowPages] = useState<number[]>([])
+  const effectiveDocument = useMemo(() => document ? {
+    ...document,
+    charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
+      ...style,
+      fontFamily: style.fontFamily ? fontResolutions[style.fontFamily]?.resolved ?? style.fontFamily : undefined
+    }]))
+  } : null, [document, fontResolutions])
+  const pages = useMemo(() => effectiveDocument ? paginateDocument(effectiveDocument) : [], [effectiveDocument])
+  const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
 
   const openPath = async (path: string) => {
     setLoading(true); setError(null)
@@ -85,6 +88,20 @@ export default function App() {
     const initialPath = new URLSearchParams(window.location.search).get('open')
     if (initialPath) void openPath(initialPath)
   }, [])
+  useEffect(() => {
+    if (!document) return
+    const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
+    void api().getFonts().then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts))).catch(() => setFontResolutions(resolveDocumentFonts(requested, [])))
+  }, [document])
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
+        .map((page, index) => page.scrollHeight > page.clientHeight + 1 ? index + 1 : 0)
+        .filter(Boolean)
+      setOverflowPages(overflow)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [effectiveDocument, pages.length])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
 
@@ -94,7 +111,8 @@ export default function App() {
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
-      {document && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(document.page.width), minHeight: hwpUnitToCssPx(document.page.height), padding: `${hwpUnitToCssPx(document.page.margin.top)}px ${hwpUnitToCssPx(document.page.margin.right)}px ${hwpUnitToCssPx(document.page.margin.bottom)}px ${hwpUnitToCssPx(document.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</article>)}</div>}
+      {effectiveDocument && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: hwpUnitToCssPx(effectiveDocument.page.height), padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}</article>)}</div>}
     </section>
+    {effectiveDocument && <footer className="viewer-status" title={substitutions.map((font) => `${font.requested} → ${font.resolved}`).join('\n')}><span>{pages.length}페이지</span><span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>페이지 넘침 {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span></footer>}
   </main>
 }

@@ -22,4 +22,7 @@ button { font: inherit; }
 .viewer-empty button { padding: 0 16px; }
 .viewer-drop-icon { width: 76px; height: 92px; display: grid; place-items: center; background: white; border-radius: 10px; box-shadow: 0 4px 18px rgba(0,0,0,.15); color: #335eea; font-weight: 800; }
 .viewer-error { color: #a12626; }
+.viewer-status { flex: 0 0 28px; height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: rgba(248,248,248,.94); border-top: 1px solid rgba(0,0,0,.14); color: #58606b; font-size: 11px; }
+.viewer-status-warn { color: #8a5a00; }
+.viewer-status-error { color: #b42318; font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.92); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } }

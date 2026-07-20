@@ -21,7 +21,11 @@ function decodeParagraph(node: OrderedXmlNode, id: string): ViewerParagraph {
       if (item.name === 'hp:lineBreak') content.push({ type: 'text', text: '\n', charStyleId })
     })
   })
-  return { id, paraStyleId: node.attributes.paraPrIDRef ?? '0', pageBreak: node.attributes.pageBreak === '1', content }
+  const lineSegments = children(child(node, 'hp:linesegarray') ?? node, 'hp:lineseg')
+  const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
+  const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
+  const layoutHeight = lineSegments.length ? Math.max(...ends) - Math.min(...starts) : 0
+  return { id, paraStyleId: node.attributes.paraPrIDRef ?? '0', pageBreak: node.attributes.pageBreak === '1', layoutHeight, content }
 }
 
 function decodeImage(node: OrderedXmlNode): ViewerImage {
