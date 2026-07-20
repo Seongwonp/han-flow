@@ -37,8 +37,11 @@ State Manager는 문서의 편집 상태, 변경 이력(Undo/Redo), 그리고 �
 | :--- | :--- | :--- |
 | **Framework** | Electron | 크로스 플랫폼 지원 및 시스템 자원 접근 |
 | **Language** | TypeScript | 정적 타입을 통한 안정성 및 대규모 프로젝트 유지보수 |
-| **UI Library** | React | 컴포넌트 기반 UI 및 풍부한 에코시스템 |
-| **State** | Zustand / Jotai | 가볍고 성능 중심적인 상태 관리 |
+| **UI Library** | React / react-icons | 컴포넌트 기반 UI 및 고해상도 전문가용 아이콘 |
+| **State** | Zustand | 가볍고 성능 중심적인 상태 관리 (isDirty 감지 포함) |
+| **Parsing** | fast-xml-parser / unzipper | OWPML(HWPX) 표준 XML 스트리밍 처리 |
+| **Serialization** | adm-zip | HWPX 패키지 생성을 위한 압축 및 파일 구조화 |
+| **System** | font-list | 사용자의 모든 시스템 폰트 로드 및 동기화 |
 | **Build Tool** | Vite | 빠른 개발 피드백 및 빌드 속도 |
 
 
