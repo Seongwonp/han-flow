@@ -30,3 +30,4 @@ Git에 커밋하지 않는다.
 - PNG resource: 2
 
 golden 테스트는 내용 문자열 대신 구조, 크기, style 수, 병합 좌표만 검증한다.
+이미지 테스트도 원문을 노출하지 않고 resource ID, MIME, byte 존재 여부만 검증한다.

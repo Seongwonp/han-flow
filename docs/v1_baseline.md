@@ -168,13 +168,20 @@ fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명
 - [x] 읽기 전용 `ViewerDocument` 기본 모델
 - [x] 페이지 크기·여백, 한글 font table, 글자/문단 style 해석
 - [x] 표 행/열, cell address, row/column span, 크기·여백, 셀 문단 해석
-- [ ] border/fill 상세 style 해석과 이미지 resource loading
-- [ ] 첫 페이지 layout/paint tree 및 reference PDF 시각 비교
+- [x] border/fill 상세 style 해석과 이미지 resource loading
+- [x] 기존 편집 리본/contentEditable 제거 및 read-only A4 페이지 UI 연결
+- [x] OWPML pageBreak 기반 초기 페이지 분리와 줌/드래그앤드롭
+- [ ] reference PDF와 첫 페이지 시각 비교 및 layout 보정
 
 검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
 편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의
 `tsconfig` include 누락 때문에 실패한다. viewer 전환 시 구 편집 경로를 격리하면서 별도
 typecheck script를 품질 관문으로 추가한다.
+
+현재 화면은 semantic model을 HWPUNIT 기반 HTML table/image로 직접 표시하는 초기 renderer다.
+화면에 표시되지만 아직 paint tree나 줄 조판 엔진은 아니므로 reference PDF와의 시각
+정합을 M1 완료로 간주하지 않는다. 다음 단계에서 첫 페이지 캡처와 PDF 기준 이미지를
+비교해 줄 높이, 폰트 fallback, 셀 크기, 페이지 넘침을 보정한다.
 
 현재 AIDA fixture의 golden 기준은 section 3개, 최상위 문단 `[11, 1, 20]`, 전체 문단
 303개, 표 15개, 그림 개체 4개, 이미지 resource 2개다. section은 페이지가 아니므로
