@@ -146,6 +146,28 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - **M4 macOS 마감**: dark chrome(문서 용지는 독립), pinch zoom, drag/drop, 오류/폰트 진단,
   패키징과 실제 주간 사용 검증
 
+## M2 빠른 열기 진행 현황 (2026-07-20)
+
+- [x] 개인정보 없는 synthetic HWPX 생성기와 항상 실행되는 공개 회귀 테스트
+- [x] 앱 시작 전 macOS `open-file` 이벤트를 보관해 첫 창에 전달
+- [x] 실행 중 `open-file`과 두 번째 프로세스의 HWPX 인자를 기존 창에 전달
+- [x] single-instance lock과 기존 창 복원·포커스
+- [x] 파일 선택 및 IPC 파싱 입력을 `.hwpx`로 제한
+- [ ] 패키징 설정에 `.hwpx` document type/UTI 등록 후 Finder 더블클릭 검증
+- [ ] open → package index → decode → layout → first paint 구간 계측
+- [ ] 첫 section 우선 decode와 뒤 section 점진 로딩
+- [ ] viewport 주변 page virtualization
+
+공개 fixture는 테스트 시 임시 디렉터리에 결정적인 ZIP으로 생성하며 section 정렬, 혼합
+콘텐츠 순서, 글자·셀 스타일, PNG resource, `pageBreak=CELL` 표 분할과 반복 header를
+private AIDA 문서 없이 검증한다. 실행 중 파일 열기는 개발 앱을 빈 화면으로 시작한 뒤
+두 번째 Electron 프로세스에 private fixture 경로를 넘기는 방식으로 확인했고, 기존 창이
+8페이지/overflow 0 문서로 전환됐다. 캡처와 fixture는 저장소에 포함하지 않는다.
+
+현재 완료된 것은 운영체제가 넘긴 경로를 앱 내부로 전달하는 부분이다. Finder가 Han-Flow를
+`.hwpx` 기본 앱 후보로 인식하게 만드는 file association은 패키징 도구와 앱 식별자를
+결정한 다음 실제 `.app` 번들로 검증해야 하므로 다음 구현 단위로 남긴다.
+
 ## 다음 구현 단위
 
 M1은 아래 순서로만 진행한다.
