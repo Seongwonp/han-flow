@@ -174,6 +174,10 @@ fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명
 - [x] Electron 실앱 캡처와 reference PDF 첫 페이지 구조 비교
 - [x] 병합 셀 기반 열 폭 복원, 세로 정렬, 이미지 CSP 보정
 - [ ] 폰트 metric 기반 줄바꿈 및 페이지 하단 정밀 보정
+- [x] 시스템 글꼴 조회와 결정적 `요청 → 대체` font resolution
+- [x] 고정 A4 viewport의 실제 overflow 측정 및 상태 표시
+- [x] section 경계·pageBreak·lineseg 높이 기반 block pagination
+- [ ] 페이지를 가로지르는 표의 행 단위 분할
 
 검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
 편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의
@@ -197,6 +201,19 @@ PDF 1페이지와 비교했다. 검은 제목 표, 회색 header cell, 13×11 �
 font metric이 달라지는 것이 주원인이며, 픽셀 동일성을 추구하기보다 페이지 넘침 없이
 읽기 좋은 상태를 우선한다. 다음 시각 회귀 단계에서는 page bounding box와 overflow를
 수치화하고 font resolution diagnostic을 화면에 노출한다.
+
+### 글꼴·페이지 진단 결과
+
+시스템 글꼴 목록과 문서의 한글 font table을 비교해 정확한 family가 있으면 그대로 쓰고,
+없으면 명조/바탕 계열은 `AppleMyungjo`, 고딕 계열은 `Apple SD Gothic Neo`를 우선한다.
+상태 표시줄은 대체 font 수와 실제 A4 element의 `scrollHeight > clientHeight` 여부를
+페이지 번호와 함께 표시한다.
+
+AIDA 실앱 결과는 **7 block pages / 글꼴 대체 16 / overflow 1(2페이지)**다. reference
+PDF는 8페이지다. section 경계를 페이지로 처리하고 `lineseg` 높이로 top-level block을
+나누면서 기존 4페이지/overflow 2개에서 개선됐다. 남은 1페이지는 표 하나가 페이지 경계를
+가로질러 행 단위로 나뉘는 구조다. 현재 표는 atomic block이므로 다음 단계에서 반복 header,
+row height, `pageBreak=CELL`을 사용해 두 개의 page fragment로 분리한다.
 
 현재 AIDA fixture의 golden 기준은 section 3개, 최상위 문단 `[11, 1, 20]`, 전체 문단
 303개, 표 15개, 그림 개체 4개, 이미지 resource 2개다. section은 페이지가 아니므로
