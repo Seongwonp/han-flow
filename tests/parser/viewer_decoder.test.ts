@@ -29,7 +29,7 @@ describe('AIDA ViewerDocument decoder', () => {
     expect(tables[1].rows[0].cells.map((cell) => [cell.column, cell.columnSpan, cell.rowSpan])).toEqual([
       [0, 2, 1], [2, 6, 1], [8, 3, 1]
     ])
-    expect(tables[1].rows[4].cells[0]).toMatchObject({ row: 4, column: 0, columnSpan: 2, rowSpan: 3, width: 8675, height: 8847 })
+    expect(tables[1].rows[4].cells[0]).toMatchObject({ row: 4, column: 0, columnSpan: 2, rowSpan: 3, width: 8675, height: 8847, verticalAlign: 'CENTER' })
   })
 
   privateTest('동일 입력에서 결정적 ID를 만든다', async () => {

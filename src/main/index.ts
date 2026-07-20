@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
+import { writeFile } from 'fs/promises'
 import { parseHWP } from '../core/parser/hwp_parser'
 import { serializeToHWPX } from '../core/parser/serialization'
 import AdmZip from 'adm-zip'
@@ -10,10 +11,11 @@ import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 function createWindow(): void {
+  const visualCapturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 1200,
-    height: 800,
+    height: visualCapturePath ? 1500 : 800,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset', // macOS 네이티브 스타일 최적화
@@ -28,6 +30,17 @@ function createWindow(): void {
     mainWindow.show()
   })
 
+  if (visualCapturePath) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        const image = await mainWindow.webContents.capturePage()
+        await writeFile(visualCapturePath, image.toPNG())
+        const imageState = await mainWindow.webContents.executeJavaScript(`Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length }))`)
+        console.log('Visual test image state:', imageState)
+      }, 2500)
+    })
+  }
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -35,10 +48,13 @@ function createWindow(): void {
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
+  const visualTestFile = isDev ? process.env['HAN_FLOW_VISUAL_TEST_FILE'] : undefined
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
+    if (visualTestFile) rendererUrl.searchParams.set('open', visualTestFile)
+    mainWindow.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), visualTestFile ? { query: { open: visualTestFile } } : undefined)
   }
 }
 

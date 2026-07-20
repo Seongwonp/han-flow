@@ -49,6 +49,7 @@ function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
         height: num(cellSize?.attributes.height),
         margin: box(child(cell, 'hp:cellMargin')),
         borderFillId: cell.attributes.borderFillIDRef,
+        verticalAlign: subList?.attributes.vertAlign,
         paragraphs: subList ? children(subList, 'hp:p').map((p, index) => decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`)) : []
       }
     })

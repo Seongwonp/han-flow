@@ -1,4 +1,4 @@
-import { CSSProperties, DragEvent, useMemo, useState } from 'react'
+import { CSSProperties, DragEvent, useEffect, useMemo, useState } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerParagraph, ViewerTable } from '../../core/document/viewer_document'
 import { hwpUnitToCssPx } from '../../core/layout/hwp_unit'
 
@@ -44,10 +44,21 @@ function ParagraphView({ paragraph, document }: { paragraph: ViewerParagraph; do
 }
 
 function TableView({ table, document }: { table: ViewerTable; document: ViewerDocument }) {
-  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><tbody>{table.rows.map((row, rowIndex) => <tr key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
+  const columnWidths = Array.from({ length: table.columnCount }, () => 0)
+  const candidates = table.rows.flatMap((row) => row.cells).sort((a, b) => a.columnSpan - b.columnSpan)
+  candidates.forEach((cell) => {
+    const unresolved = Array.from({ length: cell.columnSpan }, (_, offset) => cell.column + offset).filter((column) => !columnWidths[column])
+    const known = Array.from({ length: cell.columnSpan }, (_, offset) => columnWidths[cell.column + offset] ?? 0).reduce((sum, width) => sum + width, 0)
+    const share = Math.max((cell.width - known) / Math.max(unresolved.length, 1), 0)
+    unresolved.forEach((column) => { columnWidths[column] = share })
+  })
+  const fallback = (table.width ?? 0) / Math.max(table.columnCount, 1)
+  const resolvedWidths = columnWidths.map((width) => width || fallback)
+  const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
+  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     return <td key={`${table.id}:r${cell.row}c${cell.column}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
-      width: hwpUnitToCssPx(cell.width), minHeight: hwpUnitToCssPx(cell.height),
+      minHeight: hwpUnitToCssPx(cell.height), verticalAlign: cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
       padding: `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
       background: style?.backgroundColor === '#000000' ? '#000' : style?.backgroundColor,
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
@@ -70,6 +81,10 @@ export default function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setLoading(false) }
   }
+  useEffect(() => {
+    const initialPath = new URLSearchParams(window.location.search).get('open')
+    if (initialPath) void openPath(initialPath)
+  }, [])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
 
@@ -79,7 +94,7 @@ export default function App() {
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
-      {document && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(document.page.width), minHeight: hwpUnitToCssPx(document.page.height), padding: `${hwpUnitToCssPx(document.page.margin.top)}px ${hwpUnitToCssPx(document.page.margin.right)}px ${hwpUnitToCssPx(document.page.margin.bottom)}px ${hwpUnitToCssPx(document.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}<span className="viewer-page-number">{index + 1}</span></article>)}</div>}
+      {document && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(document.page.width), minHeight: hwpUnitToCssPx(document.page.height), padding: `${hwpUnitToCssPx(document.page.margin.top)}px ${hwpUnitToCssPx(document.page.margin.right)}px ${hwpUnitToCssPx(document.page.margin.bottom)}px ${hwpUnitToCssPx(document.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</article>)}</div>}
     </section>
   </main>
 }
