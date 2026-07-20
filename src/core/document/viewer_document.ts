@@ -19,8 +19,17 @@ export interface ViewerParseTimings {
 }
 
 export interface ViewerParseResult {
+  loadId: string
   document: ViewerDocument
   timings: ViewerParseTimings
+  sectionCount: number
+  complete: boolean
+}
+
+export interface ViewerDocumentComplete {
+  loadId: string
+  document: ViewerDocument
+  decodeMs: number
 }
 
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }

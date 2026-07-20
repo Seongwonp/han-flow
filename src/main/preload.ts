@@ -14,7 +14,12 @@ const api = {
     ipcRenderer.on('file:open', handler)
     return () => ipcRenderer.removeListener('file:open', handler)
   },
-  parseHWPX: (filePath: string) => ipcRenderer.invoke('hwpx:parse', filePath),
+  onDocumentComplete: (listener: (payload: unknown) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload)
+    ipcRenderer.on('hwpx:complete', handler)
+    return () => ipcRenderer.removeListener('hwpx:complete', handler)
+  },
+  parseHWPX: (filePath: string, loadId: string) => ipcRenderer.invoke('hwpx:parse', { filePath, loadId }),
   saveHWPX: (filePath: string, doc: any) => ipcRenderer.invoke('hwpx:save', { filePath, doc })
 }
 

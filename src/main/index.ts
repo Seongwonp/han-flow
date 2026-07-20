@@ -9,6 +9,7 @@ import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const processStartedAt = Date.now()
+const progressiveSectionThreshold = 20
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
 
@@ -23,12 +24,13 @@ function pathFromArguments(arguments_: string[]): string | undefined {
 function captureVisualState(window: BrowserWindow): void {
   const capturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
   if (!capturePath) return
+  const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
   setTimeout(async () => {
     const image = await window.webContents.capturePage()
     await writeFile(capturePath, image.toPNG())
-    const visualState = await window.webContents.executeJavaScript(`({ images: Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })), status: document.querySelector('.viewer-status')?.textContent, timing: document.querySelector('.viewer-status')?.getAttribute('title') })`)
+    const visualState = await window.webContents.executeJavaScript(`({ images: Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })), renderedPages: document.querySelectorAll('.viewer-page').length, status: document.querySelector('.viewer-status')?.textContent, timing: document.querySelector('.viewer-status')?.getAttribute('title') })`)
     console.log('Visual test state:', visualState)
-  }, 2500)
+  }, captureDelayMs)
 }
 
 function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
@@ -199,7 +201,7 @@ app.whenReady().then(() => {
   })
 
   // v1은 HWPX 읽기 전용 파싱만 지원한다.
-  ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
+  ipcMain.handle('hwpx:parse', async (event, { filePath, loadId }: { filePath: string; loadId: string }) => {
     try {
       if (!isHwpxPath(filePath)) throw new Error('HWPX 파일만 열 수 있습니다.')
       const startedAt = performance.now()
@@ -207,16 +209,33 @@ app.whenReady().then(() => {
       const packageOpenedAt = performance.now()
       const index = await reader.index()
       const packageIndexedAt = performance.now()
-      const document = await decodeViewerDocument(reader, index)
+      const progressive = index.sectionPaths.length >= progressiveSectionThreshold
+      const document = await decodeViewerDocument(reader, index, progressive ? { sectionPaths: [index.sectionPaths[0]] } : undefined)
       const decodedAt = performance.now()
+      if (progressive) {
+        setImmediate(async () => {
+          try {
+            const backgroundStartedAt = performance.now()
+            const completeDocument = await decodeViewerDocument(reader, index)
+            if (!event.sender.isDestroyed()) {
+              event.sender.send('hwpx:complete', { loadId, document: completeDocument, decodeMs: performance.now() - backgroundStartedAt })
+            }
+          } catch (error) {
+            console.error('Progressive parsing error:', error)
+          }
+        })
+      }
       return {
+        loadId,
         document,
         timings: {
           packageOpenMs: packageOpenedAt - startedAt,
           packageIndexMs: packageIndexedAt - packageOpenedAt,
           decodeMs: decodedAt - packageIndexedAt,
           mainTotalMs: decodedAt - startedAt
-        }
+        },
+        sectionCount: index.sectionPaths.length,
+        complete: !progressive
       }
     } catch (error) {
       console.error('Parsing error:', error)

@@ -1,5 +1,5 @@
-import { CSSProperties, DragEvent, useEffect, useMemo, useState } from 'react'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
+import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
 import { hwpUnitToCssPx } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateDocument } from '../../core/layout/pagination'
@@ -83,6 +83,10 @@ export default function App() {
   const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
   const [overflowPages, setOverflowPages] = useState<number[]>([])
   const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
+  const [sectionProgress, setSectionProgress] = useState<{ loaded: number; total: number } | null>(null)
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12 })
+  const activeLoadId = useRef('')
+  const loadSequence = useRef(0)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -96,15 +100,29 @@ export default function App() {
     return { pages, layoutMs: performance.now() - startedAt }
   }, [effectiveDocument])
   const pages = pagination.pages
+  const virtualized = pages.length > 50
+  const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
+  const pageStride = (pageHeight + 24) * zoom
+  const updateVisibleRange = (scrollTop: number, viewportHeight: number) => {
+    if (!virtualized || pageStride <= 0) return
+    const start = Math.max(Math.floor(scrollTop / pageStride) - 2, 0)
+    const end = Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length)
+    setVisibleRange((current) => current.start === start && current.end === end ? current : { start, end })
+  }
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
 
   const openPath = async (path: string, openReceivedAt = Date.now()) => {
     const requestStartedAt = performance.now()
+    const loadId = String(++loadSequence.current)
+    activeLoadId.current = loadId
     setLoading(true); setError(null)
     setLoadTiming(null)
+    setSectionProgress(null)
     try {
-      const result = await api().parseHWPX(path) as ViewerParseResult
+      const result = await api().parseHWPX(path, loadId) as ViewerParseResult
+      if (activeLoadId.current !== result.loadId) return
       setDocument(result.document)
+      setSectionProgress({ loaded: result.complete ? result.sectionCount : result.document.sections.length, total: result.sectionCount })
       setLoadTiming({ requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
       setFileName(path.split('/').pop() ?? path)
     }
@@ -132,6 +150,11 @@ export default function App() {
     const unsubscribe = api().onOpenFile(({ filePath, receivedAt }: { filePath: string; receivedAt: number }) => { void openPath(filePath, receivedAt) })
     return unsubscribe
   }, [])
+  useEffect(() => api().onDocumentComplete((payload: ViewerDocumentComplete) => {
+    if (payload.loadId !== activeLoadId.current) return
+    setDocument(payload.document)
+    setSectionProgress({ loaded: payload.document.sections.length, total: payload.document.sections.length })
+  }), [])
   useEffect(() => {
     if (!document) return
     const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
@@ -140,12 +163,12 @@ export default function App() {
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
-        .map((page, index) => page.scrollHeight > page.clientHeight + 1 ? index + 1 : 0)
+        .map((page) => page.scrollHeight > page.clientHeight + 1 ? Number(page.dataset.pageIndex) + 1 : 0)
         .filter(Boolean)
       setOverflowPages(overflow)
     })
     return () => cancelAnimationFrame(frame)
-  }, [effectiveDocument, pages.length])
+  }, [effectiveDocument, pages.length, visibleRange])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
   const timingDetails = loadTiming ? [
@@ -161,12 +184,19 @@ export default function App() {
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
-    <section className="viewer-stage">
+    <section className="viewer-stage" onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
-      {effectiveDocument && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: hwpUnitToCssPx(effectiveDocument.page.height), padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}</article>)}</div>}
+      {effectiveDocument && !loading && <div className={`viewer-pages${virtualized ? ' viewer-pages-virtualized' : ''}`} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
+        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.start * (pageHeight + 24) }} />}
+        {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
+          const index = virtualized ? visibleRange.start + localIndex : localIndex
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}</article>
+        })}
+        {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
+      </div>}
     </section>
-    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span><span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>페이지 넘침 {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
+    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
   </main>
 }
