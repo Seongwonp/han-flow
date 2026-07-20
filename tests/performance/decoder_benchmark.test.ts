@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
+import { shouldLoadProgressively } from '../../src/core/parser/progressive_loading'
 import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
@@ -39,9 +40,23 @@ describe('대형 synthetic HWPX 디코더 기준선', () => {
       }
       console.log('HAN_FLOW_DECODE_BENCHMARK', JSON.stringify(result))
 
+      const largeSectionFixture = createSyntheticHwpx(directory, {
+        sectionCount: 2,
+        firstSectionExtraParagraphs: 12_000,
+        fileName: 'large-section.hwpx'
+      })
+      const largeSectionIndex = await (await HwpxPackageReader.open(largeSectionFixture)).index()
+      console.log('HAN_FLOW_LARGE_SECTION', JSON.stringify({
+        sectionCount: largeSectionIndex.sectionPaths.length,
+        firstSectionBytes: largeSectionIndex.sectionSizes[largeSectionIndex.sectionPaths[0]],
+        progressive: shouldLoadProgressively(largeSectionIndex)
+      }))
+
       expect(first.sections).toHaveLength(1)
       expect(full.sections).toHaveLength(80)
       expect(fullDocumentMs).toBeGreaterThan(firstSectionMs)
+      expect(largeSectionIndex.sectionPaths).toHaveLength(2)
+      expect(shouldLoadProgressively(largeSectionIndex)).toBe(true)
     } finally {
       if (!outputDirectory) rmSync(directory, { recursive: true, force: true })
     }

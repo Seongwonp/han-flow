@@ -15,12 +15,14 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
 
   test('section 순서와 그림·텍스트 혼합 순서를 보존한다', async () => {
     const reader = await HwpxPackageReader.open(fixture)
-    expect(await reader.index()).toEqual({
+    const index = await reader.index()
+    expect(index).toMatchObject({
       mimetype: 'application/hwp+zip',
       headerPath: 'Contents/header.xml',
       sectionPaths: ['Contents/section0.xml', 'Contents/section1.xml'],
       resourcePaths: ['BinData/image1.png']
     })
+    expect(Object.keys(index.sectionSizes)).toEqual(index.sectionPaths)
     const section = walkOrderedXml(await reader.readOrderedXml('Contents/section1.xml'))
     const run = section.find((node) => node.name === 'hp:run')
     expect(run?.children.map((node) => node.name)).toEqual(['hp:pic', 'hp:t'])

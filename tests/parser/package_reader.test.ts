@@ -10,7 +10,7 @@ describe('AIDA M1 HWPX package', () => {
   privateTest('패키지 구조와 혼합 콘텐츠를 결정적으로 읽는다', async () => {
     const reader = await HwpxPackageReader.open(fixture)
     const index = await reader.index()
-    expect(index).toEqual({
+    expect(index).toMatchObject({
       mimetype: 'application/hwp+zip',
       headerPath: 'Contents/header.xml',
       sectionPaths: [
@@ -20,6 +20,7 @@ describe('AIDA M1 HWPX package', () => {
       ],
       resourcePaths: ['BinData/image1.png', 'BinData/image2.png']
     })
+    expect(Object.values(index.sectionSizes).every((size) => size > 0)).toBe(true)
 
     const counts = { paragraph: 0, table: 0, picture: 0 }
     for (const path of index.sectionPaths) {

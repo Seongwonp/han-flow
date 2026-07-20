@@ -27,14 +27,18 @@ export interface SyntheticHwpxOptions {
   sectionCount?: number
   paragraphsPerExtraSection?: number
   imageBytes?: number
+  firstSectionExtraParagraphs?: number
   fileName?: string
 }
 
-function extraSection(sectionIndex: number, paragraphCount: number): string {
-  const paragraphs = Array.from({ length: paragraphCount }, (_, paragraphIndex) =>
+function paragraphs(sectionIndex: number, paragraphCount: number): string {
+  return Array.from({ length: paragraphCount }, (_, paragraphIndex) =>
     `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>성능 측정 section ${sectionIndex} paragraph ${paragraphIndex}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
   ).join('')
-  return `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">${paragraphs}</hs:sec>`
+}
+
+function extraSection(sectionIndex: number, paragraphCount: number): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">${paragraphs(sectionIndex, paragraphCount)}</hs:sec>`
 }
 
 export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOptions = {}): string {
@@ -45,7 +49,8 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
   zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section1.xml', Buffer.from(section1))
-  zip.addFile('Contents/section0.xml', Buffer.from(section0))
+  const firstSection = section0.replace('</hs:sec>', `${paragraphs(0, options.firstSectionExtraParagraphs ?? 0)}</hs:sec>`)
+  zip.addFile('Contents/section0.xml', Buffer.from(firstSection))
   for (let sectionIndex = 2; sectionIndex < sectionCount; sectionIndex += 1) {
     zip.addFile(`Contents/section${sectionIndex}.xml`, Buffer.from(extraSection(sectionIndex, paragraphsPerExtraSection)))
   }

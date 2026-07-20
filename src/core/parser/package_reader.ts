@@ -5,6 +5,7 @@ export interface HwpxPackageIndex {
   mimetype: string
   headerPath: string
   sectionPaths: string[]
+  sectionSizes: Record<string, number>
   resourcePaths: string[]
 }
 
@@ -39,6 +40,10 @@ export class HwpxPackageReader {
       mimetype,
       headerPath: 'Contents/header.xml',
       sectionPaths,
+      sectionSizes: Object.fromEntries(sectionPaths.map((path) => {
+        const entry = this.entry(path)
+        return [path, entry.uncompressedSize]
+      })),
       resourcePaths: this.directory.files
         .map((file) => file.path)
         .filter((path) => path.startsWith('BinData/'))
