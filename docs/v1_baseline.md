@@ -171,7 +171,9 @@ fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명
 - [x] border/fill 상세 style 해석과 이미지 resource loading
 - [x] 기존 편집 리본/contentEditable 제거 및 read-only A4 페이지 UI 연결
 - [x] OWPML pageBreak 기반 초기 페이지 분리와 줌/드래그앤드롭
-- [ ] reference PDF와 첫 페이지 시각 비교 및 layout 보정
+- [x] Electron 실앱 캡처와 reference PDF 첫 페이지 구조 비교
+- [x] 병합 셀 기반 열 폭 복원, 세로 정렬, 이미지 CSP 보정
+- [ ] 폰트 metric 기반 줄바꿈 및 페이지 하단 정밀 보정
 
 검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
 편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의
@@ -182,6 +184,19 @@ typecheck script를 품질 관문으로 추가한다.
 화면에 표시되지만 아직 paint tree나 줄 조판 엔진은 아니므로 reference PDF와의 시각
 정합을 M1 완료로 간주하지 않는다. 다음 단계에서 첫 페이지 캡처와 PDF 기준 이미지를
 비교해 줄 높이, 폰트 fallback, 셀 크기, 페이지 넘침을 보정한다.
+
+### 첫 시각 검증 결과
+
+Electron 자체 `capturePage`로 private fixture를 자동 로드한 실앱 화면을 캡처해 reference
+PDF 1페이지와 비교했다. 검은 제목 표, 회색 header cell, 13×11 병합 표, 신청자/구성원
+영역, 서명 PNG의 순서와 배치가 정상이다. 첫 행의 병합 셀만으로 HTML 열 폭을 정하던
+문제는 전체 cell address/width를 모아 11개 열을 복원하고 표 너비로 정규화해 해결했다.
+`data:` 이미지가 CSP에 차단되던 문제도 `img-src 'self' data:`로 제한 허용해 해결했다.
+
+현재 차이는 일부 긴 소속명과 본문 줄바꿈이다. macOS에 원문 글꼴이 없을 때 fallback
+font metric이 달라지는 것이 주원인이며, 픽셀 동일성을 추구하기보다 페이지 넘침 없이
+읽기 좋은 상태를 우선한다. 다음 시각 회귀 단계에서는 page bounding box와 overflow를
+수치화하고 font resolution diagnostic을 화면에 노출한다.
 
 현재 AIDA fixture의 golden 기준은 section 3개, 최상위 문단 `[11, 1, 20]`, 전체 문단
 303개, 표 15개, 그림 개체 4개, 이미지 resource 2개다. section은 페이지가 아니므로
