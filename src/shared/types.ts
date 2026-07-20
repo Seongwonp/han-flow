@@ -332,6 +332,15 @@ export interface Control {
   // Generic control interface, specific controls will extend this
 }
 
+export interface Equation {
+  "@_version": string;
+  "@_baseLine": string;
+  "@_textColor": string;
+  "@_font": string;
+  "@_size": string;
+  "hp:script": string;
+}
+
 // Internal Normalized Document Model
 export interface NormalizedDocument {
   metadata: {
@@ -348,6 +357,7 @@ export interface NormalizedDocument {
     numberingPeriods: { [id: string]: Numbering };
     bullets: { [id: string]: Bullet };
   };
+  binData: { [id: string]: { data: string; ext: string; mime: string } };
   sections: NormalizedSection[];
 }
 
@@ -361,7 +371,7 @@ export interface NormalizedParagraph {
   content: NormalizedContentElement[];
 }
 
-export type NormalizedContentElement = NormalizedTextRun | NormalizedTable | NormalizedControl;
+export type NormalizedContentElement = NormalizedTextRun | NormalizedTable | NormalizedControl | NormalizedEquation | NormalizedImage;
 
 export interface NormalizedTextRun {
   type: "text";
@@ -372,7 +382,38 @@ export interface NormalizedTextRun {
 export interface NormalizedTable {
   type: "table";
   id: string;
-  // TODO: Add more specific table properties
+  width: number;
+  height: number;
+  colCount: number;
+  rowCount: number;
+  cells: NormalizedTableCell[][];
+}
+
+export interface NormalizedTableCell {
+  id: string;
+  colSpan: number;
+  rowSpan: number;
+  width?: number;
+  height?: number;
+  backgroundColor?: string;
+  styleId: string; // Reference to borderFill style
+  paragraphs: NormalizedParagraph[];
+}
+
+export interface NormalizedEquation {
+  type: "equation";
+  id: string;
+  script: string;
+  styleId: string;
+}
+
+export interface NormalizedImage {
+  type: "image";
+  id: string;
+  binDataId: string; // Reference to NormalizedDocument.binData
+  width: number;
+  height: number;
+  styleId: string;
 }
 
 export interface NormalizedControl {

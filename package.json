@@ -15,11 +15,16 @@
     "test": "jest"
   },
   "dependencies": {
+    "@types/katex": "^0.16.8",
+    "adm-zip": "^0.5.17",
     "cfb": "^1.2.2",
     "electron-updater": "^6.1.7",
     "fast-xml-parser": "^4.3.2",
+    "font-list": "^2.1.0",
+    "katex": "^0.17.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-icons": "^5.6.0",
     "unzipper": "^0.10.14",
     "zustand": "^4.4.7"
   },
@@ -28,6 +33,7 @@
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@types/adm-zip": "^0.5.8",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.4",
     "@types/react": "^18.2.42",

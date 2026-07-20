@@ -18,23 +18,33 @@ export async function parseHWPX(filePath: string): Promise<NormalizedDocument> {
     // 2. 핵심 파일 추출 (header.xml, section0.xml 등)
     const headerFile = directory.files.find(f => f.path === 'Contents/header.xml');
     const sectionFiles = directory.files.filter(f => f.path.startsWith('Contents/section'));
+    const binDataFiles = directory.files.filter(f => f.path.startsWith('BinData/'));
 
     if (!headerFile) {
       throw new Error('header.xml not found in HWPX file.');
     }
 
+    // 바이너리 데이터(이미지) 추출 및 Base64 변환
+    const binDataMap: { [path: string]: string } = {};
+    for (const f of binDataFiles) {
+      const buffer = await f.buffer();
+      binDataMap[f.path] = buffer.toString('base64');
+    }
+
     // 3. XML to JSON 변환 (fast-xml-parser 활용)
-    // OWPML(KS X 6101) 표준 스키마를 기반으로 XML을 파싱합니다.
-    // ignoreAttributes: false, attributeNamePrefix: "@_" 설정으로 속성도 파싱하고 접두사를 붙입니다.
-    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+    const parser = new XMLParser({ 
+      ignoreAttributes: false, 
+      attributeNamePrefix: "@_",
+      removeNSPrefix: false 
+    });
     
-    const headerData: OWPMLHead = parser.parse(await headerFile.buffer())['hp:head'];
-    const sectionsData: OWPMLBody[] = await Promise.all(
-      sectionFiles.map(async (f) => parser.parse(await f.buffer())['hp:body'])
+    const headerData = parser.parse(await headerFile.buffer());
+    const sectionsData = await Promise.all(
+      sectionFiles.map(async (f) => parser.parse(await f.buffer()))
     );
 
     // 4. Han-Flow 내부 모델로 정규화 (Normalization)
-    return normalizeDocument(headerData, sectionsData);
+    return normalizeDocument(headerData, sectionsData, binDataMap);
 
   } catch (error) {
     console.error(`Error parsing HWPX file: ${error}`);

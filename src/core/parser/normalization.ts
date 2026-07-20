@@ -7,19 +7,43 @@ import { HWPXDocument, OWPMLHead, OWPMLBody, NormalizedDocument, FontFace, Borde
  * @param sectionsData sectionN.xml에서 파싱된 데이터 배열
  * @returns 정규화된 문서 객체
  */
-export function normalizeDocument(headerData: any, sectionsData: any[]): NormalizedDocument {
+export function normalizeDocument(rawHeader: any, rawSections: any[], binDataMap: { [path: string]: string } = {}): NormalizedDocument {
   console.log("Normalizing document data...");
   
-  // 데이터가 없는 경우 빈 객체로 초기화
-  if (!headerData) headerData = {};
-
-  // 네임스페이스(hp:)가 있을 수도 있고 없을 수도 있으므로 유연하게 접근하는 헬퍼 함수
   const getVal = (obj: any, key: string) => {
     if (!obj) return undefined;
-    return obj[key] || obj[`hp:${key}`] || obj[`hh:${key}`] || obj[`hs:${key}`];
+    if (obj[key] !== undefined) return obj[key];
+    if (obj[`hp:${key}`] !== undefined) return obj[`hp:${key}`];
+    if (obj[`hh:${key}`] !== undefined) return obj[`hh:${key}`];
+    if (obj[`hs:${key}`] !== undefined) return obj[`hs:${key}`];
+    return undefined;
   };
 
-  // 1. 스타일 정보 추출 및 맵핑
+  const headerData = getVal(rawHeader, "head") || rawHeader;
+
+  // 1. 스타일 및 바이너리 데이터 정보 추출
+  const binDataInternal: { [id: string]: { data: string; ext: string; mime: string } } = {};
+  const rawBinDataList = getVal(headerData, "binData");
+  if (rawBinDataList) {
+    const bdList = getVal(rawBinDataList, "binData") || rawBinDataList;
+    (Array.isArray(bdList) ? bdList : [bdList]).forEach(bd => {
+      const id = bd["@_id"];
+      const ref = bd["@_binaryItemIDRef"];
+      
+      // binDataMap에서 실제 데이터 찾기 (단순 매칭 전략)
+      const path = Object.keys(binDataMap).find(p => p.includes(ref));
+      if (path) {
+        const ext = path.split('.').pop() || 'png';
+        binDataInternal[id] = {
+          data: binDataMap[path],
+          ext: ext,
+          mime: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+        };
+      }
+    });
+  }
+
+  // 스타일 정보 (기존 로직 유지)
   const fontFaces: { [id: string]: FontFace } = {};
   const rawFontFaces = getVal(headerData, "fontFaces");
   if (rawFontFaces && getVal(rawFontFaces, "fontFace")) {
@@ -27,7 +51,7 @@ export function normalizeDocument(headerData: any, sectionsData: any[]): Normali
     (Array.isArray(ffList) ? ffList : [ffList])
       .forEach(ff => fontFaces[ff["@_id"]] = ff);
   }
-
+  
   const borderFills: { [id: string]: BorderFill } = {};
   const rawBorderFills = getVal(headerData, "borderFills");
   if (rawBorderFills && getVal(rawBorderFills, "borderFill")) {
@@ -87,113 +111,136 @@ export function normalizeDocument(headerData: any, sectionsData: any[]): Normali
   };
 
   // 2. 섹션 데이터 정규화
-  const normalizedSections: NormalizedSection[] = sectionsData.map((sectionBody, sIdx) => {
+  const normalizedSections: NormalizedSection[] = rawSections.map((sectionBody, sIdx) => {
     console.log(`Normalizing section ${sIdx + 1}...`);
     const paragraphs: NormalizedParagraph[] = [];
-    const section = getVal(sectionBody, "section");
-    if (section && getVal(section, "p")) {
-      const rawParagraphs = getVal(section, "p");
-      const pList = Array.isArray(rawParagraphs) ? rawParagraphs : [rawParagraphs];
-      
-      // 최대 10,000개 단락으로 제한 (안전장치)
-      const safePList = pList.slice(0, 10000);
-      
-      safePList.forEach((p: any, pIdx: number) => {
-        const content: (NormalizedTextRun | NormalizedTable | NormalizedControl)[] = [];
-        
-        // 텍스트 런 처리
-        const rawRuns = getVal(p, "run");
-        if (rawRuns) {
-          const runs = Array.isArray(rawRuns) ? rawRuns : [rawRuns];
-          runs.forEach((run: any) => {
-            const t = getVal(run, "t");
-            if (t && t["#text"]) {
-              content.push({
-                type: "text",
-                text: t["#text"],
-                styleId: run["@_charPrRef"] || p["@_charPrRef"]
-              });
-            }
+    const sectionRoot = getVal(sectionBody, "sec") || sectionBody;
+    const keys = Object.keys(sectionRoot);
+    
+    const processParagraph = (p: any, pIdx: number) => {
+      const content: (NormalizedTextRun | NormalizedTable | NormalizedControl | NormalizedEquation | NormalizedImage)[] = [];
+      const rawRuns = getVal(p, "run");
+      if (rawRuns) {
+        (Array.isArray(rawRuns) ? rawRuns : [rawRuns]).forEach((run: any) => {
+          const runCharPrId = run["@_charPrRef"] || p["@_charPrRef"] || "0";
+          
+          // 텍스트 처리
+          const t = getVal(run, "t");
+          if (t) {
+            const textContent = typeof t === 'string' ? t : (t["#text"] || "");
+            content.push({
+              type: "text",
+              text: textContent,
+              styleId: runCharPrId
+            });
+          }
+
+          // 수식(Equation) 처리
+          const equation = getVal(run, "equation");
+          if (equation) {
+            content.push({
+              type: "equation",
+              id: `eq-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              script: typeof equation.script === 'string' ? equation.script : (equation.script?.["#text"] || ""),
+              styleId: runCharPrId
+            });
+          }
+
+          // 이미지(Picture) 처리
+          const pic = getVal(run, "pic");
+          if (pic) {
+            const img = getVal(pic, "img");
+            const shapeObj = getVal(pic, "shapeObj");
+            const sz = shapeObj ? getVal(shapeObj, "sz") : null;
+            
+            content.push({
+              type: "image",
+              id: `img-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              binDataId: img ? img["@_binaryItemIDRef"] : "0",
+              width: sz ? parseInt(sz["@_width"]) / 100 : 100, // HWPUNIT -> mm (근사치)
+              height: sz ? parseInt(sz["@_height"]) / 100 : 100,
+              styleId: runCharPrId
+            });
+          }
+          
+          // 기타 요소(탭, 줄바꿈)
+          if (!t && !equation && !pic) {
             if (getVal(run, "tab")) {
-              content.push({ type: "text", text: "\t", styleId: run["@_charPrRef"] || p["@_charPrRef"] });
+              content.push({ type: "text", text: "\t", styleId: runCharPrId });
+            } else if (getVal(run, "lineBreak")) {
+              content.push({ type: "text", text: "\n", styleId: runCharPrId });
             }
-            if (getVal(run, "lineBreak")) {
-              content.push({ type: "text", text: "\n", styleId: run["@_charPrRef"] || p["@_charPrRef"] });
-            }
-          });
-        }
-
-        // 테이블 처리
-        const rawTbls = getVal(p, "tbl");
-        if (rawTbls) {
-          const tables = Array.isArray(rawTbls) ? rawTbls : [rawTbls];
-          tables.forEach((tbl: any) => {
-            const rawRows = getVal(tbl, "tr");
-            const tableRows = Array.isArray(rawRows) ? rawRows : [rawRows];
-            const normalizedCells: NormalizedParagraph[][] = [];
-
-            tableRows.forEach(row => {
-              const rowCells: NormalizedParagraph[] = [];
-              const rawTcs = getVal(row, "tc");
-              const cells = Array.isArray(rawTcs) ? rawTcs : [rawTcs];
-              cells.forEach((cell: any) => {
-                const cellRawPs = getVal(cell, "p");
-                if (cellRawPs) {
-                  const cellParagraphs = Array.isArray(cellRawPs) ? cellRawPs : [cellRawPs];
-                  cellParagraphs.forEach(cp => {
-                    const cellContent: (NormalizedTextRun | NormalizedTable | NormalizedControl)[] = [];
-                    const cpRawRuns = getVal(cp, "run");
-                    if (cpRawRuns) {
-                      const cellRuns = Array.isArray(cpRawRuns) ? cpRawRuns : [cpRawRuns];
-                      cellRuns.forEach(cr => {
-                        const crT = getVal(cr, "t");
-                        if (crT && crT["#text"]) {
-                          cellContent.push({ type: "text", text: crT["#text"], styleId: cr["@_charPrRef"] || cp["@_charPrRef"] });
-                        }
-                      });
-                    }
-                    rowCells.push({
-                      id: `cell-p-${pIdx}-${rowCells.length}`,
-                      styleId: cp["@_paraPrRef"],
-                      content: cellContent
-                    });
-                  });
-                }
-              });
-              normalizedCells.push(rowCells);
-            });
-
-            content.push({
-              type: "table",
-              id: tbl["@_id"],
-              width: tbl["@_width"],
-              height: tbl["@_height"],
-              colCount: parseInt(tbl["@_colCount"]),
-              rowCount: parseInt(tbl["@_rowCount"]),
-              cells: normalizedCells
-            });
-          });
-        }
-
-        // 컨트롤 처리
-        const rawCtrls = getVal(p, "ctrl");
-        if (rawCtrls) {
-          const controls = Array.isArray(rawCtrls) ? rawCtrls : [rawCtrls];
-          controls.forEach((ctrl: any) => {
-            content.push({
-              type: "control",
-              id: ctrl["@_id"],
-            });
-          });
-        }
-
-        paragraphs.push({
-          id: `p-${pIdx}`,
-          styleId: p["@_paraPrRef"],
-          content: content
+          }
         });
+      }
+      
+      if (content.length === 0) content.push({ type: "text", text: "", styleId: p["@_charPrRef"] || "0" });
+      
+      return {
+        id: `p-${sIdx}-${pIdx}-${Math.random().toString(36).substr(2, 4)}`,
+        styleId: p["@_paraPrRef"] || "0",
+        content: content
+      };
+    };
+
+    const processTable = (tbl: any, tIdx: number): NormalizedParagraph => {
+      const rawRows = getVal(tbl, "tr");
+      const tableRows = Array.isArray(rawRows) ? rawRows : [rawRows];
+      const normalizedCells: NormalizedTableCell[][] = [];
+
+      tableRows.forEach((row) => {
+        const rowCells: NormalizedTableCell[] = [];
+        const rawTcs = getVal(row, "tc");
+        const cells = Array.isArray(rawTcs) ? rawTcs : [rawTcs];
+        
+        cells.forEach((cell: any) => {
+          const paragraphs: NormalizedParagraph[] = [];
+          const cellRawPs = getVal(cell, "p");
+          if (cellRawPs) {
+            const cellParagraphs = Array.isArray(cellRawPs) ? cellRawPs : [cellRawPs];
+            cellParagraphs.forEach((cp, cpIdx) => {
+              paragraphs.push(processParagraph(cp, cpIdx) as NormalizedParagraph);
+            });
+          }
+
+          rowCells.push({
+            id: `cell-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            colSpan: parseInt(cell["@_colSpan"]) || 1,
+            rowSpan: parseInt(cell["@_rowSpan"]) || 1,
+            width: parseInt(cell["@_width"]),
+            height: parseInt(cell["@_height"]),
+            styleId: cell["@_borderFillRef"] || "0",
+            paragraphs: paragraphs
+          });
+        });
+        normalizedCells.push(rowCells);
       });
-    }
+
+      return {
+        id: `tbl-para-${sIdx}-${tIdx}`,
+        styleId: "0",
+        content: [{
+          type: "table",
+          id: tbl["@_id"] || `tbl-${Date.now()}`,
+          width: parseInt(tbl["@_width"]) || 0,
+          height: parseInt(tbl["@_height"]) || 0,
+          colCount: parseInt(tbl["@_colCount"]) || 0,
+          rowCount: parseInt(tbl["@_rowCount"]) || 0,
+          cells: normalizedCells
+        }]
+      };
+    };
+
+    // 모든 요소 순차 처리
+    keys.forEach((key, idx) => {
+      const val = sectionRoot[key];
+      if (key.includes(":p") || key === "p") {
+        (Array.isArray(val) ? val : [val]).forEach((p, i) => paragraphs.push(processParagraph(p, idx + i) as NormalizedParagraph));
+      } else if (key.includes(":tbl") || key === "tbl") {
+        (Array.isArray(val) ? val : [val]).forEach((tbl, i) => paragraphs.push(processTable(tbl, idx + i) as NormalizedParagraph));
+      }
+    });
+
     return { paragraphs };
   });
 
