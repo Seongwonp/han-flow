@@ -1,16 +1,51 @@
 {
   "name": "han-flow",
   "version": "0.1.0",
-  "description": "High-performance HWPX cross-platform editor for macOS",
+  "description": "빠르고 가벼운 macOS용 읽기 전용 HWPX 뷰어",
+  "author": "Seongwon Park",
   "main": "./out/main/index.js",
   "build": {
+    "appId": "com.hanflow.viewer",
+    "productName": "Han-Flow",
+    "asar": true,
     "directories": {
-      "output": "dist"
+      "output": "release"
+    },
+    "files": ["out/**/*", "package.json"],
+    "fileAssociations": [
+      {
+        "ext": "hwpx",
+        "name": "HWPX 문서",
+        "description": "한글 개방형 문서",
+        "role": "Viewer",
+        "mimeType": "application/hwp+zip",
+        "rank": "Alternate"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": ["dir"],
+      "extendInfo": {
+        "CFBundleDisplayName": "Han-Flow",
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "com.hanflow.hwpx",
+            "UTTypeDescription": "HWPX 문서",
+            "UTTypeConformsTo": ["public.data", "public.archive"],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": ["hwpx"],
+              "public.mime-type": "application/hwp+zip"
+            }
+          }
+        ]
+      }
     }
   },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "package:mac": "npm run build && electron-builder --mac dir",
     "preview": "electron-vite preview",
     "test": "jest"
   },
@@ -40,6 +75,7 @@
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "^28.1.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "eslint": "^8.55.0",
     "jest": "^29.7.0",
