@@ -158,6 +158,28 @@ M1은 아래 순서로만 진행한다.
 
 fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명하지 못하므로 진행하지 않는다.
 
+## 구현 현황 (2026-07-20)
+
+- [x] private AIDA 기준 문서와 8페이지 reference PDF 확보
+- [x] HWPX mimetype/필수 entry 검증 및 section 숫자 정렬
+- [x] XML 혼합 자식 순서를 보존하는 ordered AST
+- [x] source 위치 기반 결정적 문단/표/셀 ID
+- [x] HWPUNIT → mm/CSS px 변환과 A4 크기 테스트
+- [x] 읽기 전용 `ViewerDocument` 기본 모델
+- [x] 페이지 크기·여백, 한글 font table, 글자/문단 style 해석
+- [x] 표 행/열, cell address, row/column span, 크기·여백, 셀 문단 해석
+- [ ] border/fill 상세 style 해석과 이미지 resource loading
+- [ ] 첫 페이지 layout/paint tree 및 reference PDF 시각 비교
+
+검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
+편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의
+`tsconfig` include 누락 때문에 실패한다. viewer 전환 시 구 편집 경로를 격리하면서 별도
+typecheck script를 품질 관문으로 추가한다.
+
+현재 AIDA fixture의 golden 기준은 section 3개, 최상위 문단 `[11, 1, 20]`, 전체 문단
+303개, 표 15개, 그림 개체 4개, 이미지 resource 2개다. section은 페이지가 아니므로
+8페이지 reference PDF와 직접 대응시키지 않는다.
+
 ## 참고 자료
 
 - 한컴 공개 OWPML 모델: https://github.com/hancom-io/hwpx-owpml-model
