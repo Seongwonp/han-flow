@@ -177,7 +177,7 @@ fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명
 - [x] 시스템 글꼴 조회와 결정적 `요청 → 대체` font resolution
 - [x] 고정 A4 viewport의 실제 overflow 측정 및 상태 표시
 - [x] section 경계·pageBreak·lineseg 높이 기반 block pagination
-- [ ] 페이지를 가로지르는 표의 행 단위 분할
+- [x] `pageBreak=CELL` 표의 행 높이 기반 페이지 분할
 
 검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
 편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의
@@ -209,11 +209,17 @@ font metric이 달라지는 것이 주원인이며, 픽셀 동일성을 추구�
 상태 표시줄은 대체 font 수와 실제 A4 element의 `scrollHeight > clientHeight` 여부를
 페이지 번호와 함께 표시한다.
 
-AIDA 실앱 결과는 **7 block pages / 글꼴 대체 16 / overflow 1(2페이지)**다. reference
-PDF는 8페이지다. section 경계를 페이지로 처리하고 `lineseg` 높이로 top-level block을
-나누면서 기존 4페이지/overflow 2개에서 개선됐다. 남은 1페이지는 표 하나가 페이지 경계를
-가로질러 행 단위로 나뉘는 구조다. 현재 표는 atomic block이므로 다음 단계에서 반복 header,
-row height, `pageBreak=CELL`을 사용해 두 개의 page fragment로 분리한다.
+AIDA 실앱 결과는 **8페이지 / 글꼴 대체 16 / overflow 0**이며 reference PDF의 페이지 수와
+일치한다. section 경계와 명시적 pageBreak에 더해 `pageBreak=CELL` 표는 셀의 선언 높이와
+내부 문단 `lineseg` 높이 중 큰 값을 행 높이로 사용한다. 남은 페이지 공간을 넘는 행 앞에서
+표를 page fragment로 나누고, `repeatHeader=1`이며 header로 표시된 행은 다음 fragment에
+반복한다. AIDA의 긴 설명 행 다음에는 작은 제목 행과 별도의 긴 본문 행이 이어지므로,
+페이지를 충분히 채우는 큰 행 뒤의 자연스러운 제목 경계도 분할 후보로 사용했다.
+
+Electron `capturePage`로 private fixture를 다시 열어 상태 표시줄의 8페이지와 overflow 0,
+첫 페이지의 표·이미지 유지 여부를 확인했다. 캡처에는 개인정보가 포함되므로 fixture와
+함께 저장소에 넣지 않는다. M1의 남은 정확도 과제는 원문 글꼴 부재에 따른 줄바꿈 차이를
+허용 범위로 정의하고, 공개 synthetic fixture로 표 분할 회귀 테스트를 옮기는 것이다.
 
 현재 AIDA fixture의 golden 기준은 section 3개, 최상위 문단 `[11, 1, 20]`, 전체 문단
 303개, 표 15개, 그림 개체 4개, 이미지 resource 2개다. section은 페이지가 아니므로
