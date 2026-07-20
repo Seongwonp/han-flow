@@ -159,6 +159,8 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - [x] package open → index → decode → layout → first paint 구간 계측
 - [x] 20 sections 이상 문서의 첫 section 우선 decode와 전체 모델 백그라운드 교체
 - [x] 50페이지 초과 문서의 viewport 주변 page virtualization
+- [x] section 압축 전 크기 기반 대형 단일 section 판정
+- [x] 점진 decode worker thread 이동과 load ID 단위 취소·오류 전달
 
 공개 fixture는 테스트 시 임시 디렉터리에 결정적인 ZIP으로 생성하며 section 정렬, 혼합
 콘텐츠 순서, 글자·셀 스타일, PNG resource, `pageBreak=CELL` 표 분할과 반복 header를
@@ -206,26 +208,31 @@ private AIDA 기준 문서의 개발 앱 warm-open 유효 표본 5회는 **116, 
 텍스트와 0-byte padding의 높은 압축률 때문에 약 95KB이므로 실제 복잡한 5MiB 문서와 같은
 I/O 기준으로 해석하면 안 된다.
 
-정확도가 이미 검증된 작은 문서의 경로를 바꾸지 않기 위해 section이 20개 이상일 때만
-점진 로딩한다. main process는 header, 첫 section, resource를 먼저 반환하고 전체 문서는
-백그라운드에서 decode해 같은 load ID의 renderer에 전달한다. 다른 파일을 연 뒤 도착한 오래된
-결과는 무시한다. 실제 Electron 빠른 캡처에서 **2페이지 · 불러오는 중 1/80 · 요청→첫 화면
+정확도가 이미 검증된 작은 문서의 경로를 바꾸지 않기 위해 section이 20개 이상이거나 section
+하나의 압축 전 크기가 2MiB 이상일 때 점진 로딩한다. worker thread가 header, 첫 section,
+resource를 먼저 반환하고 전체 문서도 별도 worker 작업으로 decode해 같은 load ID의 renderer에
+전달한다. 새 파일을 열면 이전 worker를 종료하고 늦게 도착한 결과는 무시한다. background
+오류가 나도 첫 section은 유지하고 상태 표시줄에 오류를 표시한다. 실제 Electron 빠른 캡처에서
+**2페이지 · 불러오는 중 1/80 · 요청→첫 화면
 148ms**를 확인했고 전체 모델도 이후 80/80으로 교체됐다.
 
 전체 모델은 synthetic 문단 높이 기준 2,499페이지였지만 50페이지 초과 시 viewport 주변만
 렌더해 실제 `.viewer-page` DOM은 **12개**로 제한됐다. 이 상태의 개발 앱 열기→첫 화면은
 655ms였다. 가상화 문서의 overflow 진단은 현재 마운트된 페이지에 한정되므로 상태 표시줄도
-`보이는 페이지 넘침`으로 구분한다. 다음 과제는 section 개수뿐 아니라 첫 section 자체가 큰
-문서를 판별하는 byte/노드 기준과, 백그라운드 decode를 worker thread로 옮기는 것이다.
+`보이는 페이지 넘침`으로 구분한다. worker 적용 후 80-section fixture는 실제 DOM 12개,
+열기→첫 화면 641ms였다. 2 sections이지만 첫 section이 2,271,162 bytes인 fixture도 점진
+경로로 판정됐고 최종 1,503페이지 중 DOM 12개, 실행 중 열기 357ms였다.
+동일한 80-section fixture를 패키지 앱의 `app.asar` 환경에서도 열어 worker 번들 로딩,
+2,499페이지 모델 교체, DOM 12개 제한을 확인했으며 열기→첫 화면은 284ms였다.
 
 ## 다음 구현 단위
 
-M2는 아래 순서로 진행한다.
+M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 
-1. section 압축 전 byte/노드 수를 package index에 추가해 한 section 대형 문서도 판별
-2. 전체 decode를 main event loop 밖 worker thread로 이동
-3. background 오류와 취소를 load ID 단위로 renderer에 전달
-4. 실제 대형 HWPX와 warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
+1. `/Applications` 설치 후 Finder 기본 앱 선택과 더블클릭 수동 검증
+2. 실제 대형 HWPX와 warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
+3. 실제 사용에서 1초를 넘는 문서가 발견되면 참조 resource 우선 로딩 검토
+4. 위 검증과 별개로 다음 개발 마일스톤 M3 PDF 내보내기 시작
 
 현재 AIDA는 이미 목표 안쪽이므로 작은 문서의 숫자만 더 줄이는 최적화보다, 대형 문서에서도
 첫 페이지를 먼저 보여 주고 메모리 사용량을 제한하는 구조를 우선한다.

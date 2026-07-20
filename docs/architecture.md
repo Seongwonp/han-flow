@@ -1,51 +1,72 @@
-# 기술 아키텍처 제안: Han-Flow
+# Han-Flow v1 기술 아키텍처
 
-Han-Flow는 macOS 환경에 최적화된 고성능 HWPX 에디터로, Electron과 TypeScript를 기반으로 설계되었습니다. 성능과 확장성을 극대화하기 위해 **Modular First** 원칙을 준수하며, 파서, 렌더러, 상태관리자를 철저히 분리합니다.
+Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어다. 편집 상태나 Undo/Redo를 관리하지 않고,
+받은 문서를 빠르게 열어 레이아웃이 깨지지 않게 표시하고 PDF로 내보내는 데 집중한다.
 
-## 1. 프로젝트 디렉토리 구조
+## 파이프라인
 
 ```text
-han-flow/
-├── src/
-│   ├── main/               # Electron Main Process (OS API, File I/O)
-│   ├── renderer/           # Electron Renderer Process (React/Vue UI)
-│   ├── shared/             # 공용 타입 및 유틸리티
-│   └── core/               # 핵심 비즈니스 로직 (플랫폼 독립적)
-│       ├── parser/         # HWPX (XML) -> JSON 변환 엔진
-│       ├── renderer-engine/# JSON -> Canvas/SVG/HTML 렌더링 로직
-│       └── state/          # 문서 상태 관리 (CRDT 또는 Immutable State)
-├── docs/                   # 개발 문서 및 로그
-├── tests/                  # 단위 및 통합 테스트
-├── package.json
-└── tsconfig.json
+macOS open-file / drag-and-drop / file dialog
+  → Electron main process
+  → HwpxPackageReader (ZIP index, section size, resource entry)
+  → ordered XML decoder
+  → immutable ViewerDocument
+  → block pagination
+  → React read-only page renderer
 ```
 
-## 2. 핵심 모듈 설계 원칙
+parser는 React와 CSS를 모르고 renderer는 ZIP/XML을 해석하지 않는다. 길이는 문서 모델에서
+HWPUNIT 정수로 유지하고 화면 경계에서만 CSS px로 변환한다. 동일 입력은 source 위치 기반의
+결정적 ID를 만들어 테스트와 캐시가 재현 가능해야 한다.
 
-### 2.1 Parser Module (HWPX to Internal Model)
-Parser Module은 HWPX 파일의 ZIP 압축을 해제하고 내부의 XML 스트림을 파싱하는 역할을 담당합니다. 대용량 문서 파싱 시 UI 블로킹을 방지하기 위해 Worker Threads를 활용하며, OWPML(KS X 6101) 표준 스키마를 준수하여 정확한 파싱을 보장합니다.
+## 프로세스 책임
 
-### 2.2 Renderer Engine (Internal Model to View)
-Renderer Engine은 파싱된 내부 JSON 모델을 시각적 요소로 변환하는 역할을 수행합니다. 레이아웃 깨짐을 방지하기 위해 Virtual DOM 또는 Canvas-based rendering을 선택적으로 적용하며, macOS의 Retina 디스플레이에 최적화된 고해상도 렌더링을 지원하여 사용자에게 쾌적한 시각적 경험을 제공합니다.
+### Electron main
 
-### 2.3 State Manager (Document State)
-State Manager는 문서의 편집 상태, 변경 이력(Undo/Redo), 그리고 스타일 캐시를 효율적으로 관리합니다. 불필요한 리렌더링을 방지하기 위해 원자적(Atomic) 상태 업데이트를 적용하여 성능을 최적화합니다.
+- macOS `open-file`, single-instance, 파일 대화상자 처리
+- HWPX 확장자와 패키지 필수 entry 검증
+- 작은 문서의 전체 decode 및 renderer IPC 전달
+- 대형 문서 worker 생성·취소·오류 전달
+- 이후 M3의 `webContents.printToPDF`
 
-## 3. 기술 스택 요약
+### Decoder worker
 
-| 구분 | 기술 | 사유 |
-| :--- | :--- | :--- |
-| **Framework** | Electron | 크로스 플랫폼 지원 및 시스템 자원 접근 |
-| **Language** | TypeScript | 정적 타입을 통한 안정성 및 대규모 프로젝트 유지보수 |
-| **UI Library** | React / react-icons | 컴포넌트 기반 UI 및 고해상도 전문가용 아이콘 |
-| **State** | Zustand | 가볍고 성능 중심적인 상태 관리 (isDirty 감지 포함) |
-| **Parsing** | fast-xml-parser / unzipper | OWPML(HWPX) 표준 XML 스트리밍 처리 |
-| **Serialization** | adm-zip | HWPX 패키지 생성을 위한 압축 및 파일 구조화 |
-| **System** | font-list | 사용자의 모든 시스템 폰트 로드 및 동기화 |
-| **Build Tool** | Vite | 빠른 개발 피드백 및 빌드 속도 |
+section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이상이면 worker thread를
+사용한다. 첫 section 모델을 먼저 보내고 전체 모델은 별도 worker 작업으로 완성한다. load ID가
+바뀌면 이전 worker를 종료하며 늦게 도착한 결과는 renderer가 무시한다. worker 오류가 발생해도
+이미 표시한 첫 section은 유지하고 상태 표시줄에 나머지 페이지 오류를 노출한다.
 
+### Renderer
 
-## References
+- `ViewerDocument`를 읽기 전용 A4 page로 표시
+- 폰트 대체, 페이지 overflow, 로딩 시간 진단
+- 50페이지 이하는 전체 DOM 렌더
+- 50페이지 초과는 viewport 주변 page만 mount
+- 문서 mutation, 저장 history, `contentEditable` 금지
 
-- [1] 한글과컴퓨터. (n.d.). *HWP/OWPML 형식*. Retrieved from [https://developer.hancom.com/hwpx-owpml-model](https://developer.hancom.com/hwpx-owpml-model)
-- [2] 한컴테크. (2025, 2월 26일). *한/글 문서 파일 형식 : HWPX 포맷 구조 살펴보기*. Retrieved from [https://tech.hancom.com/hwpxformat/](https://tech.hancom.com/hwpxformat/)
+## 대형 문서 로딩
+
+```text
+package index
+  ├─ small document → full decode → render
+  └─ large document → worker(first section) → first paint
+                    └→ worker(full document) → load ID 확인 → model 교체
+                                              → viewport virtualization
+```
+
+현재 첫 단계도 image resource를 포함해 이미지 누락 없이 표시한다. 다음 최적화 후보는 첫
+section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 모델을 순차적으로 합치는
+방식이다. 정확도를 잃는 lazy loading은 도입하지 않는다.
+
+## v1 품질 관문
+
+- 공개 synthetic fixture 기반 parser/layout 회귀 테스트
+- private 실사용 fixture와 reference PDF 시각 비교
+- `npm test`, `npm run build`, `npm run package:mac`
+- `npm run benchmark:decoder` 대형 문서 기준선
+- 화면/PDF 페이지 수, overflow, font substitution 진단
+
+## v1 이후
+
+`.hwp` 바이너리 열람은 v2에서 기존 파서 활용을 검토한다. 텍스트·표·이미지 편집과 안전한
+HWPX 재저장은 v3 범위다. 기존 편집 프로토타입 코드는 v1 런타임 계약으로 간주하지 않는다.
