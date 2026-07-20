@@ -9,7 +9,8 @@ export default defineConfig({
       outDir: 'out/main',
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/main/index.ts'),
+          decoder_worker: resolve(__dirname, 'src/main/decoder_worker.ts')
         }
       }
     }

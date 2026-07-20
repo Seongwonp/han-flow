@@ -1,17 +1,49 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { writeFile } from 'fs/promises'
+import { Worker } from 'worker_threads'
 import { serializeToHWPX } from '../core/parser/serialization'
 import AdmZip from 'adm-zip'
 import fontList from 'font-list'
 import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
+import { shouldLoadProgressively } from '../core/parser/progressive_loading'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const processStartedAt = Date.now()
-const progressiveSectionThreshold = 20
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
+const decodeWorkers = new Map<number, Worker>()
+const activeLoadIds = new Map<number, string>()
+
+function stopDecodeWorker(senderId: number): void {
+  const worker = decodeWorkers.get(senderId)
+  if (worker) void worker.terminate()
+  decodeWorkers.delete(senderId)
+}
+
+function decodeInWorker(senderId: number, filePath: string, sectionPaths?: string[]): Promise<{ document: Awaited<ReturnType<typeof decodeViewerDocument>>; decodeMs: number }> {
+  stopDecodeWorker(senderId)
+  const worker = new Worker(join(__dirname, 'decoder_worker.js'))
+  decodeWorkers.set(senderId, worker)
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const cleanup = () => { if (decodeWorkers.get(senderId) === worker) decodeWorkers.delete(senderId) }
+    worker.once('message', (result: { document?: Awaited<ReturnType<typeof decodeViewerDocument>>; decodeMs?: number; error?: string }) => {
+      settled = true
+      cleanup()
+      void worker.terminate()
+      if (result.error || !result.document) reject(new Error(result.error ?? 'worker 디코딩 결과가 없습니다.'))
+      else resolve({ document: result.document, decodeMs: result.decodeMs ?? 0 })
+    })
+    worker.once('error', (error) => { settled = true; cleanup(); reject(error) })
+    worker.once('exit', (code) => {
+      cleanup()
+      if (!settled && code !== 0) reject(new Error(`worker가 종료되었습니다: ${code}`))
+    })
+    worker.postMessage({ filePath, sectionPaths })
+  })
+}
 
 function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
@@ -204,24 +236,31 @@ app.whenReady().then(() => {
   ipcMain.handle('hwpx:parse', async (event, { filePath, loadId }: { filePath: string; loadId: string }) => {
     try {
       if (!isHwpxPath(filePath)) throw new Error('HWPX 파일만 열 수 있습니다.')
+      const senderId = event.sender.id
+      activeLoadIds.set(senderId, loadId)
+      stopDecodeWorker(senderId)
       const startedAt = performance.now()
       const reader = await HwpxPackageReader.open(filePath)
       const packageOpenedAt = performance.now()
       const index = await reader.index()
       const packageIndexedAt = performance.now()
-      const progressive = index.sectionPaths.length >= progressiveSectionThreshold
-      const document = await decodeViewerDocument(reader, index, progressive ? { sectionPaths: [index.sectionPaths[0]] } : undefined)
+      const progressive = shouldLoadProgressively(index)
+      const firstResult = progressive
+        ? await decodeInWorker(senderId, filePath, [index.sectionPaths[0]])
+        : { document: await decodeViewerDocument(reader, index), decodeMs: performance.now() - packageIndexedAt }
+      const document = firstResult.document
       const decodedAt = performance.now()
-      if (progressive) {
+      if (progressive && activeLoadIds.get(senderId) === loadId) {
         setImmediate(async () => {
           try {
-            const backgroundStartedAt = performance.now()
-            const completeDocument = await decodeViewerDocument(reader, index)
-            if (!event.sender.isDestroyed()) {
-              event.sender.send('hwpx:complete', { loadId, document: completeDocument, decodeMs: performance.now() - backgroundStartedAt })
+            const complete = await decodeInWorker(senderId, filePath)
+            if (activeLoadIds.get(senderId) === loadId && !event.sender.isDestroyed()) {
+              event.sender.send('hwpx:complete', { loadId, document: complete.document, decodeMs: complete.decodeMs })
             }
           } catch (error) {
-            console.error('Progressive parsing error:', error)
+            if (activeLoadIds.get(senderId) === loadId && !event.sender.isDestroyed()) {
+              event.sender.send('hwpx:error', { loadId, message: error instanceof Error ? error.message : String(error) })
+            }
           }
         })
       }
@@ -231,7 +270,7 @@ app.whenReady().then(() => {
         timings: {
           packageOpenMs: packageOpenedAt - startedAt,
           packageIndexMs: packageIndexedAt - packageOpenedAt,
-          decodeMs: decodedAt - packageIndexedAt,
+          decodeMs: firstResult.decodeMs,
           mainTotalMs: decodedAt - startedAt
         },
         sectionCount: index.sectionPaths.length,

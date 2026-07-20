@@ -84,6 +84,7 @@ export default function App() {
   const [overflowPages, setOverflowPages] = useState<number[]>([])
   const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
   const [sectionProgress, setSectionProgress] = useState<{ loaded: number; total: number } | null>(null)
+  const [backgroundError, setBackgroundError] = useState<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12 })
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
@@ -118,6 +119,7 @@ export default function App() {
     setLoading(true); setError(null)
     setLoadTiming(null)
     setSectionProgress(null)
+    setBackgroundError(null)
     try {
       const result = await api().parseHWPX(path, loadId) as ViewerParseResult
       if (activeLoadId.current !== result.loadId) return
@@ -126,8 +128,8 @@ export default function App() {
       setLoadTiming({ requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
       setFileName(path.split('/').pop() ?? path)
     }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setLoading(false) }
+    catch (reason) { if (activeLoadId.current === loadId) setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { if (activeLoadId.current === loadId) setLoading(false) }
   }
   useEffect(() => {
     if (!document || !loadTiming || loadTiming.firstPaintMs !== undefined || pages.length === 0) return
@@ -154,6 +156,10 @@ export default function App() {
     if (payload.loadId !== activeLoadId.current) return
     setDocument(payload.document)
     setSectionProgress({ loaded: payload.document.sections.length, total: payload.document.sections.length })
+  }), [])
+  useEffect(() => api().onDocumentError((payload: { loadId: string; message: string }) => {
+    if (payload.loadId !== activeLoadId.current) return
+    setBackgroundError(payload.message)
   }), [])
   useEffect(() => {
     if (!document) return
@@ -197,6 +203,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
       </div>}
     </section>
-    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
+    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
   </main>
 }
