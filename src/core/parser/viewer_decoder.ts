@@ -9,6 +9,11 @@ const descendants = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => wa
 const textOf = (node: OrderedXmlNode): string => walkOrderedXml(node.children).filter((item) => item.name === '#text').map((item) => item.text ?? '').join('')
 const box = (node?: OrderedXmlNode) => ({ top: num(node?.attributes.top), right: num(node?.attributes.right), bottom: num(node?.attributes.bottom), left: num(node?.attributes.left) })
 
+export interface ViewerDecodeOptions {
+  sectionPaths?: string[]
+  resourcePaths?: string[]
+}
+
 function decodeParagraph(node: OrderedXmlNode, id: string): ViewerParagraph {
   const content: ViewerContent[] = []
   children(node, 'hp:run').forEach((run) => {
@@ -98,17 +103,20 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   return { fonts, charStyles, paraStyles, cellStyles }
 }
 
-export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex?: HwpxPackageIndex): Promise<ViewerDocument> {
+export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
   const index = knownIndex ?? await reader.index()
+  const sectionPaths = options.sectionPaths ?? index.sectionPaths
+  const resourcePaths = options.resourcePaths ?? index.resourcePaths
   const header = decodeHeader(await reader.readOrderedXml(index.headerPath))
-  const sectionXml = await Promise.all(index.sectionPaths.map((path) => reader.readOrderedXml(path)))
-  const pagePr = sectionXml.flatMap(walkOrderedXml).find((node) => node.name === 'hp:pagePr')
+  const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
+  const pagePr = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes)).find((node) => node.name === 'hp:pagePr')
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
-  const sections = sectionXml.map((nodes, sectionIndex) => {
+  const sections = sectionXml.map(({ path, nodes }) => {
+    const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
     const root = nodes.find((node) => node.name === 'hs:sec')
     return { id: `section-${sectionIndex}`, blocks: root ? children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)) : [] }
   })
-  const resources = Object.fromEntries(await Promise.all(index.resourcePaths.map(async (path) => {
+  const resources = Object.fromEntries(await Promise.all(resourcePaths.map(async (path) => {
     const id = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? path
     const extension = path.split('.').pop()?.toLowerCase()
     const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension ?? 'png'}`

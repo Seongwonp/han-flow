@@ -23,14 +23,34 @@ const section1 = `<?xml version="1.0" encoding="UTF-8"?>
 
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
 
-export function createSyntheticHwpx(directory: string): string {
-  const path = join(directory, 'han-flow-public.hwpx')
+export interface SyntheticHwpxOptions {
+  sectionCount?: number
+  paragraphsPerExtraSection?: number
+  imageBytes?: number
+  fileName?: string
+}
+
+function extraSection(sectionIndex: number, paragraphCount: number): string {
+  const paragraphs = Array.from({ length: paragraphCount }, (_, paragraphIndex) =>
+    `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>성능 측정 section ${sectionIndex} paragraph ${paragraphIndex}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+  ).join('')
+  return `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">${paragraphs}</hs:sec>`
+}
+
+export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOptions = {}): string {
+  const sectionCount = Math.max(options.sectionCount ?? 2, 2)
+  const paragraphsPerExtraSection = options.paragraphsPerExtraSection ?? 1
+  const path = join(directory, options.fileName ?? 'han-flow-public.hwpx')
   const zip = new AdmZip()
   zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section1.xml', Buffer.from(section1))
   zip.addFile('Contents/section0.xml', Buffer.from(section0))
-  zip.addFile('BinData/image1.png', transparentPng)
+  for (let sectionIndex = 2; sectionIndex < sectionCount; sectionIndex += 1) {
+    zip.addFile(`Contents/section${sectionIndex}.xml`, Buffer.from(extraSection(sectionIndex, paragraphsPerExtraSection)))
+  }
+  const imageBytes = Math.max(options.imageBytes ?? transparentPng.length, transparentPng.length)
+  zip.addFile('BinData/image1.png', Buffer.concat([transparentPng, Buffer.alloc(imageBytes - transparentPng.length)]))
   zip.writeZip(path)
   return path
 }

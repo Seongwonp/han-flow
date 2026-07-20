@@ -47,7 +47,8 @@
     "build": "electron-vite build",
     "package:mac": "npm run build && electron-builder --mac dir",
     "preview": "electron-vite preview",
-    "test": "jest"
+    "test": "jest",
+    "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts"
   },
   "dependencies": {
     "@types/katex": "^0.16.8",
