@@ -156,7 +156,7 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - [x] 비서명 `.app` 패키징과 `.hwpx` document type/UTI 등록
 - [x] LaunchServices로 패키지 앱에 HWPX를 전달해 8페이지/overflow 0 렌더 검증
 - [ ] Applications 설치 후 Finder 기본 앱 선택과 더블클릭 검증
-- [ ] open → package index → decode → layout → first paint 구간 계측
+- [x] package open → index → decode → layout → first paint 구간 계측
 - [ ] 첫 section 우선 decode와 뒤 section 점진 로딩
 - [ ] viewport 주변 page virtualization
 
@@ -178,17 +178,38 @@ Developer ID 서명, notarization을 준비하고 `/Applications` 설치 후 Fin
 열기” 및 더블클릭을 수동 검증한다. M2의 다음 구현 단위는 패키징 꾸미기가 아니라 1초
 목표를 판단할 수 있는 로딩 구간 계측이다.
 
+### M2 첫 화면 성능 기준선
+
+상태 표시줄은 ZIP central directory 열기, 패키지 인덱스, 전체 ViewerDocument 디코딩,
+main 합계, IPC 요청부터 모델 수신, block pagination, 첫 paint를 각각 표시한다. 첫 paint는
+페이지 DOM이 만들어진 뒤 두 번의 `requestAnimationFrame`이 지난 시점이다. 실행 중 파일
+열기는 macOS 이벤트 수신 시각을 함께 전달하고, 최초 파일 열기는 main 모듈 시작 시각을
+기준으로 앱 부팅을 포함한 `열기 → 첫 화면`도 별도로 측정한다.
+
+private AIDA 기준 문서의 개발 앱 warm-open 유효 표본 5회는 **116, 109, 256, 102,
+102ms**였고 관측 p95(표본이 5개이므로 최댓값)는 **256ms**다. 최초 개발 앱 문서 요청은
+397ms였다. 대표 warm-open의 main 합계는 37~38ms이며 이 중 전체 디코딩이 34~36ms,
+패키지 인덱스는 약 1ms였다. 패키지 앱을 종료한 뒤 LaunchServices로 다시 연 콜드 실행은
+**열기 → 첫 화면 304ms**, 8페이지/overflow 0이었다.
+
+이 측정은 2026-07-20의 한 기기와 한 문서에 대한 기준선이며 통계적으로 충분한 p95나 모든
+문서의 1초 보장을 뜻하지 않는다. LaunchServices가 프로세스를 띄우기 전의 OS 지연도 포함하지
+않는다. 다만 현재 문서에서는 ZIP 인덱스와 layout보다 XML 전체 디코딩 및 모델 IPC 전달이 큰
+비용임을 확인했다. 다음 단계에서는 큰 문서 fixture를 추가하고 첫 section 우선 decode가
+필요한 크기 임계값을 측정한다.
+
 ## 다음 구현 단위
 
-M1은 아래 순서로만 진행한다.
+M2는 아래 순서로 진행한다.
 
-1. private fixture와 reference PDF를 배치하고 SHA-256/기대 요소 수 manifest 작성
-2. 순서 보존 PackageReader/Decoder 및 결정적 snapshot test
-3. HWPUNIT 유틸리티와 style resolver test
-4. viewer-only store와 read-only page component로 UI 교체
-5. 표/이미지까지 한 페이지씩 시각 비교
+1. 공개 생성기를 확장해 section 수와 이미지 크기를 조절할 수 있는 대형 fixture 작성
+2. 전체 decode 기준선과 첫 section decode 시간을 같은 계측 방식으로 비교
+3. 첫 section 모델을 먼저 반환하고 나머지 section을 순차 전달하는 IPC 계약 설계
+4. viewport 주변 페이지만 DOM에 유지하는 page virtualization
+5. warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
 
-fixture가 없는 상태에서 UI를 더 만드는 작업은 정확도를 증명하지 못하므로 진행하지 않는다.
+현재 AIDA는 이미 목표 안쪽이므로 작은 문서의 숫자만 더 줄이는 최적화보다, 대형 문서에서도
+첫 페이지를 먼저 보여 주고 메모리 사용량을 제한하는 구조를 우선한다.
 
 ## 구현 현황 (2026-07-20)
 
