@@ -153,7 +153,9 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - [x] 실행 중 `open-file`과 두 번째 프로세스의 HWPX 인자를 기존 창에 전달
 - [x] single-instance lock과 기존 창 복원·포커스
 - [x] 파일 선택 및 IPC 파싱 입력을 `.hwpx`로 제한
-- [ ] 패키징 설정에 `.hwpx` document type/UTI 등록 후 Finder 더블클릭 검증
+- [x] 비서명 `.app` 패키징과 `.hwpx` document type/UTI 등록
+- [x] LaunchServices로 패키지 앱에 HWPX를 전달해 8페이지/overflow 0 렌더 검증
+- [ ] Applications 설치 후 Finder 기본 앱 선택과 더블클릭 검증
 - [ ] open → package index → decode → layout → first paint 구간 계측
 - [ ] 첫 section 우선 decode와 뒤 section 점진 로딩
 - [ ] viewport 주변 page virtualization
@@ -164,9 +166,17 @@ private AIDA 문서 없이 검증한다. 실행 중 파일 열기는 개발 앱�
 두 번째 Electron 프로세스에 private fixture 경로를 넘기는 방식으로 확인했고, 기존 창이
 8페이지/overflow 0 문서로 전환됐다. 캡처와 fixture는 저장소에 포함하지 않는다.
 
-현재 완료된 것은 운영체제가 넘긴 경로를 앱 내부로 전달하는 부분이다. Finder가 Han-Flow를
-`.hwpx` 기본 앱 후보로 인식하게 만드는 file association은 패키징 도구와 앱 식별자를
-결정한 다음 실제 `.app` 번들로 검증해야 하므로 다음 구현 단위로 남긴다.
+`electron-builder`로 Apple Silicon용 `Han-Flow.app`을 생성한다. 앱 식별자는
+`com.hanflow.viewer`이며 `Info.plist`에 `.hwpx`, 문서 역할 `Viewer`, MIME
+`application/hwp+zip`, UTI `com.hanflow.hwpx`가 포함된다. 생성된 비서명 앱을 macOS
+LaunchServices의 앱 지정 열기로 실행해 private AIDA 문서가 8페이지/overflow 0으로
+표시되는 것을 확인했다.
+
+현재 패키지는 로컬 개발 검증용이다. 기본 Electron 아이콘을 사용하고 서명·공증하지
+않았으며 사용자의 기본 앱 설정도 자동으로 변경하지 않는다. 실제 배포 전에는 전용 아이콘,
+Developer ID 서명, notarization을 준비하고 `/Applications` 설치 후 Finder의 “다음으로
+열기” 및 더블클릭을 수동 검증한다. M2의 다음 구현 단위는 패키징 꾸미기가 아니라 1초
+목표를 판단할 수 있는 로딩 구간 계측이다.
 
 ## 다음 구현 단위
 

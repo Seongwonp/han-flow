@@ -1,15 +1,20 @@
-# Han-Flow: HWPX Cross-Platform Editor
+# Han-Flow: macOS용 HWPX 뷰어
 
 ![Han-Flow Logo](https://raw.githubusercontent.com/Seongwonp/han-flow/main/docs/assets/han-flow-logo.png) <!-- 로고 이미지는 추후 추가 예정 -->
 
 ## 🚀 프로젝트 소개
 
-Han-Flow는 macOS 환경에 최적화된 고성능 HWPX 크로스 플랫폼 에디터입니다. 기존 HWP 뷰어의 고질적인 문제인 'UI 깨짐'과 '느린 로딩'을 해결하고, 사용자에게 더 직관적이고 쾌적한 문서 열람 및 편집 경험을 제공하는 것을 목표로 합니다.
+Han-Flow는 macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내기 위한 읽기 전용
+뷰어입니다. 상용 편집기를 복제하지 않고 실제로 매주 사용할 수 있는 가볍고 안정적인
+도구를 목표로 합니다.
+
+v1에서는 편집, `.hwp` 바이너리 직접 파싱, 한컴과 픽셀 단위로 동일한 렌더링을 지원하지
+않습니다.
 
 ## ✨ 주요 기능 및 차별점
 
 -   **레이아웃 무결성**: HWPX 표준(OWPML)을 준수하는 정밀한 파싱 및 하이브리드 렌더링 엔진(HTML + SVG/Canvas)을 통해 macOS 환경에서 레이아웃 깨짐 현상을 최소화합니다.
--   **고성능 로딩**: 지능형 점진적 로딩(Smart Incremental Loading) 전략을 적용하여 대용량 문서도 빠르게 초기 화면을 표시하고, 백그라운드에서 나머지 콘텐츠를 비동기적으로 로딩합니다.
+-   **빠른 열기 준비**: macOS 파일 열기 이벤트, single-instance, `.hwpx` 파일 연결을 지원하며 점진 로딩은 M2에서 진행 중입니다.
 -   **macOS 최적화 UX**: macOS의 디자인 시스템과 네이티브 기능을 적극 활용하여 트랙패드 제스처, 다크 모드 지원 등 맥 사용자에게 익숙하고 편리한 사용자 경험을 제공합니다.
 -   **모듈화된 아키텍처**: 파서, 렌더러, 상태 관리자를 철저히 분리하여 높은 확장성과 유지보수성을 확보했습니다.
 
@@ -66,11 +71,20 @@ npm install
 npm run dev
 ```
 
-### 4. 빌드
+### 4. 프로덕션 번들 빌드
 
 ```bash
 npm run build
 ```
+
+### 5. macOS 앱 패키징
+
+```bash
+npm run package:mac
+```
+
+로컬 검증용 비서명 앱은 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 배포용 앱에는
+별도의 Developer ID 서명과 Apple notarization이 필요합니다.
 
 ## 🤝 기여 방법
 
