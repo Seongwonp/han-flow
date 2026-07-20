@@ -23,6 +23,6 @@ export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: b
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerText { type: 'text'; text: string; charStyleId: string }
 export interface ViewerImage { type: 'image'; resourceId?: string; width?: HwpUnit; height?: HwpUnit }
-export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; rows: ViewerTableRow[] }
+export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; pageBreak?: string; repeatHeader: boolean; rows: ViewerTableRow[] }
 export interface ViewerTableRow { cells: ViewerTableCell[] }
-export interface ViewerTableCell { row: number; column: number; rowSpan: number; columnSpan: number; width: HwpUnit; height: HwpUnit; margin: BoxSpacing; borderFillId?: string; verticalAlign?: string; paragraphs: ViewerParagraph[] }
+export interface ViewerTableCell { row: number; column: number; rowSpan: number; columnSpan: number; width: HwpUnit; height: HwpUnit; margin: BoxSpacing; borderFillId?: string; verticalAlign?: string; header: boolean; paragraphs: ViewerParagraph[] }

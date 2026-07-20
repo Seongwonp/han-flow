@@ -54,11 +54,12 @@ function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
         margin: box(child(cell, 'hp:cellMargin')),
         borderFillId: cell.attributes.borderFillIDRef,
         verticalAlign: subList?.attributes.vertAlign,
+        header: cell.attributes.header === '1',
         paragraphs: subList ? children(subList, 'hp:p').map((p, index) => decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`)) : []
       }
     })
   }))
-  return { type: 'table', id, rowCount: num(node.attributes.rowCnt) || rows.length, columnCount: num(node.attributes.colCnt), width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined, rows }
+  return { type: 'table', id, rowCount: num(node.attributes.rowCnt) || rows.length, columnCount: num(node.attributes.colCnt), width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined, pageBreak: node.attributes.pageBreak, repeatHeader: node.attributes.repeatHeader === '1', rows }
 }
 
 function decodeHeader(nodes: OrderedXmlNode[]) {

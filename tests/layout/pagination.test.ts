@@ -8,11 +8,12 @@ const fixture = resolve(__dirname, '../fixtures/private/m1-weekly.hwpx')
 const privateTest = existsSync(fixture) ? test : test.skip
 
 describe('AIDA block pagination', () => {
-  privateTest('section 경계와 layout height로 7개 block page를 구성한다', async () => {
+  privateTest('페이지 경계 표를 행 단위로 나눠 8페이지를 구성한다', async () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
     const pages = paginateDocument(document)
-    // reference PDF의 8번째 페이지는 표 행 분할이 필요하며 다음 pagination 단계에서 처리한다.
-    expect(pages).toHaveLength(7)
+    expect(pages).toHaveLength(8)
     expect(pages.every((page) => page.length > 0)).toBe(true)
+    const fragments = pages.flat().filter((block) => block.id.includes(':fragment'))
+    expect(fragments).toHaveLength(2)
   })
 })
