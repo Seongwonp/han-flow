@@ -1,6 +1,6 @@
 import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerImage, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
-import { HwpxPackageReader } from './package_reader'
+import { HwpxPackageIndex, HwpxPackageReader } from './package_reader'
 
 const num = (value?: string): number => Number(value ?? 0)
 const children = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => node.children.filter((child) => child.name === name)
@@ -98,8 +98,8 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   return { fonts, charStyles, paraStyles, cellStyles }
 }
 
-export async function decodeViewerDocument(reader: HwpxPackageReader): Promise<ViewerDocument> {
-  const index = await reader.index()
+export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex?: HwpxPackageIndex): Promise<ViewerDocument> {
+  const index = knownIndex ?? await reader.index()
   const header = decodeHeader(await reader.readOrderedXml(index.headerPath))
   const sectionXml = await Promise.all(index.sectionPaths.map((path) => reader.readOrderedXml(path)))
   const pagePr = sectionXml.flatMap(walkOrderedXml).find((node) => node.name === 'hp:pagePr')

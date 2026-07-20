@@ -11,6 +11,18 @@ export interface ViewerDocument {
   diagnostics: ViewerDiagnostic[]
 }
 
+export interface ViewerParseTimings {
+  packageOpenMs: number
+  packageIndexMs: number
+  decodeMs: number
+  mainTotalMs: number
+}
+
+export interface ViewerParseResult {
+  document: ViewerDocument
+  timings: ViewerParseTimings
+}
+
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; fontId?: string; fontFamily?: string }

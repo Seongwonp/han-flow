@@ -8,8 +8,9 @@ import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const processStartedAt = Date.now()
 let mainWindow: BrowserWindow | null = null
-let pendingOpenPath: string | null = null
+let pendingOpen: { filePath: string; receivedAt: number } | null = null
 
 function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
@@ -25,25 +26,25 @@ function captureVisualState(window: BrowserWindow): void {
   setTimeout(async () => {
     const image = await window.webContents.capturePage()
     await writeFile(capturePath, image.toPNG())
-    const imageState = await window.webContents.executeJavaScript(`Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length }))`)
-    console.log('Visual test image state:', imageState)
+    const visualState = await window.webContents.executeJavaScript(`({ images: Array.from(document.images).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })), status: document.querySelector('.viewer-status')?.textContent, timing: document.querySelector('.viewer-status')?.getAttribute('title') })`)
+    console.log('Visual test state:', visualState)
   }, 2500)
 }
 
-function deliverOpenPath(filePath: string): void {
+function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
   if (!isHwpxPath(filePath)) return
   if (!mainWindow || mainWindow.isDestroyed()) {
-    pendingOpenPath = filePath
+    pendingOpen = { filePath, receivedAt }
     return
   }
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
-  mainWindow.webContents.send('file:open', filePath)
+  mainWindow.webContents.send('file:open', { filePath, receivedAt })
   captureVisualState(mainWindow)
 }
 
-function createWindow(initialOpenPath?: string): void {
+function createWindow(initialOpen?: { filePath: string; receivedAt: number }): void {
   const visualCapturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
   // Create the browser window.
   mainWindow = new BrowserWindow({
@@ -79,13 +80,15 @@ function createWindow(initialOpenPath?: string): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   const visualTestFile = isDev ? process.env['HAN_FLOW_VISUAL_TEST_FILE'] : undefined
-  const openPath = visualTestFile ?? initialOpenPath
+  const openPath = visualTestFile ?? initialOpen?.filePath
+  const openReceivedAt = visualTestFile ? processStartedAt : initialOpen?.receivedAt
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
     if (openPath) rendererUrl.searchParams.set('open', openPath)
+    if (openReceivedAt) rendererUrl.searchParams.set('openReceivedAt', String(openReceivedAt))
     mainWindow.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath } } : undefined)
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt) } } : undefined)
   }
 }
 
@@ -199,7 +202,22 @@ app.whenReady().then(() => {
   ipcMain.handle('hwpx:parse', async (_, filePath: string) => {
     try {
       if (!isHwpxPath(filePath)) throw new Error('HWPX 파일만 열 수 있습니다.')
-      return await decodeViewerDocument(await HwpxPackageReader.open(filePath))
+      const startedAt = performance.now()
+      const reader = await HwpxPackageReader.open(filePath)
+      const packageOpenedAt = performance.now()
+      const index = await reader.index()
+      const packageIndexedAt = performance.now()
+      const document = await decodeViewerDocument(reader, index)
+      const decodedAt = performance.now()
+      return {
+        document,
+        timings: {
+          packageOpenMs: packageOpenedAt - startedAt,
+          packageIndexMs: packageIndexedAt - packageOpenedAt,
+          decodeMs: decodedAt - packageIndexedAt,
+          mainTotalMs: decodedAt - startedAt
+        }
+      }
     } catch (error) {
       console.error('Parsing error:', error)
       throw error
@@ -229,8 +247,8 @@ app.whenReady().then(() => {
   })
 
   const commandLinePath = pathFromArguments(process.argv)
-  createWindow(pendingOpenPath ?? commandLinePath)
-  pendingOpenPath = null
+  createWindow(pendingOpen ?? (commandLinePath ? { filePath: commandLinePath, receivedAt: processStartedAt } : undefined))
+  pendingOpen = null
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

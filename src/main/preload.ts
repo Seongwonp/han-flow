@@ -9,8 +9,8 @@ const api = {
   askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
   openNewWindow: () => ipcRenderer.invoke('window:openNew'),
   openImage: () => ipcRenderer.invoke('dialog:openImage'),
-  onOpenFile: (listener: (filePath: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, filePath: string) => listener(filePath)
+  onOpenFile: (listener: (payload: { filePath: string; receivedAt: number }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { filePath: string; receivedAt: number }) => listener(payload)
     ipcRenderer.on('file:open', handler)
     return () => ipcRenderer.removeListener('file:open', handler)
   },

@@ -1,10 +1,24 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useState } from 'react'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerParagraph, ViewerTable } from '../../core/document/viewer_document'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
 import { hwpUnitToCssPx } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateDocument } from '../../core/layout/pagination'
 
 const api = () => (window as any).api
+
+interface ViewerLoadTiming {
+  requestStartedAt: number
+  openReceivedAt: number
+  requestToModelMs: number
+  packageOpenMs: number
+  packageIndexMs: number
+  decodeMs: number
+  mainTotalMs: number
+  firstPaintMs?: number
+  openToFirstPaintMs?: number
+}
+
+const ms = (value: number): string => `${Math.round(value)}ms`
 
 function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
@@ -68,6 +82,7 @@ export default function App() {
   const [zoom, setZoom] = useState(1)
   const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
   const [overflowPages, setOverflowPages] = useState<number[]>([])
+  const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -75,19 +90,46 @@ export default function App() {
       fontFamily: style.fontFamily ? fontResolutions[style.fontFamily]?.resolved ?? style.fontFamily : undefined
     }]))
   } : null, [document, fontResolutions])
-  const pages = useMemo(() => effectiveDocument ? paginateDocument(effectiveDocument) : [], [effectiveDocument])
+  const pagination = useMemo(() => {
+    const startedAt = performance.now()
+    const pages = effectiveDocument ? paginateDocument(effectiveDocument) : []
+    return { pages, layoutMs: performance.now() - startedAt }
+  }, [effectiveDocument])
+  const pages = pagination.pages
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
 
-  const openPath = async (path: string) => {
+  const openPath = async (path: string, openReceivedAt = Date.now()) => {
+    const requestStartedAt = performance.now()
     setLoading(true); setError(null)
-    try { setDocument(await api().parseHWPX(path)); setFileName(path.split('/').pop() ?? path) }
+    setLoadTiming(null)
+    try {
+      const result = await api().parseHWPX(path) as ViewerParseResult
+      setDocument(result.document)
+      setLoadTiming({ requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
+      setFileName(path.split('/').pop() ?? path)
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setLoading(false) }
   }
   useEffect(() => {
-    const initialPath = new URLSearchParams(window.location.search).get('open')
-    if (initialPath) void openPath(initialPath)
-    const unsubscribe = api().onOpenFile((filePath: string) => { void openPath(filePath) })
+    if (!document || !loadTiming || loadTiming.firstPaintMs !== undefined || pages.length === 0) return
+    const requestStartedAt = loadTiming.requestStartedAt
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => setLoadTiming((current) =>
+        current?.requestStartedAt === requestStartedAt && current.firstPaintMs === undefined
+          ? { ...current, firstPaintMs: performance.now() - requestStartedAt, openToFirstPaintMs: Date.now() - current.openReceivedAt }
+          : current
+      ))
+    })
+    return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame) }
+  }, [document, loadTiming, pages.length])
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search)
+    const initialPath = query.get('open')
+    const initialReceivedAt = Number(query.get('openReceivedAt')) || Date.now()
+    if (initialPath) void openPath(initialPath, initialReceivedAt)
+    const unsubscribe = api().onOpenFile(({ filePath, receivedAt }: { filePath: string; receivedAt: number }) => { void openPath(filePath, receivedAt) })
     return unsubscribe
   }, [])
   useEffect(() => {
@@ -106,6 +148,16 @@ export default function App() {
   }, [effectiveDocument, pages.length])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
+  const timingDetails = loadTiming ? [
+    `ZIP 열기 ${ms(loadTiming.packageOpenMs)}`,
+    `패키지 인덱스 ${ms(loadTiming.packageIndexMs)}`,
+    `전체 디코딩 ${ms(loadTiming.decodeMs)}`,
+    `main 합계 ${ms(loadTiming.mainTotalMs)}`,
+    `IPC→모델 ${ms(loadTiming.requestToModelMs)}`,
+    `레이아웃 ${ms(pagination.layoutMs)}`,
+    `요청→첫 화면 ${loadTiming.firstPaintMs === undefined ? '측정 중' : ms(loadTiming.firstPaintMs)}`,
+    `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
+  ] : []
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
@@ -115,6 +167,6 @@ export default function App() {
       {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
       {effectiveDocument && !loading && <div className="viewer-pages" style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>{pages.map((page, index) => <article className="viewer-page" key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: hwpUnitToCssPx(effectiveDocument.page.height), padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}</article>)}</div>}
     </section>
-    {effectiveDocument && <footer className="viewer-status" title={substitutions.map((font) => `${font.requested} → ${font.resolved}`).join('\n')}><span>{pages.length}페이지</span><span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>페이지 넘침 {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span></footer>}
+    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span><span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>페이지 넘침 {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
   </main>
 }
