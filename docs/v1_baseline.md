@@ -157,8 +157,8 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - [x] LaunchServices로 패키지 앱에 HWPX를 전달해 8페이지/overflow 0 렌더 검증
 - [ ] Applications 설치 후 Finder 기본 앱 선택과 더블클릭 검증
 - [x] package open → index → decode → layout → first paint 구간 계측
-- [ ] 첫 section 우선 decode와 뒤 section 점진 로딩
-- [ ] viewport 주변 page virtualization
+- [x] 20 sections 이상 문서의 첫 section 우선 decode와 전체 모델 백그라운드 교체
+- [x] 50페이지 초과 문서의 viewport 주변 page virtualization
 
 공개 fixture는 테스트 시 임시 디렉터리에 결정적인 ZIP으로 생성하며 section 정렬, 혼합
 콘텐츠 순서, 글자·셀 스타일, PNG resource, `pageBreak=CELL` 표 분할과 반복 header를
@@ -198,15 +198,34 @@ private AIDA 기준 문서의 개발 앱 warm-open 유효 표본 5회는 **116, 
 비용임을 확인했다. 다음 단계에서는 큰 문서 fixture를 추가하고 첫 section 우선 decode가
 필요한 크기 임계값을 측정한다.
 
+### 대형 문서 점진 로딩 기준선
+
+공개 생성기는 section 수, 추가 section당 문단 수, image resource 크기를 조절할 수 있다.
+80 sections, 19,502문단, 5MiB PNG resource 구성에서 resource를 포함한 첫 section decode는
+약 **13ms**, 전체 decode는 약 **250ms**로 약 **19배** 차이가 났다. 압축 파일 크기는 반복
+텍스트와 0-byte padding의 높은 압축률 때문에 약 95KB이므로 실제 복잡한 5MiB 문서와 같은
+I/O 기준으로 해석하면 안 된다.
+
+정확도가 이미 검증된 작은 문서의 경로를 바꾸지 않기 위해 section이 20개 이상일 때만
+점진 로딩한다. main process는 header, 첫 section, resource를 먼저 반환하고 전체 문서는
+백그라운드에서 decode해 같은 load ID의 renderer에 전달한다. 다른 파일을 연 뒤 도착한 오래된
+결과는 무시한다. 실제 Electron 빠른 캡처에서 **2페이지 · 불러오는 중 1/80 · 요청→첫 화면
+148ms**를 확인했고 전체 모델도 이후 80/80으로 교체됐다.
+
+전체 모델은 synthetic 문단 높이 기준 2,499페이지였지만 50페이지 초과 시 viewport 주변만
+렌더해 실제 `.viewer-page` DOM은 **12개**로 제한됐다. 이 상태의 개발 앱 열기→첫 화면은
+655ms였다. 가상화 문서의 overflow 진단은 현재 마운트된 페이지에 한정되므로 상태 표시줄도
+`보이는 페이지 넘침`으로 구분한다. 다음 과제는 section 개수뿐 아니라 첫 section 자체가 큰
+문서를 판별하는 byte/노드 기준과, 백그라운드 decode를 worker thread로 옮기는 것이다.
+
 ## 다음 구현 단위
 
 M2는 아래 순서로 진행한다.
 
-1. 공개 생성기를 확장해 section 수와 이미지 크기를 조절할 수 있는 대형 fixture 작성
-2. 전체 decode 기준선과 첫 section decode 시간을 같은 계측 방식으로 비교
-3. 첫 section 모델을 먼저 반환하고 나머지 section을 순차 전달하는 IPC 계약 설계
-4. viewport 주변 페이지만 DOM에 유지하는 page virtualization
-5. warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
+1. section 압축 전 byte/노드 수를 package index에 추가해 한 section 대형 문서도 판별
+2. 전체 decode를 main event loop 밖 worker thread로 이동
+3. background 오류와 취소를 load ID 단위로 renderer에 전달
+4. 실제 대형 HWPX와 warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
 
 현재 AIDA는 이미 목표 안쪽이므로 작은 문서의 숫자만 더 줄이는 최적화보다, 대형 문서에서도
 첫 페이지를 먼저 보여 주고 메모리 사용량을 제한하는 구조를 우선한다.
