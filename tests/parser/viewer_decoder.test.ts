@@ -38,4 +38,18 @@ describe('AIDA ViewerDocument decoder', () => {
     const [a, b] = await Promise.all([decodeViewerDocument(readerA), decodeViewerDocument(readerB)])
     expect(a.sections.map((section) => section.blocks.map((block) => block.id))).toEqual(b.sections.map((section) => section.blocks.map((block) => block.id)))
   })
+
+  privateTest('이미지 resource와 셀 테두리·배경색을 연결한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
+    expect(Object.keys(document.resources)).toEqual(['image1', 'image2'])
+    expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })
+    expect(document.resources.image1.data.length).toBeGreaterThan(1000)
+    expect(document.cellStyles).toHaveProperty('25', {
+      id: '25', backgroundColor: '#D9D9D9',
+      left: { type: 'SOLID', widthMm: 0.4, color: '#000000' },
+      right: { type: 'SOLID', widthMm: 0.12, color: '#000000' },
+      top: { type: 'SOLID', widthMm: 0.4, color: '#000000' },
+      bottom: { type: 'SOLID', widthMm: 0.12, color: '#000000' }
+    })
+  })
 })

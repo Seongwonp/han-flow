@@ -1,4 +1,4 @@
-import { ViewerCharStyle, ViewerContent, ViewerDocument, ViewerImage, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerImage, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import { HwpxPackageReader } from './package_reader'
 
@@ -72,7 +72,24 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
     const getValue = (name: string) => num(child(marginNode ?? style, name)?.attributes.value)
     paraStyles[style.attributes.id] = { id: style.attributes.id, align: child(style, 'hh:align')?.attributes.horizontal, lineSpacing: num(child(style, 'hh:lineSpacing')?.attributes.value), margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') } }
   })
-  return { fonts, charStyles, paraStyles }
+  const border = (node?: OrderedXmlNode): ViewerBorder => ({
+    type: node?.attributes.type ?? 'NONE',
+    widthMm: Number.parseFloat(node?.attributes.width ?? '0') || 0,
+    color: node?.attributes.color ?? '#000000'
+  })
+  const cellStyles: Record<string, ViewerCellStyle> = {}
+  all.filter((node) => node.name === 'hh:borderFill').forEach((style) => {
+    const fill = descendants(style, 'hc:winBrush')[0]
+    cellStyles[style.attributes.id] = {
+      id: style.attributes.id,
+      backgroundColor: fill?.attributes.faceColor,
+      left: border(child(style, 'hh:leftBorder')),
+      right: border(child(style, 'hh:rightBorder')),
+      top: border(child(style, 'hh:topBorder')),
+      bottom: border(child(style, 'hh:bottomBorder'))
+    }
+  })
+  return { fonts, charStyles, paraStyles, cellStyles }
 }
 
 export async function decodeViewerDocument(reader: HwpxPackageReader): Promise<ViewerDocument> {
@@ -85,9 +102,16 @@ export async function decodeViewerDocument(reader: HwpxPackageReader): Promise<V
     const root = nodes.find((node) => node.name === 'hs:sec')
     return { id: `section-${sectionIndex}`, blocks: root ? children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)) : [] }
   })
+  const resources = Object.fromEntries(await Promise.all(index.resourcePaths.map(async (path) => {
+    const id = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? path
+    const extension = path.split('.').pop()?.toLowerCase()
+    const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension ?? 'png'}`
+    return [id, { id, path, mime, data: (await reader.readBuffer(path)).toString('base64') }]
+  })))
   return {
     page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin) },
     ...header,
+    resources,
     sections,
     diagnostics: []
   }

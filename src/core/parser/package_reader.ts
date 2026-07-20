@@ -49,4 +49,8 @@ export class HwpxPackageReader {
   async readOrderedXml(path: string): Promise<OrderedXmlNode[]> {
     return parseOrderedXml(await this.entry(path).buffer())
   }
+
+  async readBuffer(path: string): Promise<Buffer> {
+    return this.entry(path).buffer()
+  }
 }

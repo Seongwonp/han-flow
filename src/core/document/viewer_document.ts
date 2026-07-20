@@ -5,6 +5,8 @@ export interface ViewerDocument {
   fonts: Record<string, string>
   charStyles: Record<string, ViewerCharStyle>
   paraStyles: Record<string, ViewerParaStyle>
+  cellStyles: Record<string, ViewerCellStyle>
+  resources: Record<string, ViewerResource>
   sections: ViewerSection[]
   diagnostics: ViewerDiagnostic[]
 }
@@ -13,6 +15,9 @@ export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; lef
 export interface ViewerDiagnostic { source: string; message: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; fontId?: string; fontFamily?: string }
 export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; margin: BoxSpacing }
+export interface ViewerBorder { type: string; widthMm: number; color: string }
+export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
+export interface ViewerResource { id: string; path: string; mime: string; data: string }
 export interface ViewerSection { id: string; blocks: ViewerParagraph[] }
 export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
