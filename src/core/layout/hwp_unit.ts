@@ -15,3 +15,7 @@ export function hwpUnitToInches(value: HwpUnit): number {
 export function hwpUnitToCssPx(value: HwpUnit): number {
   return (value * CSS_PX_PER_INCH) / HWPUNIT_PER_INCH
 }
+
+export function cssPxToHwpUnit(value: number): HwpUnit {
+  return (value * HWPUNIT_PER_INCH) / CSS_PX_PER_INCH
+}

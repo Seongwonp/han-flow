@@ -3,6 +3,7 @@
 html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 button { font: inherit; }
 .viewer-app { height: 100%; display: flex; flex-direction: column; background: #cfd3d8; }
+.viewer-measurement { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
 .viewer-toolbar { height: 52px; flex: 0 0 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 78px; background: rgba(248,248,248,.92); border-bottom: 1px solid rgba(0,0,0,.16); backdrop-filter: blur(20px); -webkit-app-region: drag; }
 .viewer-title, .viewer-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .viewer-mark { display: grid; place-items: center; width: 25px; height: 25px; color: white; background: #335eea; border-radius: 6px; font-weight: 800; }

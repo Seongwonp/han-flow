@@ -1,8 +1,8 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
-import { hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
+import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { paginateViewerDocument } from '../../core/layout/pagination'
+import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 
@@ -39,7 +39,7 @@ function Content({ item, document }: { item: ViewerContent; document: ViewerDocu
   return <TableView table={item} document={document} />
 }
 
-function ParagraphView({ paragraph, document }: { paragraph: ViewerParagraph; document: ViewerDocument }) {
+function ParagraphView({ paragraph, document, measurable = false }: { paragraph: ViewerParagraph; document: ViewerDocument; measurable?: boolean }) {
   const style = document.paraStyles[paragraph.paraStyleId]
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
@@ -49,7 +49,7 @@ function ParagraphView({ paragraph, document }: { paragraph: ViewerParagraph; do
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  return <div className="viewer-paragraph" style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
+  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
 }
 
 function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
@@ -71,7 +71,7 @@ function TableView({ table, document }: { table: ViewerTable; document: ViewerDo
   const fallback = (table.width ?? 0) / Math.max(table.columnCount, 1)
   const resolvedWidths = columnWidths.map((width) => width || fallback)
   const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
-  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
+  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={`${table.id}:r${row.cells[0]?.row ?? rowIndex}`} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     return <td key={`${table.id}:r${cell.row}c${cell.column}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
       minHeight: hwpUnitToCssPx(cell.height), verticalAlign: cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
@@ -97,6 +97,8 @@ export default function App() {
   const [printing, setPrinting] = useState(false)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12 })
+  const [layoutMeasurements, setLayoutMeasurements] = useState<LayoutMeasurements | undefined>()
+  const measurementRef = useRef<HTMLDivElement>(null)
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
   const automaticPdfStarted = useRef(false)
@@ -109,9 +111,9 @@ export default function App() {
   } : null, [document, fontResolutions])
   const pagination = useMemo(() => {
     const startedAt = performance.now()
-    const pages = effectiveDocument ? paginateViewerDocument(effectiveDocument) : []
+    const pages = effectiveDocument ? paginateViewerDocument(effectiveDocument, layoutMeasurements) : []
     return { pages, layoutMs: performance.now() - startedAt }
-  }, [effectiveDocument])
+  }, [effectiveDocument, layoutMeasurements])
   const pages = pagination.pages
   const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
   const virtualized = pages.length > 50 && !printing
@@ -189,9 +191,21 @@ export default function App() {
   }, [])
   useEffect(() => {
     if (!document) return
+    setLayoutMeasurements(undefined)
     const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
     void api().getFonts().then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts))).catch(() => setFontResolutions(resolveDocumentFonts(requested, [])))
   }, [document])
+  useEffect(() => {
+    if (!effectiveDocument || !measurementRef.current) return
+    let cancelled = false
+    void globalThis.document.fonts.ready.then(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))).then(() => {
+      if (cancelled || !measurementRef.current) return
+      const blockHeights = Object.fromEntries(Array.from(measurementRef.current.querySelectorAll<HTMLElement>('[data-measure-block-id]')).map((element) => [element.dataset.measureBlockId!, cssPxToHwpUnit(element.getBoundingClientRect().height)]))
+      const tableRowHeights = Object.fromEntries(Array.from(measurementRef.current.querySelectorAll<HTMLElement>('[data-measure-row-id]')).map((element) => [element.dataset.measureRowId!, cssPxToHwpUnit(element.getBoundingClientRect().height)]))
+      setLayoutMeasurements({ blockHeights, tableRowHeights })
+    })
+    return () => { cancelled = true }
+  }, [effectiveDocument])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
@@ -235,6 +249,7 @@ export default function App() {
   ] : []
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+    {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
     <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button onClick={() => void exportPdf()} disabled={!effectiveDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
     <section className="viewer-stage" onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}

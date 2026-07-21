@@ -1,6 +1,7 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
-import { paginateDocument } from '../../src/core/layout/pagination'
+import { paginateDocument, paginateViewerDocument } from '../../src/core/layout/pagination'
+import { ViewerDocument, ViewerParagraph, ViewerTableRow } from '../../src/core/document/viewer_document'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 
@@ -15,5 +16,30 @@ describe('AIDA block pagination', () => {
     expect(pages.every((page) => page.length > 0)).toBe(true)
     const fragments = pages.flat().filter((block) => block.id.includes(':fragment'))
     expect(fragments).toHaveLength(2)
+  })
+
+  test('실측 행이 페이지에 맞으면 경험적 분할 대신 원본 좌표 경계를 사용한다', () => {
+    const row = (index: number, height: number, header = false): ViewerTableRow => ({ cells: [{
+      row: index, column: 0, rowSpan: 1, columnSpan: 1, width: 6000, height,
+      margin: { top: 0, right: 0, bottom: 0, left: 0 }, header, paragraphs: []
+    }] })
+    const tableBlock: ViewerParagraph = {
+      id: 'table-block', paraStyleId: '0', pageBreak: false, layoutTop: 100, layoutHeight: 7500,
+      content: [{ type: 'table', id: 'table', rowCount: 4, columnCount: 1, pageBreak: 'CELL', repeatHeader: true, rows: [row(0, 1000, true), row(1, 3000), row(2, 500), row(3, 3000)] }]
+    }
+    const nextBlock: ViewerParagraph = { id: 'next', paraStyleId: '0', pageBreak: false, layoutTop: 0, layoutHeight: 500, content: [] }
+    const document = {
+      page: { width: 10000, height: 10000, margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 }, headerOffset: 0, footerOffset: 0 },
+      fonts: {}, charStyles: {}, paraStyles: {}, cellStyles: {}, resources: {}, diagnostics: [],
+      sections: [{ id: 'section', blocks: [tableBlock, nextBlock], headers: [], footers: [] }]
+    } satisfies ViewerDocument
+    const measurements = {
+      blockHeights: { 'table-block': 7500, next: 500 },
+      tableRowHeights: { 'table:r0': 1000, 'table:r1': 3000, 'table:r2': 500, 'table:r3': 3000 }
+    }
+
+    expect(paginateViewerDocument(document, measurements).map((page) => page.blocks.map((block) => block.id))).toEqual([
+      ['table-block'], ['next']
+    ])
   })
 })

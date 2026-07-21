@@ -30,7 +30,8 @@ function decodeParagraph(node: OrderedXmlNode, id: string): ViewerParagraph {
   const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
   const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
   const layoutHeight = lineSegments.length ? Math.max(...ends) - Math.min(...starts) : 0
-  return { id, paraStyleId: node.attributes.paraPrIDRef ?? '0', pageBreak: node.attributes.pageBreak === '1', layoutHeight, content }
+  const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
+  return { id, paraStyleId: node.attributes.paraPrIDRef ?? '0', pageBreak: node.attributes.pageBreak === '1', layoutTop, layoutHeight, content }
 }
 
 function decodeImage(node: OrderedXmlNode): ViewerImage {
