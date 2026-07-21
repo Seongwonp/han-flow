@@ -22,8 +22,9 @@ Git에 커밋하지 않는다.
 
 `createSyntheticHwpx`의 `sectionCount`, `paragraphsPerExtraSection`, `imageBytes` 옵션으로
 대형 문서를 만들 수 있다. `npm run benchmark:decoder`는 80 sections, 약 1만 9천 문단,
-5MiB image resource 조건에서 첫 section과 전체 디코딩 시간을 비교한다. 시간 자체는 환경에
-따라 달라지므로 일반 테스트에서는 건너뛰고 명시적으로 실행한다.
+5MiB image resource 조건에서 첫 section과 전체 디코딩을 각각 20회 실행하고 p50/p95를
+출력한다. 시간 자체는 환경에 따라 달라지므로 일반 테스트에서는 건너뛰고 명시적으로 실행한다.
+이 결과는 디코더 회귀 기준이며 앱 기동·IPC·조판·paint를 포함한 실사용 열기 시간은 아니다.
 
 ## 현재 M1 기준
 
