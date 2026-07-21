@@ -1,9 +1,10 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
 import { hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { paginateDocument } from '../../core/layout/pagination'
+import { paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
+import { resolvePageDecorations } from '../../core/layout/page_decorations'
 
 const api = () => (window as any).api
 
@@ -49,6 +50,13 @@ function ParagraphView({ paragraph, document }: { paragraph: ViewerParagraph; do
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
   return <div className="viewer-paragraph" style={css}>{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
+}
+
+function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
+  if (!control) return null
+  return <div className={`viewer-${kind}`} style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}>
+    {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
+  </div>
 }
 
 function TableView({ table, document }: { table: ViewerTable; document: ViewerDocument }) {
@@ -101,10 +109,11 @@ export default function App() {
   } : null, [document, fontResolutions])
   const pagination = useMemo(() => {
     const startedAt = performance.now()
-    const pages = effectiveDocument ? paginateDocument(effectiveDocument) : []
+    const pages = effectiveDocument ? paginateViewerDocument(effectiveDocument) : []
     return { pages, layoutMs: performance.now() - startedAt }
   }, [effectiveDocument])
   const pages = pagination.pages
+  const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
   const virtualized = pages.length > 50 && !printing
   const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
   const pageStride = (pageHeight + 24) * zoom
@@ -235,8 +244,9 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.start * (pageHeight + 24) }} />}
         {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
-          const pageNumber = effectiveDocument.pageNumber ? formatPageNumber(effectiveDocument.pageNumber, index) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}{pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(effectiveDocument.pageNumber!.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          const decoration = decorations[index]
+          const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
       </div>}

@@ -1,4 +1,4 @@
-import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerImage, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import { HwpxPackageIndex, HwpxPackageReader } from './package_reader'
 
@@ -67,6 +67,34 @@ function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
   return { type: 'table', id, rowCount: num(node.attributes.rowCnt) || rows.length, columnCount: num(node.attributes.colCnt), width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined, pageBreak: node.attributes.pageBreak, repeatHeader: node.attributes.repeatHeader === '1', rows }
 }
 
+function decodePageNumber(nodes: OrderedXmlNode[]): ViewerPageNumber | undefined {
+  const all = walkOrderedXml(nodes)
+  const pageNum = all.find((node) => node.name === 'hp:pageNum')
+  if (!pageNum) return undefined
+  const startNum = all.find((node) => node.name === 'hp:startNum')
+  const visibility = all.find((node) => node.name === 'hp:visibility')
+  const start = num(startNum?.attributes.page)
+  return {
+    position: pageNum.attributes.pos ?? 'BOTTOM_CENTER',
+    formatType: pageNum.attributes.formatType ?? 'DIGIT',
+    sideChar: pageNum.attributes.sideChar ?? '',
+    start: start > 0 ? start : undefined,
+    hiddenOnFirstPage: visibility?.attributes.hideFirstPageNum === '1'
+  }
+}
+
+function decodeHeaderFooters(nodes: OrderedXmlNode[], name: 'hp:header' | 'hp:footer', sectionIndex: number): ViewerHeaderFooter[] {
+  return walkOrderedXml(nodes).filter((node) => node.name === name).map((node, controlIndex) => {
+    const subList = child(node, 'hp:subList')
+    const kind = name === 'hp:header' ? 'header' : 'footer'
+    return {
+      id: node.attributes.id ?? `s${sectionIndex}:${kind}${controlIndex}`,
+      applyPageType: node.attributes.applyPageType ?? 'BOTH',
+      paragraphs: subList ? children(subList, 'hp:p').map((paragraph, index) => decodeParagraph(paragraph, `s${sectionIndex}:${kind}${controlIndex}:p${index}`)) : []
+    }
+  })
+}
+
 function decodeHeader(nodes: OrderedXmlNode[]) {
   const all = walkOrderedXml(nodes)
   const fonts: Record<string, string> = {}
@@ -111,14 +139,17 @@ export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex
   const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
   const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
   const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
-  const pageNum = sectionNodes.find((node) => node.name === 'hp:pageNum')
-  const startNum = sectionNodes.find((node) => node.name === 'hp:startNum')
-  const visibility = sectionNodes.find((node) => node.name === 'hp:visibility')
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
   const sections = sectionXml.map(({ path, nodes }) => {
     const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
     const root = nodes.find((node) => node.name === 'hs:sec')
-    return { id: `section-${sectionIndex}`, blocks: root ? children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)) : [] }
+    return {
+      id: `section-${sectionIndex}`,
+      blocks: root ? children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)) : [],
+      pageNumber: decodePageNumber(nodes),
+      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex),
+      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex)
+    }
   })
   const resources = Object.fromEntries(await Promise.all(resourcePaths.map(async (path) => {
     const id = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? path
@@ -127,14 +158,7 @@ export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex
     return [id, { id, path, mime, data: (await reader.readBuffer(path)).toString('base64') }]
   })))
   return {
-    page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin) },
-    pageNumber: pageNum ? {
-      position: pageNum.attributes.pos ?? 'BOTTOM_CENTER',
-      formatType: pageNum.attributes.formatType ?? 'DIGIT',
-      sideChar: pageNum.attributes.sideChar ?? '',
-      start: Math.max(num(startNum?.attributes.page), 1),
-      hiddenOnFirstPage: visibility?.attributes.hideFirstPageNum === '1'
-    } : undefined,
+    page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin), headerOffset: num(margin?.attributes.header), footerOffset: num(margin?.attributes.footer) },
     ...header,
     resources,
     sections,

@@ -19,6 +19,7 @@ button { font: inherit; }
 .viewer-page-number-bottom-center, .viewer-page-number-top-center { left: 50%; transform: translateX(-50%); }
 .viewer-page-number-bottom-right, .viewer-page-number-top-right { right: 0; }
 .viewer-page-number-top-left, .viewer-page-number-top-center, .viewer-page-number-top-right { top: 0; bottom: auto !important; }
+.viewer-header, .viewer-footer { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; }
 .viewer-paragraph { min-height: 1em; white-space: pre-wrap; }
 .viewer-table { border-collapse: collapse; table-layout: fixed; margin: 0; }
 .viewer-table td { vertical-align: middle; overflow-wrap: anywhere; }

@@ -13,6 +13,8 @@ describe('AIDA ViewerDocument decoder', () => {
     expect(document.page).toEqual({
       width: 59528,
       height: 84188,
+      headerOffset: 2835,
+      footerOffset: 2835,
       margin: { left: 5500, right: 5669, top: 2835, bottom: 2835 }
     })
     expect(Object.keys(document.charStyles)).toHaveLength(89)

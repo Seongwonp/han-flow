@@ -1,8 +1,7 @@
 export type HwpUnit = number
 
 export interface ViewerDocument {
-  page: { width: HwpUnit; height: HwpUnit; margin: BoxSpacing }
-  pageNumber?: ViewerPageNumber
+  page: { width: HwpUnit; height: HwpUnit; margin: BoxSpacing; headerOffset: HwpUnit; footerOffset: HwpUnit }
   fonts: Record<string, string>
   charStyles: Record<string, ViewerCharStyle>
   paraStyles: Record<string, ViewerParaStyle>
@@ -16,8 +15,14 @@ export interface ViewerPageNumber {
   position: string
   formatType: string
   sideChar: string
-  start: number
+  start?: number
   hiddenOnFirstPage: boolean
+}
+
+export interface ViewerHeaderFooter {
+  id: string
+  applyPageType: string
+  paragraphs: ViewerParagraph[]
 }
 
 export interface ViewerParseTimings {
@@ -48,7 +53,7 @@ export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: num
 export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
-export interface ViewerSection { id: string; blocks: ViewerParagraph[] }
+export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
 export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutHeight: HwpUnit; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerText { type: 'text'; text: string; charStyleId: string }

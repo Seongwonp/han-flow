@@ -1,5 +1,11 @@
 import { ViewerDocument, ViewerParagraph, ViewerTable, ViewerTableRow } from '../document/viewer_document'
 
+export interface ViewerPage {
+  blocks: ViewerParagraph[]
+  sectionIndex: number
+  sectionPageIndex: number
+}
+
 function rowHeight(row: ViewerTableRow): number {
   return Math.max(...row.cells.map((cell) => Math.max(
     cell.height,
@@ -54,18 +60,29 @@ function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageC
 }
 
 export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] {
-  const pages: ViewerParagraph[][] = []
+  return paginateViewerDocument(document).map((page) => page.blocks)
+}
+
+export function paginateViewerDocument(document: ViewerDocument): ViewerPage[] {
+  const pages: ViewerPage[] = []
   const availableHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
   let current: ViewerParagraph[] = []
   let usedHeight = 0
+  let currentSectionIndex = 0
+  let sectionPageIndex = 0
   const flush = () => {
-    if (current.length) pages.push(current)
+    if (current.length) {
+      pages.push({ blocks: current, sectionIndex: currentSectionIndex, sectionPageIndex })
+      sectionPageIndex += 1
+    }
     current = []
     usedHeight = 0
   }
 
   document.sections.forEach((section, sectionIndex) => {
     if (sectionIndex > 0) flush()
+    currentSectionIndex = sectionIndex
+    sectionPageIndex = 0
     section.blocks.forEach((originalBlock) => {
       if (originalBlock.pageBreak) flush()
       const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight, availableHeight)
