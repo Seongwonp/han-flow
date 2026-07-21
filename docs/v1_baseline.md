@@ -246,7 +246,8 @@ M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 - [x] HWPUNIT 용지 크기를 Electron custom page size의 inch 단위로 변환
 - [x] 배경색 포함, 추가 margin 없는 `webContents.printToPDF`
 - [x] private AIDA 출력 PDF 8페이지/A4 검증
-- [ ] header/footer와 원본 페이지 번호 해석
+- [x] `pageNum` 위치·숫자 형식·양옆 문자와 첫 쪽 숨김 해석
+- [ ] 일반 header/footer 본문과 구역별 쪽 번호 재시작 해석
 - [ ] font metric 차이로 인한 페이지별 콘텐츠 분배 보정
 - [ ] 패키지 앱에서 사용자 저장 대화상자 수동 검증
 
@@ -256,9 +257,15 @@ private AIDA를 실제 Electron renderer에서 출력한 결과는 **8페이지,
 선명하게 유지되고 내용이 용지 밖으로 잘리지 않는 것을 확인했다. fixture, 출력 PDF, PNG는
 개인정보 때문에 저장소에 포함하지 않는다.
 
-reference와 픽셀 단위로 같지는 않다. 원본의 하단 페이지 번호와 일부 header/footer는 아직
-모델에 없고, 대체 폰트 metric 때문에 2페이지 이후 block 분배가 다르다. v1의 읽기 가능하고
-깨지지 않는 PDF 기준은 충족하지만 M3 완료 전 위 두 차이를 known limitation으로 유지한다.
+reference와 픽셀 단위로 같지는 않다. 대체 폰트 metric 때문에 2페이지 이후 block 분배가
+다르다. v1의 읽기 가능하고 깨지지 않는 PDF 기준은 충족하지만 이 차이는 known limitation으로
+유지한다.
+
+AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `startNum`,
+`visibility`를 문서 모델로 옮기고 본문 조판에 영향을 주지 않는 page decoration으로 렌더한다.
+재출력한 PDF의 1·2·8페이지에서 각각 `- 1 -`, `- 2 -`, `- 8 -`이 하단 중앙에 표시되고
+잘리지 않는 것을 확인했다. AIDA에는 별도 header/footer 본문 정의가 없으므로 이번 검증 범위는
+자동 쪽 번호까지다. 구역마다 번호 형식이나 시작 번호가 바뀌는 문서는 후속 fixture로 다룬다.
 
 첫 시도에서 custom page size를 microns로 넘겨 비정상적으로 큰 용지가 생성됐으며, Electron
 28의 `printToPDF` 계약에 맞게 inch로 수정했다. HWPUNIT→inch 단위 테스트를 추가해 A4가
