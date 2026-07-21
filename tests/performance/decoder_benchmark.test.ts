@@ -7,6 +7,22 @@ import { shouldLoadProgressively } from '../../src/core/parser/progressive_loadi
 import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
+const sampleCount = 20
+
+function percentile(samples: number[], ratio: number): number {
+  const sorted = [...samples].sort((left, right) => left - right)
+  return sorted[Math.ceil(sorted.length * ratio) - 1]
+}
+
+function summarize(samples: number[]): { p50: number; p95: number; min: number; max: number } {
+  const round = (value: number) => Math.round(value * 10) / 10
+  return {
+    p50: round(percentile(samples, 0.5)),
+    p95: round(percentile(samples, 0.95)),
+    min: round(Math.min(...samples)),
+    max: round(Math.max(...samples))
+  }
+}
 
 describe('대형 synthetic HWPX 디코더 기준선', () => {
   benchmark('첫 section과 전체 section 비용을 비교한다', async () => {
@@ -22,21 +38,31 @@ describe('대형 synthetic HWPX 디코더 기준선', () => {
       const reader = await HwpxPackageReader.open(fixture)
       const index = await reader.index()
 
-      const firstStartedAt = performance.now()
-      const first = await decodeViewerDocument(reader, index, { sectionPaths: [index.sectionPaths[0]] })
-      const firstSectionMs = performance.now() - firstStartedAt
+      const firstSectionSamples: number[] = []
+      const fullDocumentSamples: number[] = []
+      let first: Awaited<ReturnType<typeof decodeViewerDocument>> | undefined
+      let full: Awaited<ReturnType<typeof decodeViewerDocument>> | undefined
+      for (let sample = 0; sample < sampleCount; sample += 1) {
+        const firstStartedAt = performance.now()
+        first = await decodeViewerDocument(reader, index, { sectionPaths: [index.sectionPaths[0]] })
+        firstSectionSamples.push(performance.now() - firstStartedAt)
 
-      const fullStartedAt = performance.now()
-      const full = await decodeViewerDocument(reader, index)
-      const fullDocumentMs = performance.now() - fullStartedAt
+        const fullStartedAt = performance.now()
+        full = await decodeViewerDocument(reader, index)
+        fullDocumentSamples.push(performance.now() - fullStartedAt)
+      }
+
+      const firstSection = summarize(firstSectionSamples)
+      const fullDocument = summarize(fullDocumentSamples)
 
       const result = {
         fileBytes: statSync(fixture).size,
         sectionCount: index.sectionPaths.length,
-        paragraphCount: full.sections.reduce((sum, section) => sum + section.blocks.length, 0),
-        firstSectionMs: Math.round(firstSectionMs * 10) / 10,
-        fullDocumentMs: Math.round(fullDocumentMs * 10) / 10,
-        speedup: Math.round((fullDocumentMs / firstSectionMs) * 10) / 10
+        paragraphCount: full!.sections.reduce((sum, section) => sum + section.blocks.length, 0),
+        sampleCount,
+        firstSectionMs: firstSection,
+        fullDocumentMs: fullDocument,
+        p50Speedup: Math.round((fullDocument.p50 / firstSection.p50) * 10) / 10
       }
       console.log('HAN_FLOW_DECODE_BENCHMARK', JSON.stringify(result))
 
@@ -52,9 +78,9 @@ describe('대형 synthetic HWPX 디코더 기준선', () => {
         progressive: shouldLoadProgressively(largeSectionIndex)
       }))
 
-      expect(first.sections).toHaveLength(1)
-      expect(full.sections).toHaveLength(80)
-      expect(fullDocumentMs).toBeGreaterThan(firstSectionMs)
+      expect(first!.sections).toHaveLength(1)
+      expect(full!.sections).toHaveLength(80)
+      expect(fullDocument.p50).toBeGreaterThan(firstSection.p50)
       expect(largeSectionIndex.sectionPaths).toHaveLength(2)
       expect(shouldLoadProgressively(largeSectionIndex)).toBe(true)
     } finally {
