@@ -46,7 +46,9 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     expect(pages).toHaveLength(3)
     const fragments = pages.flat().filter((block) => block.id.includes(':fragment'))
     expect(fragments).toHaveLength(2)
+    const firstTable = fragments[0].content.find((content) => content.type === 'table')
     const secondTable = fragments[1].content.find((content) => content.type === 'table')
+    expect(firstTable?.type === 'table' ? firstTable.rows[0].cells[0].header : false).toBe(true)
     expect(secondTable?.type === 'table' ? secondTable.rows[0].cells[0].header : false).toBe(true)
 
     const viewerPages = paginateViewerDocument(document)

@@ -33,8 +33,8 @@ function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageC
   const fragments: ViewerParagraph[] = []
   const headerRows = table.repeatHeader ? table.rows.filter((row) => row.cells.some((cell) => cell.header)) : []
   const bodyRows = table.rows.filter((row) => !headerRows.includes(row))
-  let currentRows: ViewerTableRow[] = []
-  let used = 0
+  let currentRows: ViewerTableRow[] = [...headerRows]
+  let used = headerRows.reduce((sum, row) => sum + rowHeight(row), 0)
   let capacity = firstCapacity
 
   const flush = () => {
