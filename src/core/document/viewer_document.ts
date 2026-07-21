@@ -49,12 +49,13 @@ export interface ViewerDocumentComplete {
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; fontId?: string; fontFamily?: string }
-export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; margin: BoxSpacing }
+export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; margin: BoxSpacing; heading?: ViewerHeadingStyle }
+export interface ViewerHeadingStyle { type: string; idRef: string; level: number; bullet?: string; numberPattern?: string; numberFormat?: string }
 export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
 export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
-export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutHeight: HwpUnit; content: ViewerContent[] }
+export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerText { type: 'text'; text: string; charStyleId: string }
 export interface ViewerImage { type: 'image'; resourceId?: string; width?: HwpUnit; height?: HwpUnit }

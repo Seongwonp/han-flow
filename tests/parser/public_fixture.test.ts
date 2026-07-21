@@ -38,6 +38,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     expect(document.sections[0].headers[0].paragraphs[0].content).toContainEqual({ type: 'text', text: '공개 머리말', charStyleId: '0' })
     expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual({ type: 'text', text: '공개 꼬리말', charStyleId: '0' })
     expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual({ type: 'image', resourceId: 'image1', width: 200, height: 200 })
+    expect(document.sections[0].footers[0].paragraphs.map((paragraph) => paragraph.marker)).toEqual(['-', '1.', '2.'])
     expect(document.charStyles['0']).toMatchObject({ fontFamily: 'HanFlow Test Sans', bold: true, color: '#123456' })
     expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })
 

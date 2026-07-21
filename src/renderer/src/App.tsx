@@ -49,7 +49,7 @@ function ParagraphView({ paragraph, document }: { paragraph: ViewerParagraph; do
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  return <div className="viewer-paragraph" style={css}>{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
+  return <div className="viewer-paragraph" style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
 }
 
 function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {

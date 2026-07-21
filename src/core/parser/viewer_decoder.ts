@@ -106,10 +106,22 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
     charStyles[style.attributes.id] = { id: style.attributes.id, height: num(style.attributes.height), color: style.attributes.textColor ?? '#000000', bold: Boolean(child(style, 'hh:bold')), fontId: ref, fontFamily: ref ? fonts[ref] : undefined }
   })
   const paraStyles: Record<string, ViewerParaStyle> = {}
+  const bullets = Object.fromEntries(all.filter((node) => node.name === 'hh:bullet').map((node) => [node.attributes.id, node.attributes.char ?? '•']))
+  const numberings = Object.fromEntries(all.filter((node) => node.name === 'hh:numbering').map((node) => [node.attributes.id, children(node, 'hh:paraHead').map((head) => ({ pattern: textOf(head), format: head.attributes.numFormat ?? 'DIGIT' }))]))
   all.filter((node) => node.name === 'hh:paraPr').forEach((style) => {
     const marginNode = child(style, 'hh:margin')
     const getValue = (name: string) => num(child(marginNode ?? style, name)?.attributes.value)
-    paraStyles[style.attributes.id] = { id: style.attributes.id, align: child(style, 'hh:align')?.attributes.horizontal, lineSpacing: num(child(style, 'hh:lineSpacing')?.attributes.value), margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') } }
+    const heading = child(style, 'hh:heading')
+    const level = num(heading?.attributes.level)
+    const idRef = heading?.attributes.idRef ?? '0'
+    const numbering = numberings[idRef]?.[level]
+    paraStyles[style.attributes.id] = {
+      id: style.attributes.id,
+      align: child(style, 'hh:align')?.attributes.horizontal,
+      lineSpacing: num(child(style, 'hh:lineSpacing')?.attributes.value),
+      margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') },
+      heading: heading ? { type: heading.attributes.type ?? 'NONE', idRef, level, bullet: bullets[idRef], numberPattern: numbering?.pattern, numberFormat: numbering?.format } : undefined
+    }
   })
   const border = (node?: OrderedXmlNode): ViewerBorder => ({
     type: node?.attributes.type ?? 'NONE',
@@ -131,6 +143,26 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   return { fonts, charStyles, paraStyles, cellStyles }
 }
 
+function applyParagraphMarkers(paragraphs: ViewerParagraph[], paraStyles: Record<string, ViewerParaStyle>): ViewerParagraph[] {
+  const counters: Record<string, number> = {}
+  return paragraphs.map((paragraph) => {
+    const heading = paraStyles[paragraph.paraStyleId]?.heading
+    let marker: string | undefined
+    if (heading?.type === 'BULLET') marker = heading.bullet
+    if (heading?.type === 'NUMBER') {
+      const key = `${heading.idRef}:${heading.level}`
+      counters[key] = (counters[key] ?? 0) + 1
+      const token = `^${heading.level + 1}`
+      marker = heading.numberPattern?.replace(token, String(counters[key])) || `${counters[key]}.`
+    }
+    const content = paragraph.content.map((item) => item.type === 'table' ? {
+      ...item,
+      rows: item.rows.map((row) => ({ ...row, cells: row.cells.map((cell) => ({ ...cell, paragraphs: applyParagraphMarkers(cell.paragraphs, paraStyles) })) }))
+    } : item)
+    return { ...paragraph, marker, content }
+  })
+}
+
 export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
   const index = knownIndex ?? await reader.index()
   const sectionPaths = options.sectionPaths ?? index.sectionPaths
@@ -145,10 +177,10 @@ export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex
     const root = nodes.find((node) => node.name === 'hs:sec')
     return {
       id: `section-${sectionIndex}`,
-      blocks: root ? children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)) : [],
+      blocks: root ? applyParagraphMarkers(children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)), header.paraStyles) : [],
       pageNumber: decodePageNumber(nodes),
-      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex),
-      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex)
+      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex).map((control) => ({ ...control, paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles) })),
+      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex).map((control) => ({ ...control, paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles) }))
     }
   })
   const resources = Object.fromEntries(await Promise.all(resourcePaths.map(async (path) => {
