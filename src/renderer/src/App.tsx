@@ -195,7 +195,7 @@ export default function App() {
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
-        .map((page) => page.scrollHeight > page.clientHeight + 1 ? Number(page.dataset.pageIndex) + 1 : 0)
+        .map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0)
         .filter(Boolean)
       setOverflowPages(overflow)
     })

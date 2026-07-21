@@ -10,6 +10,8 @@ import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 import { shouldLoadProgressively } from '../core/parser/progressive_loading'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+const isE2E = process.env['HAN_FLOW_E2E'] === '1'
+const testValue = (name: string): string | undefined => isDev || isE2E ? process.env[name] : undefined
 const processStartedAt = Date.now()
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
@@ -54,7 +56,7 @@ function pathFromArguments(arguments_: string[]): string | undefined {
 }
 
 function captureVisualState(window: BrowserWindow): void {
-  const capturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
+  const capturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   if (!capturePath) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
   setTimeout(async () => {
@@ -79,7 +81,7 @@ function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
 }
 
 function createWindow(initialOpen?: { filePath: string; receivedAt: number }): void {
-  const visualCapturePath = isDev ? process.env['HAN_FLOW_VISUAL_CAPTURE_PATH'] : undefined
+  const visualCapturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -113,8 +115,8 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
-  const visualTestFile = isDev ? process.env['HAN_FLOW_VISUAL_TEST_FILE'] : undefined
-  const pdfTestPath = isDev ? process.env['HAN_FLOW_PDF_EXPORT_PATH'] : undefined
+  const visualTestFile = testValue('HAN_FLOW_VISUAL_TEST_FILE')
+  const pdfTestPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
   const openPath = visualTestFile ?? initialOpen?.filePath
   const openReceivedAt = visualTestFile ? processStartedAt : initialOpen?.receivedAt
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
@@ -149,7 +151,7 @@ app.whenReady().then(() => {
     if (![pageSize.width, pageSize.height].every((value) => Number.isFinite(value) && value >= 0.1 && value <= 200)) {
       throw new Error('PDF 용지 크기가 올바르지 않습니다.')
     }
-    const testPath = isDev ? process.env['HAN_FLOW_PDF_EXPORT_PATH'] : undefined
+    const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
     const targetPath = testPath ?? (await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) ?? undefined, {
       title: 'PDF로 내보내기',
       defaultPath: '문서.pdf',
