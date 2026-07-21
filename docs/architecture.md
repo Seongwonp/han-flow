@@ -81,6 +81,11 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - `npm run benchmark:decoder` 대형 문서 기준선
 - 화면/PDF 페이지 수, overflow, font substitution 진단
 
+production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1`을 설정한다. 이 모드에서는
+개발용 visual capture와 고정 PDF 출력 경로를 패키지 앱에서도 사용할 수 있다. 환경 변수가
+없는 일반 패키지 실행은 항상 macOS 저장 대화상자를 사용한다. overflow는 세로뿐 아니라
+가로 `scrollWidth`도 검사하며, 표는 본문 너비를 넘지 않도록 축소한다.
+
 ## v1 이후
 
 `.hwp` 바이너리 열람은 v2에서 기존 파서 활용을 검토한다. 텍스트·표·이미지 편집과 안전한

@@ -249,7 +249,8 @@ M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 - [x] `pageNum` 위치·숫자 형식·양옆 문자와 첫 쪽 숨김 해석
 - [x] 일반 header/footer 본문과 구역별 쪽 번호 재시작 해석
 - [ ] font metric 차이로 인한 페이지별 콘텐츠 분배 보정
-- [ ] 패키지 앱에서 사용자 저장 대화상자 수동 검증
+- [x] production 패키지에서 파일 열기·연속 열기·PDF 생성 E2E 검증
+- [ ] 패키지 앱에서 사용자 저장 대화상자 수동 클릭 검증
 
 private AIDA를 실제 Electron renderer에서 출력한 결과는 **8페이지, 595.92 × 841.92pt
 (A4), PDF 1.4**다. reference PDF도 8페이지 A4다. 출력 PDF의 1·2·8페이지를 Poppler로
@@ -277,6 +278,29 @@ AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `
 첫 시도에서 custom page size를 microns로 넘겨 비정상적으로 큰 용지가 생성됐으며, Electron
 28의 `printToPDF` 계약에 맞게 inch로 수정했다. HWPUNIT→inch 단위 테스트를 추가해 A4가
 약 8.27 × 11.69 inch로 변환되는지 회귀 검증한다.
+
+## production 패키지·글꼴 기준선 (2026-07-21)
+
+`release/mac-arm64/Han-Flow.app`을 개발 서버 없이 실행해 private AIDA를 열었다. 첫 실행은
+588~615ms, 실행 중인 single-instance에 같은 문서를 다시 전달했을 때는 102ms였다. 두 경우
+모두 8페이지, 이미지 4개 decode 완료, font substitution 16개, overflow 0이다. production
+bundle의 PDF 자동 출력도 8페이지 A4로 완료됐다. 테스트 자동화는 일반 실행에서 비활성화되고
+`HAN_FLOW_E2E=1`일 때만 capture/output 환경 변수를 허용한다.
+
+reference PDF와 production PDF의 페이지별 텍스트 위치를 비교했다. 일반 본문 글꼴 중앙값은
+9.33pt 대비 9.0pt, 큰 제목은 13.33pt 대비 13.0pt와 15.33pt 대비 15.0pt로 약 0.33pt 작다.
+reference 249행 대비 출력 224행이며, 가장 큰 차이는 2·3페이지다. reference가 2페이지에
+연속 배치한 창업팀 설명을 현재 block pagination은 3페이지로 넘겨 페이지별 텍스트 유사도가
+각각 0.598, 0.318이지만 두 페이지 합계 글자 수는 동일하다. 4·5·7페이지는 1.0, 8페이지는
+0.998로 텍스트 순서가 일치한다.
+
+측정 중 6페이지의 넓은 비즈니스 모델 표가 오른쪽에서 잘리는 문제를 발견했다. table을 본문
+폭 이하로 제한하고 overflow 진단에 `scrollWidth`를 추가했다. 수정 후 누락 차이는 한글·영문
+0자이며, reference에만 있는 48자는 목록 하이픈 37개와 마침표·번호 등 자동 목록 표식이다.
+따라서 남은 M3 정확도 과제는 (1) bullet/numbering 표식 해석, (2) 대체 글꼴 metric과 block
+pagination을 함께 보정해 2·3페이지 콘텐츠 분배를 reference에 가깝게 만드는 것이다. 저장
+대화상자 자체의 마우스 클릭은 현재 자동화 프로세스에 macOS 보조 접근 권한이 없어 수동 확인
+항목으로 유지한다.
 
 ## 구현 현황 (2026-07-20)
 
