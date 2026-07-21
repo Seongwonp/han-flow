@@ -49,7 +49,8 @@ npm run package:mac
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
-않았으며, 배포 전 Developer ID 서명과 notarization이 필요합니다.
+않았으며, 전용 아이콘은 적용되어 있습니다. 배포 전 Developer ID 서명과 notarization이
+필요합니다.
 
 ## 구조
 

@@ -272,7 +272,7 @@ reference와 픽셀 단위로 같지는 않다. 대체 폰트 metric 때문에 2
 - [x] `⌘+`, `⌘-`, `⌘0` 확대 단축키
 - [x] 50–200% zoom 범위와 확대 기준점의 세로 스크롤 보존
 - [x] 글꼴 대체·페이지 overflow·열기 시간 상태 진단
-- [ ] 전용 앱 아이콘
+- [x] 전용 앱 아이콘과 ICNS 패키지 적용
 - [ ] `/Applications` 설치 후 Finder 기본 앱·더블클릭 검증
 - [ ] Developer ID 서명과 notarization
 
@@ -283,6 +283,13 @@ zoom 계산은 renderer 밖의 순수 함수로 분리해 최소·최대 범위�
 핀치 줌 포함 production 패키지에서 private AIDA는 **8페이지 / 이미지 4개 / overflow 0 /
 첫 화면 631ms**를 유지했다. 자동화 환경은 물리 트랙패드 gesture를 생성하지 못하므로 실제
 손가락 감도와 관성은 패키지 앱 수동 확인 항목으로 남긴다.
+
+전용 아이콘은 Han-Flow의 파란색 `#335eea` 계열 rounded tile, 흰 문서, 흐르는 선을 사용하며
+글자 없이 작은 Dock 크기에서도 형태가 남도록 구성했다. 1024px 투명 PNG에서 ICNS를 생성해
+`electron-builder`의 mac icon으로 연결했다. production `.app`의 `CFBundleIconFile`은
+`icon.icns`이며 패키지 내부 파일의 SHA-256이 source ICNS와 일치한다. 생성 중간 자산은 제외하고
+`build/icon.png`와 `build/icon.icns`만 저장소에서 추적한다. 아이콘 적용 production 앱도
+**8페이지 / 이미지 4개 / overflow 0 / 첫 화면 635ms**로 기존 렌더 기준을 유지했다.
 
 AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `startNum`,
 `visibility`를 문서 모델로 옮기고 본문 조판에 영향을 주지 않는 page decoration으로 렌더한다.
