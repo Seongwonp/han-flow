@@ -119,6 +119,10 @@ Thumbs.db:encoding/smb
 *.asar.unpacked
 release/
 build/
+!build/
+build/*
+!build/icon.png
+!build/icon.icns
 
 # Vite
 .vite/
