@@ -19,6 +19,11 @@ parser는 React와 CSS를 모르고 renderer는 ZIP/XML을 해석하지 않는�
 HWPUNIT 정수로 유지하고 화면 경계에서만 CSS px로 변환한다. 동일 입력은 source 위치 기반의
 결정적 ID를 만들어 테스트와 캐시가 재현 가능해야 한다.
 
+paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
+결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
+renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를
+지원하며 다른 번호 체계는 원문 format 정보를 모델에 보존한 뒤 후속 formatter에서 확장한다.
+
 ## 프로세스 책임
 
 ### Electron main

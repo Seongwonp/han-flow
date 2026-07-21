@@ -62,6 +62,11 @@ header/footer의 `subList`는 일반 문단 디코더를 재사용한다. pagina
 남겨 새 구역의 번호 재시작과 장식 교체를 결정하며, 정의가 없으면 이전 구역 상태를 상속한다.
 `startNum page="0"`은 연속 번호, 양수는 해당 값에서 재시작으로 처리한다.
 
+문단 목록 표식은 `hh:bullets`, `hh:numberings/hh:paraHead`를 먼저 ID map으로 만들고
+`hh:paraPr/hh:heading`의 type, idRef, level과 결합한다. bullet 문자는 그대로 사용하고 DIGIT
+number pattern의 해당 level token(`^1` 등)을 목록 순번으로 치환한다. marker는 본문과
+header/footer 및 표 cell 문단에 같은 방식으로 적용한다.
+
 ## 4. 대형 문서
 
 section 20개 이상 또는 압축 전 2MiB 이상 section이 있으면 worker thread에서 디코딩한다.

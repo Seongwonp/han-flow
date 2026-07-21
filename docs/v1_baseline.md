@@ -296,9 +296,17 @@ reference 249행 대비 출력 224행이며, 가장 큰 차이는 2·3페이지�
 
 측정 중 6페이지의 넓은 비즈니스 모델 표가 오른쪽에서 잘리는 문제를 발견했다. table을 본문
 폭 이하로 제한하고 overflow 진단에 `scrollWidth`를 추가했다. 수정 후 누락 차이는 한글·영문
-0자이며, reference에만 있는 48자는 목록 하이픈 37개와 마침표·번호 등 자동 목록 표식이다.
-따라서 남은 M3 정확도 과제는 (1) bullet/numbering 표식 해석, (2) 대체 글꼴 metric과 block
-pagination을 함께 보정해 2·3페이지 콘텐츠 분배를 reference에 가깝게 만드는 것이다. 저장
+0자였다.
+
+OWPML `bullets`, `numberings/paraHead`, `paraPr/heading`을 연결해 문자 bullet과 DIGIT 번호
+pattern을 문단 marker로 렌더한다. AIDA의 목록 하이픈 37개와 번호·마침표가 복원되어 reference
+6,077자 대비 production PDF 6,076자다. 남은 1자는 화면에 보이지 않는 한글 채움 문자 `ㅤ`
+뿐이며 표시 본문 유실은 0으로 본다. 공개 fixture는 `-`, `1.`, `2.` marker를 회귀 검증한다.
+
+2·3페이지는 `lineseg vertpos` 되감기를 원본 페이지 경계로 적용하는 실험도 했다. 페이지 수는
+8로 유지됐지만 Apple 대체 글꼴의 폭 때문에 2페이지 DOM이 넘쳐 v1의 레이아웃 안전 기준을
+위반했다. 이 변경은 채택하지 않았다. 남은 M3 정확도 과제는 폰트 번들 가능 여부를 먼저
+결정한 뒤 font metric과 block pagination을 함께 보정하는 것이다. 저장
 대화상자 자체의 마우스 클릭은 현재 자동화 프로세스에 macOS 보조 접근 권한이 없어 수동 확인
 항목으로 유지한다.
 
