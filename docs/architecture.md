@@ -97,7 +97,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
 
 production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1`을 설정한다. 이 모드에서는
-개발용 visual capture와 고정 PDF 출력 경로를 패키지 앱에서도 사용할 수 있다. 환경 변수가
+개발용 visual capture, 앱 성능 측정과 고정 PDF 출력 경로를 패키지 앱에서도 사용할 수 있다. 환경 변수가
 없는 일반 패키지 실행은 항상 macOS 저장 대화상자를 사용한다. overflow는 세로뿐 아니라
 가로 `scrollWidth`도 검사하며, 표는 본문 너비를 넘지 않도록 축소한다.
 

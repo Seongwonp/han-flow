@@ -46,11 +46,16 @@ npm run dev
 npm test -- --runInBand
 npm run build
 npm run package:mac
+npm run benchmark:app -- /path/to/document.hwpx
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
 않았으며, 전용 아이콘은 적용되어 있습니다. 배포 전 Developer ID 서명과 notarization이
 필요합니다.
+
+`benchmark:app`은 패키지 앱을 사용해 같은 프로세스의 warm open 20회와 새 프로세스의 cold
+open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. 입력 문서의 본문은 출력하지
+않으며 먼저 `npm run package:mac`을 실행해야 합니다.
 
 macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
 `com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의

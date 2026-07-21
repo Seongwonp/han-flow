@@ -194,11 +194,17 @@ private AIDA 기준 문서의 개발 앱 warm-open 유효 표본 5회는 **116, 
 패키지 인덱스는 약 1ms였다. 패키지 앱을 종료한 뒤 LaunchServices로 다시 연 콜드 실행은
 **열기 → 첫 화면 304ms**, 8페이지/overflow 0이었다.
 
-이 측정은 2026-07-20의 한 기기와 한 문서에 대한 기준선이며 통계적으로 충분한 p95나 모든
-문서의 1초 보장을 뜻하지 않는다. LaunchServices가 프로세스를 띄우기 전의 OS 지연도 포함하지
-않는다. 다만 현재 문서에서는 ZIP 인덱스와 layout보다 XML 전체 디코딩 및 모델 IPC 전달이 큰
-비용임을 확인했다. 다음 단계에서는 큰 문서 fixture를 추가하고 첫 section 우선 decode가
-필요한 크기 임계값을 측정한다.
+2026-07-21 production 패키지 자동 측정에서 같은 프로세스의 warm open 20회는
+**p50 86ms / p95 126ms**(min 78ms, max 127ms), 매회 새 프로세스를 사용한 cold open 20회는
+**p50 468ms / p95 491ms**(min 451ms, max 498ms)였다. 두 조건 모두 현재 AIDA 문서에서
+1초 목표를 충족했다. `npm run benchmark:app -- <fixture.hwpx>`가 격리된 Electron user-data
+경로로 single-instance 충돌을 피하고 결과 JSON을 수집한다. 첫 warm 표본은 앱 기동 영향을
+제거하기 위해 버리고 이어지는 20회만 집계한다.
+
+이 측정은 한 기기와 0.93MB·8페이지 문서에 대한 기준선이며 모든 문서의 1초 보장을 뜻하지
+않는다. cold 수치는 main 모듈 시작부터 재므로 macOS가 프로세스를 시작하기 전의 Finder 및
+LaunchServices 지연은 포함하지 않는다. 실제 대형 HWPX를 확보하면 같은 명령으로 다시
+측정해야 한다.
 
 ### 대형 문서 점진 로딩 기준선
 
@@ -228,8 +234,8 @@ resource를 먼저 반환하고 전체 문서도 별도 worker 작업으로 deco
 
 ## 다음 구현 단위
 
-M2 핵심 구현은 완료했다. 공개 synthetic 디코더의 20회 p50/p95 측정 장치도 마련했다.
-남은 것은 실제 대형 문서를 사용한 앱 전체 구간 통계 검증이다.
+M2 핵심 구현과 AIDA 앱 전체 warm/cold 20회 통계 검증은 완료했다. 공개 synthetic 디코더의
+20회 p50/p95 측정 장치도 마련했다. 남은 것은 실제 대형 문서를 사용한 동일 검증이다.
 
 1. 실제 대형 HWPX를 확보해 warm/cold 각 20회 이상 측정하고 1초 목표의 p50/p95 기록
 2. 실제 사용에서 1초를 넘는 문서가 발견되면 참조 resource 우선 로딩 검토
