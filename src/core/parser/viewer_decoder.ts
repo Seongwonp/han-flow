@@ -109,7 +109,11 @@ export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex
   const resourcePaths = options.resourcePaths ?? index.resourcePaths
   const header = decodeHeader(await reader.readOrderedXml(index.headerPath))
   const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
-  const pagePr = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes)).find((node) => node.name === 'hp:pagePr')
+  const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
+  const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
+  const pageNum = sectionNodes.find((node) => node.name === 'hp:pageNum')
+  const startNum = sectionNodes.find((node) => node.name === 'hp:startNum')
+  const visibility = sectionNodes.find((node) => node.name === 'hp:visibility')
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
   const sections = sectionXml.map(({ path, nodes }) => {
     const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
@@ -124,6 +128,13 @@ export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex
   })))
   return {
     page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin) },
+    pageNumber: pageNum ? {
+      position: pageNum.attributes.pos ?? 'BOTTOM_CENTER',
+      formatType: pageNum.attributes.formatType ?? 'DIGIT',
+      sideChar: pageNum.attributes.sideChar ?? '',
+      start: Math.max(num(startNum?.attributes.page), 1),
+      hiddenOnFirstPage: visibility?.attributes.hideFirstPageNum === '1'
+    } : undefined,
     ...header,
     resources,
     sections,

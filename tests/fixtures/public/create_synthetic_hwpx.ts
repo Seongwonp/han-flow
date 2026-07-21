@@ -13,7 +13,7 @@ const cell = (row: number, height: number, label: string, headerCell = false) =>
 
 const section0 = `<?xml version="1.0" encoding="UTF-8"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
-  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="10000" height="10000"><hp:margin left="1000" right="1000" top="1000" bottom="1000"/></hp:pagePr></hp:secPr><hp:tbl id="public-table" rowCnt="4" colCnt="1" pageBreak="CELL" repeatHeader="1"><hp:sz width="6000" height="7500"/>${cell(0, 1000, '공개 헤더', true)}${cell(1, 3000, '긴 설명')}${cell(2, 500, '다음 제목')}${cell(3, 3000, '다음 본문')}</hp:tbl></hp:run></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:startNum page="0"/><hp:visibility hideFirstPageNum="0"/><hp:pagePr width="10000" height="10000"><hp:margin left="1000" right="1000" top="1000" bottom="1000"/></hp:pagePr><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:secPr><hp:tbl id="public-table" rowCnt="4" colCnt="1" pageBreak="CELL" repeatHeader="1"><hp:sz width="6000" height="7500"/>${cell(0, 1000, '공개 헤더', true)}${cell(1, 3000, '긴 설명')}${cell(2, 500, '다음 제목')}${cell(3, 3000, '다음 본문')}</hp:tbl></hp:run></hp:p>
 </hs:sec>`
 
 const section1 = `<?xml version="1.0" encoding="UTF-8"?>

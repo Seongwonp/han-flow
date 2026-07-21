@@ -3,6 +3,7 @@ import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete,
 import { hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateDocument } from '../../core/layout/pagination'
+import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 
 const api = () => (window as any).api
 
@@ -234,7 +235,8 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.start * (pageHeight + 24) }} />}
         {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}</article>
+          const pageNumber = effectiveDocument.pageNumber ? formatPageNumber(effectiveDocument.pageNumber, index) : undefined
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}>{page.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}{pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(effectiveDocument.pageNumber!.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
       </div>}

@@ -2,6 +2,7 @@ export type HwpUnit = number
 
 export interface ViewerDocument {
   page: { width: HwpUnit; height: HwpUnit; margin: BoxSpacing }
+  pageNumber?: ViewerPageNumber
   fonts: Record<string, string>
   charStyles: Record<string, ViewerCharStyle>
   paraStyles: Record<string, ViewerParaStyle>
@@ -9,6 +10,14 @@ export interface ViewerDocument {
   resources: Record<string, ViewerResource>
   sections: ViewerSection[]
   diagnostics: ViewerDiagnostic[]
+}
+
+export interface ViewerPageNumber {
+  position: string
+  formatType: string
+  sideChar: string
+  start: number
+  hiddenOnFirstPage: boolean
 }
 
 export interface ViewerParseTimings {

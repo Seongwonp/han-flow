@@ -14,6 +14,11 @@ button { font: inherit; }
 .viewer-pages-virtualized { gap: 24px; }
 .viewer-page-spacer { flex: none; width: 1px; }
 .viewer-page { position: relative; flex: none; background: white; box-shadow: 0 5px 24px rgba(20,25,35,.22); overflow: hidden; color: #111; }
+.viewer-page-number { position: absolute; z-index: 1; font-family: "Apple SD Gothic Neo", sans-serif; font-size: 9pt; line-height: 1; white-space: nowrap; }
+.viewer-page-number-bottom-left, .viewer-page-number-top-left { left: 0; }
+.viewer-page-number-bottom-center, .viewer-page-number-top-center { left: 50%; transform: translateX(-50%); }
+.viewer-page-number-bottom-right, .viewer-page-number-top-right { right: 0; }
+.viewer-page-number-top-left, .viewer-page-number-top-center, .viewer-page-number-top-right { top: 0; bottom: auto !important; }
 .viewer-paragraph { min-height: 1em; white-space: pre-wrap; }
 .viewer-table { border-collapse: collapse; table-layout: fixed; margin: 0; }
 .viewer-table td { vertical-align: middle; overflow-wrap: anywhere; }

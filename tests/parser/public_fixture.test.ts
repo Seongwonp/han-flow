@@ -31,6 +31,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
   test('스타일·표·이미지를 해석하고 표를 반복 헤더와 함께 나눈다', async () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
     expect(document.page).toEqual({ width: 10000, height: 10000, margin: { left: 1000, right: 1000, top: 1000, bottom: 1000 } })
+    expect(document.pageNumber).toEqual({ position: 'BOTTOM_CENTER', formatType: 'DIGIT', sideChar: '-', start: 1, hiddenOnFirstPage: false })
     expect(document.charStyles['0']).toMatchObject({ fontFamily: 'HanFlow Test Sans', bold: true, color: '#123456' })
     expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })
 
