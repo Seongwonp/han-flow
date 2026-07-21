@@ -93,6 +93,7 @@ export default function App() {
   const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
   const [overflowPages, setOverflowPages] = useState<number[]>([])
   const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
+  const reportedBenchmark = useRef<number | null>(null)
   const [sectionProgress, setSectionProgress] = useState<{ loaded: number; total: number } | null>(null)
   const [backgroundError, setBackgroundError] = useState<string | null>(null)
   const [printing, setPrinting] = useState(false)
@@ -176,6 +177,11 @@ export default function App() {
     })
     return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame) }
   }, [document, loadTiming, pages.length])
+  useEffect(() => {
+    if (loadTiming?.openToFirstPaintMs === undefined || reportedBenchmark.current === loadTiming.requestStartedAt) return
+    reportedBenchmark.current = loadTiming.requestStartedAt
+    void api().reportBenchmark(loadTiming)
+  }, [loadTiming])
   useEffect(() => {
     const query = new URLSearchParams(window.location.search)
     const initialPath = query.get('open')

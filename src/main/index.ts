@@ -13,6 +13,12 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
 const testValue = (name: string): string | undefined => isDev || isE2E ? process.env[name] : undefined
 const processStartedAt = Date.now()
+const benchmarkFile = testValue('HAN_FLOW_BENCHMARK_FILE')
+const benchmarkOutput = testValue('HAN_FLOW_BENCHMARK_OUTPUT')
+const benchmarkRuns = Math.max(1, Number(testValue('HAN_FLOW_BENCHMARK_RUNS') ?? 1))
+const benchmarkMeasurements: unknown[] = []
+const benchmarkUserData = testValue('HAN_FLOW_BENCHMARK_USER_DATA')
+if (benchmarkUserData) app.setPath('userData', benchmarkUserData)
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
 const decodeWorkers = new Map<number, Worker>()
@@ -117,8 +123,8 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   // Load the remote URL for development or the local html file for production.
   const visualTestFile = testValue('HAN_FLOW_VISUAL_TEST_FILE')
   const pdfTestPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
-  const openPath = visualTestFile ?? initialOpen?.filePath
-  const openReceivedAt = visualTestFile ? processStartedAt : initialOpen?.receivedAt
+  const openPath = benchmarkFile ?? visualTestFile ?? initialOpen?.filePath
+  const openReceivedAt = benchmarkFile || visualTestFile ? processStartedAt : initialOpen?.receivedAt
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
     if (openPath) rendererUrl.searchParams.set('open', openPath)
@@ -147,6 +153,17 @@ if (!hasSingleInstanceLock) {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('benchmark:complete', async (_event, timing: unknown) => {
+    if (!benchmarkFile || !benchmarkOutput) return false
+    benchmarkMeasurements.push(timing)
+    if (benchmarkMeasurements.length < benchmarkRuns) {
+      setTimeout(() => deliverOpenPath(benchmarkFile), 25)
+      return true
+    }
+    await writeFile(benchmarkOutput, JSON.stringify({ measurements: benchmarkMeasurements }, null, 2))
+    app.quit()
+    return true
+  })
   ipcMain.handle('pdf:export', async (event, pageSize: { width: number; height: number }) => {
     if (![pageSize.width, pageSize.height].every((value) => Number.isFinite(value) && value >= 0.1 && value <= 200)) {
       throw new Error('PDF 용지 크기가 올바르지 않습니다.')
