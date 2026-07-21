@@ -24,6 +24,18 @@ const api = {
     ipcRenderer.on('hwpx:error', handler)
     return () => ipcRenderer.removeListener('hwpx:error', handler)
   },
+  onPreparePdf: (listener: (requestId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId)
+    ipcRenderer.on('pdf:prepare', handler)
+    return () => ipcRenderer.removeListener('pdf:prepare', handler)
+  },
+  onFinishPdf: (listener: (requestId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId)
+    ipcRenderer.on('pdf:finish', handler)
+    return () => ipcRenderer.removeListener('pdf:finish', handler)
+  },
+  pdfReady: (requestId: string) => ipcRenderer.send('pdf:ready', requestId),
+  exportPdf: (pageSize: { width: number; height: number }) => ipcRenderer.invoke('pdf:export', pageSize),
   parseHWPX: (filePath: string, loadId: string) => ipcRenderer.invoke('hwpx:parse', { filePath, loadId }),
   saveHWPX: (filePath: string, doc: any) => ipcRenderer.invoke('hwpx:save', { filePath, doc })
 }

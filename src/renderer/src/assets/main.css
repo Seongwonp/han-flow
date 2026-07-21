@@ -28,3 +28,12 @@ button { font: inherit; }
 .viewer-status-warn { color: #8a5a00; }
 .viewer-status-error { color: #b42318; font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.92); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } }
+@media print {
+  @page { margin: 0; }
+  html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }
+  .viewer-toolbar, .viewer-status { display: none !important; }
+  .viewer-stage { overflow: visible; padding: 0; background: white; }
+  .viewer-pages { gap: 0; transform: none !important; }
+  .viewer-page { box-shadow: none; break-after: page; page-break-after: always; }
+  .viewer-page:last-child { break-after: auto; page-break-after: auto; }
+}

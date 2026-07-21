@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
-import { hwpUnitToCssPx } from '../../core/layout/hwp_unit'
+import { hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateDocument } from '../../core/layout/pagination'
 
@@ -85,9 +85,12 @@ export default function App() {
   const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
   const [sectionProgress, setSectionProgress] = useState<{ loaded: number; total: number } | null>(null)
   const [backgroundError, setBackgroundError] = useState<string | null>(null)
+  const [printing, setPrinting] = useState(false)
+  const [pdfStatus, setPdfStatus] = useState<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12 })
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
+  const automaticPdfStarted = useRef(false)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -101,7 +104,7 @@ export default function App() {
     return { pages, layoutMs: performance.now() - startedAt }
   }, [effectiveDocument])
   const pages = pagination.pages
-  const virtualized = pages.length > 50
+  const virtualized = pages.length > 50 && !printing
   const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
   const pageStride = (pageHeight + 24) * zoom
   const updateVisibleRange = (scrollTop: number, viewportHeight: number) => {
@@ -111,6 +114,7 @@ export default function App() {
     setVisibleRange((current) => current.start === start && current.end === end ? current : { start, end })
   }
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
+  const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
 
   const openPath = async (path: string, openReceivedAt = Date.now()) => {
     const requestStartedAt = performance.now()
@@ -162,6 +166,18 @@ export default function App() {
     setBackgroundError(payload.message)
   }), [])
   useEffect(() => {
+    const stopPrepare = api().onPreparePdf(async (requestId: string) => {
+      setPrinting(true)
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      await globalThis.document.fonts.ready
+      await Promise.all(Array.from(globalThis.document.images).map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined)))
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+      api().pdfReady(requestId)
+    })
+    const stopFinish = api().onFinishPdf(() => setPrinting(false))
+    return () => { stopPrepare(); stopFinish() }
+  }, [])
+  useEffect(() => {
     if (!document) return
     const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
     void api().getFonts().then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts))).catch(() => setFontResolutions(resolveDocumentFonts(requested, [])))
@@ -177,6 +193,26 @@ export default function App() {
   }, [effectiveDocument, pages.length, visibleRange])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
+  const exportPdf = async () => {
+    if (!effectiveDocument || printing || documentLoading) return
+    setPrinting(true); setPdfStatus('PDF 저장 중…')
+    try {
+      const path = await api().exportPdf({
+        width: hwpUnitToInches(effectiveDocument.page.width),
+        height: hwpUnitToInches(effectiveDocument.page.height)
+      })
+      setPdfStatus(path ? 'PDF 저장 완료' : null)
+      setPrinting(false)
+    } catch (reason) {
+      setPdfStatus(`PDF 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setPrinting(false)
+    }
+  }
+  useEffect(() => {
+    if (!effectiveDocument || documentLoading || automaticPdfStarted.current || new URLSearchParams(window.location.search).get('exportPdf') !== '1') return
+    automaticPdfStarted.current = true
+    void exportPdf()
+  }, [effectiveDocument, documentLoading])
   const timingDetails = loadTiming ? [
     `ZIP 열기 ${ms(loadTiming.packageOpenMs)}`,
     `패키지 인덱스 ${ms(loadTiming.packageIndexMs)}`,
@@ -189,7 +225,7 @@ export default function App() {
   ] : []
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
-    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
+    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button onClick={() => void exportPdf()} disabled={!effectiveDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
     <section className="viewer-stage" onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
@@ -203,6 +239,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
       </div>}
     </section>
-    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}</footer>}
+    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

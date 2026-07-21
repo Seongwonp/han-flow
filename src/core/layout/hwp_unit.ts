@@ -8,6 +8,10 @@ export function hwpUnitToMm(value: HwpUnit): number {
   return (value * MM_PER_INCH) / HWPUNIT_PER_INCH
 }
 
+export function hwpUnitToInches(value: HwpUnit): number {
+  return value / HWPUNIT_PER_INCH
+}
+
 export function hwpUnitToCssPx(value: HwpUnit): number {
   return (value * CSS_PX_PER_INCH) / HWPUNIT_PER_INCH
 }

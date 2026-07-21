@@ -114,15 +114,17 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   const visualTestFile = isDev ? process.env['HAN_FLOW_VISUAL_TEST_FILE'] : undefined
+  const pdfTestPath = isDev ? process.env['HAN_FLOW_PDF_EXPORT_PATH'] : undefined
   const openPath = visualTestFile ?? initialOpen?.filePath
   const openReceivedAt = visualTestFile ? processStartedAt : initialOpen?.receivedAt
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
     if (openPath) rendererUrl.searchParams.set('open', openPath)
     if (openReceivedAt) rendererUrl.searchParams.set('openReceivedAt', String(openReceivedAt))
+    if (pdfTestPath) rendererUrl.searchParams.set('exportPdf', '1')
     mainWindow.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt) } } : undefined)
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
   }
 }
 
@@ -143,6 +145,44 @@ if (!hasSingleInstanceLock) {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle('pdf:export', async (event, pageSize: { width: number; height: number }) => {
+    if (![pageSize.width, pageSize.height].every((value) => Number.isFinite(value) && value >= 0.1 && value <= 200)) {
+      throw new Error('PDF 용지 크기가 올바르지 않습니다.')
+    }
+    const testPath = isDev ? process.env['HAN_FLOW_PDF_EXPORT_PATH'] : undefined
+    const targetPath = testPath ?? (await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) ?? undefined, {
+      title: 'PDF로 내보내기',
+      defaultPath: '문서.pdf',
+      filters: [{ name: 'PDF 문서', extensions: ['pdf'] }]
+    })).filePath
+    if (!targetPath) return null
+
+    const requestId = `${Date.now()}`
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => { ipcMain.removeListener('pdf:ready', ready); reject(new Error('PDF 렌더링 준비 시간이 초과되었습니다.')) }, 30_000)
+        const ready = (readyEvent: Electron.IpcMainEvent, readyId: string) => {
+          if (readyEvent.sender !== event.sender || readyId !== requestId) return
+          clearTimeout(timeout)
+          ipcMain.removeListener('pdf:ready', ready)
+          resolve()
+        }
+        ipcMain.on('pdf:ready', ready)
+        event.sender.send('pdf:prepare', requestId)
+      })
+      const pdf = await event.sender.printToPDF({
+        printBackground: true,
+        preferCSSPageSize: false,
+        pageSize,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 }
+      })
+      await writeFile(targetPath, pdf)
+      return targetPath
+    } finally {
+      if (!event.sender.isDestroyed()) event.sender.send('pdf:finish', requestId)
+    }
+  })
+
   // 시스템 폰트 목록 가져오기
   ipcMain.handle('system:getFonts', async () => {
     try {
