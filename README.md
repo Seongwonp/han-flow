@@ -1,100 +1,75 @@
-# Han-Flow: macOS용 HWPX 뷰어
+# Han-Flow
 
-![Han-Flow Logo](https://raw.githubusercontent.com/Seongwonp/han-flow/main/docs/assets/han-flow-logo.png) <!-- 로고 이미지는 추후 추가 예정 -->
+macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내는 읽기 전용 뷰어입니다. 상용 편집기를
+복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를 목표로 합니다.
 
-## 🚀 프로젝트 소개
+## v1 목표
 
-Han-Flow는 macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내기 위한 읽기 전용
-뷰어입니다. 상용 편집기를 복제하지 않고 실제로 매주 사용할 수 있는 가볍고 안정적인
-도구를 목표로 합니다.
+- Finder에서 HWPX 파일을 열어 1초 안에 첫 화면 표시
+- 문단·글자 스타일, 표, 이미지, 머리말·꼬리말과 쪽 번호를 읽기 좋게 렌더링
+- 화면과 같은 페이지 구조로 PDF 내보내기
+- 대형 문서의 worker 기반 점진 파싱과 페이지 가상화
 
-v1에서는 편집, `.hwp` 바이너리 직접 파싱, 한컴과 픽셀 단위로 동일한 렌더링을 지원하지
-않습니다.
+편집 기능은 v3 이후 범위입니다. `.hwp` 5.0 바이너리 직접 파싱은 하지 않으며 v2에서 기존
+파서 활용을 검토합니다. 한컴오피스와 픽셀 단위로 같은 결과도 목표로 하지 않습니다.
 
-## ✨ 주요 기능 및 차별점
+## 현재 상태
 
--   **레이아웃 무결성**: HWPX 표준(OWPML)을 준수하는 정밀한 파싱 및 하이브리드 렌더링 엔진(HTML + SVG/Canvas)을 통해 macOS 환경에서 레이아웃 깨짐 현상을 최소화합니다.
--   **빠른 열기**: macOS 파일 열기, worker 기반 점진 디코딩, viewport page 가상화를 지원합니다.
--   **PDF 내보내기**: 화면과 같은 읽기 전용 페이지를 문서 용지 크기와 배경을 유지해 PDF로 저장합니다.
--   **macOS 최적화 UX**: macOS의 디자인 시스템과 네이티브 기능을 적극 활용하여 트랙패드 제스처, 다크 모드 지원 등 맥 사용자에게 익숙하고 편리한 사용자 경험을 제공합니다.
--   **모듈화된 아키텍처**: 파서, 렌더러, 상태 관리자를 철저히 분리하여 높은 확장성과 유지보수성을 확보했습니다.
+OWPML의 XML 자식 순서를 보존해 읽기 전용 문서 모델로 변환하고, HWPUNIT 기반 페이지에
+문단·표·병합 셀·테두리·배경·이미지·목록·구역별 머리말/꼬리말/쪽 번호를 렌더링합니다.
+macOS `open-file`, single-instance 전달, 드래그앤드롭, PDF 출력도 연결되어 있습니다.
 
-## 🛠️ 기술 스택
+실사용 AIDA 기준 문서는 production 패키지에서 8페이지, 이미지 4개, 페이지 overflow 0으로
+검증했습니다. 첫 실행은 약 0.6초, 실행 중인 앱으로 다시 열기는 약 0.1초였습니다. 원문에서
+보이는 텍스트는 기준 PDF 6,077자 중 6,076자가 일치하며 남은 한 글자는 화면에 보이지 않는
+채움 문자입니다.
 
-Han-Flow는 다음과 같은 기술 스택을 기반으로 개발됩니다.
+현재 가장 큰 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴의 폭이 달라져 2·3페이지의 줄바꿈과
+콘텐츠 분배가 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지
+않고, 시스템 설치본의 한글·영문 family 이름을 찾아 사용합니다. 자세한 결정은
+[글꼴 전략](docs/font_strategy.md)을 참고하세요.
 
-| 구분 | 기술 | 설명 |
-| :--- | :--- | :--- |
-| **프레임워크** | Electron | 크로스 플랫폼 데스크톱 애플리케이션 개발 |
-| **언어** | TypeScript | 정적 타입 지원으로 안정성 및 생산성 향상 |
-| **UI 라이브러리** | React | 컴포넌트 기반의 선언적 UI 구축 |
-| **상태 관리** | React state | 읽기 전용 session, viewport, 진단 상태 관리 |
-| **빌드 도구** | Vite, Electron-Vite | 빠른 개발 서버 및 최적화된 빌드 환경 제공 |
-| **HWPX 파싱** | `unzipper`, `fast-xml-parser` | HWPX 파일 압축 해제 및 XML 데이터 파싱 |
+## 개발
 
-## 📦 프로젝트 구조
-
-```text
-han-flow/
-├── src/
-│   ├── main/               # Electron Main Process (OS API, File I/O)
-│   ├── renderer/           # Electron Renderer Process (React/Vue UI)
-│   ├── shared/             # 공용 타입 및 유틸리티
-│   └── core/               # 핵심 비즈니스 로직 (플랫폼 독립적)
-│       ├── parser/         # HWPX (XML) -> JSON 변환 엔진
-│       ├── renderer-engine/# JSON -> Canvas/SVG/HTML 렌더링 로직
-│       └── state/          # 문서 상태 관리 (CRDT 또는 Immutable State)
-├── docs/                   # 개발 문서 및 로그
-├── tests/                  # 단위 및 통합 테스트
-├── package.json
-└── tsconfig.json
-```
-
-## ⚙️ 개발 환경 설정 및 실행 방법
-
-### 1. 프로젝트 클론
-
-```bash
-git clone https://github.com/Seongwonp/han-flow.git
-cd han-flow
-```
-
-### 2. 의존성 설치
+Node.js와 npm이 필요합니다.
 
 ```bash
 npm install
-# 또는 yarn install / pnpm install
-```
-
-### 3. 개발 모드 실행
-
-```bash
 npm run dev
 ```
 
-### 4. 프로덕션 번들 빌드
+검증과 macOS용 비서명 앱 패키징:
 
 ```bash
+npm test -- --runInBand
 npm run build
-```
-
-### 5. macOS 앱 패키징
-
-```bash
 npm run package:mac
 ```
 
-로컬 검증용 비서명 앱은 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 배포용 앱에는
-별도의 Developer ID 서명과 Apple notarization이 필요합니다.
+패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
+않았으며, 배포 전 Developer ID 서명과 notarization이 필요합니다.
 
-## 🤝 기여 방법
+## 구조
 
-Han-Flow 프로젝트에 기여하고 싶으시다면, 언제든지 Pull Request를 보내주세요. 버그 리포트, 기능 제안 등 모든 형태의 기여를 환영합니다.
+```text
+src/
+├── main/          # macOS 파일 열기, worker, IPC, PDF 출력
+├── core/
+│   ├── parser/    # HWPX package와 ordered XML 해석
+│   ├── document/  # 읽기 전용 ViewerDocument
+│   ├── fonts/     # 시스템 글꼴 해석과 대체 진단
+│   └── layout/    # 페이지·표 분할과 단위 변환
+└── renderer/      # React 페이지 렌더러와 뷰어 UI
+tests/             # 공개 synthetic fixture 기반 회귀 테스트
+docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
+```
 
-## 📄 라이선스
+실사용 fixture와 캡처에는 개인정보가 포함될 수 있어 저장소에 넣지 않습니다. 공개 테스트는
+실행 시 결정적으로 생성되는 synthetic HWPX를 사용합니다.
 
-이 프로젝트는 [MIT License](LICENSE)를 따릅니다. <!-- LICENSE 파일은 추후 추가 예정 -->
+## 문서
 
-## 📞 문의
-
-프로젝트 관련 문의는 [Seongwonp](https://github.com/Seongwonp)에게 연락 바랍니다.
+- [기술 아키텍처](docs/architecture.md)
+- [파싱 전략](docs/parsing_strategy.md)
+- [v1 기준선과 구현 현황](docs/v1_baseline.md)
+- [글꼴 전략과 라이선스 판단](docs/font_strategy.md)

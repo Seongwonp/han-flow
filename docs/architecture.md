@@ -47,6 +47,7 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 - `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
 - 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
+- 시스템 함초롬체의 한글·영문 family 별칭 해석(글꼴 파일은 번들하지 않음)
 - 50페이지 이하는 전체 DOM 렌더
 - 50페이지 초과는 viewport 주변 page만 mount
 - 문서 mutation, 저장 history, `contentEditable` 금지
