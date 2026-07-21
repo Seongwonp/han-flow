@@ -50,6 +50,7 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 - 시스템 함초롬체의 한글·영문 family 별칭 해석(글꼴 파일은 번들하지 않음)
 - 50페이지 이하는 전체 DOM 렌더
 - 50페이지 초과는 viewport 주변 page만 mount
+- 트랙패드 pinch와 `⌘+`/`⌘-`/`⌘0`을 50–200% zoom 상태로 통합
 - 문서 mutation, 저장 history, `contentEditable` 금지
 
 첫 화면은 OWPML `lineseg`와 셀 선언 높이를 사용하는 결정적 pagination으로 즉시 표시한다.

@@ -18,7 +18,7 @@ macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내는 읽기 �
 OWPML의 XML 자식 순서를 보존해 읽기 전용 문서 모델로 변환하고, HWPUNIT 기반 페이지에
 문단·표·병합 셀·테두리·배경·이미지·목록·구역별 머리말/꼬리말/쪽 번호를 렌더링합니다.
 현재 글꼴로 실제 block·표 행 높이를 재는 2-pass pagination과 macOS `open-file`,
-single-instance 전달, 드래그앤드롭, PDF 출력도 연결되어 있습니다.
+single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력도 연결되어 있습니다.
 
 실사용 AIDA 기준 문서는 production 패키지에서 8페이지, 이미지 4개, 페이지 overflow 0으로
 검증했습니다. 첫 실행은 약 0.6초, 실행 중인 앱으로 다시 열기는 약 0.1초였습니다. 원문에서

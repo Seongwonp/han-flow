@@ -264,6 +264,26 @@ reference와 픽셀 단위로 같지는 않다. 대체 폰트 metric 때문에 2
 다르다. v1의 읽기 가능하고 깨지지 않는 PDF 기준은 충족하지만 이 차이는 known limitation으로
 유지한다.
 
+## M4 macOS 마감 진행 현황 (2026-07-21)
+
+- [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지
+- [x] HWPX drag-and-drop과 확장자 오류 안내
+- [x] 트랙패드 pinch-to-zoom
+- [x] `⌘+`, `⌘-`, `⌘0` 확대 단축키
+- [x] 50–200% zoom 범위와 확대 기준점의 세로 스크롤 보존
+- [x] 글꼴 대체·페이지 overflow·열기 시간 상태 진단
+- [ ] 전용 앱 아이콘
+- [ ] `/Applications` 설치 후 Finder 기본 앱·더블클릭 검증
+- [ ] Developer ID 서명과 notarization
+
+트랙패드 pinch가 보내는 `ctrlKey + wheel delta`를 연속 zoom 값으로 변환하고, 버튼과 키보드는
+10% 단계를 사용한다. 확대 직전 포인터 또는 viewport 중앙이 가리키던 문서 세로 좌표를 계산해
+다음 frame의 `scrollTop`을 보정하므로 긴 문서에서 확대할 때 읽던 위치가 크게 튀지 않는다.
+zoom 계산은 renderer 밖의 순수 함수로 분리해 최소·최대 범위와 방향을 공개 테스트로 고정했다.
+핀치 줌 포함 production 패키지에서 private AIDA는 **8페이지 / 이미지 4개 / overflow 0 /
+첫 화면 631ms**를 유지했다. 자동화 환경은 물리 트랙패드 gesture를 생성하지 못하므로 실제
+손가락 감도와 관성은 패키지 앱 수동 확인 항목으로 남긴다.
+
 AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `startNum`,
 `visibility`를 문서 모델로 옮기고 본문 조판에 영향을 주지 않는 page decoration으로 렌더한다.
 재출력한 PDF의 1·2·8페이지에서 각각 `- 1 -`, `- 2 -`, `- 8 -`이 하단 중앙에 표시되고
