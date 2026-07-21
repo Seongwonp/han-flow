@@ -50,3 +50,15 @@ production AIDA 결과는 8페이지, overflow 0, 첫 화면 623ms로 성능 기
 따라서 Noto Serif KR 번들은 채택하지 않고 코드와 의존성을 제거했다. 이 결과는 특정 글꼴을
 더 시도하는 것보다 원본 `lineseg`와 실제 block 높이를 함께 사용하는 pagination 보정이 먼저라는
 근거로 삼는다.
+
+실험에 사용한 재배포·패키지 근거는 다음과 같다.
+
+- [Noto CJK 공식 저장소](https://github.com/notofonts/noto-cjk): Korean 배포본과 release 안내
+- [Noto CJK OFL-1.1 원문](https://github.com/notofonts/noto-cjk/blob/main/Serif/LICENSE):
+  소프트웨어와 함께 번들·재배포할 수 있으며 저작권 고지와 라이선스 사본을 포함해야 함
+- [Fontsource Noto Serif KR 5.3.0](https://www.npmjs.com/package/@fontsource/noto-serif-kr/v/5.3.0):
+  실험에서 사용한 한국어 WOFF2 배포 패키지
+
+측정 당시 dependency 전체의 unpacked size는 약 84MB였다. production dependency로 두면
+원본 패키지가 앱에 따라 들어가므로 build dependency로 제한하고 Vite가 선택한 WOFF2만
+포함해야 한다는 패키징 조건도 확인했다.
