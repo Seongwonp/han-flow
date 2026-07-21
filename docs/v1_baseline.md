@@ -312,6 +312,12 @@ pattern을 문단 marker로 렌더한다. AIDA의 목록 하이픈 37개와 번�
 대화상자 자체의 마우스 클릭은 현재 자동화 프로세스에 macOS 보조 접근 권한이 없어 수동 확인
 항목으로 유지한다.
 
+OFL-1.1 Noto Serif KR의 한국어 Regular/Bold WOFF2 약 2MB를 바탕·명조 fallback으로 넣는
+production 실험도 수행했다. 8페이지, overflow 0, 첫 화면 623ms와 PDF 텍스트 6,075자는
+유지했지만 기준 PDF 대비 2·3페이지 텍스트 유사도가 기존 0.598/0.318에서 0.555/0.210으로
+낮아졌다. 본문 block 분배도 개선되지 않아 번들을 채택하지 않았으며 코드·의존성을 제거했다.
+다음 정확도 작업은 글꼴 추가가 아니라 `lineseg`와 실제 block 높이를 결합한 pagination 보정이다.
+
 ## 구현 현황 (2026-07-20)
 
 - [x] private AIDA 기준 문서와 8페이지 reference PDF 확보
