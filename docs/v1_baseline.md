@@ -157,7 +157,7 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - [x] 파일 선택 및 IPC 파싱 입력을 `.hwpx`로 제한
 - [x] 비서명 `.app` 패키징과 `.hwpx` document type/UTI 등록
 - [x] LaunchServices로 패키지 앱에 HWPX를 전달해 8페이지/overflow 0 렌더 검증
-- [ ] Applications 설치 후 Finder 기본 앱 선택과 더블클릭 검증
+- [x] Applications 설치 후 Finder 기본 앱 선택과 더블클릭 경로 검증
 - [x] package open → index → decode → layout → first paint 구간 계측
 - [x] 20 sections 이상 문서의 첫 section 우선 decode와 전체 모델 백그라운드 교체
 - [x] 50페이지 초과 문서의 viewport 주변 page virtualization
@@ -176,11 +176,9 @@ private AIDA 문서 없이 검증한다. 실행 중 파일 열기는 개발 앱�
 LaunchServices의 앱 지정 열기로 실행해 private AIDA 문서가 8페이지/overflow 0으로
 표시되는 것을 확인했다.
 
-현재 패키지는 로컬 개발 검증용이다. 기본 Electron 아이콘을 사용하고 서명·공증하지
-않았으며 사용자의 기본 앱 설정도 자동으로 변경하지 않는다. 실제 배포 전에는 전용 아이콘,
-Developer ID 서명, notarization을 준비하고 `/Applications` 설치 후 Finder의 “다음으로
-열기” 및 더블클릭을 수동 검증한다. M2의 다음 구현 단위는 패키징 꾸미기가 아니라 1초
-목표를 판단할 수 있는 로딩 구간 계측이다.
+현재 패키지는 로컬 개발 검증용이며 서명·공증하지 않았고 사용자의 기본 앱 설정도 자동으로
+변경하지 않는다. 전용 아이콘과 `/Applications` 설치, Finder 일반 열기 경로는 검증했다.
+실제 배포 전에는 Developer ID 서명과 notarization을 준비한다.
 
 ### M2 첫 화면 성능 기준선
 
@@ -231,10 +229,8 @@ resource를 먼저 반환하고 전체 문서도 별도 worker 작업으로 deco
 
 M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 
-1. `/Applications` 설치 후 Finder 기본 앱 선택과 더블클릭 수동 검증
-2. 실제 대형 HWPX와 warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
-3. 실제 사용에서 1초를 넘는 문서가 발견되면 참조 resource 우선 로딩 검토
-4. 위 검증과 별개로 다음 개발 마일스톤 M3 PDF 내보내기 시작
+1. 실제 대형 HWPX와 warm/cold 각 20회 이상 측정해 1초 목표의 p50/p95 기록
+2. 실제 사용에서 1초를 넘는 문서가 발견되면 참조 resource 우선 로딩 검토
 
 현재 AIDA는 이미 목표 안쪽이므로 작은 문서의 숫자만 더 줄이는 최적화보다, 대형 문서에서도
 첫 페이지를 먼저 보여 주고 메모리 사용량을 제한하는 구조를 우선한다.
@@ -273,7 +269,7 @@ reference와 픽셀 단위로 같지는 않다. 대체 폰트 metric 때문에 2
 - [x] 50–200% zoom 범위와 확대 기준점의 세로 스크롤 보존
 - [x] 글꼴 대체·페이지 overflow·열기 시간 상태 진단
 - [x] 전용 앱 아이콘과 ICNS 패키지 적용
-- [ ] `/Applications` 설치 후 Finder 기본 앱·더블클릭 검증
+- [x] `/Applications` 설치 후 Finder 기본 앱·더블클릭 검증
 - [ ] Developer ID 서명과 notarization
 
 트랙패드 pinch가 보내는 `ctrlKey + wheel delta`를 연속 zoom 값으로 변환하고, 버튼과 키보드는
@@ -290,6 +286,19 @@ zoom 계산은 renderer 밖의 순수 함수로 분리해 최소·최대 범위�
 `icon.icns`이며 패키지 내부 파일의 SHA-256이 source ICNS와 일치한다. 생성 중간 자산은 제외하고
 `build/icon.png`와 `build/icon.icns`만 저장소에서 추적한다. 아이콘 적용 production 앱도
 **8페이지 / 이미지 4개 / overflow 0 / 첫 화면 635ms**로 기존 렌더 기준을 유지했다.
+
+### Finder 기본 앱 실사용 검증
+
+`/Applications/Han-Flow.app`에 production 패키지를 설치하고 LaunchServices에 등록했다.
+이 Mac에서 `.hwpx`의 실제 content type은 과거 한컴 앱이 등록한
+`com.haansoft.hancomofficeviewer.mac.hwpx`였으므로, Han-Flow 자체 `com.hanflow.hwpx`와 함께
+단일 `CFBundleDocumentTypes`의 `LSItemContentTypes`에 선언했다. 개발용 `release` 복사본은
+LaunchServices에서 등록 해제해 설치본과 같은 bundle ID가 중복 선택되지 않게 했다.
+
+Finder 일반 열기는 기존 앱의 Editor 역할을 우선할 수 있어 Viewer와 Editor 기본 handler를
+모두 `com.hanflow.viewer`로 지정했다. 이후 앱 이름을 지정하지 않은 일반 `open`이
+`/Applications/Han-Flow.app/Contents/MacOS/Han-Flow`를 실행하는 것을 프로세스 경로로 확인했다.
+이 역할 값은 파일 편집 기능을 활성화하지 않으며 Han-Flow의 UI와 문서 모델은 계속 읽기 전용이다.
 
 AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `startNum`,
 `visibility`를 문서 모델로 옮기고 본문 조판에 영향을 주지 않는 page decoration으로 렌더한다.
@@ -432,3 +441,4 @@ Electron `capturePage`로 private fixture를 다시 열어 상태 표시줄의 8
 - 한컴 공개 OWPML 모델: https://github.com/hancom-io/hwpx-owpml-model
 - HWPX 포맷 개요: https://tech.hancom.com/hwpxformat/
 - OWPML 표준 안내: https://www.hancom.com/etc/hwpDownload.do
+- electron-builder macOS file association: https://www.electron.build/docs/api/electron-builder.interface.fileassociation/

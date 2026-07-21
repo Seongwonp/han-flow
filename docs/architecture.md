@@ -29,6 +29,7 @@ renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현
 ### Electron main
 
 - macOS `open-file`, single-instance, 파일 대화상자 처리
+- 자체 HWPX UTI와 기존 한컴 HWPX UTI의 Finder 문서 연결
 - HWPX 확장자와 패키지 필수 entry 검증
 - 작은 문서의 전체 decode 및 renderer IPC 전달
 - 대형 문서 worker 생성·취소·오류 전달

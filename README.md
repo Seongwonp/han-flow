@@ -52,6 +52,10 @@ npm run package:mac
 않았으며, 전용 아이콘은 적용되어 있습니다. 배포 전 Developer ID 서명과 notarization이
 필요합니다.
 
+macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
+`com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의
+기본 앱 설정을 자동으로 변경하지 않습니다.
+
 ## 구조
 
 ```text
