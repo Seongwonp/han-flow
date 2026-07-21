@@ -1,10 +1,11 @@
-import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
+import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 
 const api = () => (window as any).api
 
@@ -102,6 +103,7 @@ export default function App() {
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
   const automaticPdfStarted = useRef(false)
+  const stageRef = useRef<HTMLElement>(null)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -124,6 +126,20 @@ export default function App() {
     const start = Math.max(Math.floor(scrollTop / pageStride) - 2, 0)
     const end = Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length)
     setVisibleRange((current) => current.start === start && current.end === end ? current : { start, end })
+  }
+  const changeZoomAt = (nextZoom: number, anchorY?: number) => {
+    const stage = stageRef.current
+    if (!stage || nextZoom === zoom) return
+    const viewportAnchor = anchorY ?? stage.clientHeight / 2
+    const documentAnchor = (stage.scrollTop + viewportAnchor) / zoom
+    setZoom(nextZoom)
+    requestAnimationFrame(() => { stage.scrollTop = documentAnchor * nextZoom - viewportAnchor })
+  }
+  const onStageWheel = (event: WheelEvent<HTMLElement>) => {
+    if (!event.ctrlKey) return
+    event.preventDefault()
+    const top = event.currentTarget.getBoundingClientRect().top
+    changeZoomAt(pinchZoom(zoom, event.deltaY), event.clientY - top)
   }
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
   const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
@@ -207,6 +223,16 @@ export default function App() {
     return () => { cancelled = true }
   }, [effectiveDocument])
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey) return
+      if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
+      if (event.key === '-') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
+      if (event.key === '0') { event.preventDefault(); changeZoomAt(1) }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [zoom])
+  useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
         .map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0)
@@ -250,8 +276,8 @@ export default function App() {
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
-    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button onClick={() => setZoom((value) => Math.max(.5, value - .1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + .1))}>+</button><button onClick={() => void exportPdf()} disabled={!effectiveDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
-    <section className="viewer-stage" onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
+    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!effectiveDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
+    <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
