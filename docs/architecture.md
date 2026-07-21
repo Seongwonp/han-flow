@@ -52,6 +52,12 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 - 50페이지 초과는 viewport 주변 page만 mount
 - 문서 mutation, 저장 history, `contentEditable` 금지
 
+첫 화면은 OWPML `lineseg`와 셀 선언 높이를 사용하는 결정적 pagination으로 즉시 표시한다.
+동시에 화면 밖 측정 레이어가 원본 block과 표 행을 현재 resolved font로 한 번 렌더링해 CSS
+높이를 HWPUNIT으로 되돌린다. 두 번째 pagination은 실측 행이 남은 공간에 들어갈 때만 경험적
+표 분할을 생략하고 `lineseg vertpos`가 되감기는 원본 페이지 경계를 적용한다. 실측 높이가
+더 크면 내용 보존을 위해 행 단위 분할이 원본 경계보다 우선한다.
+
 ### PDF export
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
@@ -86,6 +92,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - `npm test`, `npm run build`, `npm run package:mac`
 - `npm run benchmark:decoder` 대형 문서 기준선
 - 화면/PDF 페이지 수, overflow, font substitution 진단
+- 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
 
 production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1`을 설정한다. 이 모드에서는
 개발용 visual capture와 고정 PDF 출력 경로를 패키지 앱에서도 사용할 수 있다. 환경 변수가
