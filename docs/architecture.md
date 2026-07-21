@@ -27,7 +27,7 @@ HWPUNIT 정수로 유지하고 화면 경계에서만 CSS px로 변환한다. �
 - HWPX 확장자와 패키지 필수 entry 검증
 - 작은 문서의 전체 decode 및 renderer IPC 전달
 - 대형 문서 worker 생성·취소·오류 전달
-- 이후 M3의 `webContents.printToPDF`
+- renderer 준비 완료 후 `webContents.printToPDF` 실행과 파일 저장
 
 ### Decoder worker
 
@@ -43,6 +43,13 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 - 50페이지 이하는 전체 DOM 렌더
 - 50페이지 초과는 viewport 주변 page만 mount
 - 문서 mutation, 저장 history, `contentEditable` 금지
+
+### PDF export
+
+renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
+React paint가 끝날 때까지 기다린다. print media에서는 toolbar, status bar, page shadow와 page
+gap을 제거한다. main process는 HWPUNIT 용지 크기를 inch로 변환한 custom page size와 0 margin,
+background 인쇄 옵션으로 `printToPDF`를 실행한다. 완료 또는 오류 후 화면 가상화를 복원한다.
 
 ## 대형 문서 로딩
 

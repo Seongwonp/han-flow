@@ -237,6 +237,33 @@ M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 현재 AIDA는 이미 목표 안쪽이므로 작은 문서의 숫자만 더 줄이는 최적화보다, 대형 문서에서도
 첫 페이지를 먼저 보여 주고 메모리 사용량을 제한하는 구조를 우선한다.
 
+## M3 PDF 내보내기 진행 현황 (2026-07-21)
+
+- [x] toolbar PDF 버튼과 macOS 저장 대화상자
+- [x] renderer 준비/완료 IPC와 폰트·이미지·paint 대기
+- [x] 출력 중 page virtualization 해제와 완료 후 복원
+- [x] print media에서 toolbar/status/shadow/gap 제거
+- [x] HWPUNIT 용지 크기를 Electron custom page size의 inch 단위로 변환
+- [x] 배경색 포함, 추가 margin 없는 `webContents.printToPDF`
+- [x] private AIDA 출력 PDF 8페이지/A4 검증
+- [ ] header/footer와 원본 페이지 번호 해석
+- [ ] font metric 차이로 인한 페이지별 콘텐츠 분배 보정
+- [ ] 패키지 앱에서 사용자 저장 대화상자 수동 검증
+
+private AIDA를 실제 Electron renderer에서 출력한 결과는 **8페이지, 595.92 × 841.92pt
+(A4), PDF 1.4**다. reference PDF도 8페이지 A4다. 출력 PDF의 1·2·8페이지를 Poppler로
+다시 PNG 렌더링해 검은 제목 셀, 회색 cell fill, 표 테두리, 한글·영문 텍스트, 서명 PNG가
+선명하게 유지되고 내용이 용지 밖으로 잘리지 않는 것을 확인했다. fixture, 출력 PDF, PNG는
+개인정보 때문에 저장소에 포함하지 않는다.
+
+reference와 픽셀 단위로 같지는 않다. 원본의 하단 페이지 번호와 일부 header/footer는 아직
+모델에 없고, 대체 폰트 metric 때문에 2페이지 이후 block 분배가 다르다. v1의 읽기 가능하고
+깨지지 않는 PDF 기준은 충족하지만 M3 완료 전 위 두 차이를 known limitation으로 유지한다.
+
+첫 시도에서 custom page size를 microns로 넘겨 비정상적으로 큰 용지가 생성됐으며, Electron
+28의 `printToPDF` 계약에 맞게 inch로 수정했다. HWPUNIT→inch 단위 테스트를 추가해 A4가
+약 8.27 × 11.69 inch로 변환되는지 회귀 검증한다.
+
 ## 구현 현황 (2026-07-20)
 
 - [x] private AIDA 기준 문서와 8페이지 reference PDF 확보
