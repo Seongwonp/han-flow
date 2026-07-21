@@ -1,37 +1,23 @@
 # HWPX 파싱 전략: Pipeline & Schema
 
-HWPX는 ZIP 아카이브 내에 XML 파일들이 구조화된 형태(OPC, Open Packaging Conventions)를 가집니다. Han-Flow는 이를 효율적으로 분석하기 위해 스트리밍 파이프라인 방식을 채택합니다.
+HWPX는 ZIP 아카이브 안에 OWPML XML과 이미지 resource가 들어 있는 형식이다. Han-Flow는
+원본 XML의 혼합 자식 순서를 보존하는 ordered AST를 거쳐 읽기 전용 `ViewerDocument`로
+변환한다.
 
-## 1. 파싱 파이프라인 (Node.js/TypeScript)
+## 1. 현재 파싱 파이프라인
 
-```typescript
-/**
- * HWPX 파싱 파이프라인 로직 개요
- */
-import { createReadStream } from 'fs';
-import * as unzipper from 'unzipper';
-import { XMLParser } from 'fast-xml-parser';
-
-export async function parseHWPX(filePath: string) {
-  // 1. ZIP 스트림 오픈
-  const directory = await unzipper.Open.file(filePath);
-  
-  // 2. 핵심 파일 추출 (header.xml, section0.xml 등)
-  const headerFile = directory.files.find(f => f.path === 'Contents/header.xml');
-  const sectionFiles = directory.files.filter(f => f.path.startsWith('Contents/section'));
-
-  // 3. XML to JSON 변환 (fast-xml-parser 활용)
-  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
-  
-  const headerData = parser.parse(await headerFile.buffer());
-  const sections = await Promise.all(
-    sectionFiles.map(async (f) => parser.parse(await f.buffer()))
-  );
-
-  // 4. Han-Flow 내부 모델로 정규화 (Normalization)
-  return normalizeDocument(headerData, sections);
-}
+```text
+ZIP index와 mimetype 검증
+  → header.xml 및 section XML ordered parse
+  → 글꼴·글자·문단·border/fill style map
+  → 문단·표·이미지·header/footer·section page setting decode
+  → immutable ViewerDocument
+  → section metadata를 보존한 block pagination
 ```
+
+section 파일은 파일명 숫자 순서로 정렬한다. XML을 일반 객체로 바로 바꾸지 않고 ordered
+node 배열로 읽어 `text → image → text` 같은 run 내부 순서를 유지한다. source 위치 기반 ID로
+동일 입력의 paragraph/table/cell ID가 항상 같도록 한다.
 
 ## 2. 스타일 정보 맵핑 (JSON 스키마 예시)
 
@@ -69,8 +55,20 @@ HWPX의 스타일(단락, 표, 글꼴)을 렌더링 엔진이 이해하기 쉬�
 }
 ```
 
-## 3. 효율적인 맵핑 전략
-효율적인 맵핑 전략을 위해 `header.xml`에 정의된 `CharShape`와 `ParaShape`는 ID 기반 Map 객체로 캐싱되어 `section.xml` 파싱 시 즉시 참조됩니다. 대용량 문서의 경우 모든 섹션을 한 번에 파싱하는 대신, 사용자가 보고 있는 섹션부터 우선순위로 파싱하고 캐싱하는 Lazy Loading 방식을 적용하여 성능을 최적화합니다. 또한, Zod 또는 JSON Schema를 사용하여 파싱된 데이터의 무결성을 검증하고 레이아웃 깨짐의 잠재적 원인을 사전에 차단합니다.
+## 3. 구역과 페이지 장식
+
+각 `ViewerSection`은 본문 block과 함께 `pageNum`, `startNum`, header/footer control을 가진다.
+header/footer의 `subList`는 일반 문단 디코더를 재사용한다. pagination은 section index를 페이지에
+남겨 새 구역의 번호 재시작과 장식 교체를 결정하며, 정의가 없으면 이전 구역 상태를 상속한다.
+`startNum page="0"`은 연속 번호, 양수는 해당 값에서 재시작으로 처리한다.
+
+## 4. 대형 문서
+
+section 20개 이상 또는 압축 전 2MiB 이상 section이 있으면 worker thread에서 디코딩한다.
+첫 section을 먼저 표시한 뒤 전체 모델로 교체하고, load ID로 취소되거나 늦게 도착한 작업을
+격리한다. 50페이지 초과 문서는 viewport 주변 페이지만 mount한다. resource reference 단위
+선별 로딩과 section 단위 누적 모델은 이후 최적화 후보이며 정확도를 희생하는 lazy decode는
+도입하지 않는다.
 
 
 ## References

@@ -247,7 +247,7 @@ M2 핵심 구현은 완료했다. 남은 것은 배포·통계 검증이다.
 - [x] 배경색 포함, 추가 margin 없는 `webContents.printToPDF`
 - [x] private AIDA 출력 PDF 8페이지/A4 검증
 - [x] `pageNum` 위치·숫자 형식·양옆 문자와 첫 쪽 숨김 해석
-- [ ] 일반 header/footer 본문과 구역별 쪽 번호 재시작 해석
+- [x] 일반 header/footer 본문과 구역별 쪽 번호 재시작 해석
 - [ ] font metric 차이로 인한 페이지별 콘텐츠 분배 보정
 - [ ] 패키지 앱에서 사용자 저장 대화상자 수동 검증
 
@@ -265,7 +265,14 @@ AIDA의 첫 section에 있는 `pageNum(BOTTOM_CENTER, DIGIT, sideChar="-")`과 `
 `visibility`를 문서 모델로 옮기고 본문 조판에 영향을 주지 않는 page decoration으로 렌더한다.
 재출력한 PDF의 1·2·8페이지에서 각각 `- 1 -`, `- 2 -`, `- 8 -`이 하단 중앙에 표시되고
 잘리지 않는 것을 확인했다. AIDA에는 별도 header/footer 본문 정의가 없으므로 이번 검증 범위는
-자동 쪽 번호까지다. 구역마다 번호 형식이나 시작 번호가 바뀌는 문서는 후속 fixture로 다룬다.
+자동 쪽 번호까지다. 구역마다 번호 형식이나 시작 번호가 바뀌는 문서는 아래 공개 fixture로
+별도 검증했다.
+
+후속 공개 synthetic fixture는 첫 구역의 `BOTH` 머리말·꼬리말을 1·2쪽에 적용하고, 두 번째
+구역에서 머리말을 교체하면서 쪽 번호를 5로 재시작한다. 새 꼬리말 정의가 없으면 앞 구역의
+정의를 이어받는다. 페이지 결과 `[1, 2, 5]`, 머리말 교체, 꼬리말 상속을 회귀 테스트로
+고정했다. 머리말·꼬리말 내부는 일반 문단 디코더를 재사용하므로 텍스트뿐 아니라 표와 이미지도
+같은 read-only renderer 경로를 사용한다. `BOTH/EVEN/ODD` 적용 타입을 지원한다.
 
 첫 시도에서 custom page size를 microns로 넘겨 비정상적으로 큰 용지가 생성됐으며, Electron
 28의 `printToPDF` 계약에 맞게 inch로 수정했다. HWPUNIT→inch 단위 테스트를 추가해 A4가

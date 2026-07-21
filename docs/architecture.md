@@ -40,6 +40,7 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 
 - `ViewerDocument`를 읽기 전용 A4 page로 표시
 - `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
+- 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
 - 50페이지 이하는 전체 DOM 렌더
 - 50페이지 초과는 viewport 주변 page만 mount
@@ -52,8 +53,11 @@ React paint가 끝날 때까지 기다린다. print media에서는 toolbar, stat
 gap을 제거한다. main process는 HWPUNIT 용지 크기를 inch로 변환한 custom page size와 0 margin,
 background 인쇄 옵션으로 `printToPDF`를 실행한다. 완료 또는 오류 후 화면 가상화를 복원한다.
 쪽 번호는 화면과 PDF가 동일한 DOM을 사용하므로 두 출력에서 같은 위치와 값을 유지한다.
-현재 모델은 문서 전체에 적용되는 쪽 번호 하나를 표현하며 구역별 재시작과 일반 header/footer
-본문은 후속 확장 지점으로 남긴다.
+pagination 결과는 block 배열과 함께 section index와 section 내부 page index를 보존한다.
+renderer는 이를 이용해 `startNum page > 0`에서 번호를 재시작하고, 새 정의가 없는 section은
+앞 section의 쪽 번호와 header/footer를 이어받는다. header/footer의 `subList` 문단은 본문과
+같은 문단·표·이미지 renderer를 쓰되 절대 위치 decoration으로 배치해 본문 pagination에는
+영향을 주지 않는다.
 
 ## 대형 문서 로딩
 
