@@ -290,6 +290,12 @@ lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 
 overflow cell 선택, rowSpan fallback, 단일 초대형 문단을 공개 테스트로 고정했다. 아직 실제
 pagination과 renderer fragment에는 연결하지 않아 페이지 분배는 바뀌지 않는다.
 
+fragment renderer 선행 작업으로 각 원본 셀에 `sourceCellId`를 부여하고 continuation 전용
+`splitTop/splitBottom` flag를 추가했다. flag가 있는 조각은 잘린 경계의 border·padding과 원본
+min-height를 제거하고 top 정렬한다. renderer 마크업 테스트와 production AIDA에서
+**8페이지 / 이미지 4개 / overflow 0**을 유지했으며 pagination 통합 전이라 실제 문서에는 아직
+이 flag가 생성되지 않는다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

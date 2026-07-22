@@ -72,6 +72,11 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 넘치는 행과 단일 초대형 문단은 기존 행 단위 pagination 또는 overflow 진단으로 fallback한다.
 현재 함수는 `fragmentTableBlock`에 연결하지 않은 독립 검증 단계다.
 
+원본 셀은 결정적 `sourceCellId`를 가지며 pagination이 만들 continuation cell은 `splitTop`과
+`splitBottom`을 사용할 수 있다. renderer는 잘린 위·아래 border와 padding을 제거하고 fragment의
+원본 min-height를 해제하며 vertical-align을 top으로 고정한다. flag가 없는 원본 셀의 스타일은
+기존과 동일하고, 현재 pagination은 아직 continuation flag를 생성하지 않는다.
+
 ### PDF export
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
