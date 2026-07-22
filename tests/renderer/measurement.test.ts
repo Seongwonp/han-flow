@@ -37,4 +37,23 @@ describe('DOM 측정 마커', () => {
     expect(markup).not.toContain('data-measure-block-id')
     expect(markup).not.toContain('data-measure-row-id')
   })
+
+  test('이어지는 셀 조각은 잘린 경계와 padding, 최소 높이를 제거한다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const fragment: ViewerParagraph = {
+      ...topParagraph,
+      content: [{
+        ...table,
+        rows: [{ cells: [{ ...table.rows[0].cells[0], splitTop: true, splitBottom: true }] }]
+      }]
+    }
+    const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: fragment, document }))
+    expect(markup).toContain('vertical-align:top')
+    expect(markup).toContain('padding-top:0')
+    expect(markup).toContain('padding-bottom:0')
+    expect(markup).toContain('border-top:none')
+    expect(markup).toContain('border-bottom:none')
+    expect(markup).not.toContain('min-height:')
+  })
 })

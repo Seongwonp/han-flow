@@ -74,12 +74,18 @@ function TableView({ table, document, measurable = false }: { table: ViewerTable
   const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
   return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
-    return <td key={`${table.id}:r${cell.row}c${cell.column}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
-      minHeight: hwpUnitToCssPx(cell.height), verticalAlign: cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
-      padding: `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
+    const fragmented = cell.splitTop || cell.splitBottom
+    return <td key={`${table.id}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${cell.splitTop ? 'top' : 'head'}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
+      minHeight: fragmented ? undefined : hwpUnitToCssPx(cell.height), verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
+      padding: fragmented ? undefined : `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
+      paddingTop: fragmented ? hwpUnitToCssPx(cell.splitTop ? 0 : cell.margin.top) : undefined,
+      paddingRight: fragmented ? hwpUnitToCssPx(cell.margin.right) : undefined,
+      paddingBottom: fragmented ? hwpUnitToCssPx(cell.splitBottom ? 0 : cell.margin.bottom) : undefined,
+      paddingLeft: fragmented ? hwpUnitToCssPx(cell.margin.left) : undefined,
       background: style?.backgroundColor === '#000000' ? '#000' : style?.backgroundColor,
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
-      borderTop: style ? borderCss(style.top) : undefined, borderBottom: style ? borderCss(style.bottom) : undefined
+      borderTop: cell.splitTop ? 'none' : style ? borderCss(style.top) : undefined,
+      borderBottom: cell.splitBottom ? 'none' : style ? borderCss(style.bottom) : undefined
     }}>{cell.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} measurable={measurable} />)}</td>
   })}</tr>)}</tbody></table>
 }

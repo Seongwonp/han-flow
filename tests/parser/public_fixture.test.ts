@@ -45,6 +45,8 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
       margin: { left: 120, right: 240, top: 360, bottom: 480 }
     })
     expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })
+    const sourceTable = document.sections[0].blocks[0].content.find((content) => content.type === 'table')
+    expect(sourceTable?.type === 'table' ? sourceTable.rows[0].cells[0].sourceCellId : undefined).toBe('s0:p0:tbl0:r0c0')
 
     const pages = paginateDocument(document)
     expect(pages).toHaveLength(3)

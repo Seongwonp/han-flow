@@ -69,6 +69,7 @@ function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
         borderFillId: cell.attributes.borderFillIDRef,
         verticalAlign: subList?.attributes.vertAlign,
         header: cell.attributes.header === '1',
+        sourceCellId: `${id}:r${actualRow}c${column}`,
         paragraphs: subList ? children(subList, 'hp:p').map((p, index) => decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`)) : []
       }
     })
