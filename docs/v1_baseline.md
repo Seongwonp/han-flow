@@ -280,6 +280,11 @@ reference는 단일 표 셀 안의 15개 문단을 두 페이지에 나누지만
 lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 `hp:case`를 우선하고 direct 속성,
 `hp:default` 순으로 해석하며 공개 synthetic fixture로 130% 줄 간격과 네 방향 margin을 고정했다.
 
+셀 fragment 구현의 선행 작업으로 측정 표시를 표 셀 내부 문단까지 전파했다. 숨겨진 측정 표는
+실제 colgroup을 사용하므로 각 문단 높이가 셀 너비 기준으로 수집된다. production AIDA는 이
+변경 후에도 **8페이지 / 이미지 4개 / overflow 0**을 유지했다. 앱 전체 20회 재측정은 warm
+**p50 108ms / p95 129ms**, cold **p50 606ms / p95 725ms**로 1초 p95 목표 안쪽이다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

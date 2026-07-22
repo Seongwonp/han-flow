@@ -62,6 +62,10 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 표 분할을 생략하고 `lineseg vertpos`가 되감기는 원본 페이지 경계를 적용한다. 실측 높이가
 더 크면 내용 보존을 위해 행 단위 분할이 원본 경계보다 우선한다.
 
+측정 모드의 `measurable` 표시는 top-level 문단에서 `TableView`와 각 셀의 `ParagraphView`까지
+전파한다. 따라서 셀 문단은 페이지 전체 폭이 아니라 실제 colgroup과 셀 너비에서 줄바꿈된 DOM
+높이를 가지며, 일반 화면 렌더에는 측정용 data attribute를 노출하지 않는다.
+
 ### PDF export
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
