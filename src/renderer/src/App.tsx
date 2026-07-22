@@ -27,7 +27,7 @@ function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
 }
 
-function Content({ item, document }: { item: ViewerContent; document: ViewerDocument }) {
+function Content({ item, document, measurable = false }: { item: ViewerContent; document: ViewerDocument; measurable?: boolean }) {
   if (item.type === 'text') {
     const style = document.charStyles[item.charStyleId]
     return <span style={{ fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined, fontSize: style ? `${style.height / 100}pt` : undefined, fontWeight: style?.bold ? 700 : 400, color: style?.color }}>{item.text}</span>
@@ -37,10 +37,10 @@ function Content({ item, document }: { item: ViewerContent; document: ViewerDocu
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
     return <img className="viewer-image" src={`data:${resource.mime};base64,${resource.data}`} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
-  return <TableView table={item} document={document} />
+  return <TableView table={item} document={document} measurable={measurable} />
 }
 
-function ParagraphView({ paragraph, document, measurable = false }: { paragraph: ViewerParagraph; document: ViewerDocument; measurable?: boolean }) {
+export function ParagraphView({ paragraph, document, measurable = false }: { paragraph: ViewerParagraph; document: ViewerDocument; measurable?: boolean }) {
   const style = document.paraStyles[paragraph.paraStyleId]
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
@@ -50,7 +50,7 @@ function ParagraphView({ paragraph, document, measurable = false }: { paragraph:
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} />)}</div>
+  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} />)}</div>
 }
 
 function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
@@ -60,7 +60,7 @@ function HeaderFooterView({ control, kind, document, offset }: { control?: Viewe
   </div>
 }
 
-function TableView({ table, document }: { table: ViewerTable; document: ViewerDocument }) {
+function TableView({ table, document, measurable = false }: { table: ViewerTable; document: ViewerDocument; measurable?: boolean }) {
   const columnWidths = Array.from({ length: table.columnCount }, () => 0)
   const candidates = table.rows.flatMap((row) => row.cells).sort((a, b) => a.columnSpan - b.columnSpan)
   candidates.forEach((cell) => {
@@ -72,7 +72,7 @@ function TableView({ table, document }: { table: ViewerTable; document: ViewerDo
   const fallback = (table.width ?? 0) / Math.max(table.columnCount, 1)
   const resolvedWidths = columnWidths.map((width) => width || fallback)
   const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
-  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={`${table.id}:r${row.cells[0]?.row ?? rowIndex}`} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
+  return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     return <td key={`${table.id}:r${cell.row}c${cell.column}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
       minHeight: hwpUnitToCssPx(cell.height), verticalAlign: cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
@@ -80,7 +80,7 @@ function TableView({ table, document }: { table: ViewerTable; document: ViewerDo
       background: style?.backgroundColor === '#000000' ? '#000' : style?.backgroundColor,
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
       borderTop: style ? borderCss(style.top) : undefined, borderBottom: style ? borderCss(style.bottom) : undefined
-    }}>{cell.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</td>
+    }}>{cell.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} measurable={measurable} />)}</td>
   })}</tr>)}</tbody></table>
 }
 
