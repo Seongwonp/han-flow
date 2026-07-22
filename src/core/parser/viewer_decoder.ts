@@ -6,6 +6,14 @@ const num = (value?: string): number => Number(value ?? 0)
 const children = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => node.children.filter((child) => child.name === name)
 const child = (node: OrderedXmlNode, name: string): OrderedXmlNode | undefined => children(node, name)[0]
 const descendants = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => walkOrderedXml(node.children).filter((item) => item.name === name)
+
+function styleChild(node: OrderedXmlNode, name: string): OrderedXmlNode | undefined {
+  const direct = child(node, name)
+  if (direct) return direct
+  const switchNode = child(node, 'hp:switch')
+  const branch = child(switchNode ?? node, 'hp:case') ?? child(switchNode ?? node, 'hp:default')
+  return branch ? descendants(branch, name)[0] : undefined
+}
 const textOf = (node: OrderedXmlNode): string => walkOrderedXml(node.children).filter((item) => item.name === '#text').map((item) => item.text ?? '').join('')
 const box = (node?: OrderedXmlNode) => ({ top: num(node?.attributes.top), right: num(node?.attributes.right), bottom: num(node?.attributes.bottom), left: num(node?.attributes.left) })
 
@@ -110,7 +118,7 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   const bullets = Object.fromEntries(all.filter((node) => node.name === 'hh:bullet').map((node) => [node.attributes.id, node.attributes.char ?? '•']))
   const numberings = Object.fromEntries(all.filter((node) => node.name === 'hh:numbering').map((node) => [node.attributes.id, children(node, 'hh:paraHead').map((head) => ({ pattern: textOf(head), format: head.attributes.numFormat ?? 'DIGIT' }))]))
   all.filter((node) => node.name === 'hh:paraPr').forEach((style) => {
-    const marginNode = child(style, 'hh:margin')
+    const marginNode = styleChild(style, 'hh:margin')
     const getValue = (name: string) => num(child(marginNode ?? style, name)?.attributes.value)
     const heading = child(style, 'hh:heading')
     const level = num(heading?.attributes.level)
@@ -119,7 +127,7 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
     paraStyles[style.attributes.id] = {
       id: style.attributes.id,
       align: child(style, 'hh:align')?.attributes.horizontal,
-      lineSpacing: num(child(style, 'hh:lineSpacing')?.attributes.value),
+      lineSpacing: num(styleChild(style, 'hh:lineSpacing')?.attributes.value),
       margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') },
       heading: heading ? { type: heading.attributes.type ?? 'NONE', idRef, level, bullet: bullets[idRef], numberPattern: numbering?.pattern, numberFormat: numbering?.format } : undefined
     }

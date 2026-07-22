@@ -2,12 +2,12 @@ import AdmZip from 'adm-zip'
 import { join } from 'path'
 
 const header = `<?xml version="1.0" encoding="UTF-8"?>
-<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+<hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
   <hh:fontfaces><hh:fontface lang="HANGUL"><hh:font id="0" face="HanFlow Test Sans"/></hh:fontface></hh:fontfaces>
   <hh:charProperties><hh:charPr id="0" height="1000" textColor="#123456"><hh:fontRef hangul="0"/><hh:bold/></hh:charPr></hh:charProperties>
   <hh:numberings><hh:numbering id="1"><hh:paraHead level="1" numFormat="DIGIT">^1.</hh:paraHead></hh:numbering></hh:numberings>
   <hh:bullets><hh:bullet id="1" char="-"/></hh:bullets>
-  <hh:paraProperties><hh:paraPr id="0"><hh:align horizontal="LEFT"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing value="160"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr><hh:paraPr id="1"><hh:heading type="BULLET" idRef="1" level="0"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr><hh:paraPr id="2"><hh:heading type="NUMBER" idRef="1" level="0"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr></hh:paraProperties>
+  <hh:paraProperties><hh:paraPr id="0"><hh:align horizontal="LEFT"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing value="160"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr><hh:paraPr id="1"><hh:heading type="BULLET" idRef="1" level="0"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr><hh:paraPr id="2"><hh:heading type="NUMBER" idRef="1" level="0"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr><hh:paraPr id="3"><hp:switch><hp:case><hh:margin><hc:left value="120"/><hc:right value="240"/><hc:prev value="360"/><hc:next value="480"/></hh:margin><hh:lineSpacing type="PERCENT" value="130"/></hp:case><hp:default><hh:margin><hc:left value="1200"/><hc:right value="2400"/><hc:prev value="3600"/><hc:next value="4800"/></hh:margin><hh:lineSpacing type="PERCENT" value="200"/></hp:default></hp:switch></hh:paraPr></hh:paraProperties>
   <hh:borderFills><hh:borderFill id="1"><hh:leftBorder type="SOLID" width="0.12" color="#000000"/><hh:rightBorder type="SOLID" width="0.12" color="#000000"/><hh:topBorder type="SOLID" width="0.12" color="#000000"/><hh:bottomBorder type="SOLID" width="0.12" color="#000000"/><hc:fillBrush><hc:winBrush faceColor="#EEEEEE"/></hc:fillBrush></hh:borderFill></hh:borderFills>
 </hh:head>`
 
