@@ -285,6 +285,11 @@ lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 
 변경 후에도 **8페이지 / 이미지 4개 / overflow 0**을 유지했다. 앱 전체 20회 재측정은 warm
 **p50 108ms / p95 129ms**, cold **p50 606ms / p95 725ms**로 1초 p95 목표 안쪽이다.
 
+다음 단계의 위험을 격리하기 위해 셀 문단 분할 계산을 `cell_fragment` 순수 함수로 먼저
+추가했다. 문단 순서·참조의 완전 보존, 첫 문단 미수용, 전체 수용, 측정값 fallback, 단일
+overflow cell 선택, rowSpan fallback, 단일 초대형 문단을 공개 테스트로 고정했다. 아직 실제
+pagination과 renderer fragment에는 연결하지 않아 페이지 분배는 바뀌지 않는다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

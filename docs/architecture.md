@@ -66,6 +66,12 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 전파한다. 따라서 셀 문단은 페이지 전체 폭이 아니라 실제 colgroup과 셀 너비에서 줄바꿈된 DOM
 높이를 가지며, 일반 화면 렌더에는 측정용 data attribute를 노출하지 않는다.
 
+`cell_fragment`의 순수 함수는 셀 위·아래 padding과 문단별 실측 높이를 사용해 head/tail 후보를
+계산한다. 첫 문단이 남은 공간에 들어가지 않거나 모든 문단이 들어가면 분할하지 않으며, 문단
+참조와 순서를 그대로 보존한다. rowSpan 참여 행, 이전 rowSpan에 덮인 행, 동시에 둘 이상의 셀이
+넘치는 행과 단일 초대형 문단은 기존 행 단위 pagination 또는 overflow 진단으로 fallback한다.
+현재 함수는 `fragmentTableBlock`에 연결하지 않은 독립 검증 단계다.
+
 ### PDF export
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
