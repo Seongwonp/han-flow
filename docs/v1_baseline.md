@@ -268,6 +268,18 @@ reference와 픽셀 단위로 같지는 않다. 대체 폰트 metric 때문에 2
 다르다. v1의 읽기 가능하고 깨지지 않는 PDF 기준은 충족하지만 이 차이는 known limitation으로
 유지한다.
 
+2026-07-22 페이지별 비공백 글자 수를 비교한 결과 reference는
+`[867, 1650, 264, 1238, 174, 1138, 322, 424]`, Han-Flow는
+`[866, 756, 1158, 1238, 174, 1138, 322, 424]`였다. 차이는 2·3페이지에 집중되며,
+reference는 단일 표 셀 안의 15개 문단을 두 페이지에 나누지만 현재 renderer는 행 경계에서만
+표를 나눌 수 있어 셀 전체를 다음 페이지로 보낸다. 단순 `layoutTop` 휴리스틱이나 행 복제는
+뒤쪽 표를 9페이지로 밀어 회귀하므로 채택하지 않았다. 다음 보정은 셀 테두리와 rowSpan을
+유지하는 문단 단위 table-cell fragment 모델로 설계한다.
+
+별개로 문단 모양이 `hp:switch > hp:case/default` 안에 들어간 문서에서 margin과 PERCENT
+lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 `hp:case`를 우선하고 direct 속성,
+`hp:default` 순으로 해석하며 공개 synthetic fixture로 130% 줄 간격과 네 방향 margin을 고정했다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지
@@ -450,3 +462,4 @@ Electron `capturePage`로 private fixture를 다시 열어 상태 표시줄의 8
 - HWPX 포맷 개요: https://tech.hancom.com/hwpxformat/
 - OWPML 표준 안내: https://www.hancom.com/etc/hwpDownload.do
 - electron-builder macOS file association: https://www.electron.build/docs/api/electron-builder.interface.fileassociation/
+- 한컴 줄 간격 도움말: https://help.hancom.com/hoffice/multi/ko_kr/hwp/format/paragraph/paragraph%28line_spacing%29.htm

@@ -23,6 +23,8 @@ paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHe
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를
 지원하며 다른 번호 체계는 원문 format 정보를 모델에 보존한 뒤 후속 formatter에서 확장한다.
+문단 margin과 line spacing은 직접 자식뿐 아니라 `hp:switch`의 지원 가능한 `hp:case`와
+fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규화한다.
 
 ## 프로세스 책임
 
