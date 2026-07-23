@@ -18,7 +18,8 @@ const benchmarkOutput = testValue('HAN_FLOW_BENCHMARK_OUTPUT')
 const benchmarkRuns = Math.max(1, Number(testValue('HAN_FLOW_BENCHMARK_RUNS') ?? 1))
 const benchmarkMeasurements: unknown[] = []
 const benchmarkUserData = testValue('HAN_FLOW_BENCHMARK_USER_DATA')
-if (benchmarkUserData) app.setPath('userData', benchmarkUserData)
+const e2eUserData = testValue('HAN_FLOW_E2E_USER_DATA')
+if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData ?? e2eUserData)!)
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
 const decodeWorkers = new Map<number, Worker>()
@@ -63,19 +64,28 @@ function pathFromArguments(arguments_: string[]): string | undefined {
 
 function captureVisualState(window: BrowserWindow): void {
   const capturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
-  if (!capturePath) return
+  const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
+  const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
+  if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
   setTimeout(async () => {
-    const image = await window.webContents.capturePage()
-    await writeFile(capturePath, image.toPNG())
+    if (capturePath) {
+      const image = await window.webContents.capturePage()
+      await writeFile(capturePath, image.toPNG())
+    }
     const visualState = await window.webContents.executeJavaScript(`({
       images: Array.from(document.querySelectorAll('.viewer-page img')).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })),
-      renderedPages: document.querySelectorAll('.viewer-page').length,
+      totalPages: Number(document.querySelector('.viewer-pages')?.dataset.totalPages || 0),
+      mountedPages: document.querySelectorAll('.viewer-page').length,
+      documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => (page.innerText.match(/\\S/g) || []).length),
+      overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       status: document.querySelector('.viewer-status')?.textContent,
       timing: document.querySelector('.viewer-status')?.getAttribute('title')
     })`)
+    if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
+    if (exitWhenComplete) app.quit()
   }, captureDelayMs)
 }
 
@@ -94,10 +104,11 @@ function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
 
 function createWindow(initialOpen?: { filePath: string; receivedAt: number }): void {
   const visualCapturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
+  const visualStateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   // Create the browser window.
   mainWindow = new BrowserWindow({
     width: 1200,
-    height: visualCapturePath ? 1500 : 800,
+    height: visualCapturePath || visualStateOutput ? 1500 : 800,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset', // macOS 네이티브 스타일 최적화
@@ -114,7 +125,7 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     mainWindow.show()
   })
 
-  if (visualCapturePath) {
+  if (visualCapturePath || visualStateOutput) {
     mainWindow.webContents.once('did-finish-load', () => {
       if (mainWindow) captureVisualState(mainWindow)
     })
