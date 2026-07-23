@@ -68,7 +68,13 @@ function captureVisualState(window: BrowserWindow): void {
   setTimeout(async () => {
     const image = await window.webContents.capturePage()
     await writeFile(capturePath, image.toPNG())
-    const visualState = await window.webContents.executeJavaScript(`({ images: Array.from(document.querySelectorAll('.viewer-page img')).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })), renderedPages: document.querySelectorAll('.viewer-page').length, status: document.querySelector('.viewer-status')?.textContent, timing: document.querySelector('.viewer-status')?.getAttribute('title') })`)
+    const visualState = await window.webContents.executeJavaScript(`({
+      images: Array.from(document.querySelectorAll('.viewer-page img')).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })),
+      renderedPages: document.querySelectorAll('.viewer-page').length,
+      pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => (page.innerText.match(/\\S/g) || []).length),
+      status: document.querySelector('.viewer-status')?.textContent,
+      timing: document.querySelector('.viewer-status')?.getAttribute('title')
+    })`)
     console.log('Visual test state:', visualState)
   }, captureDelayMs)
 }
