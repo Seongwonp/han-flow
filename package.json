@@ -1,6 +1,6 @@
 {
   "name": "han-flow",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.1",
   "description": "빠르고 가벼운 macOS용 읽기 전용 HWPX 뷰어",
   "author": "Seongwon Park",
   "main": "./out/main/index.js",
@@ -52,7 +52,9 @@
     "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts",
     "benchmark:app": "node scripts/benchmark_app.mjs",
     "verify:app": "node scripts/verify_app.mjs",
-    "verify:matrix": "node scripts/verify_public_matrix.mjs"
+    "verify:matrix": "node scripts/verify_public_matrix.mjs",
+    "verify:pdf": "node scripts/verify_pdf.mjs",
+    "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.8",
