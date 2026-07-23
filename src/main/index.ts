@@ -68,7 +68,25 @@ function captureVisualState(window: BrowserWindow): void {
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
-  setTimeout(async () => {
+  const readyTimeoutMs = Number(process.env['HAN_FLOW_VISUAL_READY_TIMEOUT_MS'] ?? 30_000)
+  const startedAt = Date.now()
+  let previousSignature = ''
+  let stableSamples = 0
+  const captureWhenReady = async () => {
+    const readiness = await window.webContents.executeJavaScript(`(() => {
+      const pages = document.querySelector('.viewer-pages')
+      const errorVisible = Boolean(document.querySelector('.viewer-error'))
+      return {
+        ready: errorVisible || Boolean(pages && pages.dataset.documentLoading === 'false' && pages.dataset.layoutMeasured === 'true'),
+        signature: errorVisible ? 'error' : pages ? [pages.dataset.totalPages, document.querySelectorAll('.viewer-page').length, pages.dataset.documentLoading, pages.dataset.layoutMeasured].join(':') : 'empty'
+      }
+    })()`)
+    stableSamples = readiness.ready && readiness.signature === previousSignature ? stableSamples + 1 : readiness.ready ? 1 : 0
+    previousSignature = readiness.signature
+    if (stableSamples < 3 && Date.now() - startedAt < readyTimeoutMs) {
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
     if (capturePath) {
       const image = await window.webContents.capturePage()
       await writeFile(capturePath, image.toPNG())
@@ -80,13 +98,16 @@ function captureVisualState(window: BrowserWindow): void {
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
+      errorVisible: Boolean(document.querySelector('.viewer-error')),
+      errorMessageLength: document.querySelector('.viewer-error')?.textContent?.trim().length || 0,
       status: document.querySelector('.viewer-status')?.textContent,
       timing: document.querySelector('.viewer-status')?.getAttribute('title')
     })`)
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
-  }, captureDelayMs)
+  }
+  setTimeout(() => void captureWhenReady(), captureDelayMs)
 }
 
 function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {

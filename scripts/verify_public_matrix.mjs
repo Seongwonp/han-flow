@@ -24,11 +24,13 @@ function loadGenerator() {
   return loaded.exports
 }
 
-async function verify(fixture, delayMs) {
+async function verify(fixture, delayMs, expectedError = false) {
   let standardOutput = ''
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [resolve('scripts/verify_app.mjs'), fixture, appBinary], {
+    const arguments_ = [resolve('scripts/verify_app.mjs'), fixture, appBinary]
+    if (expectedError) arguments_.push('--expect-error')
+    const child = spawn(process.execPath, arguments_, {
       env: { ...process.env, HAN_FLOW_VERIFY_DELAY_MS: String(delayMs) },
       stdio: ['ignore', 'pipe', 'pipe']
     })
@@ -47,17 +49,22 @@ async function verify(fixture, delayMs) {
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
 try {
-  const { createCellFragmentHwpx, createSyntheticHwpx } = loadGenerator()
+  const { createCellFragmentHwpx, createCompatibilityHwpx, createInvalidHwpx, createSyntheticHwpx } = loadGenerator()
   const fixtures = [
     {
       name: 'baseline',
       path: createSyntheticHwpx(directory, { fileName: 'baseline.hwpx' }),
-      delayMs: 3000
+      delayMs: 500
     },
     {
       name: 'cell-continuation',
       path: createCellFragmentHwpx(directory, 'cell-continuation.hwpx'),
-      delayMs: 3000
+      delayMs: 500
+    },
+    {
+      name: 'images-rowspan',
+      path: createCompatibilityHwpx(directory, 'images-rowspan.hwpx'),
+      delayMs: 500
     },
     {
       name: 'large-progressive',
@@ -67,21 +74,31 @@ try {
         paragraphsPerExtraSection: 250,
         imageBytes: 5 * 1024 * 1024
       }),
-      delayMs: 8000
+      delayMs: 500
+    },
+    {
+      name: 'invalid-package',
+      path: createInvalidHwpx(directory, 'invalid-package.hwpx'),
+      delayMs: 500,
+      expectedError: true
     }
   ]
   const results = []
   for (const fixture of fixtures) {
-    results.push({ name: fixture.name, ...await verify(fixture.path, fixture.delayMs) })
+    results.push({ name: fixture.name, ...await verify(fixture.path, fixture.delayMs, fixture.expectedError) })
   }
 
   const continuation = results.find(({ name }) => name === 'cell-continuation')
+  const compatibility = results.find(({ name }) => name === 'images-rowspan')
   const large = results.find(({ name }) => name === 'large-progressive')
+  const invalid = results.find(({ name }) => name === 'invalid-package')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ name }) => `${name}: verify 실패`),
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
+    compatibility?.imageCount === 12 ? undefined : 'images-rowspan: 이미지 12개가 decode되지 않음',
     large && large.totalPages > 50 ? undefined : 'large-progressive: 50페이지를 넘지 않음',
-    large && large.mountedPages < large.totalPages ? undefined : 'large-progressive: page virtualization이 적용되지 않음'
+    large && large.mountedPages < large.totalPages ? undefined : 'large-progressive: page virtualization이 적용되지 않음',
+    invalid?.expectedError && invalid.passed ? undefined : 'invalid-package: 오류 안내 검증 실패'
   ].filter(Boolean)
   const summary = {
     passed: failures.length === 0,

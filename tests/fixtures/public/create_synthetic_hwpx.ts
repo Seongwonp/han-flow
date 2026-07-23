@@ -36,6 +36,20 @@ const cellFragmentSection = `<?xml version="1.0" encoding="UTF-8"?>
   <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="anchor-table" rowCnt="1" colCnt="1" pageBreak="CELL"><hp:sz width="12000" height="2000"/>${cell(0, 2000, 'A')}</hp:tbl></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="2000"/></hp:linesegarray></hp:p>
 </hs:sec>`
 
+const compatibilityImages = Array.from({ length: 12 }, (_, index) =>
+  `<hp:pic><hp:curSz width="1000" height="1000"/><hc:img binaryItemIDRef="image${index + 1}"/></hp:pic>`
+).join('')
+
+const compatibilitySection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="20000" height="21000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr>${compatibilityImages}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1200"/></hp:linesegarray></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="merged-table" rowCnt="3" colCnt="2" pageBreak="CELL"><hp:sz width="12000" height="6000"/>
+    <hp:tr><hp:tc borderFillIDRef="1" header="1"><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="6000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>H1</hp:t></hp:run></hp:p></hp:subList></hp:tc><hp:tc borderFillIDRef="1" header="1"><hp:cellAddr colAddr="1" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="6000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>H2</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+    <hp:tr><hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="1" rowSpan="2"/><hp:cellSz width="6000" height="4000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>R</hp:t></hp:run></hp:p></hp:subList></hp:tc><hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="1" rowAddr="1"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="6000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>A</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+    <hp:tr><hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="1" rowAddr="2"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="6000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>B</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+  </hp:tbl></hp:run><hp:linesegarray><hp:lineseg vertpos="1200" vertsize="6000"/></hp:linesegarray></hp:p>
+</hs:sec>`
+
 export interface SyntheticHwpxOptions {
   sectionCount?: number
   paragraphsPerExtraSection?: number
@@ -78,6 +92,28 @@ export function createCellFragmentHwpx(directory: string, fileName = 'han-flow-c
   const zip = new AdmZip()
   zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
   zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
+  zip.writeZip(path)
+  return path
+}
+
+export function createCompatibilityHwpx(directory: string, fileName = 'han-flow-compatibility.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip()
+  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(compatibilitySection))
+  for (let index = 1; index <= 12; index += 1) {
+    zip.addFile(`BinData/image${index}.png`, transparentPng)
+  }
+  zip.writeZip(path)
+  return path
+}
+
+export function createInvalidHwpx(directory: string, fileName = 'han-flow-invalid.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip()
+  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
   zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
   zip.writeZip(path)
   return path

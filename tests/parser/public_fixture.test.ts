@@ -8,12 +8,13 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createCellFragmentHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createCompatibilityHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
   const fixture = createSyntheticHwpx(directory)
   const cellFragmentFixture = createCellFragmentHwpx(directory)
+  const compatibilityFixture = createCompatibilityHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -116,5 +117,17 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
       .flatMap((table) => table.rows)
       .flatMap((row) => row.cells)
       .some((cell) => cell.splitTop || cell.splitBottom)).toBe(false)
+  })
+
+  test('다중 이미지 resource와 rowSpan 표를 보존한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(compatibilityFixture))
+    expect(Object.keys(document.resources)).toHaveLength(12)
+    expect(document.sections[0].blocks[0].content.filter((content) => content.type === 'image')).toHaveLength(12)
+    const table = document.sections[0].blocks[1].content.find((content) => content.type === 'table')
+    expect(table?.type).toBe('table')
+    if (!table || table.type !== 'table') throw new Error('공개 병합 표가 없습니다.')
+    expect(table.rows).toHaveLength(3)
+    expect(table.rows[1].cells[0]).toMatchObject({ row: 1, column: 0, rowSpan: 2, columnSpan: 1 })
+    expect(table.rows[2].cells[0]).toMatchObject({ row: 2, column: 1, rowSpan: 1, columnSpan: 1 })
   })
 })

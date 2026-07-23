@@ -4,7 +4,9 @@ import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 
 const fixture = process.argv[2]
-const appBinary = resolve(process.argv[3] ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const expectedError = process.argv.includes('--expect-error')
+const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
+const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
 if (!fixture?.toLowerCase().endsWith('.hwpx')) {
   console.error('사용법: npm run verify:app -- <fixture.hwpx> [Han-Flow 실행 파일]')
@@ -42,15 +44,20 @@ const directory = await mkdtemp(join(tmpdir(), 'han-flow-app-verify-'))
 try {
   const state = await launch(join(directory, 'visual-state.json'), join(directory, 'user-data'))
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
-  const failures = [
+  const failures = (expectedError ? [
+    state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
+    state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음'
+  ] : [
+    state.errorVisible ? '예상하지 않은 사용자 오류가 표시됨' : undefined,
     state.totalPages > 0 ? undefined : '페이지가 생성되지 않음',
     state.mountedPages > 0 ? undefined : '페이지 DOM이 생성되지 않음',
     state.documentLoading ? '백그라운드 문서 로딩이 끝나지 않음' : undefined,
     state.overflowPages.length ? `페이지 overflow: ${state.overflowPages.join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined
-  ].filter(Boolean)
+  ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),
+    expectedError,
     passed: failures.length === 0,
     totalPages: state.totalPages,
     mountedPages: state.mountedPages,
