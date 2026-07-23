@@ -148,6 +148,21 @@ PDF는 화면과 같은 resolved font를 사용해야 한다. 폰트 metric 차�
 - **M4 macOS 마감**: dark chrome(문서 용지는 독립), pinch zoom, drag/drop, 오류/폰트 진단,
   패키징과 실제 주간 사용 검증
 
+### 현재 마일스톤 요약 (2026-07-23)
+
+- **M0 완료**: 코드 감사, viewer-only v1 계약, private/public fixture 규칙, 파이프라인과
+  글꼴 라이선스 결정을 문서화했다.
+- **M1 완료**: 기준 문서의 ordered decode, 스타일·표·이미지·머리말/꼬리말/쪽 번호,
+  8페이지 read-only 렌더와 overflow 0을 검증했다. 픽셀 동일성이 아닌 읽기 가능성과 내용
+  보존이라는 완료 조건을 충족하며, 대체 글꼴 metric과 단일 문단 내부 줄 분할은 정확도
+  후속 과제로 남긴다.
+- **M2 핵심 완료**: Finder 열기, single-instance, worker 점진 decode, page virtualization,
+  warm/cold p95 계측을 완료했다. 실제 대형 업무 HWPX 표본 확보와 재측정만 남았다.
+- **M3 핵심 완료**: 화면과 동일한 8페이지 A4 PDF, 배경·이미지·쪽 번호와 continuation
+  pagination을 검증했다. 일반 저장 대화상자의 수동 클릭과 font metric 분배 차이는 남아 있다.
+- **M4 로컬 실사용 완료**: dark mode chrome, pinch zoom, drag/drop, 진단, 아이콘, Finder
+  기본 앱 경로를 검증했다. 외부 배포를 위한 Developer ID 서명과 notarization은 미완료다.
+
 ## M2 빠른 열기 진행 현황 (2026-07-20)
 
 - [x] 개인정보 없는 synthetic HWPX 생성기와 항상 실행되는 공개 회귀 테스트
@@ -275,6 +290,18 @@ reference는 단일 표 셀 안의 15개 문단을 두 페이지에 나누지만
 표를 나눌 수 있어 셀 전체를 다음 페이지로 보낸다. 단순 `layoutTop` 휴리스틱이나 행 복제는
 뒤쪽 표를 9페이지로 밀어 회귀하므로 채택하지 않았다. 다음 보정은 셀 테두리와 rowSpan을
 유지하는 문단 단위 table-cell fragment 모델로 설계한다.
+
+2026-07-23 continuation pagination 연결 후 화면과 PDF의 페이지별 비공백 글자 수는 모두
+`[867, 772, 1142, 1238, 174, 1138, 322, 424]`였다. 이전 결과보다 16자가 3페이지에서
+2페이지로 이동했고 첫 페이지도 reference와 같아졌다. 2·3페이지 합계 1,914자는 reference와
+동일하므로 누락·중복은 없다. Poppler로 다시 렌더링한 2·3페이지에서도 테두리 연결, 본문,
+뒤쪽 표가 잘리지 않았다.
+
+2페이지에 남은 큰 빈 공간은 continuation 실패가 아니다. 다음 원본 조각이 여러 줄을 가진
+하나의 긴 문단이라 현재의 문단 원자성 규칙으로는 일부 줄만 잘라 넣을 수 없다. reference와
+같은 1,650/264 분배를 얻으려면 line box 측정과 단일 문단 내부 줄 분할이 필요하다. 이는
+문단 순서·스타일 보존과 중복 방지 계약을 새로 설계해야 하므로 v1 known limitation으로 두고,
+편집 기능과는 별개의 향후 정확도 작업으로 분리한다.
 
 별개로 문단 모양이 `hp:switch > hp:case/default` 안에 들어간 문서에서 margin과 PERCENT
 lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 `hp:case`를 우선하고 direct 속성,
@@ -444,6 +471,8 @@ production 실험도 수행했다. 8페이지, overflow 0, 첫 화면 623ms와 P
 - [x] 고정 A4 viewport의 실제 overflow 측정 및 상태 표시
 - [x] section 경계·pageBreak·lineseg 높이 기반 block pagination
 - [x] `pageBreak=CELL` 표의 행 높이 기반 페이지 분할
+- [x] measured pass의 표 셀 문단 continuation과 반복 header·뒤쪽 표 비회귀
+- [ ] 단일 장문 문단의 line box 기반 페이지 내부 분할
 
 검증 참고: `npm test`와 `npm run build`는 통과한다. 저장소 전체 `tsc --noEmit`은 기존
 편집 프로토타입의 미사용 import, `NormalizedDocument.binData` 누락, core 경로의

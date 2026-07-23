@@ -127,6 +127,10 @@ production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1
 없는 일반 패키지 실행은 항상 macOS 저장 대화상자를 사용한다. overflow는 세로뿐 아니라
 가로 `scrollWidth`도 검사하며, 표는 본문 너비를 넘지 않도록 축소한다.
 
+visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이미지 decode 상태, 페이지별
+비공백 글자 수, overflow와 timing만 출력한다. 같은 페이지별 글자 수를 Poppler PDF 추출
+결과와 비교해 화면 pagination과 `printToPDF` pagination이 일치하는지 검증한다.
+
 ## v1 이후
 
 `.hwp` 바이너리 열람은 v2에서 기존 파서 활용을 검토한다. 텍스트·표·이미지 편집과 안전한
