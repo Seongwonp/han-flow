@@ -1,5 +1,5 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable } from '../../core/document/viewer_document'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
@@ -25,6 +25,11 @@ const ms = (value: number): string => `${Math.round(value)}ms`
 
 function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
+}
+
+export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string {
+  const fragment = cell.splitTop ? (cell.splitBottom ? 'tb' : 't') : (cell.splitBottom ? 'b' : 'full')
+  return `${tableId}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${fragment}`
 }
 
 function Content({ item, document, measurable = false }: { item: ViewerContent; document: ViewerDocument; measurable?: boolean }) {
@@ -75,7 +80,7 @@ function TableView({ table, document, measurable = false }: { table: ViewerTable
   return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     const fragmented = cell.splitTop || cell.splitBottom
-    return <td key={`${table.id}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${cell.splitTop ? 'top' : 'head'}`} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
+    return <td key={cellFragmentKey(table.id, cell)} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
       minHeight: fragmented ? undefined : hwpUnitToCssPx(cell.height), verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
       padding: fragmented ? undefined : `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
       paddingTop: fragmented ? hwpUnitToCssPx(cell.splitTop ? 0 : cell.margin.top) : undefined,

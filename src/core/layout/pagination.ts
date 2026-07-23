@@ -19,6 +19,7 @@ function declaredRowHeight(row: ViewerTableRow): number {
 }
 
 function rowHeight(table: ViewerTable, row: ViewerTableRow, rowIndex: number, measurements?: LayoutMeasurements): number {
+  if (row.fragmentHeight !== undefined && Number.isFinite(row.fragmentHeight)) return Math.max(row.fragmentHeight, 0)
   const sourceRow = row.cells[0]?.row ?? rowIndex
   return measurements?.tableRowHeights[`${table.id}:r${sourceRow}`] ?? declaredRowHeight(row)
 }

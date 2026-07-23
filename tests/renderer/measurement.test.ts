@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerParagraph } from '../../src/core/document/viewer_document'
-import { ParagraphView } from '../../src/renderer/src/App'
+import { cellFragmentKey, ParagraphView } from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
@@ -55,5 +55,39 @@ describe('DOM 측정 마커', () => {
     expect(markup).toContain('border-top:none')
     expect(markup).toContain('border-bottom:none')
     expect(markup).not.toContain('min-height:')
+  })
+
+  test('head와 tail 조각은 바깥 경계만 유지한다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const border = { type: 'SOLID', widthMm: 0.12, color: '#000000' }
+    const styledDocument: ViewerDocument = { ...document, cellStyles: { '1': { id: '1', left: border, right: border, top: border, bottom: border } } }
+    const renderCell = (splitTop: boolean, splitBottom: boolean) => renderToStaticMarkup(createElement(ParagraphView, {
+      document: styledDocument,
+      paragraph: { ...topParagraph, content: [{ ...table, rows: [{ cells: [{ ...table.rows[0].cells[0], margin: { top: 75, right: 75, bottom: 150, left: 75 }, borderFillId: '1', splitTop, splitBottom }] }] }] }
+    }))
+    const head = renderCell(false, true)
+    expect(head).toContain('border-top:0.12mm solid #000000')
+    expect(head).toContain('border-bottom:none')
+    expect(head).toContain('padding-top:1px')
+    expect(head).toContain('padding-bottom:0')
+    const tail = renderCell(true, false)
+    expect(tail).toContain('border-top:none')
+    expect(tail).toContain('border-bottom:0.12mm solid #000000')
+    expect(tail).toContain('padding-top:0')
+    expect(tail).toContain('padding-bottom:2px')
+  })
+
+  test('셀 fragment key는 네 상태를 모두 구분한다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const source = { ...table.rows[0].cells[0], sourceCellId: 'source' }
+    const keys = [
+      cellFragmentKey('table', source),
+      cellFragmentKey('table', { ...source, splitTop: true }),
+      cellFragmentKey('table', { ...source, splitBottom: true }),
+      cellFragmentKey('table', { ...source, splitTop: true, splitBottom: true })
+    ]
+    expect(new Set(keys).size).toBe(4)
   })
 })

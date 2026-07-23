@@ -42,4 +42,29 @@ describe('AIDA block pagination', () => {
       ['table-block'], ['next']
     ])
   })
+
+  test('부분 행은 원본 DOM 실측값보다 명시한 fragment 높이를 우선한다', () => {
+    const row = (index: number): ViewerTableRow => ({
+      fragmentHeight: 2000,
+      cells: [{
+        row: index, column: 0, rowSpan: 1, columnSpan: 1, width: 6000, height: 7000,
+        margin: { top: 0, right: 0, bottom: 0, left: 0 }, header: false, paragraphs: []
+      }]
+    })
+    const tableBlock: ViewerParagraph = {
+      id: 'fragment-block', paraStyleId: '0', pageBreak: false, layoutHeight: 4000,
+      content: [{ type: 'table', id: 'fragment-table', rowCount: 2, columnCount: 1, pageBreak: 'CELL', repeatHeader: false, rows: [row(0), row(1)] }]
+    }
+    const document = {
+      page: { width: 10000, height: 10000, margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 }, headerOffset: 0, footerOffset: 0 },
+      fonts: {}, charStyles: {}, paraStyles: {}, cellStyles: {}, resources: {}, diagnostics: [],
+      sections: [{ id: 'section', blocks: [tableBlock], headers: [], footers: [] }]
+    } satisfies ViewerDocument
+    const measurements = {
+      blockHeights: { 'fragment-block': 4000 },
+      tableRowHeights: { 'fragment-table:r0': 7000, 'fragment-table:r1': 7000 }
+    }
+
+    expect(paginateViewerDocument(document, measurements)[0].blocks.map(({ id }) => id)).toEqual(['fragment-block'])
+  })
 })

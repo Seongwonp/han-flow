@@ -1,4 +1,4 @@
-import { ViewerParagraph, ViewerTableCell, ViewerTableRow } from '../document/viewer_document'
+import { ViewerParagraph, ViewerTable, ViewerTableCell, ViewerTableRow } from '../document/viewer_document'
 
 export type ParagraphHeights = Readonly<Record<string, number>>
 
@@ -60,6 +60,10 @@ export function findSplittableCell(row: ViewerTableRow, capacity: number, height
   const [{ cell, cellIndex }] = overflowing
   const split = splitCellParagraphs(cell, capacity, heights)
   return split ? { cellIndex, ...split } : undefined
+}
+
+export function tableSupportsCellSplitting(table: ViewerTable): boolean {
+  return table.rows.every((row) => row.cells.every((cell) => cell.rowSpan === 1))
 }
 
 export function preservesParagraphOrder(original: readonly ViewerParagraph[], split: CellParagraphSplit): boolean {
