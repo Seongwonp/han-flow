@@ -12,11 +12,18 @@ v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도
 - [x] `npm run package:mac`
 - [x] `npm run verify:app -- tests/fixtures/private/m1-weekly.hwpx`
 - [x] `npm run verify:matrix`
+- [x] `npm run verify:pdf -- tests/fixtures/private/m1-weekly.hwpx`
+- [x] `npm run release:check -- tests/fixtures/private/m1-weekly.hwpx`
 - [x] private AIDA 8페이지, 이미지 4개, overflow 0
 - [x] 화면과 PDF 페이지별 비공백 글자 수 일치
 - [x] 공개 15문단 fixture의 8+7 continuation, 반복 header, 뒤쪽 표 비회귀
 - [x] 출력 PDF 8페이지 A4, 배경·이미지·쪽 번호 유지
 - [x] 80-section synthetic 9,767페이지 중 DOM 12개만 mount, overflow 0
+- [x] 이미지 12개와 `rowSpan=2` 표 production 렌더, overflow 0
+- [x] 필수 header가 없는 손상 HWPX의 crash 없는 사용자 오류
+- [x] AIDA 화면/PDF 8페이지와 페이지별 글자 수 일치
+- [x] background decode와 DOM measurement 완료 후 3회 안정된 layout 상태 수집
+- [x] 앱 bundle version `1.0.0-rc.1`
 
 `verify:app`은 본문 문자열을 출력하지 않는다. 파일 basename, 페이지 수, 이미지 수,
 overflow 페이지와 페이지별 비공백 글자 수만 사용하며 임시 JSON과 Electron user-data는
@@ -37,6 +44,7 @@ pinch zoom, dark chrome, PDF 자동 출력과 앱 재실행 경로를 production
 
 - [ ] 개인정보를 제거한 실제 업무 HWPX 2~3개 추가 검증
 - [x] 50페이지 이상 synthetic 문서의 점진 로딩·가상화 검증
+- [x] 이미지 중심·세로 병합 중심 synthetic production 검증
 - [ ] 이미지 중심·세로 병합 중심 실제 문서를 각각 `verify:app`으로 통과
 - [ ] PDF 저장 대화상자를 실제 사용자 흐름에서 최종 수동 확인
 - [ ] Developer ID 서명

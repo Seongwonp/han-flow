@@ -7,6 +7,9 @@
 macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내는 읽기 전용 뷰어입니다. 상용 편집기를
 복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를 목표로 합니다.
 
+현재 버전은 **1.0.0-rc.1**입니다. 로컬 실사용과 unsigned beta 기준의 v1 기능은 완성됐으며,
+공개 배포에는 Developer ID 서명과 Apple notarization이 필요합니다.
+
 ## v1 목표
 
 - Finder에서 HWPX 파일을 열어 1초 안에 첫 화면 표시
@@ -62,6 +65,8 @@ npm run package:mac
 npm run benchmark:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwpx
 npm run verify:matrix
+npm run verify:pdf -- /path/to/document.hwpx
+npm run release:check -- /path/to/private-reference.hwpx
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
@@ -79,6 +84,10 @@ loading 완료와 overflow 0을 자동 판정합니다. 본문 문자열 대신 
 `verify:matrix`는 기본 표·이미지, 15문단 continuation, 80-section 대형 progressive 공개
 fixture를 임시 생성해 production 앱으로 연속 검증합니다. 대형 fixture는 전체 페이지와 실제
 mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
+
+`verify:pdf`는 production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지 수와
+페이지별 글자 수를 비교하고 대표 페이지를 PNG로 재렌더링합니다. `release:check`는 전체 테스트,
+패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을 순서대로 실행하는 최종 RC 관문입니다.
 
 macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
 `com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의
@@ -109,3 +118,4 @@ docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 - [v1 기준선과 구현 현황](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
 - [v1 Release Candidate 체크리스트](docs/release_checklist.md)
+- [변경 기록](CHANGELOG.md)

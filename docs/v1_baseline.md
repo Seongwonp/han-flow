@@ -359,6 +359,30 @@ fixture **9,767페이지 / mount 12 / overflow 0**이며 전체 matrix가 통과
 이미지·폰트·표 구조와 디스크 I/O를 대체하지 않으므로, 실문서가 생기면 `verify:app` 결과를
 별도 기준선으로 추가한다.
 
+v1 RC 호환성 matrix를 이미지 12개와 `rowSpan=2` 표, 필수 header가 없는 손상 package까지
+확장했다. production 결과는 이미지·병합 표 fixture **1페이지 / 이미지 12개 / overflow 0**,
+손상 package는 **crash 0 / 비어 있지 않은 사용자 오류 표시**이며 5종 matrix 전체가 통과했다.
+
+`verify:pdf`는 private AIDA를 production 앱에서 출력하고 Poppler로 다시 검사한다. 결과는
+**화면 8페이지 = PDF 8페이지 / 595.92 × 841.92pt A4 / PDF 1.4 / 1,542,671 bytes**이며
+페이지별 글자 수 `[867, 772, 1142, 1238, 174, 1138, 322, 424]`가 화면과 PDF에서
+완전히 같았다. 1·4·8페이지 PNG를 직접 확인해 제목 셀, 긴 본문, 표, 이미지·서명, 쪽 번호와
+마지막 동의서에 잘림·겹침이 없음을 확인했다.
+
+프로젝트 버전은 `1.0.0-rc.1`로 올렸다. `release:check`는 전체 테스트, production 패키징,
+공개 5종 matrix, private 앱 smoke test, private 화면/PDF 일치 검증을 하나의 실패 즉시 중단
+관문으로 묶는다.
+
+첫 통합 관문은 대형 progressive 문서가 full model로 교체된 직후 DOM 재측정 전 상태를
+고정 타이머가 읽어 2,499페이지와 일시 overflow를 보고하면서 실패했다. renderer가
+`documentLoading=false`와 measured layout 완료를 명시하고, page signature가 연속 3회
+안정된 뒤에만 E2E 상태를 기록하도록 수정했다. 이후 대형 문서는 다시
+**9,767페이지 / mount 12 / overflow 0**으로 확정됐다.
+
+최종 `release:check`는 **41 tests / production package / 공개 5종 matrix / private AIDA
+app / private AIDA PDF** 전 단계를 통과했다. 생성된 앱의 `CFBundleShortVersionString`과
+`CFBundleVersion`도 모두 `1.0.0-rc.1`이다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

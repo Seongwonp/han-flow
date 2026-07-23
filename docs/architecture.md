@@ -121,6 +121,8 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - `npm run benchmark:decoder` 대형 문서 기준선
 - `npm run verify:app -- <fixture.hwpx>` production 앱 smoke test
 - `npm run verify:matrix` 공개 fixture production 회귀 matrix
+- `npm run verify:pdf -- <fixture.hwpx>` 화면/PDF pagination 일치와 Poppler 재렌더
+- `npm run release:check -- <fixture.hwpx>` v1 RC 통합 관문
 - 화면/PDF 페이지 수, overflow, font substitution 진단
 - 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
 
@@ -137,6 +139,17 @@ JSON 상태를 읽은 뒤 임시 파일과 user-data를 제거한다.
 `verify:matrix`는 공개 생성기를 재사용해 기본, cell continuation, 80-section progressive
 fixture를 각각 격리 실행한다. 대형 문서는 전체 page count보다 mount된 `.viewer-page` 수가
 작아야 통과하므로 50페이지 초과 virtualization 회귀도 함께 잡는다.
+matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 package도 포함한다.
+손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
+
+`verify:pdf`는 production 앱의 고정 PDF 출력과 visual state를 같은 격리 실행에서 수집한다.
+Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 페이지별 비공백 글자 수와 대표 PNG
+재렌더를 검사한다. 50페이지 이하 문서는 화면과 PDF의 모든 페이지별 글자 수가 같아야 통과한다.
+
+visual state는 고정 지연 직후 바로 읽지 않는다. background decode가 끝나고 DOM measurement가
+완료된 뒤 전체·mount page signature가 250ms 간격으로 3회 같을 때만 상태를 확정한다. 대형
+문서의 partial model → full model → measured pagination 전환 중간값을 최종 결과로 오인하지
+않기 위한 안정성 계약이다.
 
 ## v1 이후
 
