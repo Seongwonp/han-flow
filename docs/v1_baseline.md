@@ -342,6 +342,12 @@ production AIDA도 새 패키지에서 다시 열어 **8페이지 / 이미지 4�
 pagination 또는 overflow 진단으로 fallback한다. 테두리 두께는 수용량 예산에 직접 포함하지
 않지만 공개 fixture와 production 문서 양쪽의 실제 렌더 overflow 0으로 이번 통합을 검증했다.
 
+Release Candidate 반복 검증을 위해 `npm run verify:app -- <fixture.hwpx>`를 추가했다.
+검증기는 격리된 user-data로 production `.app`을 열고 전체/마운트 페이지 수, background
+loading 완료, 이미지 decode, overflow와 페이지별 비공백 글자 수를 안전한 JSON으로 수집한
+뒤 자동 종료한다. private AIDA 결과는 **pass / 8페이지 / 이미지 4개 / overflow 0**이며
+글자 수는 화면·PDF 기준과 같은 `[867, 772, 1142, 1238, 174, 1138, 322, 424]`다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

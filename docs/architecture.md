@@ -119,6 +119,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - private 실사용 fixture와 reference PDF 시각 비교
 - `npm test`, `npm run build`, `npm run package:mac`
 - `npm run benchmark:decoder` 대형 문서 기준선
+- `npm run verify:app -- <fixture.hwpx>` production 앱 smoke test
 - 화면/PDF 페이지 수, overflow, font substitution 진단
 - 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
 
@@ -130,6 +131,8 @@ production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1
 visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이미지 decode 상태, 페이지별
 비공백 글자 수, overflow와 timing만 출력한다. 같은 페이지별 글자 수를 Poppler PDF 추출
 결과와 비교해 화면 pagination과 `printToPDF` pagination이 일치하는지 검증한다.
+`verify:app`은 별도 Electron user-data에서 패키지를 실행해 single-instance 충돌을 피하고,
+JSON 상태를 읽은 뒤 임시 파일과 user-data를 제거한다.
 
 ## v1 이후
 
