@@ -51,7 +51,8 @@
     "test": "jest",
     "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts",
     "benchmark:app": "node scripts/benchmark_app.mjs",
-    "verify:app": "node scripts/verify_app.mjs"
+    "verify:app": "node scripts/verify_app.mjs",
+    "verify:matrix": "node scripts/verify_public_matrix.mjs"
   },
   "dependencies": {
     "@types/katex": "^0.16.8",
