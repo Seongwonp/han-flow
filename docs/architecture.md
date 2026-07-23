@@ -70,7 +70,8 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 계산한다. 첫 문단이 남은 공간에 들어가지 않거나 모든 문단이 들어가면 분할하지 않으며, 문단
 참조와 순서를 그대로 보존한다. rowSpan 참여 행, 이전 rowSpan에 덮인 행, 동시에 둘 이상의 셀이
 넘치는 행과 단일 초대형 문단은 기존 행 단위 pagination 또는 overflow 진단으로 fallback한다.
-현재 함수는 `fragmentTableBlock`에 연결하지 않은 독립 검증 단계다.
+측정값이 있는 두 번째 pagination pass에서만 `fragmentTableBlock`에 연결하고, 무측정 첫 pass는
+기존 행 단위 결과를 유지한다.
 
 원본 셀은 결정적 `sourceCellId`를 가지며 pagination이 만들 continuation cell은 `splitTop`과
 `splitBottom`을 사용할 수 있다. renderer는 잘린 위·아래 border와 padding을 제거하고 fragment의
@@ -79,9 +80,11 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 
 부분 행은 원본 행의 DOM 실측값을 다시 참조하지 않고 `fragmentHeight`를 명시해 pagination 높이를
 결정한다. `rowSpan > 1`인 셀이 하나라도 있는 표는 표 전체에서 셀 분할을 비활성화하고 기존 행
-단위 pagination으로 fallback한다. 테두리 두께는 현재 문단 수용량 계산에 포함하지 않으므로 실제
-통합 시 overflow 진단으로 검증해야 한다. 현재 pagination은 아직 continuation 행이나 flag를
-생성하지 않는다.
+단위 pagination으로 fallback한다. 단 하나의 셀이 넘칠 때 head를 현재 fragment에 넣고 tail을
+다음 fragment로 넘긴다. 짧은 이웃 셀의 내용은 head에만 두고 tail에는 빈 placeholder를 남겨
+열 구조와 배경을 유지하며, 여러 페이지에 걸치면 잘린 padding을 다시 더하지 않고 반복 분할한다.
+테두리 두께는 현재 문단 수용량 계산에 포함하지 않으므로 공개 fixture와 production 문서의 실제
+overflow 진단으로 검증한다.
 
 ### PDF export
 

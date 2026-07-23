@@ -287,14 +287,14 @@ lineSpacing이 0으로 사라지던 파서 누락을 수정했다. 지원되는 
 
 다음 단계의 위험을 격리하기 위해 셀 문단 분할 계산을 `cell_fragment` 순수 함수로 먼저
 추가했다. 문단 순서·참조의 완전 보존, 첫 문단 미수용, 전체 수용, 측정값 fallback, 단일
-overflow cell 선택, rowSpan fallback, 단일 초대형 문단을 공개 테스트로 고정했다. 아직 실제
-pagination과 renderer fragment에는 연결하지 않아 페이지 분배는 바뀌지 않는다.
+overflow cell 선택, rowSpan fallback, 단일 초대형 문단을 공개 테스트로 고정했다. 이 선행
+단계에서는 실제 pagination과 renderer fragment에 연결하지 않아 페이지 분배를 바꾸지 않았다.
 
 fragment renderer 선행 작업으로 각 원본 셀에 `sourceCellId`를 부여하고 continuation 전용
 `splitTop/splitBottom` flag를 추가했다. flag가 있는 조각은 잘린 경계의 border·padding과 원본
 min-height를 제거하고 top 정렬한다. renderer 마크업 테스트와 production AIDA에서
-**8페이지 / 이미지 4개 / overflow 0**을 유지했으며 pagination 통합 전이라 실제 문서에는 아직
-이 flag가 생성되지 않는다.
+**8페이지 / 이미지 4개 / overflow 0**을 유지했으며 이 단계까지는 실제 문서에 flag를 생성하지
+않았다.
 
 Claude의 두 번째 설계 리뷰에서 pagination 통합 전 필수 조건으로 지적된 부분 행 높이와
 `rowSpan` 안전장치를 반영했다. 부분 행은 `fragmentHeight`가 원본 행 DOM 실측값보다 우선하고,
@@ -302,7 +302,18 @@ Claude의 두 번째 설계 리뷰에서 pagination 통합 전 필수 조건으�
 bottom-padding-only overflow, 0 overflow, 일부 측정값 누락, `columnSpan`, 문단 누락·중복,
 head/tail 경계와 네 가지 fragment key를 공개 테스트로 고정했다. 테두리 두께는 아직 수용량
 계산 밖에 있으므로 실제 pagination 연결 단계에서 overflow 0을 다시 확인한다. 이 변경도
-continuation 행을 생성하지 않아 현재 페이지 분배에는 영향을 주지 않는다.
+continuation 행을 생성하기 전의 안전장치 단계라 페이지 분배에는 영향을 주지 않았다.
+
+이후 measured pagination에 continuation 행 생성을 연결했다. 개인정보 없는 전용 HWPX는 반복
+header, 15개 문단의 단일 장문 셀, 뒤쪽 앵커 표로 구성한다. 합성 측정값과 패키지 앱의 실제 DOM
+측정에서 모두 문단이 **8개 + 7개**로 나뉘고, 문단 ID 누락·중복 없이 두 페이지에 보존됐다.
+두 페이지 모두 header가 반복되고 앵커 표는 두 번째 페이지에 남았으며 **2페이지 / overflow 0**을
+확인했다. 같은 입력의 무측정 pass는 continuation flag 없이 기존 행 단위 3페이지를 유지한다.
+
+production AIDA도 새 패키지에서 다시 열어 **8페이지 / 이미지 4개 / overflow 0**을 유지했다.
+`rowSpan > 1`인 셀이 하나라도 있는 표, 복수 overflow 셀, 단일 초대형 문단은 계속 행 단위
+pagination 또는 overflow 진단으로 fallback한다. 테두리 두께는 수용량 예산에 직접 포함하지
+않지만 공개 fixture와 production 문서 양쪽의 실제 렌더 overflow 0으로 이번 통합을 검증했다.
 
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
