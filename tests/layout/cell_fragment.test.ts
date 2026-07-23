@@ -35,6 +35,12 @@ describe('표 셀 문단 분할', () => {
     expect(split?.headHeight).toBe(2100)
   })
 
+  test('continuation 조각을 다시 나눌 때 잘린 padding을 중복 계산하지 않는다', () => {
+    const split = splitCellParagraphs(cell(paragraphs, { splitTop: true, splitBottom: true }), 2000, heights)
+    expect(split?.head.map(({ id }) => id)).toEqual(['p0', 'p1'])
+    expect(split).toMatchObject({ headHeight: 2000, tailHeight: 2800 })
+  })
+
   test('아래 padding만 넘치게 만들면 안전하게 행 단위 fallback한다', () => {
     const exactContent = cell([paragraph('a', 900), paragraph('b', 1100)])
     expect(findSplittableCell({ cells: [exactContent] }, 2100, {})).toBeUndefined()

@@ -24,12 +24,16 @@ export function cellContentHeight(cell: ViewerTableCell, heights: ParagraphHeigh
 }
 
 export function cellOccupiedHeight(cell: ViewerTableCell, heights: ParagraphHeights): number {
-  return cell.margin.top + cellContentHeight(cell, heights) + cell.margin.bottom
+  return (cell.splitTop ? 0 : cell.margin.top) +
+    cellContentHeight(cell, heights) +
+    (cell.splitBottom ? 0 : cell.margin.bottom)
 }
 
 export function splitCellParagraphs(cell: ViewerTableCell, capacity: number, heights: ParagraphHeights): CellParagraphSplit | undefined {
-  if (!Number.isFinite(capacity) || capacity <= cell.margin.top || cell.paragraphs.length < 2) return undefined
-  const contentCapacity = capacity - cell.margin.top
+  const top = cell.splitTop ? 0 : cell.margin.top
+  const bottom = cell.splitBottom ? 0 : cell.margin.bottom
+  if (!Number.isFinite(capacity) || capacity <= top || cell.paragraphs.length < 2) return undefined
+  const contentCapacity = capacity - top
   const head: ViewerParagraph[] = []
   let used = 0
 
@@ -46,8 +50,8 @@ export function splitCellParagraphs(cell: ViewerTableCell, capacity: number, hei
   return {
     head,
     tail,
-    headHeight: cell.margin.top + used,
-    tailHeight: tail.reduce((sum, paragraph) => sum + paragraphHeight(paragraph, heights), 0) + cell.margin.bottom
+    headHeight: top + used,
+    tailHeight: tail.reduce((sum, paragraph) => sum + paragraphHeight(paragraph, heights), 0) + bottom
   }
 }
 

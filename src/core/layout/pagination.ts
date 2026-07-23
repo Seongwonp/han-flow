@@ -1,4 +1,5 @@
 import { ViewerDocument, ViewerParagraph, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { cellOccupiedHeight, findSplittableCell, ParagraphHeights, tableSupportsCellSplitting } from './cell_fragment'
 
 export interface ViewerPage {
   blocks: ViewerParagraph[]
@@ -28,6 +29,23 @@ function tableOf(block: ViewerParagraph): ViewerTable | undefined {
   return block.content.find((content): content is ViewerTable => content.type === 'table')
 }
 
+function splitRow(row: ViewerTableRow, cellIndex: number, headParagraphs: ViewerParagraph[], tailParagraphs: ViewerParagraph[], heights: ParagraphHeights): [ViewerTableRow, ViewerTableRow] {
+  const headCells = row.cells.map((cell, index) => ({
+    ...cell,
+    paragraphs: index === cellIndex ? headParagraphs : cell.paragraphs,
+    splitBottom: true
+  }))
+  const tailCells = row.cells.map((cell, index) => ({
+    ...cell,
+    paragraphs: index === cellIndex ? tailParagraphs : [],
+    splitTop: true
+  }))
+  return [
+    { cells: headCells, fragmentHeight: Math.max(...headCells.map((cell) => cellOccupiedHeight(cell, heights)), 0) },
+    { cells: tailCells, fragmentHeight: Math.max(...tailCells.map((cell) => cellOccupiedHeight(cell, heights)), 0) }
+  ]
+}
+
 function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageCapacity: number, measurements?: LayoutMeasurements): ViewerParagraph[] {
   const table = tableOf(block)
   if (!table || table.pageBreak !== 'CELL' || table.rows.length < 2) return [block]
@@ -44,6 +62,7 @@ function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageC
   const fragments: ViewerParagraph[] = []
   const headerRows = table.repeatHeader ? table.rows.filter((row) => row.cells.some((cell) => cell.header)) : []
   const bodyRows = table.rows.filter((row) => !headerRows.includes(row))
+  const allowsCellSplitting = Boolean(measurements && tableSupportsCellSplitting(table))
   let currentRows: ViewerTableRow[] = [...headerRows]
   let used = headerRows.reduce((sum, row, index) => sum + rowHeight(table, row, index, measurements), 0)
   let capacity = firstCapacity
@@ -60,12 +79,38 @@ function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageC
     capacity = pageCapacity
   }
 
-  bodyRows.forEach((row, rowIndex) => {
+  bodyRows.forEach((sourceRow, rowIndex) => {
     if (!measurements && rowIndex === naturalBreakIndex && currentRows.length) flush()
-    const height = rowHeight(table, row, table.rows.indexOf(row), measurements)
-    if (currentRows.length && used + height > capacity) flush()
-    currentRows.push(row)
-    used += height
+    let row = sourceRow
+    while (true) {
+      const height = rowHeight(table, row, table.rows.indexOf(sourceRow), measurements)
+      if (used + height <= capacity) {
+        currentRows.push(row)
+        used += height
+        break
+      }
+
+      const remaining = capacity - used
+      const split = allowsCellSplitting && remaining > 0
+        ? findSplittableCell(row, remaining, measurements!.blockHeights)
+        : undefined
+      if (split) {
+        const [head, tail] = splitRow(row, split.cellIndex, split.head, split.tail, measurements!.blockHeights)
+        currentRows.push(head)
+        used += head.fragmentHeight ?? 0
+        flush()
+        row = tail
+        continue
+      }
+
+      if (currentRows.length) {
+        flush()
+        continue
+      }
+      currentRows.push(row)
+      used += height
+      break
+    }
   })
   flush()
   return fragments.length > 1 ? fragments : [block]

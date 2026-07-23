@@ -8,11 +8,12 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
   const fixture = createSyntheticHwpx(directory)
+  const cellFragmentFixture = createCellFragmentHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -66,5 +67,54 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
       { type: 'text', text: '둘째 구역 머리말', charStyleId: '0' }
     ])
     expect(decorations.every((decoration) => decoration.footer?.id === '2')).toBe(true)
+  })
+
+  test('15문단 장문 셀 fixture를 continuation 행으로 나누고 뒤쪽 표를 밀지 않는다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(cellFragmentFixture))
+    const sourceTable = document.sections[0].blocks[0].content.find((content) => content.type === 'table')
+    expect(sourceTable?.type).toBe('table')
+    if (!sourceTable || sourceTable.type !== 'table') throw new Error('공개 장문 표가 없습니다.')
+    const sourceParagraphs = sourceTable.rows[1].cells[0].paragraphs
+    expect(sourceParagraphs).toHaveLength(15)
+
+    const tableId = sourceTable.id
+    const paragraphHeights = Object.fromEntries(sourceParagraphs.map((paragraph) => [paragraph.id, 2000]))
+    const measurements = {
+      blockHeights: {
+        ...paragraphHeights,
+        [document.sections[0].blocks[0].id]: 32200,
+        [document.sections[0].blocks[1].id]: 2000
+      },
+      tableRowHeights: {
+        [`${tableId}:r0`]: 2000,
+        [`${tableId}:r1`]: 30200
+      }
+    }
+    const pages = paginateViewerDocument(document, measurements)
+    expect(pages).toHaveLength(2)
+
+    const fragmentTables = pages.flatMap((page) => page.blocks)
+      .flatMap((block) => block.content)
+      .filter((content) => content.type === 'table' && content.id.startsWith(`${tableId}:fragment`))
+    expect(fragmentTables).toHaveLength(2)
+    const head = fragmentTables[0].rows[1].cells[0]
+    const tail = fragmentTables[1].rows[1].cells[0]
+    expect(head.paragraphs).toHaveLength(8)
+    expect(tail.paragraphs).toHaveLength(7)
+    expect(head.splitBottom).toBe(true)
+    expect(head.splitTop).toBeUndefined()
+    expect(tail.splitTop).toBe(true)
+    expect(tail.splitBottom).toBeUndefined()
+    expect([...head.paragraphs, ...tail.paragraphs].map(({ id }) => id)).toEqual(sourceParagraphs.map(({ id }) => id))
+    expect(fragmentTables.every((table) => table.rows[0].cells[0].header)).toBe(true)
+    expect(pages[1].blocks.some((block) => block.id === document.sections[0].blocks[1].id)).toBe(true)
+
+    const unmeasuredPages = paginateViewerDocument(document)
+    expect(unmeasuredPages).toHaveLength(3)
+    expect(unmeasuredPages.flatMap((page) => page.blocks).flatMap((block) => block.content)
+      .filter((content) => content.type === 'table')
+      .flatMap((table) => table.rows)
+      .flatMap((row) => row.cells)
+      .some((cell) => cell.splitTop || cell.splitBottom)).toBe(false)
   })
 })

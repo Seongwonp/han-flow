@@ -20,6 +20,11 @@ Git에 커밋하지 않는다.
 의존하지 않는다. section 숫자 정렬, 혼합 콘텐츠 순서, 스타일, 이미지 resource, 표의
 행 분할과 반복 header를 private 파일 없이 항상 검증한다.
 
+같은 생성기의 `createCellFragmentHwpx`는 반복 header 아래 한 셀에 15개 문단을 넣고,
+그 뒤에 별도 앵커 표를 둔다. 측정 pagination에서 장문 셀이 head/tail continuation 행으로
+나뉘는지, 문단 ID가 빠지거나 중복되지 않는지, 뒤쪽 표가 추가 페이지로 밀리지 않는지를
+개인정보 없는 입력으로 검증한다.
+
 `createSyntheticHwpx`의 `sectionCount`, `paragraphsPerExtraSection`, `imageBytes` 옵션으로
 대형 문서를 만들 수 있다. `npm run benchmark:decoder`는 80 sections, 약 1만 9천 문단,
 5MiB image resource 조건에서 첫 section과 전체 디코딩을 각각 20회 실행하고 p50/p95를

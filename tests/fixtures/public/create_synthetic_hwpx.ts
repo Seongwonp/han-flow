@@ -25,6 +25,17 @@ const section1 = `<?xml version="1.0" encoding="UTF-8"?>
 
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
 
+const cellFragmentHeader = header.replace('height="1000"', 'height="500"')
+const fragmentParagraphs = Array.from({ length: 15 }, (_, index) =>
+  `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>P${String(index + 1).padStart(2, '0')}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="2000"/></hp:linesegarray></hp:p>`
+).join('')
+
+const cellFragmentSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="20000" height="21000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:tbl id="cell-fragment-table" rowCnt="2" colCnt="1" pageBreak="CELL" repeatHeader="1"><hp:sz width="12000" height="32200"/>${cell(0, 2000, 'H', true)}<hp:tr><hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="12000" height="30200"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER">${fragmentParagraphs}</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="32200"/></hp:linesegarray></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="anchor-table" rowCnt="1" colCnt="1" pageBreak="CELL"><hp:sz width="12000" height="2000"/>${cell(0, 2000, 'A')}</hp:tbl></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="2000"/></hp:linesegarray></hp:p>
+</hs:sec>`
+
 export interface SyntheticHwpxOptions {
   sectionCount?: number
   paragraphsPerExtraSection?: number
@@ -58,6 +69,16 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
   }
   const imageBytes = Math.max(options.imageBytes ?? transparentPng.length, transparentPng.length)
   zip.addFile('BinData/image1.png', Buffer.concat([transparentPng, Buffer.alloc(imageBytes - transparentPng.length)]))
+  zip.writeZip(path)
+  return path
+}
+
+export function createCellFragmentHwpx(directory: string, fileName = 'han-flow-cell-fragment.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip()
+  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
   zip.writeZip(path)
   return path
 }
