@@ -120,6 +120,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - `npm test`, `npm run build`, `npm run package:mac`
 - `npm run benchmark:decoder` 대형 문서 기준선
 - `npm run verify:app -- <fixture.hwpx>` production 앱 smoke test
+- `npm run verify:matrix` 공개 fixture production 회귀 matrix
 - 화면/PDF 페이지 수, overflow, font substitution 진단
 - 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
 
@@ -133,6 +134,9 @@ visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이�
 결과와 비교해 화면 pagination과 `printToPDF` pagination이 일치하는지 검증한다.
 `verify:app`은 별도 Electron user-data에서 패키지를 실행해 single-instance 충돌을 피하고,
 JSON 상태를 읽은 뒤 임시 파일과 user-data를 제거한다.
+`verify:matrix`는 공개 생성기를 재사용해 기본, cell continuation, 80-section progressive
+fixture를 각각 격리 실행한다. 대형 문서는 전체 page count보다 mount된 `.viewer-page` 수가
+작아야 통과하므로 50페이지 초과 virtualization 회귀도 함께 잡는다.
 
 ## v1 이후
 

@@ -61,6 +61,7 @@ npm run build
 npm run package:mac
 npm run benchmark:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwpx
+npm run verify:matrix
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
@@ -74,6 +75,10 @@ open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. �
 `verify:app`은 격리된 user-data로 패키지 앱을 열어 페이지 생성, 이미지 decode, background
 loading 완료와 overflow 0을 자동 판정합니다. 본문 문자열 대신 페이지별 비공백 글자 수만
 출력하며 임시 상태 파일은 종료 시 삭제합니다.
+
+`verify:matrix`는 기본 표·이미지, 15문단 continuation, 80-section 대형 progressive 공개
+fixture를 임시 생성해 production 앱으로 연속 검증합니다. 대형 fixture는 전체 페이지와 실제
+mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 
 macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
 `com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의

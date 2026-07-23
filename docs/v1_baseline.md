@@ -348,6 +348,17 @@ loading 완료, 이미지 decode, overflow와 페이지별 비공백 글자 수�
 뒤 자동 종료한다. private AIDA 결과는 **pass / 8페이지 / 이미지 4개 / overflow 0**이며
 글자 수는 화면·PDF 기준과 같은 `[867, 772, 1142, 1238, 174, 1138, 322, 424]`다.
 
+실제 대형 HWPX 확보를 기다리지 않고 구조 회귀를 검사하기 위해 `verify:matrix`도 추가했다.
+production 패키지 결과는 기본 fixture **3페이지 / mount 3 / 이미지 4 / overflow 0**,
+cell continuation fixture **2페이지 / mount 2 / overflow 0**, 80-section progressive
+fixture **9,767페이지 / mount 12 / overflow 0**이며 전체 matrix가 통과했다. 모든 입력과
+격리 user-data는 종료 후 삭제된다.
+
+대형 synthetic은 약 1만 9천 문단과 5MiB resource 조건으로 worker 교체와 virtualization을
+강하게 검증하지만 반복 텍스트와 합성 resource의 압축률이 높다. 실제 업무 문서의 복잡한
+이미지·폰트·표 구조와 디스크 I/O를 대체하지 않으므로, 실문서가 생기면 `verify:app` 결과를
+별도 기준선으로 추가한다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지
