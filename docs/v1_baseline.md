@@ -296,6 +296,14 @@ min-height를 제거하고 top 정렬한다. renderer 마크업 테스트와 pro
 **8페이지 / 이미지 4개 / overflow 0**을 유지했으며 pagination 통합 전이라 실제 문서에는 아직
 이 flag가 생성되지 않는다.
 
+Claude의 두 번째 설계 리뷰에서 pagination 통합 전 필수 조건으로 지적된 부분 행 높이와
+`rowSpan` 안전장치를 반영했다. 부분 행은 `fragmentHeight`가 원본 행 DOM 실측값보다 우선하고,
+`rowSpan > 1`인 셀이 하나라도 있는 표는 셀 분할 대상에서 제외한다. exact-fit,
+bottom-padding-only overflow, 0 overflow, 일부 측정값 누락, `columnSpan`, 문단 누락·중복,
+head/tail 경계와 네 가지 fragment key를 공개 테스트로 고정했다. 테두리 두께는 아직 수용량
+계산 밖에 있으므로 실제 pagination 연결 단계에서 overflow 0을 다시 확인한다. 이 변경도
+continuation 행을 생성하지 않아 현재 페이지 분배에는 영향을 주지 않는다.
+
 ## M4 macOS 마감 진행 현황 (2026-07-21)
 
 - [x] 시스템 dark mode에 맞춘 chrome과 독립된 흰색 문서 용지

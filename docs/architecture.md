@@ -75,7 +75,13 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 원본 셀은 결정적 `sourceCellId`를 가지며 pagination이 만들 continuation cell은 `splitTop`과
 `splitBottom`을 사용할 수 있다. renderer는 잘린 위·아래 border와 padding을 제거하고 fragment의
 원본 min-height를 해제하며 vertical-align을 top으로 고정한다. flag가 없는 원본 셀의 스타일은
-기존과 동일하고, 현재 pagination은 아직 continuation flag를 생성하지 않는다.
+기존과 동일하다. `full`, `head`, `tail`, 양쪽이 잘린 중간 조각은 서로 다른 React key를 사용한다.
+
+부분 행은 원본 행의 DOM 실측값을 다시 참조하지 않고 `fragmentHeight`를 명시해 pagination 높이를
+결정한다. `rowSpan > 1`인 셀이 하나라도 있는 표는 표 전체에서 셀 분할을 비활성화하고 기존 행
+단위 pagination으로 fallback한다. 테두리 두께는 현재 문단 수용량 계산에 포함하지 않으므로 실제
+통합 시 overflow 진단으로 검증해야 한다. 현재 pagination은 아직 continuation 행이나 flag를
+생성하지 않는다.
 
 ### PDF export
 
