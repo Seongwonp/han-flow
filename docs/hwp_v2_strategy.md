@@ -160,7 +160,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 
 ### V2-0 후보 bake-off
 
-- [x] AIDA `.hwp` 공통 비노출 진단기와 HWPX/PDF 기준 수치 비교
+- [x] AIDA `.hwp` 공통 비노출 진단기와 HWPX `ViewerDocument` 자동 비교
 - [x] `@rhwp/core` 첫 페이지·전체 페이지 SVG probe
 - [x] `kordoc` IR 구조 요약과 첫 gap 분석
 - [ ] 후보별 PDF 출력과 section별 자동 비교

@@ -12,6 +12,7 @@
 
 ```bash
 npm run probe:hwp -- /path/to/document.hwp
+npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx
 npm run test:probe
 ```
 
@@ -19,6 +20,7 @@ npm run test:probe
 
 - `kordoc`: Node process에서 semantic IR을 요약
 - `@rhwp/core`: hidden Electron renderer에서 실제 Canvas font metric으로 모든 page SVG 생성
+- `--hwpx`: build된 Han-Flow decoder로 HWPX `ViewerDocument` 구조를 같은 schema로 요약
 - 공통 preflight: CFB magic, HWP signature/version, 보안 flag, stream 크기
 - 공통 제한: 200 MiB 입력 상한, 60초 timeout, signal 전달
 
@@ -52,10 +54,12 @@ private AIDA `.hwp`를 2회 실행해 다음 범위를 확인했다. 실제 파�
 | 비공백 text | 6,105 |
 | warning code | 없음 |
 
-HWPX 기준은 section 3, table 15, 그림 개체 4, PNG resource 2다. image block 4와 binary 2는
-원본 구조와 맞지만 표가 2개 적고, HWPX 전체 문단 303개와 직접 대응할 cell paragraph
-구조가 IR 요약에 나타나지 않는다. 비공백 text는 기준 PDF 6,077자보다 28자 많다. control
-text의 포함 범위와 header/footer·cell 내부 구조를 다음 probe에서 구분해야 한다.
+자동 비교한 HWPX `ViewerDocument` 기준은 section 3, paragraph 303, table 15, cell 154,
+그림 개체 4, PNG resource 2, semantic text 6,053자다. image block 4와 binary 2는 원본
+구조와 맞지만 표가 2개 적고, Kordoc의 265 cell은 HWPX 154 cell과 정의가 다르다. HWPX 전체
+문단 303개와 직접 대응할 cell paragraph·section 경계도 Kordoc의 공개 IR에는 나타나지
+않는다. Kordoc text는 HWPX semantic 기준보다 52자, 기준 PDF 6,077자보다 28자 많다.
+control text의 포함 범위와 누락된 table 종류를 다음 probe에서 구분해야 한다.
 
 개발 의존성을 포함한 `npm audit`에서는 총 20건(보통 5, 높음 15)이 보고됐고 `kordoc`과 그
 선택 dependency도 높음 항목에 포함됐다. 반면 `--omit=dev` production 집계는 기존 직접
@@ -84,7 +88,8 @@ landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-p
 ## 현재 판단
 
 - `kordoc`은 빠르고 기존 `ViewerDocument` adapter에 가까우나 page geometry와 cell 내부
-  paragraph·일부 table 구조의 보존 여부가 미확인이다.
+  paragraph·section 경계를 공개 IR에서 복원할 수 없고 일부 table 구조의 보존 여부가
+  미확인이다.
 - `@rhwp/core`는 이미지와 실제 page SVG를 제공하지만 AIDA page/text 기준에서 차이가 있다.
 - 두 후보를 결합하거나 fork하기 전에 차이가 발생한 구조를 **본문 없이 count와 source
   위치로** 좁힌다.
@@ -97,7 +102,7 @@ landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-p
 
 ## 다음 판정 작업
 
-1. HWPX `ViewerDocument`와 kordoc IR의 section별 paragraph/table/image count 비교
+1. Kordoc 공개 IR에서 사라진 section·cell paragraph 경계를 adapter에서 복원할 수 있는지 판정
 2. rhwp page별 text count가 기준 8페이지에서 합쳐지거나 누락되는 지점 진단
 3. header/footer와 cell paragraph를 별도 count로 분리
 4. 같은 HWP를 한컴에서 직접 출력한 PDF인지 reference provenance 재확인

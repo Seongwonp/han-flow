@@ -82,6 +82,7 @@ npm run verify:matrix
 npm run verify:pdf -- /path/to/document.hwpx
 npm run release:check -- /path/to/private-reference.hwpx
 npm run probe:hwp -- /path/to/document.hwp
+npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 개인용 검증 빌드로 서명·공증되지
@@ -105,7 +106,8 @@ mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 
 `probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱에 연결하지 않고 별도 process에서
 비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,
-페이지별 비공백 글자 수와 timing만 기록합니다. 현재 결과는
+페이지별 비공백 글자 수와 timing만 기록합니다. `--hwpx`를 주면 현재 Han-Flow decoder의
+section·문단·표·cell·이미지 기준과 delta도 함께 계산합니다. 현재 결과는
 [HWP V2-0 parser bake-off](docs/hwp_v2_bakeoff.md)에 있습니다.
 
 macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는

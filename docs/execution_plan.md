@@ -27,7 +27,8 @@
 
 - [x] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
 - [x] 첫 paragraph/table/image gap 표 작성
-- [ ] AIDA의 HWPX decoder와 section별 구조 count 자동 비교
+- [x] AIDA의 HWPX decoder와 문서 전체 구조 count 자동 비교
+- [ ] Kordoc 공개 IR에 없는 section 경계의 복원 가능성 판정
 - [ ] 직접 dependency와 필요한 HWP parser code만 분리하는 경우의 bundle 비교
 
 ### 4. 결정

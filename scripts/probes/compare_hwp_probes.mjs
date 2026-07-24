@@ -3,8 +3,10 @@ import { resolve } from 'node:path'
 import { outputProbe } from './hwp_probe_common.mjs'
 
 const filePath = process.argv[2]
+const hwpxFlag = process.argv.indexOf('--hwpx')
+const hwpxPath = hwpxFlag >= 0 ? process.argv[hwpxFlag + 1] : undefined
 if (!filePath) {
-  console.error('사용법: npm run probe:hwp -- <document.hwp>')
+  console.error('사용법: npm run probe:hwp -- <document.hwp> [--hwpx <reference.hwpx>]')
   process.exit(1)
 }
 
@@ -32,10 +34,12 @@ function run(command, args) {
       finished = true
       clearTimeout(timeout)
       activeChildren.delete(child)
-      const line = stdout.split('\n').find((value) => value.startsWith('HAN_FLOW_HWP_PROBE '))
+      const prefixes = ['HAN_FLOW_HWP_PROBE ', 'HAN_FLOW_HWPX_REFERENCE ']
+      const line = stdout.split('\n').find((value) => prefixes.some((prefix) => value.startsWith(prefix)))
       let payload
       try {
-        payload = line ? JSON.parse(line.slice('HAN_FLOW_HWP_PROBE '.length)) : null
+        const prefix = line ? prefixes.find((value) => line.startsWith(value)) : undefined
+        payload = line && prefix ? JSON.parse(line.slice(prefix.length)) : null
       } catch {
         payload = null
       }
@@ -66,14 +70,19 @@ function run(command, args) {
 
 const root = resolve(import.meta.dirname, '../..')
 const electron = resolve(root, 'node_modules/.bin/electron')
-const [kordoc, rhwp] = await Promise.all([
+const [kordoc, rhwp, hwpx] = await Promise.all([
   run(process.execPath, [resolve(import.meta.dirname, 'kordoc_probe.mjs'), filePath]),
-  run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath])
+  run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath]),
+  hwpxPath
+    ? run(process.execPath, [resolve(import.meta.dirname, 'hwpx_reference_probe.mjs'), hwpxPath])
+    : Promise.resolve({ code: 0, payload: null })
 ])
 
-const results = [kordoc.payload, rhwp.payload]
+const results = [kordoc.payload, rhwp.payload, hwpx.payload].filter(Boolean)
 const kordocResult = kordoc.payload.result
 const rhwpResult = rhwp.payload.result
+const reference = hwpx.payload?.result?.structure
+const referenceTotal = reference?.total
 outputProbe('HAN_FLOW_HWP_BAKEOFF', {
   schemaVersion: 1,
   completed: results.every((result) => result.result?.success === true),
@@ -82,8 +91,16 @@ outputProbe('HAN_FLOW_HWP_BAKEOFF', {
     kordocTextCharacters: kordocResult?.structure?.textCharacters ?? null,
     rhwpPageCount: rhwpResult?.pageCount ?? null,
     rhwpTextCharacters: rhwpResult?.pageTextCounts?.reduce((sum, count) => sum + count, 0) ?? null,
-    rhwpImageElements: rhwpResult?.imageElements ?? null
+    rhwpImageElements: rhwpResult?.imageElements ?? null,
+    referenceSectionCount: reference?.sectionCount ?? null,
+    referenceTables: referenceTotal?.tables ?? null,
+    referenceImages: referenceTotal?.images ?? null,
+    referenceResources: reference?.resources ?? null,
+    referenceTextCharacters: referenceTotal?.textCharacters ?? null,
+    kordocTableDelta: referenceTotal ? kordocResult?.structure?.tables - referenceTotal.tables : null,
+    kordocImageDelta: referenceTotal ? kordocResult?.structure?.imageBlocks - referenceTotal.images : null,
+    kordocTextDelta: referenceTotal ? kordocResult?.structure?.textCharacters - referenceTotal.textCharacters : null
   },
   results
 })
-if (kordoc.code !== 0 || rhwp.code !== 0) process.exitCode = 1
+if (kordoc.code !== 0 || rhwp.code !== 0 || hwpx.code !== 0) process.exitCode = 1
