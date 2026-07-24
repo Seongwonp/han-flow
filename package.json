@@ -54,6 +54,8 @@
     "verify:app": "node scripts/verify_app.mjs",
     "verify:matrix": "node scripts/verify_public_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
+    "probe:hwp": "node scripts/probes/compare_hwp_probes.mjs",
+    "test:probe": "node --test scripts/probes/*.test.mjs",
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
@@ -75,6 +77,7 @@
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@rhwp/core": "0.7.19",
     "@types/adm-zip": "^0.5.8",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.4",
@@ -86,6 +89,7 @@
     "electron-vite": "^2.3.0",
     "eslint": "^8.55.0",
     "jest": "^29.7.0",
+    "kordoc": "4.2.7",
     "prettier": "^3.1.0",
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3",
