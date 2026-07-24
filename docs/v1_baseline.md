@@ -323,7 +323,7 @@ min-height를 제거하고 top 정렬한다. renderer 마크업 테스트와 pro
 **8페이지 / 이미지 4개 / overflow 0**을 유지했으며 이 단계까지는 실제 문서에 flag를 생성하지
 않았다.
 
-Claude의 두 번째 설계 리뷰에서 pagination 통합 전 필수 조건으로 지적된 부분 행 높이와
+외부 설계 리뷰에서 pagination 통합 전 필수 조건으로 지적된 부분 행 높이와
 `rowSpan` 안전장치를 반영했다. 부분 행은 `fragmentHeight`가 원본 행 DOM 실측값보다 우선하고,
 `rowSpan > 1`인 셀이 하나라도 있는 표는 셀 분할 대상에서 제외한다. exact-fit,
 bottom-padding-only overflow, 0 overflow, 일부 측정값 누락, `columnSpan`, 문단 누락·중복,

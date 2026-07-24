@@ -3,6 +3,7 @@
   "version": "1.0.0-rc.1",
   "description": "빠르고 가벼운 macOS용 읽기 전용 HWPX 뷰어",
   "author": "Seongwon Park",
+  "license": "Apache-2.0",
   "main": "./out/main/index.js",
   "build": {
     "appId": "com.hanflow.viewer",

@@ -163,3 +163,9 @@ node_modules/
 tests/fixtures/private/
 !tests/fixtures/public/
 !tests/fixtures/public/**
+
+# Local AI collaboration notes
+/GEMINI.md
+/CLAUDE.md
+/.claude/
+/docs/ai_prompts.md
