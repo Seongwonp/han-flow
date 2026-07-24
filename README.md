@@ -81,6 +81,7 @@ npm run verify:app -- /path/to/document.hwpx
 npm run verify:matrix
 npm run verify:pdf -- /path/to/document.hwpx
 npm run release:check -- /path/to/private-reference.hwpx
+npm run probe:hwp -- /path/to/document.hwp
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 개인용 검증 빌드로 서명·공증되지
@@ -101,6 +102,11 @@ mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 `verify:pdf`는 production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지 수와
 페이지별 글자 수를 비교하고 대표 페이지를 PNG로 재렌더링합니다. `release:check`는 전체 테스트,
 패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을 순서대로 실행하는 최종 RC 관문입니다.
+
+`probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱에 연결하지 않고 별도 process에서
+비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,
+페이지별 비공백 글자 수와 timing만 기록합니다. 현재 결과는
+[HWP V2-0 parser bake-off](docs/hwp_v2_bakeoff.md)에 있습니다.
 
 macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
 `com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의
@@ -129,6 +135,7 @@ docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
+- [HWP V2-0 parser bake-off 결과](docs/hwp_v2_bakeoff.md)
 - [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
 - [v1 기준선과 구현 현황](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)

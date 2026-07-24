@@ -9,25 +9,25 @@
 
 ### 1. probe 계약
 
-- [ ] production dependency와 기존 `.hwpx` 경로를 바꾸지 않는 실험 entry 작성
-- [ ] 입력: 저장소 밖의 `.hwp` 절대 경로
-- [ ] 출력: 본문 없는 JSON 진단
-- [ ] 지표: parse/first-page/total 시간, page·section·paragraph·table·image 수, 오류 분류
-- [ ] timeout, 취소와 임시 파일 정리
+- [x] production dependency와 기존 `.hwpx` 경로를 바꾸지 않는 실험 entry 작성
+- [x] 입력: 저장소 밖의 `.hwp` 절대 경로
+- [x] 출력: 본문 없는 JSON 진단
+- [x] 지표: parse/first-page/total 시간, page·section·paragraph·table·image 수, 오류 분류
+- [x] 60초 timeout과 signal 기반 취소
 
 ### 2. `@rhwp/core` probe
 
-- [ ] WASM을 Electron production asset으로 제공하는 최소 실험
-- [ ] AIDA page count와 첫 페이지 SVG 생성
-- [ ] SVG의 script, event handler, 외부 URL 검사
-- [ ] 전체 페이지 생성 시간, memory와 bundle 증가량 측정
+- [x] WASM을 hidden Electron renderer에서 초기화하는 독립 실험
+- [x] AIDA page count와 전체 page SVG 생성
+- [x] SVG의 script, event handler, 외부 URL 검사
+- [ ] 전체 페이지 생성 시간, memory와 production bundle 증가량 측정
 - [ ] 기존 page virtualization/PDF shell 연결 가능성 기록
 
 ### 3. `kordoc` probe
 
-- [ ] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
-- [ ] paragraph/run/table/image가 `ViewerDocument`에 필요한 정보를 갖는지 gap 표 작성
-- [ ] AIDA의 HWPX decoder 결과와 구조 count 비교
+- [x] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
+- [x] 첫 paragraph/table/image gap 표 작성
+- [ ] AIDA의 HWPX decoder와 section별 구조 count 자동 비교
 - [ ] 직접 dependency와 필요한 HWP parser code만 분리하는 경우의 bundle 비교
 
 ### 4. 결정
