@@ -1,7 +1,9 @@
-# Han-Flow v1 기술 아키텍처
+# Han-Flow 기술 아키텍처
 
 Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어다. 편집 상태나 Undo/Redo를 관리하지 않고,
 받은 문서를 빠르게 열어 레이아웃이 깨지지 않게 표시하고 PDF로 내보내는 데 집중한다.
+이 문서의 본문은 현재 동작하는 V1 구조를 설명한다. V2의 HWP 5.0 경계는 마지막 절의 계획이며
+후보 bake-off가 끝나기 전에는 구현 완료로 간주하지 않는다.
 
 ## 파이프라인
 
@@ -153,5 +155,30 @@ visual state는 고정 지연 직후 바로 읽지 않는다. background decode�
 
 ## v1 이후
 
-`.hwp` 바이너리 열람은 v2에서 기존 파서 활용을 검토한다. 텍스트·표·이미지 편집과 안전한
-HWPX 재저장은 v3 범위다. 기존 편집 프로토타입 코드는 v1 런타임 계약으로 간주하지 않는다.
+### V2 importer 경계
+
+```text
+file path
+  → format detector (extension + magic + format signature)
+  → DocumentImporter
+      ├─ HwpxImporter → current flow ViewerDocument
+      └─ HwpImporter  → selected parser adapter
+  → read-only page boundary
+  → shared macOS viewer shell and PDF export
+```
+
+V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. `@rhwp/core`의 fixed-page SVG 경로와
+`kordoc`의 semantic IR 경로를 private AIDA 삼쌍으로 비교한 뒤 하나를 선택한다. 선택 전에는
+현재 `ViewerDocument`를 후보 API에 맞춰 바꾸지 않는다.
+
+비신뢰 HWP binary는 Electron main이 직접 해석하지 않고 worker 또는 utility process에
+격리한다. format detector는 CFB magic과 HWP `FileHeader` signature/version을 확인하고,
+stream·inflate·시간 제한을 적용한다. Scripts, OLE와 외부 link는 실행하지 않는다.
+
+후보가 semantic model을 충분히 제공하면 현재 flow `ViewerDocument`로 정규화한다. 페이지
+표현만 정확한 후보가 이기면 read-only fixed-page variant를 추가하되 zoom, virtualization,
+PDF와 진단 shell은 공유한다. 자세한 결정 기준과 출처는
+[V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
+
+텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4
+범위다. 기존 편집 prototype 코드는 현재 런타임 계약으로 간주하지 않는다.

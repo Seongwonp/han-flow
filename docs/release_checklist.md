@@ -40,7 +40,10 @@ pinch zoom, dark chrome, PDF 자동 출력과 앱 재실행 경로를 production
 - 한 문단 내부의 줄 단위 페이지 분할은 하지 않는다.
 - `rowSpan > 1`, 복수 overflow 셀, 단일 초대형 문단은 안전한 행 단위 fallback을 사용한다.
 
-## 공개 배포 전 남은 관문
+## V4 공개 배포 관문
+
+Han-Flow는 V4가 완성될 때까지 개인용으로 사용한다. 아래 항목은 V1 RC의 즉시 배포 TODO가
+아니라 V4에서 다시 검증할 release gate다.
 
 - [ ] 개인정보를 제거한 실제 업무 HWPX 2~3개 추가 검증
 - [x] 50페이지 이상 synthetic 문서의 점진 로딩·가상화 검증

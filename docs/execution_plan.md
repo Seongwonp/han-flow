@@ -1,69 +1,58 @@
-# Han-Flow Execution Strategy: Step-by-Step to Superiority
+# Han-Flow 실행 계획
 
-To surpass existing solutions, we will execute in four distinct phases. Each phase is designed to deliver a specific "wow" factor that sets Han-Flow apart.
+기준일: 2026-07-24
 
----
+이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
+[제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
 
-## 🟢 Phase 1: Foundation & "The Math Edge" (Current Focus)
-**Goal:** Perfect the basic typing experience and deliver the best equation editor on macOS.
+## 현재 milestone: V2-0 HWP parser bake-off
 
-1.  **[Done] Uncontrolled Input Fix:** Eliminate cursor jumps and IME duplication.
-2.  **[Done] Basic KaTeX Integration:** Render HWP scripts in the UI.
-3.  **[Todo] Bidirectional Math Translator:** 
-    *   Implement a robust parser to convert HWP Script $\leftrightarrow$ LaTeX.
-    *   Allow users to paste LaTeX and have it save as HWPX Equation tags.
-4.  **[Todo] Visual Equation Modal:** A dedicated UI for building complex formulas without typing raw scripts.
+### 1. probe 계약
 
----
+- [ ] production dependency와 기존 `.hwpx` 경로를 바꾸지 않는 실험 entry 작성
+- [ ] 입력: 저장소 밖의 `.hwp` 절대 경로
+- [ ] 출력: 본문 없는 JSON 진단
+- [ ] 지표: parse/first-page/total 시간, page·section·paragraph·table·image 수, 오류 분류
+- [ ] timeout, 취소와 임시 파일 정리
 
-## 🟡 Phase 2: "The Layout Pro" (Formatting Mastery)
-**Goal:** Achieve layout parity with Windows Hancom Office for complex elements.
+### 2. `@rhwp/core` probe
 
-1.  **Advanced Table Editor:**
-    *   [Done] UI for selecting and merging cells.
-    *   [Done] UI for cell background colors and borders.
-    *   [Todo] Row/Column insertion and deletion.
-    *   [Todo] Table padding and cell alignment synchronization.
-2.  **Object & Image Handling:**
-    *   [Done] UI for local image insertion.
-    *   [Done] HWPX binary data extraction and base64 rendering.
-    *   [Todo] Image resizing handles and cropping.
-    *   [Todo] "Wrap-around" text flow logic (Square, Tight, Behind Text).
-3.  **Paragraph & Char Styles:**
-    *   Ribbon UI integration for managing and applying HWPX styles.
-    *   Bullet points and numbering system synchronization.
+- [ ] WASM을 Electron production asset으로 제공하는 최소 실험
+- [ ] AIDA page count와 첫 페이지 SVG 생성
+- [ ] SVG의 script, event handler, 외부 URL 검사
+- [ ] 전체 페이지 생성 시간, memory와 bundle 증가량 측정
+- [ ] 기존 page virtualization/PDF shell 연결 가능성 기록
 
----
+### 3. `kordoc` probe
 
-## 🟠 Phase 3: "The Native Master" (macOS Integration)
-**Goal:** Make Han-Flow feel like it was built by Apple.
+- [ ] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
+- [ ] paragraph/run/table/image가 `ViewerDocument`에 필요한 정보를 갖는지 gap 표 작성
+- [ ] AIDA의 HWPX decoder 결과와 구조 count 비교
+- [ ] 직접 dependency와 필요한 HWP parser code만 분리하는 경우의 bundle 비교
 
-1.  **Spotlight Content Indexer:**
-    *   Develop a background service to index text inside `.hwpx` files for macOS Spotlight.
-2.  **Native Polish:**
-    *   macOS native menu bar mapping (File, Edit, View in the top bar).
-    *   Apple Silicon (Universal) build optimization.
-    *   Dark Mode / Light Mode auto-switching.
-3.  **Quick Look Extension:**
-    *   High-fidelity preview generator for Finder.
+### 4. 결정
 
----
+- [ ] [V2 전략 점수표](hwp_v2_strategy.md#점수표) 작성
+- [ ] main/fallback/oracle 역할 결정
+- [ ] license와 third-party notice 확정
+- [ ] architecture decision을 V2 전략 문서에 반영
 
-## 🔴 Phase 4: "The Modern Bridge" (Future Workflows)
-**Goal:** Add "Smart" features that Windows Hancom Office doesn't have.
+## 다음 milestone: V2-1 importer 경계
 
-1.  **Markdown/HWPX Hybrid Mode:**
-    *   Live side-by-side view: Write in Markdown, see HWPX layout.
-2.  **AI Assistant Integration:**
-    *   One-click summarization and "Hon-Mal" (Honorifics) correction.
-    *   Draft generation based on HWP templates.
-3.  **Cloud Native Workflow:**
-    *   Version history and collaborative comments (macOS native style).
+V2-0 결정 전에는 시작하지 않는다.
 
----
+- [ ] magic 기반 format detector
+- [ ] `DocumentImporter`와 format-neutral IPC event
+- [ ] HWP parser 전용 worker 또는 utility process
+- [ ] 입력 제한, timeout, load cancellation
+- [ ] `.hwp` Finder association, dialog, drop
+- [ ] 암호·DRM·배포용·손상 입력 오류 UX
+- [ ] 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
 
-## 📈 Current Priority: Finishing Phase 1
-We are currently at the tail end of Phase 1. The next logical step is **improving the Math Translator** and **building a visual Equation insertion UI** to truly own "The Math Edge."
+## 매 milestone 공통 완료 규칙
 
-**Next Move?**
-Shall we start building the **Visual Equation Builder UI** to make math input incredibly easy?
+1. 실제 fixture와 공개 synthetic fixture를 각각 통과한다.
+2. 개인정보나 본문을 로그·캡처·commit에 남기지 않는다.
+3. V1 test, build와 public production matrix가 회귀하지 않는다.
+4. 구현과 같은 commit에서 관련 설계·결정 문서를 갱신한다.
+5. 완료 조건을 만족한 논리 단위로 한국어 commit을 만든다.

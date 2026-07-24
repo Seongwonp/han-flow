@@ -4,11 +4,13 @@
   <img src="build/icon.png" width="160" alt="Han-Flow 앱 아이콘" />
 </p>
 
-macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내는 읽기 전용 뷰어입니다. 상용 편집기를
-복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를 목표로 합니다.
+macOS에서 한글 문서를 빠르게 열어 읽고 PDF로 내보내는 도구입니다. 현재 V1은 HWPX 읽기
+전용이며, V2에서 HWP 5.0 열기, V3에서 편집을 추가합니다. 상용 편집기를 복제하기보다 실제로
+매주 쓸 수 있는 작고 안정적인 도구를 목표로 합니다.
 
 현재 버전은 **1.0.0-rc.1**입니다. 로컬 실사용과 unsigned beta 기준의 v1 기능은 완성됐으며,
-공개 배포에는 Developer ID 서명과 Apple notarization이 필요합니다.
+V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명과 Apple notarization은 V4에서
+진행합니다.
 
 ## v1 목표
 
@@ -19,6 +21,18 @@ macOS에서 HWPX 문서를 빠르게 열어 읽고 PDF로 내보내는 읽기 �
 
 편집 기능은 v3 이후 범위입니다. `.hwp` 5.0 바이너리 직접 파싱은 하지 않으며 v2에서 기존
 파서 활용을 검토합니다. 한컴오피스와 픽셀 단위로 같은 결과도 목표로 하지 않습니다.
+
+## 로드맵
+
+- **V1 — HWPX 뷰어:** 로컬 RC 완료. 열기, read-only 렌더, 점진 로딩, PDF와 macOS UX
+- **V2 — HWP 5.0 읽기:** 기존 parser를 adapter로 검증·채택하고 같은 viewer/PDF 경험에 연결
+- **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
+- **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
+
+V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
+WASM/page SVG 경로와 `kordoc`의 TypeScript semantic IR 경로를 첫 후보로 정했으며, 실제
+AIDA `.hwp/.hwpx/.pdf` 삼쌍으로 정확도·속도·bundle 크기를 측정한 뒤 하나를 채택합니다.
+근거와 전체 실험 계획은 [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)에 있습니다.
 
 ## 현재 상태
 
@@ -38,8 +52,8 @@ single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력�
 행 단위 fallback 또는 overflow 진단을 사용합니다.
 
 현재 v1 핵심인 열기·read-only 렌더·점진 로딩·PDF 출력과 macOS 로컬 UX는 구현되어 있습니다.
-남은 배포 작업은 Developer ID 서명·공증이며, 정확도 후속 과제는 대체 글꼴 metric과 한 문단
-내부의 줄 단위 페이지 분할입니다. 편집은 기존 계획대로 v3 이후 범위입니다.
+정확도 후속 과제는 대체 글꼴 metric과 한 문단 내부의 줄 단위 페이지 분할입니다. V4 전에는
+개인용 패키지로 사용하며, 편집은 V3 범위입니다.
 
 남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템
@@ -69,9 +83,8 @@ npm run verify:pdf -- /path/to/document.hwpx
 npm run release:check -- /path/to/private-reference.hwpx
 ```
 
-패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 로컬 검증용으로 서명·공증되지
-않았으며, 전용 아이콘은 적용되어 있습니다. 배포 전 Developer ID 서명과 notarization이
-필요합니다.
+패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 개인용 검증 빌드로 서명·공증되지
+않았으며, 전용 아이콘은 적용되어 있습니다. 서명과 notarization은 V4 배포 관문입니다.
 
 `benchmark:app`은 패키지 앱을 사용해 같은 프로세스의 warm open 20회와 새 프로세스의 cold
 open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. 입력 문서의 본문은 출력하지
@@ -115,7 +128,15 @@ docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
+- [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
+- [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
 - [v1 기준선과 구현 현황](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
 - [v1 Release Candidate 체크리스트](docs/release_checklist.md)
 - [변경 기록](CHANGELOG.md)
+
+## HWP 5.0 규격 고지
+
+본 제품은 한글과컴퓨터의 한/글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
+
+Han-Flow는 한글과컴퓨터와 제휴하거나 한글과컴퓨터의 보증을 받은 제품이 아닙니다.

@@ -1,4 +1,8 @@
-# HWPX 파싱 전략: Pipeline & Schema
+# V1 HWPX 파싱 전략: Pipeline & Schema
+
+이 문서는 현재 동작하는 HWPX 경로만 설명한다. V2의 HWP 5.0 binary는 이 decoder에 섞지 않고
+별도 `DocumentImporter` adapter로 연결한다. 후보와 공식 규격 출처는
+[V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)을 참고한다.
 
 HWPX는 ZIP 아카이브 안에 OWPML XML과 이미지 resource가 들어 있는 형식이다. Han-Flow는
 원본 XML의 혼합 자식 순서를 보존하는 ordered AST를 거쳐 읽기 전용 `ViewerDocument`로
