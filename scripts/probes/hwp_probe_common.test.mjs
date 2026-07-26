@@ -5,6 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as CFB from 'cfb'
 import { summarizeBlocks } from './kordoc_probe.mjs'
+import {
+  adapterCapability,
+  buildKordocViewerDocument,
+  summarizeKordocViewerDocument,
+  tableOriginCells
+} from './kordoc_viewer_adapter.mjs'
 import { HwpProbeError, inspectHwpContainer } from './hwp_probe_common.mjs'
 
 test('semantic block 요약은 표 cell의 중첩 block을 중복 집계하지 않는다', () => {
@@ -34,6 +40,119 @@ test('semantic block 요약은 표 cell의 중첩 block을 중복 집계하지 �
     spans: 1,
     textCharacters: 11
   })
+})
+
+test('Kordoc adapter는 section tag와 병합 cell 원점만 ViewerDocument로 보존한다', () => {
+  const blocks = [
+    { type: 'paragraph', text: '첫 구역', pageNumber: 1, spans: [{ text: '첫 ', bold: true }, { text: '구역' }] },
+    {
+      type: 'table',
+      pageNumber: 2,
+      table: {
+        rows: 2,
+        cols: 2,
+        hasHeader: true,
+        cells: [
+          [
+            {
+              text: '병합',
+              colSpan: 2,
+              rowSpan: 1,
+              isHeader: true,
+              blocks: [{ type: 'paragraph', text: '셀 첫 문단' }, { type: 'paragraph', text: '셀 둘째 문단' }]
+            },
+            { text: '병합 중복', colSpan: 1, rowSpan: 1 }
+          ],
+          [
+            { text: '', colSpan: 1, rowSpan: 1 },
+            {
+              text: '그림',
+              colSpan: 1,
+              rowSpan: 1,
+              blocks: [{
+                type: 'image',
+                imageData: {
+                  data: new Uint8Array([1, 2, 3]),
+                  mimeType: 'image/png',
+                  filename: 'fixture.png'
+                }
+              }]
+            }
+          ]
+        ]
+      }
+    },
+    {
+      type: 'image',
+      pageNumber: 2,
+      imageData: {
+        data: new Uint8Array([1, 2, 3]),
+        mimeType: 'image/png',
+        filename: 'same-binary.png'
+      }
+    }
+  ]
+
+  const document = buildKordocViewerDocument(blocks)
+  assert.deepEqual(document.sections.map((section) => section.id), ['kordoc-section-1', 'kordoc-section-2'])
+  assert.equal(document.sections[1].blocks[0].content[0].rows[0].cells.length, 1)
+  assert.deepEqual(
+    {
+      row: document.sections[1].blocks[0].content[0].rows[0].cells[0].row,
+      column: document.sections[1].blocks[0].content[0].rows[0].cells[0].column,
+      rowSpan: document.sections[1].blocks[0].content[0].rows[0].cells[0].rowSpan,
+      columnSpan: document.sections[1].blocks[0].content[0].rows[0].cells[0].columnSpan,
+      header: document.sections[1].blocks[0].content[0].rows[0].cells[0].header
+    },
+    {
+      row: 0,
+      column: 0,
+      rowSpan: 1,
+      columnSpan: 2,
+      header: true
+    }
+  )
+  assert.deepEqual(summarizeKordocViewerDocument(document), {
+    sections: 2,
+    paragraphs: 7,
+    tables: 1,
+    cells: 3,
+    images: 2,
+    resources: 1,
+    textCharacters: 12,
+    diagnostics: 3
+  })
+  const capability = adapterCapability(blocks, document)
+  assert.equal(capability.status, 'semantic-only')
+  assert.equal(capability.sectionTagCoverage, 1)
+  assert.equal(capability.pageGeometry, false)
+  assert.equal(capability.tableGeometry, false)
+  assert.equal(capability.headerFooterAndPageNumber, false)
+})
+
+test('Kordoc grid의 span 범위에 들어간 중복 slot은 cell 원점에서 제외한다', () => {
+  const table = {
+    rows: 2,
+    cols: 3,
+    cells: [
+      [
+        { text: 'root', rowSpan: 2, colSpan: 2 },
+        { text: 'covered-a', rowSpan: 1, colSpan: 1 },
+        { text: 'right', rowSpan: 1, colSpan: 1 }
+      ],
+      [
+        { text: 'covered-b', rowSpan: 1, colSpan: 1 },
+        { text: 'covered-c', rowSpan: 1, colSpan: 1 },
+        { text: 'bottom-right', rowSpan: 1, colSpan: 1 }
+      ]
+    ]
+  }
+
+  assert.deepEqual(tableOriginCells(table).map(({ row, column }) => [row, column]), [
+    [0, 0],
+    [0, 2],
+    [1, 2]
+  ])
 })
 
 test('HWP FileHeader의 version과 보안 flag만 진단한다', async () => {

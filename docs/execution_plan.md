@@ -1,6 +1,6 @@
 # Han-Flow 실행 계획
 
-기준일: 2026-07-24
+기준일: 2026-07-26
 
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
@@ -28,7 +28,8 @@
 - [x] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
 - [x] 첫 paragraph/table/image gap 표 작성
 - [x] AIDA의 HWPX decoder와 문서 전체 구조 count 자동 비교
-- [ ] Kordoc 공개 IR에 없는 section 경계의 복원 가능성 판정
+- [x] `pageNumber` tag로 section 경계를 복원하고 병합 cell 중복을 제거하는 최소 adapter
+- [x] AIDA adapter의 section·semantic text·image/resource 보존 가능성 판정
 - [ ] 직접 dependency와 필요한 HWP parser code만 분리하는 경우의 bundle 비교
 
 ### 4. 결정

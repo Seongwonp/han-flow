@@ -80,6 +80,7 @@ const [kordoc, rhwp, hwpx] = await Promise.all([
 
 const results = [kordoc.payload, rhwp.payload, hwpx.payload].filter(Boolean)
 const kordocResult = kordoc.payload.result
+const kordocAdapter = kordocResult?.adapter?.structure
 const rhwpResult = rhwp.payload.result
 const reference = hwpx.payload?.result?.structure
 const referenceTotal = reference?.total
@@ -89,6 +90,13 @@ outputProbe('HAN_FLOW_HWP_BAKEOFF', {
   observations: {
     kordocSectionCount: kordocResult?.sectionCount ?? null,
     kordocTextCharacters: kordocResult?.structure?.textCharacters ?? null,
+    kordocAdapterSections: kordocAdapter?.sections ?? null,
+    kordocAdapterParagraphs: kordocAdapter?.paragraphs ?? null,
+    kordocAdapterTables: kordocAdapter?.tables ?? null,
+    kordocAdapterCells: kordocAdapter?.cells ?? null,
+    kordocAdapterImages: kordocAdapter?.images ?? null,
+    kordocAdapterResources: kordocAdapter?.resources ?? null,
+    kordocAdapterTextCharacters: kordocAdapter?.textCharacters ?? null,
     rhwpPageCount: rhwpResult?.pageCount ?? null,
     rhwpTextCharacters: rhwpResult?.pageTextCounts?.reduce((sum, count) => sum + count, 0) ?? null,
     rhwpImageElements: rhwpResult?.imageElements ?? null,
@@ -99,7 +107,13 @@ outputProbe('HAN_FLOW_HWP_BAKEOFF', {
     referenceTextCharacters: referenceTotal?.textCharacters ?? null,
     kordocTableDelta: referenceTotal ? kordocResult?.structure?.tables - referenceTotal.tables : null,
     kordocImageDelta: referenceTotal ? kordocResult?.structure?.imageBlocks - referenceTotal.images : null,
-    kordocTextDelta: referenceTotal ? kordocResult?.structure?.textCharacters - referenceTotal.textCharacters : null
+    kordocTextDelta: referenceTotal ? kordocResult?.structure?.textCharacters - referenceTotal.textCharacters : null,
+    kordocAdapterParagraphDelta: referenceTotal ? kordocAdapter?.paragraphs - referenceTotal.paragraphs : null,
+    kordocAdapterTableDelta: referenceTotal ? kordocAdapter?.tables - referenceTotal.tables : null,
+    kordocAdapterCellDelta: referenceTotal ? kordocAdapter?.cells - referenceTotal.cells : null,
+    kordocAdapterImageDelta: referenceTotal ? kordocAdapter?.images - referenceTotal.images : null,
+    kordocAdapterResourceDelta: reference ? kordocAdapter?.resources - reference.resources : null,
+    kordocAdapterTextDelta: referenceTotal ? kordocAdapter?.textCharacters - referenceTotal.textCharacters : null
   },
   results
 })

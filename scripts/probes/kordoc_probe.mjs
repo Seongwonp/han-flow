@@ -1,6 +1,10 @@
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { inspectHwpContainer, outputProbe, probeEnvelope, safeError } from './hwp_probe_common.mjs'
+import {
+  adapterCapability,
+  buildKordocViewerDocument
+} from './kordoc_viewer_adapter.mjs'
 
 function countText(value) {
   return typeof value === 'string' ? value.replace(/\s/gu, '').length : 0
@@ -79,6 +83,11 @@ async function main() {
     return
   }
 
+  const adapterStarted = performance.now()
+  const viewerDocument = buildKordocViewerDocument(parsed.blocks ?? [])
+  const adapter = adapterCapability(parsed.blocks ?? [], viewerDocument)
+  const adapterMs = performance.now() - adapterStarted
+
   outputProbe('HAN_FLOW_HWP_PROBE', probeEnvelope(
     'kordoc',
     VERSION ?? '4.2.7',
@@ -87,10 +96,11 @@ async function main() {
       success: true,
       sectionCount: parsed.pageCount ?? parsed.metadata?.pageCount ?? null,
       structure: summarizeBlocks(parsed.blocks ?? []),
+      adapter,
       extractedImages: parsed.images?.length ?? 0,
       warningCodes: [...new Set((parsed.warnings ?? []).map((warning) => warning.code))].sort()
     },
-    { preflightMs, parseMs, totalMs: performance.now() - preflightStarted }
+    { preflightMs, parseMs, adapterMs, totalMs: performance.now() - preflightStarted }
   ))
 }
 

@@ -1,6 +1,6 @@
 # HWP V2-0 parser bake-off
 
-기준일: 2026-07-24
+기준일: 2026-07-26
 
 ## 목적
 
@@ -19,6 +19,7 @@ npm run test:probe
 `probe:hwp`는 두 후보를 별도 process로 병렬 실행한다.
 
 - `kordoc`: Node process에서 semantic IR을 요약
+- `kordoc adapter`: section tag와 병합 grid를 정규화한 최소 `ViewerDocument` 구조를 요약
 - `@rhwp/core`: hidden Electron renderer에서 실제 Canvas font metric으로 모든 page SVG 생성
 - `--hwpx`: build된 Han-Flow decoder로 HWPX `ViewerDocument` 구조를 같은 schema로 요약
 - 공통 preflight: CFB magic, HWP signature/version, 보안 flag, stream 크기
@@ -55,11 +56,33 @@ private AIDA `.hwp`를 2회 실행해 다음 범위를 확인했다. 실제 파�
 | warning code | 없음 |
 
 자동 비교한 HWPX `ViewerDocument` 기준은 section 3, paragraph 303, table 15, cell 154,
-그림 개체 4, PNG resource 2, semantic text 6,053자다. image block 4와 binary 2는 원본
-구조와 맞지만 표가 2개 적고, Kordoc의 265 cell은 HWPX 154 cell과 정의가 다르다. HWPX 전체
-문단 303개와 직접 대응할 cell paragraph·section 경계도 Kordoc의 공개 IR에는 나타나지
-않는다. Kordoc text는 HWPX semantic 기준보다 52자, 기준 PDF 6,077자보다 28자 많다.
-control text의 포함 범위와 누락된 table 종류를 다음 probe에서 구분해야 한다.
+그림 개체 4, PNG resource 2, semantic text 6,053자다. Kordoc 원시 IR의 top-level block은
+모두 `pageNumber`를 가지고 있으며 AIDA에서는 실제 물리 페이지가 아니라 section 1·2·3의
+경계로 동작했다. block 분포도 22·1·15로 안정적으로 분리돼 section 경계는 추가 재파싱 없이
+복원할 수 있다.
+
+Kordoc의 265 cell은 병합 영역에 포함된 grid slot까지 각 cell처럼 채운 값이다. adapter가
+앞선 `rowSpan`·`colSpan`이 덮은 slot 115개를 제외하면 실제 원점 cell은 150개가 된다.
+이 과정에서 중복 text 52자가 제거돼 semantic text가 HWPX 기준과 같은 **6,053자**가 됐다.
+그림 개체 4개도 보존되며 동일 binary를 SHA-256으로 합치면 resource 2개로 기준과 일치한다.
+
+최소 adapter 결과는 다음과 같다.
+
+| 지표 | Kordoc 원시 IR | 최소 adapter | HWPX 기준 | adapter delta |
+| --- | ---: | ---: | ---: | ---: |
+| section | 3 | 3 | 3 | 0 |
+| paragraph | 39 | 201 | 303 | -102 |
+| table | 13 | 13 | 15 | -2 |
+| cell | 265 | 150 | 154 | -4 |
+| image object | 4 | 4 | 4 | 0 |
+| image resource | 2 | 2 | 2 | 0 |
+| semantic text | 6,105 | 6,053 | 6,053 | 0 |
+
+adapter는 cell에 중첩 block이 있으면 문단 순서를 유지하고, 없으면 평탄화 text로 최소 한 문단을
+만든다. 그럼에도 HWPX보다 문단이 102개 적다. Kordoc IR이 버린 빈 문단·control 문단과 누락된
+표 2개는 공개 IR만으로 복원할 수 없다. 용지·여백, 문단 정렬·간격, 표 크기·테두리·배경,
+머리말·꼬리말·쪽 번호도 제공되지 않는다. 따라서 Kordoc은 **semantic text 보조 경로로는
+유효하지만 단독 visual renderer로는 부적합**하다.
 
 개발 의존성을 포함한 `npm audit`에서는 총 20건(보통 5, 높음 15)이 보고됐고 `kordoc`과 그
 선택 dependency도 높음 항목에 포함됐다. 반면 `--omit=dev` production 집계는 기존 직접
@@ -87,9 +110,9 @@ landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-p
 
 ## 현재 판단
 
-- `kordoc`은 빠르고 기존 `ViewerDocument` adapter에 가까우나 page geometry와 cell 내부
-  paragraph·section 경계를 공개 IR에서 복원할 수 없고 일부 table 구조의 보존 여부가
-  미확인이다.
+- `kordoc`은 빠르고 section 경계, 병합 cell 원점, semantic text와 image resource를
+  `ViewerDocument` 모양으로 정규화할 수 있다. 그러나 문단 102개와 표 2개가 부족하고 layout
+  geometry·테두리·머리말/꼬리말이 없어 단독 renderer 후보에서는 제외한다.
 - `@rhwp/core`는 이미지와 실제 page SVG를 제공하지만 AIDA page/text 기준에서 차이가 있다.
 - 두 후보를 결합하거나 fork하기 전에 차이가 발생한 구조를 **본문 없이 count와 source
   위치로** 좁힌다.
@@ -102,8 +125,8 @@ landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-p
 
 ## 다음 판정 작업
 
-1. Kordoc 공개 IR에서 사라진 section·cell paragraph 경계를 adapter에서 복원할 수 있는지 판정
-2. rhwp page별 text count가 기준 8페이지에서 합쳐지거나 누락되는 지점 진단
-3. header/footer와 cell paragraph를 별도 count로 분리
+1. rhwp page별 text count가 기준 8페이지에서 합쳐지거나 누락되는 지점 진단
+2. rhwp SVG와 Kordoc semantic text를 결합할 때 search·접근성·PDF shell 경계 설계
+3. 후보별 PDF 출력과 section별 자동 비교
 4. 같은 HWP를 한컴에서 직접 출력한 PDF인지 reference provenance 재확인
 5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
