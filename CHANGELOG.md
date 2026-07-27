@@ -9,6 +9,10 @@
 - 기존 HWPX 화면/PDF 페이지별 글자 수 회귀 관문 유지
 - HWP/HWPX cold peak working set과 V1 대비 package 증가량 측정
 - 중복 rhwp WASM 제거와 MIT license resource 포함
+- rhwp 파싱·페이지 처리를 전용 Web Worker로 분리
+- 새 문서 열기 취소, Worker 강제 종료형 timeout과 crash 오류 격리
+- Worker 격리 후 HWP cold/warm 20회 첫 화면 p95 614/237ms 검증
+- Worker 격리 후 HWP cold 5회 aggregate working set peak p95 647.6MiB 기록
 
 ## 1.0.0-rc.1 - 2026-07-23
 

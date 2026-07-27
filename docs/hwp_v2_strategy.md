@@ -142,21 +142,22 @@ macOS open-file / drop / dialog
 ## 보안 기준
 
 HWP는 외부에서 받은 비신뢰 binary다. Electron 공식 보안 문서는 비신뢰 콘텐츠를 main 같은
-unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 parser는 main process가 아닌
-전용 worker 또는 utility process에서 실행하고 renderer에는 직렬화 가능한 read-only 결과만
-보낸다.
+unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. 현재 main은 크기·CFB magic
+preflight와 파일 읽기만 맡고, rhwp WASM의 document 생성·페이지 정보·SVG·text layout 처리는
+renderer UI thread와 분리된 전용 Web Worker에서 실행한다. Worker와 adapter 사이에는 요청
+ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 
 초기 제한값은 fixture 측정 전의 보수적인 정책이며 benchmark 결과로 조정한다.
 
 - CFB magic과 `FileHeader` signature/version 검증
 - 파일 200 MiB, 개별 stream 128 MiB, 총 inflate 1 GiB의 초기 상한
 - sector/record/section 개수와 중첩 깊이 상한
-- parse timeout과 load ID 기반 취소
+- 30초 open·15초 page operation timeout과 Worker 강제 종료형 load ID 취소
 - 암호·DRM·배포용 문서는 V2-1에서 지원하지 않고 분류된 오류 반환
 - `Scripts`, OLE, 외부 링크를 실행하거나 자동으로 열지 않음
 - SVG 경로는 script, event handler, 외부 URL을 허용하지 않는 정제 단계 통과
 - IPC sender와 payload schema 검증
-- crash·timeout은 앱 전체 종료가 아니라 해당 문서의 오류로 격리
+- Worker crash·timeout은 Worker를 종료하고 해당 문서 상태를 무효화하며 앱은 유지
 
 ## milestone
 
@@ -175,7 +176,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 - [x] `.hwp` 확장자 분기와 200 MiB·CFB magic preflight
 - [ ] HWP `FileHeader` signature/version까지 포함한 format-neutral 감지
 - [ ] `DocumentImporter`와 format-neutral IPC
-- [ ] parser worker 격리, 제한·취소·오류 taxonomy
+- [x] parser Web Worker 격리, 강제 종료형 timeout·load cancellation과 기본 오류 taxonomy
 - [x] Finder association, dialog, drop에 `.hwp` 추가
 - [ ] 암호·DRM·배포용·손상 문서 오류 UX
 
@@ -195,7 +196,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 ### V2-4 성능과 PDF
 
 - [x] 첫 페이지 우선 SVG queue와 세로·가로 혼합 페이지 가상화 계산
-- [x] 패키지 앱 첫 화면 1초 이내(cold p95 683ms, 20회)
+- [x] Worker 격리 후 패키지 앱 첫 화면 1초 이내(cold p95 614ms, 20회)
 - [x] cold/warm 20회 p50/p95와 시작·문서 처리 구간 분리
 - [x] AIDA HWP/HWPX cold 5회 peak working set과 V1 package 증가량
 - [x] 혼합 방향 화면/PDF page count·용지 크기·텍스트 보존과 PNG 재렌더

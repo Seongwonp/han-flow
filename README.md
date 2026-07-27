@@ -56,17 +56,18 @@ single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력�
 개인용 패키지로 사용하며, 편집은 V3 범위입니다.
 
 V2 실험 경로에서는 `.hwp`도 Finder 인자, 열기 대화상자와 드래그앤드롭으로 받을 수 있습니다.
-main process는 200 MiB 제한과 CFB magic만 검사하고, renderer의 `@rhwp/core` WASM이 페이지
-정보를 만든 뒤 첫 페이지 SVG를 우선 표시하고 나머지 페이지를 이어서 렌더링합니다. SVG는
-script·event handler·외부 resource를 거부하고 blob image 경계로 표시합니다. 별도로 좌표가
-있는 텍스트 run을 React text layer로 만들어 `⌘F` 검색, 하이라이트, 텍스트 선택과 페이지
-접근성 label을 제공합니다.
+main process는 200 MiB 제한과 CFB magic을 검사하고, 전용 Web Worker의 `@rhwp/core` WASM이
+페이지 정보를 만든 뒤 첫 페이지 SVG를 우선 표시하고 나머지 페이지를 이어서 렌더링합니다.
+새 문서를 열거나 30초 open·15초 page 제한을 넘기면 Worker를 강제 종료해 UI thread와 이전
+작업을 보호합니다. SVG는 script·event handler·외부 resource를 거부하고 blob image 경계로
+표시합니다. 별도로 좌표가 있는 텍스트 run을 React text layer로 만들어 `⌘F` 검색,
+하이라이트, 텍스트 선택과 페이지 접근성 label을 제공합니다.
 
 AIDA HWP는 production build에서 7페이지, 3구역, 세로/가로 용지와 overflow 0을 확인했습니다.
 텍스트 layer는 비공백 6,074자를 보존해 기준 PDF 6,077자와 3자 차이이며, 패키지 앱에서 검색
 4페이지·6건과 6개 하이라이트를 자동 검증했습니다. 첫 페이지 우선 렌더링을 적용한 패키지 앱
-20회 기준 첫 화면은 warm p50/p95 81/125ms, cold p50/p95 604/683ms이고 cold 최악값도
-707ms로 1초 목표를 통과했습니다.
+20회 기준 첫 화면은 Worker 격리 후 warm p50/p95 203/237ms, cold p50/p95 535/614ms이고
+cold 최악값도 722ms로 1초 목표를 통과했습니다.
 
 HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 파일 안의 세로·가로
 용지 크기를 그대로 보존합니다. AIDA HWP 출력은 7페이지 중 5페이지만 가로 용지이며, Poppler
@@ -74,9 +75,9 @@ HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 �
 경로로 기존 AIDA HWPX 8페이지와 페이지별 글자 수도 계속 일치합니다.
 
 AIDA를 cold 5회 실행해 Electron 4개 프로세스의 working set을 50ms 간격으로 합산한 결과,
-HWP 전체 렌더 peak는 p50/p95 580.9/589.6MiB, HWPX는 436.8/438.3MiB였습니다. shared page가
-프로세스별로 중복 집계될 수 있어 실제 고유 물리 메모리가 아니라 같은 환경의 회귀 기준으로
-사용합니다.
+Worker 격리 후 HWP 전체 렌더 peak는 p50/p95 619.9/647.6MiB, HWPX 기준선은
+436.8/438.3MiB였습니다. HWP p95는 격리 전보다 58.0MiB 늘었습니다. shared page가 프로세스별로
+중복 집계될 수 있어 실제 고유 물리 메모리가 아니라 같은 환경의 회귀 기준으로 사용합니다.
 
 V1 RC `cd8050d`를 lockfile 그대로 재패키징해 비교한 결과 현재 앱의 논리 크기 증가는
 6.96MiB(+2.19%)입니다. renderer build asset과 production dependency에 WASM이 중복되던

@@ -15,7 +15,7 @@
 - [x] 장식 SVG image 숨김, page document role과 text layer label
 - [x] 첫 page image 우선 paint 후 text layer·나머지 page 점진 렌더
 - [x] 패키지 HWP 검색·선택·접근성 자동 검증
-- [x] cold/warm 각 20회 재측정: p95 683ms / 125ms
+- [x] Worker 격리 후 cold/warm 각 20회 재측정: p95 614ms / 237ms
 - [x] HWPX production 앱 회귀 검증
 - [x] CSS named page 기반 세로·가로 혼합 HWP PDF 출력
 - [x] HWP PDF 7페이지·용지 크기·텍스트 99.08%와 대표 PNG 검증
@@ -23,12 +23,14 @@
 - [x] AIDA HWP/HWPX cold 5회 aggregate working set peak 기준선
 - [x] V1 RC 재패키징과 현재 `.app`·`app.asar` 논리 크기 증가량 측정
 - [x] 중복 rhwp WASM 제거와 production MIT license 포함
+- [x] rhwp 전용 Web Worker 격리와 강제 종료형 timeout·load cancellation
+- [x] Worker 요청 ID, crash/timeout 오류와 SVG·text layout 응답 상한
 
 ### 다음 작업 순서
 
-1. parser 전용 worker/utility process 격리와 timeout·load cancellation
-2. 점수표, main/oracle 역할과 third-party notice를 확정하는 ADR
-3. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+1. Worker 메모리 비용을 포함한 점수표, main/oracle 역할과 third-party notice ADR
+2. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -74,9 +76,9 @@
 
 - [x] 확장자 분기와 CFB magic 기반 HWP preflight
 - [ ] `DocumentImporter`와 format-neutral IPC event
-- [ ] HWP parser 전용 worker 또는 utility process 격리
+- [x] HWP parser 전용 Web Worker 격리
 - [x] 200 MiB 입력 제한
-- [ ] timeout, load cancellation
+- [x] 30초 open·15초 page timeout과 Worker 강제 종료형 load cancellation
 - [x] `.hwp` Finder association, dialog, drop
 - [ ] 암호·DRM·배포용·손상 입력 오류 UX
 - [ ] 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리

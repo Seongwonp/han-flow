@@ -12,9 +12,10 @@ Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어이며 V2에서 HWP fixed-page 
 macOS open-file / drag-and-drop / file dialog
   → Electron main process
   ├─ HWPX → HwpxPackageReader → ordered XML → flow ViewerDocument → block pagination
-  └─ HWP  → size/CFB magic → @rhwp/core WASM → FixedPageDocument
-                                               ├─ sanitized page SVG image
-                                               └─ positioned text run layer
+  └─ HWP  → size/CFB magic → dedicated Web Worker → @rhwp/core WASM
+                                                    → FixedPageDocument
+                                                    ├─ sanitized page SVG image
+                                                    └─ positioned text run layer
   → shared React zoom / page virtualization / PDF shell
 ```
 
@@ -36,6 +37,7 @@ fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규�
 - macOS `open-file`, single-instance, 파일 대화상자 처리
 - 자체 HWPX UTI와 기존 한컴 HWPX UTI의 Finder 문서 연결
 - HWPX 확장자와 패키지 필수 entry 검증
+- HWP 200 MiB·CFB magic preflight와 byte 전달
 - 작은 문서의 전체 decode 및 renderer IPC 전달
 - 대형 문서 worker 생성·취소·오류 전달
 - renderer 준비 완료 후 `webContents.printToPDF` 실행과 파일 저장
@@ -46,6 +48,18 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 사용한다. 첫 section 모델을 먼저 보내고 전체 모델은 별도 worker 작업으로 완성한다. load ID가
 바뀌면 이전 worker를 종료하며 늦게 도착한 결과는 renderer가 무시한다. worker 오류가 발생해도
 이미 표시한 첫 section은 유지하고 상태 표시줄에 나머지 페이지 오류를 노출한다.
+
+### HWP Web Worker
+
+renderer adapter는 HWP를 열 때 rhwp 전용 module Worker를 만들고 WASM과 검증된 HWP byte를
+transfer한다. document 생성, 페이지 정보, SVG와 text layout 생성은 UI thread 밖에서만
+실행한다. open은 30초, page SVG·text layout은 요청마다 15초 제한을 두며, 제한을 넘기거나
+새 문서를 열면 Worker 자체를 종료해 동기 WASM 작업도 계속 실행되지 않게 한다.
+
+모든 요청과 응답은 증가하는 ID로 연결한다. 늦은 응답은 버리고 Worker crash·timeout이면
+진행 중 요청을 같은 분류 오류로 끝낸 뒤 열린 문서 상태와 cache를 무효화한다. Worker가
+반환한 SVG는 script·event·외부 resource 검사와 5천만 문자 상한을 통과해야 하며, text
+layout도 JSON parse 전에 같은 크기 상한을 적용하고 run·문자·좌표 범위를 다시 검사한다.
 
 ### Renderer
 
@@ -188,20 +202,22 @@ V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. `@rhwp/core`
 `kordoc`의 semantic IR 경로를 private AIDA 삼쌍으로 비교한 뒤 하나를 선택한다. 선택 전에는
 현재 `ViewerDocument`를 후보 API에 맞춰 바꾸지 않는다.
 
-현재 비신뢰 HWP binary는 main이 200 MiB 제한과 CFB magic만 확인하고 renderer WASM에
-전달한다. WASM 컴파일을 위해 CSP `wasm-unsafe-eval`만 추가했으며 외부 script는 계속
-허용하지 않는다. SVG는 blob image 경계에서 표시한다. 다음 보안 milestone은 parser를 전용
-worker 또는 utility process로 옮기고 HWP `FileHeader` signature/version, 암호·배포용·DRM,
-timeout과 load cancellation을 production importer에 적용하는 것이다. Scripts, OLE와 외부
-link는 실행하지 않는다.
+현재 비신뢰 HWP binary는 main이 200 MiB 제한과 CFB magic을 확인한 뒤 전용 Web Worker로
+전달한다. rhwp document 생성과 모든 페이지 작업은 renderer UI thread 밖에서 실행하고
+timeout·새 load는 Worker 강제 종료로 처리한다. WASM 컴파일을 위해 CSP
+`wasm-unsafe-eval`만 추가했으며 외부 script는 계속 허용하지 않는다. SVG는 검증 후 blob
+image 경계에서 표시한다. 다음 보안 milestone은 HWP `FileHeader` signature/version,
+암호·배포용·DRM 감지와 분류된 오류 UX다. Scripts, OLE와 외부 link는 실행하지 않는다.
 
 현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text
 run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않으면서 검색·선택·접근성을
 제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
-불러와 cold p95 683ms를 유지한다. CSS named page 기반 mixed-orientation PDF도 page별 크기와
-텍스트 보존, 대표 PNG 관문을 통과했다. AIDA cold 5회 기준 HWP aggregate working set peak
-p95는 589.6MiB이고 HWPX는 438.3MiB다. 자세한 결정 기준과 출처는
+불러온다. Worker 격리 후 cold 20회 첫 화면 p95는 614ms다. CSS named page 기반
+mixed-orientation PDF도 page별 크기와
+텍스트 보존, 대표 PNG 관문을 통과했다. Worker 격리 후 AIDA cold 5회 기준 HWP aggregate
+working set peak p95는 647.6MiB이고 HWPX 기준선은 438.3MiB다. 격리 전 HWP p95보다
+58.0MiB 증가한 비용은 다음 최적화 판단에 사용한다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
 
 renderer에 bundle되는 `@rhwp/core`는 build-time dependency다. production `node_modules`에

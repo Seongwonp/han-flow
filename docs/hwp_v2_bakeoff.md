@@ -133,15 +133,16 @@ dependency를 포함한 4건(보통 1, 높음 3)이며 probe 후보는 포함되
 뒤쪽 본문이 한 페이지 위·아래로 이어지지만 겹침·잘림·테두리 파손 없이 읽을 수 있었다.
 portrait와 landscape viewBox도 모두 생성됐다. 이 결과로 `@rhwp/core`를 **주 visual 후보**로
 승격한다. fixed-page shell, package 크기와 peak memory 관문은 통과했다. 최종 ADR은 parser
-격리와 공개 synthetic HWP fixture를 완료한 뒤 확정한다.
+격리를 통과했으며 공개 synthetic HWP fixture를 완료한 뒤 확정한다.
 
 ### fixed-page 앱 연결
 
 2026-07-27에 기존 flow `ViewerDocument`를 수정하지 않고 별도 `FixedPageDocument`와 페이지별
 용지 크기·section index adapter를 추가했다. main은 200 MiB와 CFB magic을 검사한 뒤 byte만
-전달하고, renderer가 WASM을 지연 초기화한다. 화면 페이지는 SVG 원문을 React HTML로 직접
-주입하지 않는다. `script`, `foreignObject`, event attribute와 외부 URL이 없는지 검사한 뒤
-blob image로 표시한다. CSP도 외부 script 없이 WebAssembly 컴파일과 blob image만 허용한다.
+전달한다. renderer adapter는 전용 Web Worker에서 WASM을 초기화하고 document 생성·page
+info·SVG·text layout 작업을 수행한다. 화면 페이지는 SVG 원문을 React HTML로 직접 주입하지
+않는다. `script`, `foreignObject`, event attribute와 외부 URL이 없는지 검사한 뒤 blob
+image로 표시한다. CSP도 외부 script 없이 WebAssembly 컴파일과 blob image만 허용한다.
 
 50페이지 이하는 전체 page shell을 만들되 SVG 생성은 페이지별 queue로 순차 실행하고, 50페이지
 초과는 세로·가로 용지의 누적 높이를 계산해 viewport 주변만 mount한다. AIDA production
@@ -156,22 +157,36 @@ build smoke test 결과는 다음과 같다.
 | HWP 읽기 | 약 2 ms |
 | WASM 초기화 | 약 47–117 ms |
 | HWP parse | 약 125–256 ms |
-| warm 첫 화면 p50 / p95 (20회) | 81 / 125 ms |
-| cold 첫 화면 p50 / p95 (20회) | 604 / 683 ms |
-| cold 최소 / 최대 | 587 / 707 ms |
-| cold 앱 시작 / 요청→첫 화면 p95 | 283 / 400 ms |
+| Worker 격리 후 warm 첫 화면 p50 / p95 (20회) | 203 / 237 ms |
+| Worker 격리 후 cold 첫 화면 p50 / p95 (20회) | 535 / 614 ms |
+| Worker 격리 후 cold 최소 / 최대 | 499 / 722 ms |
+| Worker 격리 후 cold 앱 시작 / 요청→첫 화면 p95 | 302 / 364 ms |
 | production WASM asset | 6.64 MiB |
-| renderer adapter chunk | 약 0.28 MB |
+| HWP Worker / renderer adapter chunk | 약 0.29 / 0.01 MB |
 | unsigned arm64 `.app` / `app.asar` logical size | 324.27 / 100.67 MiB |
 | V1 RC 대비 `.app` / `app.asar` 증가 | +6.96 MiB / +6.96 MiB |
-| HWP aggregate working set peak p50 / p95 (cold 5회) | 580.9 / 589.6 MiB |
+| Worker 격리 후 HWP aggregate working set peak p50 / p95 (cold 5회) | 619.9 / 647.6 MiB |
 | HWPX aggregate working set peak p50 / p95 (cold 5회) | 436.8 / 438.3 MiB |
 
 텍스트 layer를 첫 image와 함께 만들면 cold p95가 1초 부근까지 올라갔다. 첫 page SVG image의
 `load`를 첫 화면으로 확정하고, 좌표형 text layer와 2쪽 이후 렌더를 그 다음 유휴 구간에
-시작하도록 바꿨다. 실제 unsigned 패키지 앱의 격리된 cold/warm 각 20회 측정에서 cold p95
-683ms와 최대 707ms로 1초 목표를 통과했다. 측정기는 cold 앱 시작, 요청→model과
-요청→첫 화면도 분리해 시작 회귀와 문서 처리 회귀를 구별한다.
+시작하도록 바꿨다. Worker 격리 뒤 실제 unsigned 패키지 앱의 cold/warm 각 20회 측정에서
+cold p95 614ms와 최대 722ms로 1초 목표를 통과했다. 문서마다 Worker를 새로 만들기 때문에
+warm p95는 기존 125ms에서 237ms로 늘었지만 안전한 강제 취소와 UI thread 분리를 위해
+허용한다. 측정기는 cold 앱 시작, 요청→model과 요청→첫 화면도 분리해 시작 회귀와 문서 처리
+회귀를 구별한다.
+
+### Worker 격리와 작업 취소
+
+open 요청마다 Worker 수명주기를 새로 시작한다. 새 문서가 열리면 이전 Worker를 즉시
+종료하므로 동기 WASM parse나 page render가 뒤에서 계속 실행되지 않는다. open은 30초,
+page SVG·text layout은 15초 제한이며 timeout과 crash는 진행 중 RPC를 실패시키고 adapter의
+문서 상태와 cache를 무효화한다. 응답은 요청 ID로 연결해 이전 문서 결과를 버린다.
+
+Worker 결과는 다시 신뢰하지 않는다. SVG·text layout JSON은 parse 전에 각각 5천만 문자
+상한을 확인하고 기존 element·URL, run 수·문자 수·좌표 검증을 그대로 통과한다. 패키지
+AIDA 회귀에서 7페이지, 이미지 7개, 검색 4페이지·6건, 선택과 접근성 layer가 모두 유지됐고
+HWPX 8페이지 경로도 통과했다.
 
 ### 검색·선택용 text layer
 
@@ -211,10 +226,11 @@ V1 기준은 RC 완료 commit `cd8050d`를 당시 lockfile로 다시 설치·패
 `Contents/Resources/licenses/rhwp-MIT.txt`에 유지한다.
 
 메모리는 격리된 cold 앱을 포맷별 5회 실행하고 visual E2E 시작부터 전체 page가 안정될 때까지
-Electron 4개 process working set을 50ms 간격으로 합산했다. 0.91MiB HWP 7페이지는
-p50/p95 **580.9/589.6MiB**, 0.89MiB HWPX 8페이지는 **436.8/438.3MiB**다. HWP p95가
-151.3MiB 높지만 WASM heap, SVG/blob image와 GPU texture가 포함된 이 문서 쌍의 회귀
-기준선이다. macOS working set은 shared page를 process별로 중복 집계할 수 있어 앱의 고유
+Electron 4개 process working set을 50ms 간격으로 합산했다. Worker 격리 후 0.91MiB HWP
+7페이지는 p50/p95 **619.9/647.6MiB**, 0.89MiB HWPX 8페이지 기준선은
+**436.8/438.3MiB**다. HWP p95는 격리 전보다 58.0MiB, HWPX보다 209.3MiB 높다. WASM heap,
+Worker 수명주기, SVG/blob image와 GPU texture가 포함된 이 문서 쌍의 회귀 기준선이다.
+macOS working set은 shared page를 process별로 중복 집계할 수 있어 앱의 고유
 물리 메모리로 해석하지 않는다. 5회 p95는 표본상 최대값이며 공개 대형 HWP fixture가 생기면
 표본 수와 문서 크기를 늘린다.
 
@@ -246,6 +262,6 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 
 ## 다음 판정 작업
 
-1. parser의 renderer 격리, timeout과 load cancellation 구현
-2. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-3. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. 점수표와 main/oracle 역할을 확정하는 ADR 작성
+2. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
