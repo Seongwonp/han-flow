@@ -8,6 +8,7 @@ import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pa
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
+import { waitForFixedPagePrintReady } from './pdf_print_readiness'
 
 const api = () => (window as any).api
 
@@ -448,7 +449,15 @@ export default function App() {
       }
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       await globalThis.document.fonts.ready
-      await Promise.all(Array.from(globalThis.document.images).map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined)))
+      if (fixedDocument) {
+        await waitForFixedPagePrintReady(globalThis.document, fixedDocument.pageCount)
+      } else {
+        await Promise.all(Array.from(globalThis.document.images).map((image) =>
+          image.complete && image.naturalWidth > 0
+            ? Promise.resolve()
+            : image.decode()
+        ))
+      }
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
       api().pdfReady(requestId)
     })
