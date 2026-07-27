@@ -7,7 +7,7 @@ import { serializeToHWPX } from '../core/parser/serialization'
 import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 import { shouldLoadProgressively } from '../core/parser/progressive_loading'
-import { readHwpContainer } from './hwp_file'
+import { HwpFileError, readHwpContainer } from './hwp_file'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -139,6 +139,7 @@ function captureVisualState(window: BrowserWindow): void {
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       errorVisible: Boolean(document.querySelector('.viewer-error')),
+      errorCode: document.querySelector('.viewer-error')?.dataset.errorCode || null,
       errorMessageLength: document.querySelector('.viewer-error')?.textContent?.trim().length || 0,
       search: {
         open: Boolean(document.querySelector('.viewer-search')),
@@ -334,7 +335,17 @@ app.whenReady().then(() => {
 
   ipcMain.handle('hwp:read', async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !isHwpPath(filePath)) throw new Error('HWP 파일만 읽을 수 있습니다.')
-    return readHwpContainer(filePath)
+    try {
+      return { ok: true, ...(await readHwpContainer(filePath)) }
+    } catch (error) {
+      if (error instanceof HwpFileError) {
+        return {
+          ok: false,
+          error: { code: error.code, message: error.message }
+        }
+      }
+      throw error
+    }
   })
 
   ipcMain.handle('resource:readRhwpWasm', async (_event, assetUrl: string) => {

@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import * as CFB from 'cfb'
 
 const root = resolve(import.meta.dirname, '..')
 const fixture = resolve(root, 'tests/fixtures/public/synthetic-layout.hwp')
@@ -72,16 +73,62 @@ function check(condition, message, failures) {
   if (!condition) failures.push(message)
 }
 
+async function createHeaderVariant(bytes, output, mutate) {
+  const container = CFB.read(bytes, { type: 'buffer' })
+  const fileHeader = CFB.find(container, 'FileHeader')
+  if (!fileHeader?.content || fileHeader.content.length < 40) {
+    throw new Error('공개 HWP fixture의 FileHeader를 찾을 수 없습니다.')
+  }
+  mutate(fileHeader.content)
+  await writeFile(output, CFB.write(container, { type: 'buffer' }))
+}
+
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'han-flow-hwp-matrix-'))
 try {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const fixedBytes = await readFile(fixture)
   const generatedFixture = join(temporaryDirectory, 'synthetic-layout.hwp')
+  const unsupportedFixtures = [
+    {
+      name: 'encrypted',
+      code: 'HWP_ENCRYPTED',
+      path: join(temporaryDirectory, 'encrypted.hwp'),
+      mutate: (header) => header.writeUInt32LE(header.readUInt32LE(36) | (1 << 1), 36)
+    },
+    {
+      name: 'distribution',
+      code: 'HWP_DISTRIBUTION',
+      path: join(temporaryDirectory, 'distribution.hwp'),
+      mutate: (header) => header.writeUInt32LE(header.readUInt32LE(36) | (1 << 2), 36)
+    },
+    {
+      name: 'drm',
+      code: 'HWP_DRM',
+      path: join(temporaryDirectory, 'drm.hwp'),
+      mutate: (header) => header.writeUInt32LE(header.readUInt32LE(36) | (1 << 4), 36)
+    },
+    {
+      name: 'unsupported-version',
+      code: 'HWP_UNSUPPORTED_VERSION',
+      path: join(temporaryDirectory, 'unsupported-version.hwp'),
+      mutate: (header) => header.set([0, 0, 0, 4], 32)
+    }
+  ]
 
   await run(electron, [
     resolve(root, 'scripts/fixtures/generate_public_hwp_main.cjs'),
     generatedFixture
   ], { prefix: 'HAN_FLOW_PUBLIC_HWP_GENERATED ' })
+  for (const fixtureCase of unsupportedFixtures) {
+    await createHeaderVariant(fixedBytes, fixtureCase.path, fixtureCase.mutate)
+  }
+  const corruptedFixture = {
+    name: 'corrupted',
+    code: 'HWP_CORRUPTED',
+    path: join(temporaryDirectory, 'corrupted.hwp')
+  }
+  await writeFile(corruptedFixture.path, fixedBytes.subarray(0, 32))
+  unsupportedFixtures.push(corruptedFixture)
 
   const [generatedBytes, bakeoff, app, pdf] = await Promise.all([
     readFile(generatedFixture),
@@ -101,6 +148,17 @@ try {
       fixture
     ], { prefix: 'HAN_FLOW_PDF_VERIFY ', timeoutMs: 120_000 })
   ])
+  const unsupportedResults = []
+  for (const fixtureCase of unsupportedFixtures) {
+    unsupportedResults.push(await run(process.execPath, [
+      resolve(root, 'scripts/verify_app.mjs'),
+      fixtureCase.path,
+      '--expect-error'
+    ], {
+      env: { HAN_FLOW_VERIFY_ERROR_CODE: fixtureCase.code },
+      prefix: 'HAN_FLOW_APP_VERIFY '
+    }))
+  }
 
   const expected = manifest.expected
   const observations = bakeoff.observations
@@ -148,6 +206,14 @@ try {
     'PDF 텍스트 보존율 미달',
     failures
   )
+  unsupportedResults.forEach((result, index) => {
+    const fixtureCase = unsupportedFixtures[index]
+    check(
+      result.passed === true && result.errorCode === fixtureCase.code,
+      `${fixtureCase.name} 오류 UX 검증 실패`,
+      failures
+    )
+  })
 
   const result = {
     fixture: manifest.fixture,
@@ -161,10 +227,11 @@ try {
     repeatedHeaderOccurrences: app.search?.occurrences ?? 0,
     pdfPages: pdf.pdfPages,
     pdfTextPreservation: pdf.textPreservation,
+    unsupportedCases: unsupportedResults.map((result) => result.errorCode),
     failures
   }
   console.log('HAN_FLOW_HWP_MATRIX', JSON.stringify(result))
   if (failures.length) process.exitCode = 1
 } finally {
-  await rm(temporaryDirectory, { recursive: true, force: true })
+  await rm(temporaryDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

@@ -243,6 +243,7 @@ export default function App() {
   const [fixedDocument, setFixedDocument] = useState<FixedPageDocument | null>(null)
   const [fileName, setFileName] = useState('문서를 열어 주세요')
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
@@ -329,7 +330,7 @@ export default function App() {
     const requestStartedAt = performance.now()
     const loadId = String(++loadSequence.current)
     activeLoadId.current = loadId
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setErrorCode(null)
     setLoadTiming(null)
     setSectionProgress(null)
     setBackgroundError(null)
@@ -345,8 +346,15 @@ export default function App() {
       if (rhwpAdapter) (await rhwpAdapter).closeRhwpFixedPageDocument()
       if (path.toLowerCase().endsWith('.hwp')) {
         const readStartedAt = performance.now()
-        const binary = await api().readHwp(path) as { bytes: Uint8Array; readMs: number }
+        const binary = await api().readHwp(path) as
+          | { ok: true; bytes: Uint8Array; readMs: number }
+          | { ok: false; error: { code: string; message: string } }
         if (activeLoadId.current !== loadId) return
+        if (!binary.ok) {
+          setErrorCode(binary.error.code)
+          setError(binary.error.message)
+          return
+        }
         const adapter = await loadRhwpAdapter()
         if (activeLoadId.current !== loadId) return
         const result = await adapter.openRhwpFixedPageDocument(
@@ -388,7 +396,16 @@ export default function App() {
       setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
       setFileName(path.split('/').pop() ?? path)
     }
-    catch (reason) { if (activeLoadId.current === loadId) setError(reason instanceof Error ? reason.message : String(reason)) }
+    catch (reason) {
+      if (activeLoadId.current === loadId) {
+        setErrorCode(
+          reason && typeof reason === 'object' && 'code' in reason
+            ? String(reason.code)
+            : 'DOCUMENT_OPEN_FAILED'
+        )
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
+    }
     finally { if (activeLoadId.current === loadId) setLoading(false) }
   }
   useEffect(() => {
@@ -573,7 +590,10 @@ export default function App() {
     event.preventDefault()
     const path = (event.dataTransfer.files[0] as any)?.path
     if (/\.(?:hwp|hwpx)$/iu.test(path ?? '')) await openPath(path)
-    else setError('HWP 또는 HWPX 파일만 열 수 있습니다.')
+    else {
+      setErrorCode('UNSUPPORTED_FILE_TYPE')
+      setError('HWP 또는 HWPX 파일만 열 수 있습니다.')
+    }
   }
   const exportPdf = async () => {
     if (!hasDocument || printing || documentLoading) return
@@ -655,7 +675,7 @@ export default function App() {
     </div></header>
     <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
-      {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
+      {error && <div className="viewer-empty viewer-error" data-error-code={errorCode ?? undefined}>{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !hasDocument && <div className="viewer-empty"><div className="viewer-drop-icon">한</div><h1>HWP 또는 HWPX를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
       {effectiveDocument && !loading && <div className={`viewer-pages${virtualized ? ' viewer-pages-virtualized' : ''}`} data-document-format="hwpx" data-total-pages={pages.length} data-document-loading={documentLoading} data-layout-measured={Boolean(layoutMeasurements)} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}

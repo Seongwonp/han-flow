@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 
 const fixture = process.argv[2]
 const expectedError = process.argv.includes('--expect-error')
+const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
@@ -68,7 +69,10 @@ try {
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
   const failures = (expectedError ? [
     state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
-    state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음'
+    state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음',
+    expectedErrorCode && state.errorCode !== expectedErrorCode
+      ? `오류 코드 불일치: ${state.errorCode ?? '없음'}`
+      : undefined
   ] : [
     state.errorVisible ? '예상하지 않은 사용자 오류가 표시됨' : undefined,
     state.totalPages > 0 ? undefined : '페이지가 생성되지 않음',
@@ -93,6 +97,7 @@ try {
     mountedPages: state.mountedPages,
     imageCount: state.images.length,
     overflowPages: state.overflowPages,
+    errorCode: expectedError ? state.errorCode : undefined,
     pageTextCounts: state.pageTextCounts,
     search: searchQuery ? state.search : undefined,
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,
@@ -102,5 +107,5 @@ try {
   console.log('HAN_FLOW_APP_VERIFY', JSON.stringify(result))
   if (failures.length) process.exitCode = 1
 } finally {
-  await rm(directory, { recursive: true, force: true })
+  await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
 }

@@ -135,5 +135,7 @@ try {
   console.log('HAN_FLOW_PDF_VERIFY', JSON.stringify(result))
   if (failures.length) process.exitCode = 1
 } finally {
-  if (!keepArtifacts) await rm(directory, { recursive: true, force: true })
+  if (!keepArtifacts) {
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 }
