@@ -9,6 +9,12 @@
     "appId": "com.hanflow.viewer",
     "productName": "Han-Flow",
     "asar": true,
+    "extraResources": [
+      {
+        "from": "node_modules/@rhwp/core/LICENSE",
+        "to": "licenses/rhwp-MIT.txt"
+      }
+    ],
     "directories": {
       "output": "release"
     },
@@ -59,6 +65,8 @@
     "test": "jest",
     "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts",
     "benchmark:app": "node scripts/benchmark_app.mjs",
+    "benchmark:memory": "node scripts/benchmark_memory.mjs",
+    "measure:package": "node scripts/measure_package_size.mjs",
     "verify:app": "node scripts/verify_app.mjs",
     "verify:matrix": "node scripts/verify_public_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
@@ -67,7 +75,6 @@
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
-    "@rhwp/core": "0.7.19",
     "@types/katex": "^0.16.8",
     "adm-zip": "^0.5.17",
     "cfb": "^1.2.2",
@@ -82,10 +89,12 @@
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@electron-toolkit/eslint-config-prettier": "^2.0.0",
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "@rhwp/core": "0.7.19",
     "@types/adm-zip": "^0.5.8",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.4",

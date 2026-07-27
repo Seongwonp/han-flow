@@ -82,6 +82,14 @@ function captureVisualState(window: BrowserWindow): void {
   let previousSignature = ''
   let stableSamples = 0
   let searchTriggered = !searchQuery
+  let sampledPeakWorkingSetKb = 0
+  const sampleMemory = () => {
+    const workingSetKb = app.getAppMetrics()
+      .reduce((sum, metric) => sum + metric.memory.workingSetSize, 0)
+    sampledPeakWorkingSetKb = Math.max(sampledPeakWorkingSetKb, workingSetKb)
+  }
+  sampleMemory()
+  const memoryInterval = setInterval(sampleMemory, 50)
   const captureWhenReady = async () => {
     const readiness = await window.webContents.executeJavaScript(`(() => {
       const pages = document.querySelector('.viewer-pages')
@@ -159,6 +167,15 @@ function captureVisualState(window: BrowserWindow): void {
       status: document.querySelector('.viewer-status')?.textContent,
       timing: document.querySelector('.viewer-status')?.getAttribute('title')
     })`)
+    clearInterval(memoryInterval)
+    sampleMemory()
+    const processMetrics = app.getAppMetrics()
+    visualState.memory = {
+      processCount: processMetrics.length,
+      currentWorkingSetKb: processMetrics.reduce((sum, metric) => sum + metric.memory.workingSetSize, 0),
+      sampledPeakWorkingSetKb,
+      processPeakSumKb: processMetrics.reduce((sum, metric) => sum + metric.memory.peakWorkingSetSize, 0)
+    }
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
