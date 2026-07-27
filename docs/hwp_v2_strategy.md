@@ -16,9 +16,10 @@ PDF로 내보내는 것**이다. Han-Flow가 HWP 5.0 레코드 전체를 직접 
 2. `kordoc`: TypeScript HWP 5.0 파서의 구조화된 IR을 Han-Flow `ViewerDocument`로
    정규화해 기존 pagination/renderer를 재사용할 수 있는지 측정한다.
 
-아직 어느 쪽도 채택하지 않았다. private AIDA `.hwp`·동일 문서 `.hwpx`·기준 PDF 삼쌍과
-공개 synthetic fixture를 같은 지표로 비교한 뒤 결정한다. 라이브러리의 README에 적힌 지원
-범위는 후보 선정 근거일 뿐 Han-Flow의 호환성 보증으로 간주하지 않는다.
+private AIDA `.hwp`·동일 문서 `.hwpx`·기준 PDF 삼쌍 비교 결과 `@rhwp/core`를 **주 visual
+후보**로 앱의 fixed-page 경로에 잠정 연결했다. 이는 최종 ADR이 아니다. PDF, peak memory,
+package 증가량과 공개 synthetic HWP fixture를 통과한 뒤 main/oracle 역할을 확정한다.
+라이브러리의 README에 적힌 지원 범위는 호환성 보증으로 간주하지 않는다.
 
 ## 범위
 
@@ -106,7 +107,7 @@ HWP fixture를 직접 만들어 CI에 추가한다.
 
 ### 실험 산출물
 
-- 후보를 production dependency에 넣지 않는 독립 probe
+- 앱 채택 전 후보를 production dependency에 넣지 않는 독립 probe
 - 같은 JSON schema로 된 후보별 진단 결과
 - AIDA와 공개 fixture의 비교표
 - dependency, license, binary size, cold/warm timing 기록
@@ -125,17 +126,17 @@ macOS open-file / drop / dialog
   → shared PDF export
 ```
 
-후보 실험 전에는 `ViewerDocument`를 억지로 바꾸지 않는다. 결과에 따라 다음 중 하나를 ADR로
-선택한다.
+기존 flow `ViewerDocument`는 바꾸지 않고 HWP에 별도 `FixedPageDocument` variant를 추가했다.
+최종 ADR에서는 다음 두 역할을 확정한다.
 
 - semantic adapter: HWP IR을 현재 `ViewerDocument`로 변환하고 기존 layout을 사용
 - fixed-page adapter: 안전하게 정제된 페이지 표현을 별도 read-only page variant로 받고
   공통 zoom·virtualization·PDF shell을 사용
 
-format별 분기는 Electron main과 React component 곳곳에 퍼뜨리지 않고 `DocumentImporter`
-경계 한 곳에 둔다. 기존 `src/core/parser/hwp_parser.ts`는 CFB stream 이름만 출력하고 항상
-실패하는 과거 prototype이므로 V2 구현으로 간주하지 않는다. 첫 구현 단계에서 격리하거나
-제거한다.
+현재 format 분기는 파일 열기와 React loader에 최소 연결돼 있다. 다음 importer milestone에서
+이를 `DocumentImporter` 경계로 모은다. 기존 `src/core/parser/hwp_parser.ts`는 CFB stream
+이름만 출력하고 항상 실패하는 과거 prototype이므로 V2 구현으로 간주하지 않는다. 첫 구현
+단계에서 격리하거나 제거한다.
 
 ## 보안 기준
 
@@ -170,10 +171,11 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 
 ### V2-1 importer 경계와 안전한 열기
 
-- [ ] magic 기반 HWP/HWPX 감지
+- [x] `.hwp` 확장자 분기와 200 MiB·CFB magic preflight
+- [ ] HWP `FileHeader` signature/version까지 포함한 format-neutral 감지
 - [ ] `DocumentImporter`와 format-neutral IPC
 - [ ] parser worker 격리, 제한·취소·오류 taxonomy
-- [ ] Finder association, dialog, drop에 `.hwp` 추가
+- [x] Finder association, dialog, drop에 `.hwp` 추가
 - [ ] 암호·DRM·배포용·손상 문서 오류 UX
 
 ### V2-2 본문과 스타일
@@ -190,7 +192,8 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 
 ### V2-4 성능과 PDF
 
-- [ ] 첫 화면 우선 parse와 50페이지 이상 가상화
+- [x] 첫 페이지 우선 SVG queue와 세로·가로 혼합 페이지 가상화 계산
+- [ ] 앱 요청→첫 화면 1초 이내
 - [ ] cold/warm p50/p95와 peak memory
 - [ ] 화면/PDF page count·페이지별 글자 수 일치
 - [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
@@ -200,7 +203,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 - private AIDA `.hwp`가 crash 없이 열리고 표·이미지를 포함해 읽을 수 있음
 - 같은 문서의 HWPX/PDF 기준과 차이가 정량화되어 known limitation에 기록됨
 - 암호·DRM·배포용·손상 문서는 앱을 종료시키지 않고 정확한 오류를 보여줌
-- `.hwpx` V1의 41개 테스트와 production matrix가 그대로 통과함
+- `.hwpx` V1 회귀 테스트와 production matrix가 그대로 통과함
 - 개인정보 없는 HWP fixture가 CI에서 parser·app·PDF 경로를 검증함
 
 ## 출처

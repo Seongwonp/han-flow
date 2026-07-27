@@ -135,6 +135,37 @@ portrait와 landscape viewBox도 모두 생성됐다. 이 결과로 `@rhwp/core`
 승격한다. 최종 채택은 정제된 SVG를 기존 virtualization/PDF shell에 연결하고 package
 크기·peak memory를 측정한 뒤 결정한다.
 
+### fixed-page 앱 연결
+
+2026-07-27에 기존 flow `ViewerDocument`를 수정하지 않고 별도 `FixedPageDocument`와 페이지별
+용지 크기·section index adapter를 추가했다. main은 200 MiB와 CFB magic을 검사한 뒤 byte만
+전달하고, renderer가 WASM을 지연 초기화한다. 화면 페이지는 SVG 원문을 React HTML로 직접
+주입하지 않는다. `script`, `foreignObject`, event attribute와 외부 URL이 없는지 검사한 뒤
+blob image로 표시한다. CSP도 외부 script 없이 WebAssembly 컴파일과 blob image만 허용한다.
+
+50페이지 이하는 전체 page shell을 만들되 SVG 생성은 페이지별 queue로 순차 실행하고, 50페이지
+초과는 세로·가로 용지의 누적 높이를 계산해 viewport 주변만 mount한다. AIDA production
+build smoke test 결과는 다음과 같다.
+
+| 지표 | 결과 |
+| --- | ---: |
+| page / section | 7 / 3 |
+| 세로 / 가로 page | 6 / 1 |
+| image decode 실패 | 0 |
+| page overflow | 0 |
+| HWP 읽기 | 약 2 ms |
+| WASM 초기화 | 약 47–117 ms |
+| HWP parse | 약 125–256 ms |
+| 앱 요청→첫 화면 | 약 1.1초 |
+| production WASM asset | 약 6.96 MB |
+| renderer adapter chunk | 약 0.28 MB |
+| unsigned arm64 `.app` / `app.asar` | 약 332 MB / 112.8 MB |
+
+연결 가능성은 통과했지만 1초 목표에는 약 0.1초 부족하다. 또한 blob image 경계는 SVG text
+selection/search를 제공하지 않고, 현재 `printToPDF`의 단일 custom page size로는 세로·가로
+혼합 문서의 출력 일치를 아직 보증할 수 없다. `.app`과 `app.asar` 값은 현재 절대 크기이며
+V1 기준 대비 증가량은 다음 package 측정에서 분리한다.
+
 대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
 SVG나 PNG를 파일로 남기지 않는다.
 
@@ -153,17 +184,18 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
   만든다. 기준보다 한 페이지 적지만 깨진 화면은 아니므로 주 visual 후보로 올린다.
 - `kordoc`은 production renderer가 아니라 semantic 구조 비교 oracle로 유지한다. rhwp SVG의
   text layer가 검색·접근성 요구를 만족하는지 확인하기 전에는 두 parser를 함께 번들하지 않는다.
-- 후보 package는 dev dependency로만 고정해 production import graph에서 제외한다. `kordoc`의
-  OCR/PDF 선택 dependency까지 개발 설치에 들어오므로 lockfile·설치 크기와 audit 결과는
-  유지보수 감점 항목으로 기록한다. 프로젝트 전체 `omit=optional`은 Rollup의 macOS binary도
-  제거해 V1 build를 깨뜨리므로 사용하지 않는다.
-- production `.app`을 다시 패키징해 `app.asar` 1,294개 entry에 `kordoc`,
-  `@rhwp/core`, `rhwp_bg.wasm`이 없음을 확인했다.
+- `@rhwp/core`는 fixed-page 연결 실험을 위해 production dependency로 승격했다. Vite는
+  WASM 약 6.96 MB와 adapter 약 0.28 MB를 별도 asset/chunk로 만들어 HWPX 경로에서 지연
+  로딩한다. `kordoc`은 dev dependency와 비교 oracle로만 유지한다.
+- `kordoc`의 OCR/PDF 선택 dependency까지 개발 설치에 들어오므로 lockfile·설치 크기와 audit
+  결과는 유지보수 감점 항목으로 기록한다. 프로젝트 전체 `omit=optional`은 Rollup의 macOS
+  binary도 제거해 V1 build를 깨뜨리므로 사용하지 않는다.
 
 ## 다음 판정 작업
 
-1. 정제된 rhwp SVG를 기존 page virtualization shell에 넣는 fixed-page adapter probe
-2. rhwp SVG text layer의 검색·접근성 가능성 및 Kordoc 동시 번들 필요 여부 판정
-3. fixed-page shell의 PDF 출력, peak memory와 package 증가량 측정
-4. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. 첫 페이지 SVG 생성·blob decode를 분리 측정하고 요청→첫 화면 1초 이내로 최적화
+2. rhwp SVG text layer의 검색·접근성 가능성 및 blob image 경계 유지 여부 판정
+3. fixed-page shell의 mixed-orientation PDF 출력, peak memory와 package 증가량 측정
+4. parser의 renderer 격리, timeout과 load cancellation 구현
+5. 점수표와 main/oracle 역할을 확정하는 ADR 작성
+6. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가

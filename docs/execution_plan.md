@@ -1,6 +1,6 @@
 # Han-Flow 실행 계획
 
-기준일: 2026-07-26
+기준일: 2026-07-27
 
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
@@ -22,8 +22,10 @@
 - [x] SVG의 script, event handler, 외부 URL 검사
 - [x] 기준 PDF와 privacy-safe 페이지 그룹·문자 보존율 자동 비교
 - [x] PDF 3·4페이지가 합쳐진 SVG를 PNG로 재렌더링해 겹침·잘림 없음 확인
-- [ ] peak memory와 production bundle 증가량 측정
-- [ ] 기존 page virtualization/PDF shell 연결 가능성 기록
+- [ ] peak memory와 production package 증가량 측정
+- [x] fixed-page variant로 기존 zoom·page virtualization shell 연결
+- [x] 실제 AIDA HWP의 7페이지·3구역·세로/가로 용지·overflow 0 확인
+- [ ] mixed-orientation PDF 출력 검증
 
 ### 3. `kordoc` probe
 
@@ -41,15 +43,14 @@
 - [ ] license와 third-party notice 확정
 - [ ] architecture decision을 V2 전략 문서에 반영
 
-## 다음 milestone: V2-1 importer 경계
+## 진행 중 milestone: V2-1 importer 경계
 
-V2-0 결정 전에는 시작하지 않는다.
-
-- [ ] magic 기반 format detector
+- [x] 확장자 분기와 CFB magic 기반 HWP preflight
 - [ ] `DocumentImporter`와 format-neutral IPC event
-- [ ] HWP parser 전용 worker 또는 utility process
-- [ ] 입력 제한, timeout, load cancellation
-- [ ] `.hwp` Finder association, dialog, drop
+- [ ] HWP parser 전용 worker 또는 utility process 격리
+- [x] 200 MiB 입력 제한
+- [ ] timeout, load cancellation
+- [x] `.hwp` Finder association, dialog, drop
 - [ ] 암호·DRM·배포용·손상 입력 오류 UX
 - [ ] 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
 

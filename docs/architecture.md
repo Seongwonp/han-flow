@@ -1,6 +1,7 @@
 # Han-Flow 기술 아키텍처
 
-Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어다. 편집 상태나 Undo/Redo를 관리하지 않고,
+Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어이며 V2에서 HWP fixed-page 경로를 연결 중이다.
+편집 상태나 Undo/Redo를 관리하지 않고,
 받은 문서를 빠르게 열어 레이아웃이 깨지지 않게 표시하고 PDF로 내보내는 데 집중한다.
 이 문서의 본문은 현재 동작하는 V1 구조를 설명한다. V2의 HWP 5.0 경계는 마지막 절의 계획이며
 후보 bake-off가 끝나기 전에는 구현 완료로 간주하지 않는다.
@@ -10,11 +11,9 @@ Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어다. 편집 상태나 Undo/Redo
 ```text
 macOS open-file / drag-and-drop / file dialog
   → Electron main process
-  → HwpxPackageReader (ZIP index, section size, resource entry)
-  → ordered XML decoder
-  → immutable ViewerDocument
-  → block pagination
-  → React read-only page renderer + page decoration
+  ├─ HWPX → HwpxPackageReader → ordered XML → flow ViewerDocument → block pagination
+  └─ HWP  → size/CFB magic → @rhwp/core WASM → FixedPageDocument → page SVG
+  → shared React zoom / page virtualization / PDF shell
 ```
 
 parser는 React와 CSS를 모르고 renderer는 ZIP/XML을 해석하지 않는다. 길이는 문서 모델에서
@@ -48,7 +47,11 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 
 ### Renderer
 
-- `ViewerDocument`를 읽기 전용 A4 page로 표시
+- HWPX `ViewerDocument`를 읽기 전용 flow page로 표시
+- HWP `FixedPageDocument`의 세로·가로 용지와 section index를 보존
+- HWP WASM과 약 7 MB asset을 `.hwp`를 열 때만 지연 로딩
+- 보이는 HWP page SVG를 순차 생성하고 20개 LRU cache로 제한
+- HWP SVG의 실행 요소·event attribute·외부 resource를 거부한 뒤 blob image로 표시
 - `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
 - 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
@@ -171,13 +174,16 @@ V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. `@rhwp/core`
 `kordoc`의 semantic IR 경로를 private AIDA 삼쌍으로 비교한 뒤 하나를 선택한다. 선택 전에는
 현재 `ViewerDocument`를 후보 API에 맞춰 바꾸지 않는다.
 
-비신뢰 HWP binary는 Electron main이 직접 해석하지 않고 worker 또는 utility process에
-격리한다. format detector는 CFB magic과 HWP `FileHeader` signature/version을 확인하고,
-stream·inflate·시간 제한을 적용한다. Scripts, OLE와 외부 link는 실행하지 않는다.
+현재 비신뢰 HWP binary는 main이 200 MiB 제한과 CFB magic만 확인하고 renderer WASM에
+전달한다. WASM 컴파일을 위해 CSP `wasm-unsafe-eval`만 추가했으며 외부 script는 계속
+허용하지 않는다. SVG는 blob image 경계에서 표시한다. 다음 보안 milestone은 parser를 전용
+worker 또는 utility process로 옮기고 HWP `FileHeader` signature/version, 암호·배포용·DRM,
+timeout과 load cancellation을 production importer에 적용하는 것이다. Scripts, OLE와 외부
+link는 실행하지 않는다.
 
-후보가 semantic model을 충분히 제공하면 현재 flow `ViewerDocument`로 정규화한다. 페이지
-표현만 정확한 후보가 이기면 read-only fixed-page variant를 추가하되 zoom, virtualization,
-PDF와 진단 shell은 공유한다. 자세한 결정 기준과 출처는
+현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
+virtualization과 진단 shell을 공유한다. mixed-orientation PDF와 text search/accessibility는
+아직 판정 전이다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
 
 텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4

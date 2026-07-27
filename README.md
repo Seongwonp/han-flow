@@ -30,8 +30,8 @@ V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명
 - **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
 
 V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
-WASM/page SVG 경로와 `kordoc`의 TypeScript semantic IR 경로를 첫 후보로 정했으며, 실제
-AIDA `.hwp/.hwpx/.pdf` 삼쌍으로 정확도·속도·bundle 크기를 측정한 뒤 하나를 채택합니다.
+WASM/page SVG 경로를 fixed-page 주 후보로 앱에 연결했고, `kordoc`의 TypeScript semantic
+IR은 비교 oracle로 남겼습니다. 최종 채택은 PDF·메모리·패키지 크기 관문 뒤 확정합니다.
 근거와 전체 실험 계획은 [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)에 있습니다.
 
 ## 현재 상태
@@ -55,6 +55,13 @@ single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력�
 정확도 후속 과제는 대체 글꼴 metric과 한 문단 내부의 줄 단위 페이지 분할입니다. V4 전에는
 개인용 패키지로 사용하며, 편집은 V3 범위입니다.
 
+V2 실험 경로에서는 `.hwp`도 Finder 인자, 열기 대화상자와 드래그앤드롭으로 받을 수 있습니다.
+main process는 200 MiB 제한과 CFB magic만 검사하고, renderer의 `@rhwp/core` WASM이 페이지
+정보를 만든 뒤 화면에 보이는 SVG만 순차 렌더링합니다. SVG는 script·event handler·외부
+resource를 거부하고 blob image 경계로 표시합니다. AIDA HWP는 production build에서 7페이지,
+3구역, 세로/가로 용지와 overflow 0을 확인했습니다. 첫 화면은 앱 내부 요청 기준 약 1.1초로,
+1초 목표 최적화가 다음 과제입니다.
+
 남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템
 설치본의 한글·영문 family 이름을 찾아 사용합니다. OFL Noto Serif KR 번들도 실험했지만 페이지
@@ -77,7 +84,9 @@ npm test -- --runInBand
 npm run build
 npm run package:mac
 npm run benchmark:app -- /path/to/document.hwpx
+npm run benchmark:app -- /path/to/document.hwp
 npm run verify:app -- /path/to/document.hwpx
+npm run verify:app -- /path/to/document.hwp
 npm run verify:matrix
 npm run verify:pdf -- /path/to/document.hwpx
 npm run release:check -- /path/to/private-reference.hwpx
@@ -105,7 +114,7 @@ mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 페이지별 글자 수를 비교하고 대표 페이지를 PNG로 재렌더링합니다. `release:check`는 전체 테스트,
 패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을 순서대로 실행하는 최종 RC 관문입니다.
 
-`probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱에 연결하지 않고 별도 process에서
+`probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱 경로와 독립된 process에서
 비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,
 페이지별 비공백 글자 수와 timing만 기록합니다. `--hwpx`를 주면 현재 Han-Flow decoder의
 section·문단·표·cell·이미지 기준과 delta도 함께 계산합니다. Kordoc 최소 adapter는 AIDA의
@@ -114,7 +123,7 @@ section 3개, semantic text 6,053자와 이미지 resource 2개를 정확히 보
 본문을 출력하지 않고 rhwp SVG와 기준 PDF의 페이지 그룹·문자 보존율을 비교합니다. 현재 결과는
 [HWP V2-0 parser bake-off](docs/hwp_v2_bakeoff.md)에 있습니다.
 
-macOS 문서 연결은 Han-Flow의 `com.hanflow.hwpx`와 기존 한컴 제품이 등록하는
+macOS 문서 연결은 확장자 기반 HWP Viewer 선언과 Han-Flow의 `com.hanflow.hwpx`, 기존 한컴 제품이 등록하는
 `com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의
 기본 앱 설정을 자동으로 변경하지 않습니다.
 
@@ -125,10 +134,10 @@ src/
 ├── main/          # macOS 파일 열기, worker, IPC, PDF 출력
 ├── core/
 │   ├── parser/    # HWPX package와 ordered XML 해석
-│   ├── document/  # 읽기 전용 ViewerDocument
+│   ├── document/  # flow ViewerDocument와 HWP FixedPageDocument
 │   ├── fonts/     # 시스템 글꼴 해석과 대체 진단
 │   └── layout/    # 페이지·표 분할과 단위 변환
-└── renderer/      # React 페이지 렌더러와 뷰어 UI
+└── renderer/      # React flow/fixed-page 렌더러와 공통 뷰어 UI
 tests/             # 공개 synthetic fixture 기반 회귀 테스트
 docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 ```
