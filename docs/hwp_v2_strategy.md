@@ -91,8 +91,9 @@ Mini FAT, sector chain과 directory entry의 무결성 조건을 둔다. 따라�
 - 한컴에서 출력한 기준 `.pdf`
 
 본문이나 캡처는 로그와 저장소에 남기지 않는다. 페이지 수, section·문단·표·이미지 수,
-페이지별 비공백 글자 수, overflow 수, 첫 화면 시간만 기록한다. 이후 개인정보 없는 공개
-HWP fixture를 직접 만들어 CI에 추가한다.
+페이지별 비공백 글자 수, overflow 수, 첫 화면 시간만 기록한다. 개인정보 없는 공개 HWP
+fixture도 직접 만들어 고정 SHA-256, 두 parser의 구조 비교, production 앱과 PDF 검증에
+사용한다.
 
 ### 점수표
 
@@ -108,7 +109,7 @@ HWP fixture를 직접 만들어 CI에 추가한다.
 채택되면 semantic 검색·접근성 데이터가 별도로 확보되는지도 확인한다.
 
 최종 점수는 `@rhwp/core` 92점, `kordoc` 54점이다. rhwp는 7쪽·3구역·혼합 용지,
-PDF 문자 99.05%, cold p95 614ms와 공통 viewer/PDF shell을 보존했다. kordoc은 adapter의
+PDF 문자 99.08%, cold p95 614ms와 공통 viewer/PDF shell을 보존했다. kordoc은 adapter의
 semantic text가 기준과 같지만 문단 102개·표 2개와 visual geometry가 부족해 production
 renderer 탈락 조건에 해당한다. 세부 배점은 [ADR-0001](adr/0001-hwp-parser-roles.md)을
 단일 결정 기록으로 사용한다.
@@ -189,16 +190,16 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 
 ### V2-2 본문과 스타일
 
-- [ ] 문단·run·글꼴·크기·색·정렬·간격
-- [ ] section, 용지, margin, header/footer/page number
+- [x] fixed-page SVG에서 문단·run·글꼴·크기·색·정렬·간격 보존
+- [x] section, 용지, margin, header/footer/page number의 fixed-page 보존
 - [x] 좌표형 run text layer와 페이지별 글자 수 회귀
 - [x] `⌘F` 검색·하이라이트, DOM 선택과 페이지 접근성 계약
 
 ### V2-3 표와 이미지
 
-- [ ] cell grid, colSpan/rowSpan, margin, border/fill
-- [ ] BinData 이미지와 크기·배치
-- [ ] 다중 페이지 표의 보존 우선 fallback
+- [x] fixed-page SVG에서 cell grid, 병합, margin, border/fill 보존
+- [x] BinData 이미지와 크기·배치 보존
+- [x] parser pagination 결과를 고정 페이지로 보존
 
 ### V2-4 성능과 PDF
 
@@ -207,7 +208,7 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 - [x] cold/warm 20회 p50/p95와 시작·문서 처리 구간 분리
 - [x] AIDA HWP/HWPX cold 5회 peak working set과 V1 package 증가량
 - [x] 혼합 방향 화면/PDF page count·용지 크기·텍스트 보존과 PNG 재렌더
-- [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
+- [x] 공개 HWP 생성 결정성·구조·앱·PDF `verify:hwp-matrix`를 V1 회귀 관문과 통합
 
 ### V2 완료 조건
 

@@ -1,4 +1,27 @@
-# HWPX fixtures
+# 문서 fixtures
+
+## Public HWP 5.0 fixture
+
+`public/synthetic-layout.hwp`는 Han-Flow가 직접 작성한 문자열과 Canvas 그림만 넣은 2쪽 합성
+문서다. 3×3 표, PNG resource 1개, 두 페이지에 반복되는 머리말과 강제 쪽 나누기를 포함한다.
+개인정보와 외부 문서 원문은 없다.
+
+- 생성: `npm run fixture:hwp`
+- 고정 manifest: `public/synthetic-layout.hwp.json`
+- 통합 검증: `npm run verify:hwp-matrix`
+
+생성기는 외부 blank HWP 파일을 복사하지 않고 `@rhwp/core`의 `HwpDocument.createEmpty()`에서
+시작한다. serializer 실행 결과는 byte 단위로 결정적이며 manifest의 전체 SHA-256과 비교한다.
+구조 기대값은 같은 엔진의 자기 검증에만 의존하지 않고 `kordoc` development oracle로도
+표·셀·이미지·resource 수를 교차 검사한다. production 경로에서는 페이지 SVG, 반복 머리말
+검색, 접근성 layer와 PDF 페이지·텍스트 보존을 확인한다.
+
+fixture의 본문과 Canvas 그림, 생성 스크립트는 Han-Flow Apache-2.0 범위다. HWP 컨테이너
+직렬화에는 MIT 라이선스의 [`@rhwp/core`](https://github.com/edwardkim/rhwp)를 사용했고
+형식 판정 근거는 [V2 전략의 규격 출처](../../docs/hwp_v2_strategy.md#규격과-보안)에 모았다.
+dependency 고지는 저장소의 `THIRD_PARTY_NOTICES.md`와 패키지 resources에 유지한다.
+
+## HWPX fixtures
 
 ## Private milestone fixture
 

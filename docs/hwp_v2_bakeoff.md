@@ -261,8 +261,30 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
   결과는 유지보수 감점 항목으로 기록한다. 프로젝트 전체 `omit=optional`은 Rollup의 macOS
   binary도 제거해 V1 build를 깨뜨리므로 사용하지 않는다.
 
+## 공개 HWP 회귀 fixture
+
+`tests/fixtures/public/synthetic-layout.hwp`는 외부 문서나 blank template을 복사하지 않고
+`HwpDocument.createEmpty()`에서 생성하고 FileHeader를 5.0.3.2로 기록한 12,800 byte의 고정
+HWP다. 자체 문자열, Canvas PNG, 3×3 표와 두 쪽 반복 머리말을 포함하며 전체 SHA-256
+`b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e`을 manifest에 기록한다.
+두 번 생성한 결과는 byte 단위로 같았고 export 자기 재로드 전후 모두 2쪽이었다.
+
+`npm run verify:hwp-matrix`의 독립 관찰 결과는 다음과 같다.
+
+| 관문 | 결과 |
+| --- | --- |
+| kordoc semantic oracle | section 1, 표 1, 셀 9, 이미지/resource 1/1 |
+| rhwp SVG | 2쪽, 이미지 요소 1, 위험 요소·속성 0 |
+| production 앱 | 2쪽, overflow 0, 반복 머리말 2쪽·2회 검색 |
+| production PDF | 2쪽 A4, 텍스트 보존율 98.6% |
+
+private AIDA HWP 재검증에서는 인쇄 직전 마지막 SVG image decode가 끝나기 전에
+`printToPDF`가 시작될 수 있는 race를 발견했다. 모든 fixed page DOM과 `naturalWidth > 0`인
+이미지 수가 page count와 같을 때만 `pdf:ready`를 보내도록 수정했다. 이후 AIDA HWP는
+7쪽 모두 출력됐고 마지막 쪽 424자를 포함해 전체 텍스트 보존율 99.08%를 회복했다.
+
 ## 다음 판정 작업
 
-1. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
-2. `verify:hwp-matrix`를 package·PDF 회귀 관문에 연결
-3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
+1. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
+2. format-neutral `DocumentImporter`와 IPC 경계
+3. 지원 불가·손상 HWP 공개 corpus를 `verify:hwp-matrix`에 추가

@@ -28,12 +28,17 @@
 - [x] ADR-0001에서 rhwp production visual / kordoc development oracle 확정
 - [x] MIT 원문과 third-party notice production package 포함
 - [x] `verify:notices`와 release gate에서 세 고지 원문 일치 자동 검증
+- [x] 개인정보 없는 2쪽 HWP 고정 fixture와 SHA-256 manifest
+- [x] HWP fixture의 표 1개·셀 9개·이미지 1개를 두 parser로 교차 검증
+- [x] `verify:hwp-matrix`에 생성 결정성·앱·반복 머리말·PDF 관문 통합
+- [x] PDF 인쇄 전 모든 SVG image decode를 기다려 마지막 페이지 누락 race 제거
+- [x] private AIDA HWP 7쪽 PDF 텍스트 99.08% 재검증
 
 ### 다음 작업 순서
 
-1. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
-2. `verify:hwp-matrix`를 package·PDF 회귀 관문에 연결
-3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
+1. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
+2. format-neutral `DocumentImporter`와 IPC event
+3. 공개 지원 불가·손상 HWP corpus를 matrix에 추가
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -58,6 +63,7 @@
 - [x] 패키지 HWP cold/warm 20회 측정과 첫 화면 1초 관문 통과
 - [x] 좌표형 text layer의 검색·선택·접근성 및 blob image 경계 유지 확인
 - [x] mixed-orientation PDF 출력과 대표 세로·가로 PNG 검증
+- [x] 개인정보 없는 HWP 고정 fixture와 production app/PDF matrix
 
 ### 3. `kordoc` probe
 

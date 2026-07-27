@@ -1,6 +1,6 @@
 # Han-Flow v1 Release Candidate 체크리스트
 
-기준일: 2026-07-23
+기준일: 2026-07-27
 
 v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도구다. 편집, `.hwp` 5.0
 바이너리 직접 파싱, 한컴오피스와 픽셀 단위 동일 렌더링은 이번 릴리스 범위가 아니다.
@@ -12,6 +12,7 @@ v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도
 - [x] `npm run package:mac`
 - [x] `npm run verify:app -- tests/fixtures/private/m1-weekly.hwpx`
 - [x] `npm run verify:matrix`
+- [x] `npm run verify:hwp-matrix`
 - [x] `npm run verify:pdf -- tests/fixtures/private/m1-weekly.hwpx`
 - [x] `npm run release:check -- tests/fixtures/private/m1-weekly.hwpx`
 - [x] private AIDA 8페이지, 이미지 4개, overflow 0
@@ -24,6 +25,8 @@ v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도
 - [x] AIDA 화면/PDF 8페이지와 페이지별 글자 수 일치
 - [x] background decode와 DOM measurement 완료 후 3회 안정된 layout 상태 수집
 - [x] 앱 bundle version `1.0.0-rc.1`
+- [x] 공개 HWP의 결정적 SHA-256, 표·셀·이미지 구조와 2쪽 반복 머리말
+- [x] private AIDA HWP 7쪽 화면·혼합 용지 PDF와 텍스트 99.08% 보존
 
 `verify:app`은 본문 문자열을 출력하지 않는다. 파일 basename, 페이지 수, 이미지 수,
 overflow 페이지와 페이지별 비공백 글자 수만 사용하며 임시 JSON과 Electron user-data는

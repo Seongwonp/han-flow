@@ -16,6 +16,10 @@
 - ADR-0001에서 rhwp production visual engine과 kordoc development oracle 역할 확정
 - HWP parser MIT 원문과 third-party notice를 production package에 포함
 - package license·notice 원문 일치를 release gate에서 자동 검증
+- 개인정보 없는 2쪽 HWP fixture와 결정적 SHA-256 manifest
+- kordoc 구조 oracle·rhwp SVG·패키지 앱·PDF를 잇는 `verify:hwp-matrix`
+- PDF 출력 전 모든 fixed-page SVG decode를 기다려 마지막 페이지 누락 race 수정
+- private AIDA HWP 7쪽·혼합 용지·PDF 텍스트 99.08% 재검증
 
 ## 1.0.0-rc.1 - 2026-07-23
 

@@ -4,9 +4,10 @@
   <img src="build/icon.png" width="160" alt="Han-Flow 앱 아이콘" />
 </p>
 
-macOS에서 한글 문서를 빠르게 열어 읽고 PDF로 내보내는 도구입니다. 현재 V1은 HWPX 읽기
-전용이며, V2에서 HWP 5.0 열기, V3에서 편집을 추가합니다. 상용 편집기를 복제하기보다 실제로
-매주 쓸 수 있는 작고 안정적인 도구를 목표로 합니다.
+macOS에서 HWPX와 HWP 5.0 문서를 빠르게 열어 읽고 PDF로 내보내는 도구입니다. V1의 HWPX
+뷰어는 로컬 RC를 마쳤고, 현재 V2의 HWP 5.0 읽기 품질 관문을 완성하고 있습니다. V3에서
+편집을 추가합니다. 상용 편집기를 복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를
+목표로 합니다.
 
 현재 버전은 **1.0.0-rc.1**입니다. 로컬 실사용과 unsigned beta 기준의 v1 기능은 완성됐으며,
 V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명과 Apple notarization은 V4에서
@@ -25,12 +26,12 @@ V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명
 ## 로드맵
 
 - **V1 — HWPX 뷰어:** 로컬 RC 완료. 열기, read-only 렌더, 점진 로딩, PDF와 macOS UX
-- **V2 — HWP 5.0 읽기:** 기존 parser를 adapter로 검증·채택하고 같은 viewer/PDF 경험에 연결
+- **V2 — HWP 5.0 읽기:** `@rhwp/core`를 채택해 같은 viewer/PDF 경험에 연결, 오류 UX 마무리 중
 - **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
 - **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
 
-남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 80%, V3 0%, V4 5%이며 최종 배포
-전체로는 약 **41%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
+남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 85%, V3 0%, V4 5%이며 최종 배포
+전체로는 약 **42%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
 산정 기준은 [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)에 있습니다.
 
 V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
@@ -79,6 +80,13 @@ HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 �
 텍스트 추출 99.08% 보존과 세로·가로 대표 PNG의 잘림·겹침 없음을 확인했습니다. 같은 PDF
 경로로 기존 AIDA HWPX 8페이지와 페이지별 글자 수도 계속 일치합니다.
 
+개인정보 없는 고정 HWP도 저장소에 포함합니다. 자체 생성한 본문·3×3 표·PNG 그림·두 쪽에
+반복되는 머리말로 구성되며, 생성 결과 SHA-256까지 manifest에 고정합니다.
+`verify:hwp-matrix`는 생성 결정성, `kordoc` 구조 oracle의 표 1개·셀 9개·이미지 1개,
+`@rhwp/core`의 2쪽 SVG, 패키지 앱의 검색·접근성과 PDF 2쪽·텍스트 보존율을 함께 검사합니다.
+이 관문을 만들며 발견한 PDF 마지막 페이지 decode race도 수정했고, AIDA HWP 7쪽의 PDF
+텍스트가 페이지별 `[866, 1638, 1490, 171, 1107, 322, 424]`자로 모두 보존됨을 재검증했습니다.
+
 AIDA를 cold 5회 실행해 Electron 4개 프로세스의 working set을 50ms 간격으로 합산한 결과,
 Worker 격리 후 HWP 전체 렌더 peak는 p50/p95 619.9/647.6MiB, HWPX 기준선은
 436.8/438.3MiB였습니다. HWP p95는 격리 전보다 58.0MiB 늘었습니다. shared page가 프로세스별로
@@ -118,7 +126,9 @@ npm run verify:notices
 npm run verify:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwp
 npm run verify:matrix
+npm run verify:hwp-matrix
 npm run verify:pdf -- /path/to/document.hwpx
+npm run fixture:hwp
 npm run release:check -- /path/to/private-reference.hwpx
 npm run probe:hwp -- /path/to/document.hwp
 npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx
@@ -150,10 +160,14 @@ loading 완료와 overflow 0을 자동 판정합니다. HWP에는
 fixture를 임시 생성해 production 앱으로 연속 검증합니다. 대형 fixture는 전체 페이지와 실제
 mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 
+`fixture:hwp`는 개인정보 없는 공개 HWP를 결정적으로 다시 생성합니다. `verify:hwp-matrix`는
+이 결과가 커밋된 SHA-256과 같은지 확인한 뒤 두 parser의 구조·렌더 진단, production 앱,
+PDF 내보내기를 한 번에 실행합니다.
+
 `verify:pdf`는 HWP/HWPX production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지
 수, 페이지별 용지 크기와 글자 보존을 비교하고 첫·중간·끝·가로 페이지를 PNG로 재렌더링합니다.
-`release:check`는 전체 테스트, 패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을
-순서대로 실행하는 최종 RC 관문입니다.
+`release:check`는 전체 테스트, 패키징, HWPX/HWP 공개 matrix, private 앱 smoke test와 PDF
+검증을 순서대로 실행하는 최종 RC 관문입니다.
 
 `probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱 경로와 독립된 process에서
 비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,
@@ -184,7 +198,8 @@ docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 ```
 
 실사용 fixture와 캡처에는 개인정보가 포함될 수 있어 저장소에 넣지 않습니다. 공개 테스트는
-실행 시 결정적으로 생성되는 synthetic HWPX를 사용합니다.
+결정적으로 생성되는 synthetic HWPX와, 생성 코드·SHA-256 manifest를 함께 둔 고정 synthetic
+HWP만 사용합니다.
 
 ## 문서
 
