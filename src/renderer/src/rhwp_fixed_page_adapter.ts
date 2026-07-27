@@ -2,24 +2,45 @@ import initRhwp, { HwpDocument } from '@rhwp/core'
 import rhwpWasmUrl from '@rhwp/core/rhwp_bg.wasm?url'
 import {
   FixedPageDescriptor,
-  FixedPageOpenResult
+  FixedPageOpenResult,
+  FixedPageTextLayout,
+  FixedPageTextRun
 } from '../../core/document/fixed_page_document'
 
 const MAX_PAGE_COUNT = 10_000
 const PAGE_CACHE_LIMIT = 20
+const TEXT_LAYOUT_CACHE_LIMIT = 20
+const MAX_TEXT_RUNS_PER_PAGE = 100_000
+const MAX_TEXT_CHARACTERS_PER_PAGE = 5_000_000
+const MAX_TEXT_COORDINATE = 1_000_000
+const MAX_FONT_SIZE = 10_000
 
 let initialized: Promise<number> | null = null
 let activeDocument: HwpDocument | null = null
 let generation = 0
 let openGeneration = 0
-const pageCache = new Map<number, string>()
-const pageJobs = new Map<number, Promise<string>>()
+const pageCache = new Map<number, RenderedRhwpFixedPage>()
+const textLayoutCache = new Map<number, FixedPageTextLayout>()
+const pageJobs = new Map<number, Promise<RenderedRhwpFixedPage>>()
 let renderQueue: Promise<void> = Promise.resolve()
 
 interface RhwpPageInfo {
   width?: number
   height?: number
   sectionIndex?: number
+}
+
+interface RhwpTextLayout {
+  runs?: unknown[]
+}
+
+export interface RenderedRhwpFixedPage {
+  svg: string
+}
+
+export interface FixedPageSearchResult {
+  pageIndex: number
+  occurrences: number
 }
 
 function ensureTextMeasurement(): void {
@@ -142,9 +163,84 @@ function safeSvg(svg: string): string {
   return new XMLSerializer().serializeToString(root)
 }
 
-function rememberPage(index: number, svg: string): void {
+function finite(value: unknown, fallback = 0): number {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : fallback
+}
+
+function parseTextRun(value: unknown): FixedPageTextRun | null {
+  if (!value || typeof value !== 'object') return null
+  const run = value as Record<string, unknown>
+  if (typeof run.text !== 'string' || run.text.length > 1_000_000) return null
+  const x = finite(run.x, Number.NaN)
+  const y = finite(run.y, Number.NaN)
+  const width = finite(run.w, Number.NaN)
+  const height = finite(run.h, Number.NaN)
+  const fontSize = finite(run.fontSize, 12)
+  if (![x, y, width, height, fontSize].every(Number.isFinite)) return null
+  if (
+    [x, y, width, height].some((number) => Math.abs(number) > MAX_TEXT_COORDINATE) ||
+    fontSize < 0 ||
+    fontSize > MAX_FONT_SIZE
+  ) return null
+  return {
+    text: run.text,
+    x,
+    y,
+    width: Math.max(width, 0),
+    height: Math.max(height, 0),
+    fontFamily: typeof run.fontFamily === 'string' && run.fontFamily.length <= 200
+      ? run.fontFamily
+      : undefined,
+    fontSize: Math.max(fontSize, 1),
+    ratio: Math.min(Math.max(finite(run.ratio, 1), 0.1), 10)
+  }
+}
+
+function rememberTextLayout(index: number, layout: FixedPageTextLayout): void {
+  textLayoutCache.delete(index)
+  textLayoutCache.set(index, layout)
+  while (textLayoutCache.size > TEXT_LAYOUT_CACHE_LIMIT) {
+    const oldest = textLayoutCache.keys().next().value
+    if (oldest === undefined) break
+    textLayoutCache.delete(oldest)
+  }
+}
+
+function pageTextLayout(document: HwpDocument, index: number, cache = true): FixedPageTextLayout {
+  const cached = textLayoutCache.get(index)
+  if (cached) {
+    rememberTextLayout(index, cached)
+    return cached
+  }
+  const value = JSON.parse(document.getPageTextLayout(index)) as RhwpTextLayout
+  if (!Array.isArray(value.runs) || value.runs.length > MAX_TEXT_RUNS_PER_PAGE) {
+    throw new Error(`${index + 1}페이지의 텍스트 레이아웃이 올바르지 않습니다.`)
+  }
+  const runs: FixedPageTextRun[] = []
+  let characterCount = 0
+  for (const rawRun of value.runs) {
+    const run = parseTextRun(rawRun)
+    if (!run) continue
+    characterCount += run.text.length
+    if (characterCount > MAX_TEXT_CHARACTERS_PER_PAGE) {
+      throw new Error(`${index + 1}페이지의 텍스트가 허용 범위를 넘었습니다.`)
+    }
+    runs.push(run)
+  }
+  const text = runs.map((run) => run.text).join('')
+  const layout = {
+    runs,
+    text,
+    nonWhitespaceCharacters: Array.from(text.normalize('NFC').replace(/\s/gu, '')).length
+  }
+  if (cache) rememberTextLayout(index, layout)
+  return layout
+}
+
+function rememberPage(index: number, page: RenderedRhwpFixedPage): void {
   pageCache.delete(index)
-  pageCache.set(index, svg)
+  pageCache.set(index, page)
   while (pageCache.size > PAGE_CACHE_LIMIT) {
     const oldest = pageCache.keys().next().value
     if (oldest === undefined) break
@@ -152,7 +248,7 @@ function rememberPage(index: number, svg: string): void {
   }
 }
 
-export function renderRhwpFixedPage(index: number): Promise<string> {
+export function renderRhwpFixedPage(index: number): Promise<RenderedRhwpFixedPage> {
   const document = activeDocument
   const activeGeneration = generation
   if (!document) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
@@ -167,9 +263,11 @@ export function renderRhwpFixedPage(index: number): Promise<string> {
     if (activeDocument !== document || generation !== activeGeneration) {
       throw new Error('HWP 문서가 교체되어 페이지 렌더링을 취소했습니다.')
     }
-    const svg = safeSvg(document.renderPageSvg(index))
-    rememberPage(index, svg)
-    return svg
+    const page = {
+      svg: safeSvg(document.renderPageSvg(index))
+    }
+    rememberPage(index, page)
+    return page
   })
   pageJobs.set(index, job)
   void job.then(
@@ -183,12 +281,50 @@ export function renderRhwpFixedPage(index: number): Promise<string> {
   return job
 }
 
-export async function renderAllRhwpFixedPages(pageCount: number): Promise<string[]> {
-  const pages: string[] = []
+export function getRhwpFixedPageTextLayout(index: number): Promise<FixedPageTextLayout> {
+  const document = activeDocument
+  const activeGeneration = generation
+  if (!document) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
+  return Promise.resolve().then(() => {
+    if (activeDocument !== document || generation !== activeGeneration) {
+      throw new Error('HWP 문서가 교체되어 텍스트 계층 생성을 취소했습니다.')
+    }
+    return pageTextLayout(document, index)
+  })
+}
+
+export async function renderAllRhwpFixedPages(pageCount: number): Promise<RenderedRhwpFixedPage[]> {
+  const pages: RenderedRhwpFixedPage[] = []
   for (let index = 0; index < pageCount; index += 1) {
     pages.push(await renderRhwpFixedPage(index))
   }
   return pages
+}
+
+export async function searchRhwpFixedPages(query: string, pageCount: number): Promise<FixedPageSearchResult[]> {
+  const document = activeDocument
+  const activeGeneration = generation
+  const needle = query.normalize('NFC').trim().toLocaleLowerCase('ko-KR')
+  if (!document || !needle) return []
+  const results: FixedPageSearchResult[] = []
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    if (activeDocument !== document || generation !== activeGeneration) {
+      throw new Error('HWP 문서가 교체되어 검색을 취소했습니다.')
+    }
+    let occurrences = 0
+    const layout = pageTextLayout(document, pageIndex, false)
+    for (const run of layout.runs) {
+      const text = run.text.normalize('NFC').toLocaleLowerCase('ko-KR')
+      let offset = 0
+      while ((offset = text.indexOf(needle, offset)) >= 0) {
+        occurrences += 1
+        offset += needle.length
+      }
+    }
+    if (occurrences) results.push({ pageIndex, occurrences })
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  return results
 }
 
 export function closeRhwpFixedPageDocument(): void {
@@ -199,6 +335,7 @@ export function closeRhwpFixedPageDocument(): void {
 function disposeActiveDocument(): void {
   generation += 1
   pageCache.clear()
+  textLayoutCache.clear()
   pageJobs.clear()
   activeDocument?.free()
   activeDocument = null

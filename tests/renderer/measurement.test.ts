@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerParagraph } from '../../src/core/document/viewer_document'
-import { cellFragmentKey, ParagraphView } from '../../src/renderer/src/App'
+import { cellFragmentKey, FixedPageTextLayer, ParagraphView } from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
@@ -89,5 +89,25 @@ describe('DOM 측정 마커', () => {
       cellFragmentKey('table', { ...source, splitTop: true, splitBottom: true })
     ]
     expect(new Set(keys).size).toBe(4)
+  })
+})
+
+describe('fixed-page text layer', () => {
+  test('텍스트를 HTML로 해석하지 않고 좌표와 검색 강조를 보존한다', () => {
+    const markup = renderToStaticMarkup(createElement(FixedPageTextLayer, {
+      layout: {
+        runs: [{
+          text: '<한글 검색>', x: 10, y: 20, width: 90, height: 14,
+          fontFamily: '함초롬바탕', fontSize: 12, ratio: 1
+        }],
+        text: '<한글 검색>',
+        nonWhitespaceCharacters: 6
+      },
+      searchQuery: '검색'
+    }))
+    expect(markup).toContain('left:10px')
+    expect(markup).toContain('&lt;한글 ')
+    expect(markup).toContain('<mark class="viewer-fixed-page-search-hit">검색</mark>')
+    expect(markup).not.toContain('<한글')
   })
 })

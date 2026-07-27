@@ -55,6 +55,62 @@ function numericDiagnostics(value, depth = 0) {
   return undefined
 }
 
+function jsonShapeDiagnostics(json) {
+  const value = JSON.parse(json)
+  const keys = new Map()
+  const objectKeys = new Map()
+  const numericFields = new Map()
+  let objects = 0
+  let arrays = 0
+  const visit = (item, parentKey = '') => {
+    if (typeof item === 'number' && Number.isFinite(item)) {
+      const current = numericFields.get(parentKey) ?? { count: 0, min: item, max: item }
+      current.count += 1
+      current.min = Math.min(current.min, item)
+      current.max = Math.max(current.max, item)
+      numericFields.set(parentKey, current)
+      return
+    }
+    if (typeof item === 'string') {
+      const current = keys.get(parentKey) ?? { count: 0, characters: 0, nonWhitespaceCharacters: 0 }
+      current.count += 1
+      current.characters += Array.from(item.normalize('NFC')).length
+      current.nonWhitespaceCharacters += Array.from(item.normalize('NFC').replace(/\s/gu, '')).length
+      keys.set(parentKey, current)
+      return
+    }
+    if (Array.isArray(item)) {
+      arrays += 1
+      item.forEach((child) => visit(child, parentKey))
+      return
+    }
+    if (item && typeof item === 'object') {
+      objects += 1
+      Object.entries(item).forEach(([key, child]) => {
+        objectKeys.set(key, (objectKeys.get(key) ?? 0) + 1)
+        visit(child, key)
+      })
+    }
+  }
+  visit(value)
+  return {
+    rootType: Array.isArray(value) ? 'array' : typeof value,
+    rootLength: Array.isArray(value) ? value.length : undefined,
+    rootKeys: value && !Array.isArray(value) && typeof value === 'object' ? Object.keys(value).sort() : undefined,
+    objects,
+    arrays,
+    objectKeys: Object.fromEntries([...objectKeys.entries()].sort(([left], [right]) => left.localeCompare(right))),
+    numericFields: Object.fromEntries([...numericFields.entries()].sort(([left], [right]) => left.localeCompare(right))),
+    stringFields: Object.fromEntries([...keys.entries()].map(([key, statistics]) => [
+      key,
+      {
+        ...statistics,
+        nonWhitespaceCharacters: statistics.nonWhitespaceCharacters ?? 0
+      }
+    ]).sort(([left], [right]) => left.localeCompare(right)))
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   const started = performance.now()
   try {
@@ -84,6 +140,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     const pageLimit = Math.min(pageCount, 500)
     const pageDiagnostics = []
     const pageInfos = []
+    const pageTextLayouts = []
     const privateSvgPages = []
     const renderStarted = performance.now()
     for (let page = 0; page < pageLimit; page += 1) {
@@ -93,6 +150,11 @@ window.addEventListener('DOMContentLoaded', async () => {
         pageInfos.push(numericDiagnostics(JSON.parse(documentModel.getPageInfo(page))))
       } catch {
         pageInfos.push(null)
+      }
+      try {
+        pageTextLayouts.push(jsonShapeDiagnostics(documentModel.getPageTextLayout(page)))
+      } catch {
+        pageTextLayouts.push(null)
       }
       if (capturePages.has(page + 1)) privateSvgPages.push({ page: page + 1, svg })
     }
@@ -116,7 +178,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         unsafeElements: pageDiagnostics.reduce((sum, page) => sum + page.unsafeElements, 0),
         unsafeAttributes: pageDiagnostics.reduce((sum, page) => sum + page.unsafeAttributes, 0),
         pageViewBoxes: [...new Set(pageDiagnostics.map((page) => page.viewBox).filter(Boolean))],
-        pageInfos
+        pageInfos,
+        pageTextLayouts
       },
       privatePageTexts: pageDiagnostics.map((page) => page.normalizedText),
       privateSvgPages

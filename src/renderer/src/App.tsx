@@ -1,8 +1,8 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
-import { FixedPageDescriptor, FixedPageDocument } from '../../core/document/fixed_page_document'
+import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
-import { fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
+import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
@@ -109,26 +109,38 @@ function TableView({ table, document, measurable = false }: { table: ViewerTable
 
 function FixedPageView({
   page,
-  printSvg,
+  printPage,
+  renderEnabled,
+  searchQuery,
+  activeSearchPage,
   onReady,
   onError
 }: {
   page: FixedPageDescriptor
-  printSvg?: string
+  printPage?: Awaited<ReturnType<RhwpAdapter['renderRhwpFixedPage']>>
+  renderEnabled: boolean
+  searchQuery: string
+  activeSearchPage: boolean
   onReady: () => void
   onError: (message: string) => void
 }) {
   const [source, setSource] = useState<string | null>(null)
+  const [textLayout, setTextLayout] = useState<FixedPageTextLayout | null>(null)
   const [ready, setReady] = useState(false)
   useEffect(() => {
     let cancelled = false
     let objectUrl: string | undefined
     setReady(false)
+    setTextLayout(null)
+    if (!renderEnabled) {
+      setSource(null)
+      return
+    }
     const load = async () => {
       try {
-        const svg = printSvg ?? await (await loadRhwpAdapter()).renderRhwpFixedPage(page.index)
+        const rendered = printPage ?? await (await loadRhwpAdapter()).renderRhwpFixedPage(page.index)
         if (cancelled) return
-        objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+        objectUrl = URL.createObjectURL(new Blob([rendered.svg], { type: 'image/svg+xml' }))
         setSource(objectUrl)
       } catch (reason) {
         if (!cancelled) onError(reason instanceof Error ? reason.message : String(reason))
@@ -139,17 +151,34 @@ function FixedPageView({
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [page.index, printSvg])
+  }, [page.index, printPage, renderEnabled])
+  useEffect(() => {
+    if (!ready) return
+    let cancelled = false
+    void loadRhwpAdapter()
+      .then((adapter) => adapter.getRhwpFixedPageTextLayout(page.index))
+      .then((layout) => {
+        if (!cancelled) setTextLayout(layout)
+      })
+      .catch((reason) => {
+        if (!cancelled) onError(reason instanceof Error ? reason.message : String(reason))
+      })
+    return () => { cancelled = true }
+  }, [page.index, ready])
   return <article
-    className="viewer-page viewer-fixed-page"
+    className={`viewer-page viewer-fixed-page${activeSearchPage ? ' viewer-fixed-page-search-active' : ''}`}
     data-page-index={page.index}
     data-page-ready={ready}
+    data-text-characters={textLayout?.nonWhitespaceCharacters ?? 0}
+    role="document"
+    aria-label={`${page.index + 1}페이지`}
     style={{ width: page.width, height: page.height }}
   >
     {source && <img
       className="viewer-fixed-page-image"
       src={source}
-      alt={`${page.index + 1}페이지`}
+      alt=""
+      aria-hidden="true"
       draggable={false}
       onLoad={() => {
         setReady(true)
@@ -157,7 +186,48 @@ function FixedPageView({
       }}
       onError={() => onError(`${page.index + 1}페이지 이미지를 표시할 수 없습니다.`)}
     />}
+    {textLayout && <FixedPageTextLayer layout={textLayout} searchQuery={searchQuery} />}
   </article>
+}
+
+function highlightedText(text: string, query: string): Array<{ text: string; hit: boolean }> {
+  const needle = query.trim().toLocaleLowerCase('ko-KR')
+  if (!needle) return [{ text, hit: false }]
+  const haystack = text.toLocaleLowerCase('ko-KR')
+  const pieces: Array<{ text: string; hit: boolean }> = []
+  let offset = 0
+  let match = haystack.indexOf(needle)
+  while (match >= 0) {
+    if (match > offset) pieces.push({ text: text.slice(offset, match), hit: false })
+    pieces.push({ text: text.slice(match, match + needle.length), hit: true })
+    offset = match + needle.length
+    match = haystack.indexOf(needle, offset)
+  }
+  if (offset < text.length) pieces.push({ text: text.slice(offset), hit: false })
+  return pieces.length ? pieces : [{ text, hit: false }]
+}
+
+export function FixedPageTextLayer({ layout, searchQuery }: { layout: FixedPageTextLayout; searchQuery: string }) {
+  return <div className="viewer-fixed-page-text-layer" aria-label="페이지 텍스트">
+    {layout.runs.map((run, runIndex) => <span
+      className="viewer-fixed-page-text-run"
+      key={runIndex}
+      style={{
+        left: run.x,
+        top: run.y,
+        width: run.width,
+        height: Math.max(run.height, run.fontSize),
+        fontFamily: run.fontFamily,
+        fontSize: run.fontSize,
+        lineHeight: 1,
+        transform: run.ratio === 1 ? undefined : `scaleX(${run.ratio})`
+      }}
+    >{highlightedText(run.text, searchQuery).map((piece, pieceIndex) =>
+      piece.hit
+        ? <mark className="viewer-fixed-page-search-hit" key={pieceIndex}>{piece.text}</mark>
+        : piece.text
+    )}</span>)}
+  </div>
 }
 
 export default function App() {
@@ -176,10 +246,18 @@ export default function App() {
   const [printing, setPrinting] = useState(false)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12, topSpacer: 0, bottomSpacer: 0 })
-  const [fixedPrintSvgs, setFixedPrintSvgs] = useState<string[] | null>(null)
+  const [fixedPrintPages, setFixedPrintPages] = useState<Awaited<ReturnType<RhwpAdapter['renderRhwpFixedPage']>>[] | null>(null)
   const [fixedFirstPageReady, setFixedFirstPageReady] = useState(false)
+  const [fixedFollowingPagesEnabled, setFixedFollowingPagesEnabled] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<Array<{ pageIndex: number; occurrences: number }>>([])
+  const [activeSearchResult, setActiveSearchResult] = useState(0)
+  const [searching, setSearching] = useState(false)
   const [layoutMeasurements, setLayoutMeasurements] = useState<LayoutMeasurements | undefined>()
   const measurementRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchSequence = useRef(0)
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
   const automaticPdfStarted = useRef(false)
@@ -247,8 +325,12 @@ export default function App() {
     setLoadTiming(null)
     setSectionProgress(null)
     setBackgroundError(null)
-    setFixedPrintSvgs(null)
+    setFixedPrintPages(null)
     setFixedFirstPageReady(false)
+    setFixedFollowingPagesEnabled(false)
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchResults([])
     setDocument(null)
     setFixedDocument(null)
     try {
@@ -300,6 +382,14 @@ export default function App() {
     finally { if (activeLoadId.current === loadId) setLoading(false) }
   }
   useEffect(() => {
+    if (!fixedFirstPageReady) {
+      setFixedFollowingPagesEnabled(false)
+      return
+    }
+    const timeout = setTimeout(() => setFixedFollowingPagesEnabled(true), 75)
+    return () => clearTimeout(timeout)
+  }, [fixedFirstPageReady])
+  useEffect(() => {
     if (
       !hasDocument ||
       !loadTiming ||
@@ -344,8 +434,8 @@ export default function App() {
     const stopPrepare = api().onPreparePdf(async (requestId: string) => {
       setPrinting(true)
       if (fixedDocument) {
-        const svgs = await (await loadRhwpAdapter()).renderAllRhwpFixedPages(fixedDocument.pageCount)
-        setFixedPrintSvgs(svgs)
+        const renderedPages = await (await loadRhwpAdapter()).renderAllRhwpFixedPages(fixedDocument.pageCount)
+        setFixedPrintPages(renderedPages)
       }
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       await globalThis.document.fonts.ready
@@ -355,7 +445,7 @@ export default function App() {
     })
     const stopFinish = api().onFinishPdf(() => {
       setPrinting(false)
-      setFixedPrintSvgs(null)
+      setFixedPrintPages(null)
     })
     return () => { stopPrepare(); stopFinish() }
   }, [fixedDocument])
@@ -380,15 +470,77 @@ export default function App() {
     if (rhwpAdapter) void rhwpAdapter.then((adapter) => adapter.closeRhwpFixedPageDocument())
   }, [])
   useEffect(() => {
+    const sequence = ++searchSequence.current
+    const query = searchQuery.trim()
+    if (!fixedDocument || !query) {
+      setSearchResults([])
+      setActiveSearchResult(0)
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    const timeout = setTimeout(() => {
+      void loadRhwpAdapter()
+        .then((adapter) => adapter.searchRhwpFixedPages(query, fixedDocument.pageCount))
+        .then((results) => {
+          if (searchSequence.current !== sequence) return
+          setSearchResults(results)
+          setActiveSearchResult(0)
+          setSearching(false)
+        })
+        .catch((reason) => {
+          if (searchSequence.current !== sequence) return
+          setSearching(false)
+          setBackgroundError(reason instanceof Error ? reason.message : String(reason))
+        })
+    }, 120)
+    return () => clearTimeout(timeout)
+  }, [fixedDocument, searchQuery])
+  useEffect(() => {
+    const result = searchResults[activeSearchResult]
+    const stage = stageRef.current
+    if (!fixedDocument || !result || !stage) return
+    const offsets = fixedPageOffsets(fixedDocument.pages)
+    stage.scrollTo({ top: offsets[result.pageIndex] * zoom, behavior: 'smooth' })
+  }, [fixedDocument, searchResults, activeSearchResult, zoom])
+  const openSearch = () => {
+    if (!fixedDocument) return
+    setSearchOpen(true)
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchResults([])
+    setActiveSearchResult(0)
+  }
+  const stepSearchResult = (direction: number) => {
+    if (!searchResults.length) return
+    setActiveSearchResult((current) => (current + direction + searchResults.length) % searchResults.length)
+  }
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && searchOpen) {
+        event.preventDefault()
+        closeSearch()
+        return
+      }
       if (!event.metaKey) return
+      if (event.key.toLocaleLowerCase() === 'f' && fixedDocument) {
+        event.preventDefault()
+        openSearch()
+        return
+      }
       if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
       if (event.key === '-') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
       if (event.key === '0') { event.preventDefault(); changeZoomAt(1) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoom])
+  }, [zoom, fixedDocument, searchOpen, searchResults.length])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
@@ -448,10 +600,39 @@ export default function App() {
           `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
         ]
     : []
+  const totalSearchOccurrences = searchResults.reduce((sum, result) => sum + result.occurrences, 0)
+  const activeSearchPage = searchResults[activeSearchResult]?.pageIndex
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
-    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button></div></header>
+    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions">
+      {searchOpen && <div className="viewer-search" role="search">
+        <input
+          ref={searchInputRef}
+          aria-label="HWP 문서 검색"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              stepSearchResult(event.shiftKey ? -1 : 1)
+            }
+          }}
+          placeholder="문서 검색"
+        />
+        <span
+          aria-live="polite"
+          data-searching={searching}
+          data-search-pages={searchResults.length}
+          data-search-occurrences={totalSearchOccurrences}
+        >{searching ? '검색 중…' : searchQuery.trim() ? `${searchResults.length}쪽 · ${totalSearchOccurrences}건` : ''}</span>
+        <button aria-label="이전 검색 결과" onClick={() => stepSearchResult(-1)} disabled={!searchResults.length}>↑</button>
+        <button aria-label="다음 검색 결과" onClick={() => stepSearchResult(1)} disabled={!searchResults.length}>↓</button>
+        <button aria-label="검색 닫기" onClick={closeSearch}>×</button>
+      </div>}
+      {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
+      <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button>
+    </div></header>
     <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
@@ -480,7 +661,10 @@ export default function App() {
         ).map((page) => <FixedPageView
           key={page.index}
           page={page}
-          printSvg={fixedPrintSvgs?.[page.index]}
+          printPage={fixedPrintPages?.[page.index]}
+          renderEnabled={page.index === 0 || fixedFollowingPagesEnabled || printing}
+          searchQuery={searchOpen ? searchQuery : ''}
+          activeSearchPage={activeSearchPage === page.index}
           onReady={() => {
             if (page.index === 0) setFixedFirstPageReady(true)
           }}

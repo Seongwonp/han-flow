@@ -9,6 +9,11 @@ button { font: inherit; }
 .viewer-mark { display: grid; place-items: center; width: 25px; height: 25px; color: white; background: #335eea; border-radius: 6px; font-weight: 800; }
 .viewer-actions { -webkit-app-region: no-drag; color: #59606a; }
 .viewer-actions button, .viewer-empty button { border: 1px solid #b8bec6; background: #fff; border-radius: 7px; min-width: 30px; height: 30px; cursor: pointer; }
+.viewer-actions button:disabled { cursor: default; opacity: .45; }
+.viewer-search { display: flex; align-items: center; gap: 5px; height: 34px; padding: 2px 4px 2px 8px; border: 1px solid #b8bec6; border-radius: 8px; background: white; box-shadow: 0 2px 9px rgba(20,25,35,.12); }
+.viewer-search input { width: 180px; border: 0; outline: 0; font: inherit; color: #202124; background: transparent; }
+.viewer-search span { min-width: 70px; font-size: 11px; text-align: right; white-space: nowrap; }
+.viewer-search button { height: 26px; min-width: 26px; border: 0; }
 .viewer-actions .viewer-open { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
 .viewer-stage { flex: 1; overflow: auto; padding: 32px; }
 .viewer-pages { display: flex; flex-direction: column; align-items: center; gap: 24px; transition: transform .12s ease; }
@@ -16,7 +21,12 @@ button { font: inherit; }
 .viewer-page-spacer { flex: none; width: 1px; }
 .viewer-page { position: relative; flex: none; background: white; box-shadow: 0 5px 24px rgba(20,25,35,.22); overflow: hidden; color: #111; }
 .viewer-fixed-page { padding: 0; }
-.viewer-fixed-page-image { display: block; width: 100%; height: 100%; user-select: none; pointer-events: none; }
+.viewer-fixed-page-search-active { outline: 3px solid rgba(51,94,234,.78); outline-offset: 3px; }
+.viewer-fixed-page-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; user-select: none; pointer-events: none; }
+.viewer-fixed-page-text-layer { position: absolute; z-index: 1; inset: 0; overflow: hidden; color: transparent; user-select: text; cursor: text; }
+.viewer-fixed-page-text-run { position: absolute; display: block; overflow: visible; color: transparent; white-space: pre; transform-origin: left top; }
+.viewer-fixed-page-text-run::selection, .viewer-fixed-page-search-hit::selection { color: transparent; background: rgba(56,132,255,.4); }
+.viewer-fixed-page-search-hit { color: transparent; background: rgba(255,213,46,.52); border-radius: 2px; }
 .viewer-page-number { position: absolute; z-index: 1; font-family: "Apple SD Gothic Neo", sans-serif; font-size: 9pt; line-height: 1; white-space: nowrap; }
 .viewer-page-number-bottom-left, .viewer-page-number-top-left { left: 0; }
 .viewer-page-number-bottom-center, .viewer-page-number-top-center { left: 50%; transform: translateX(-50%); }
@@ -36,7 +46,7 @@ button { font: inherit; }
 .viewer-status { flex: 0 0 28px; height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: rgba(248,248,248,.94); border-top: 1px solid rgba(0,0,0,.14); color: #58606b; font-size: 11px; }
 .viewer-status-warn { color: #8a5a00; }
 .viewer-status-error { color: #b42318; font-weight: 600; }
-@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.92); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } }
+@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.92); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } }
 @media print {
   @page { margin: 0; }
   html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }
@@ -44,5 +54,6 @@ button { font: inherit; }
   .viewer-stage { overflow: visible; padding: 0; background: white; }
   .viewer-pages { gap: 0; transform: none !important; }
   .viewer-page { box-shadow: none; break-after: page; page-break-after: always; }
+  .viewer-fixed-page-text-layer { visibility: hidden; }
   .viewer-page:last-child { break-after: auto; page-break-after: auto; }
 }

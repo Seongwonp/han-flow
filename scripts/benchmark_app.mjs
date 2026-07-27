@@ -19,6 +19,8 @@ const summary = (samples) => ({
   min: Math.round(Math.min(...samples)),
   max: Math.round(Math.max(...samples))
 })
+const timingSummary = (measurements, field) => summary(measurements.map((item) => item[field]))
+const startupSummary = (measurements) => summary(measurements.map((item) => item.openToFirstPaintMs - item.firstPaintMs))
 
 async function launch(output, runs) {
   let standardError = ''
@@ -60,8 +62,11 @@ try {
   const result = {
     fixture: basename(fixture),
     sampleCount,
-    warmOpenToFirstPaintMs: summary(warm.slice(1).map((item) => item.openToFirstPaintMs)),
-    coldOpenToFirstPaintMs: summary(cold.map((item) => item.openToFirstPaintMs))
+    warmOpenToFirstPaintMs: timingSummary(warm.slice(1), 'openToFirstPaintMs'),
+    coldOpenToFirstPaintMs: timingSummary(cold, 'openToFirstPaintMs'),
+    coldStartupToRequestMs: startupSummary(cold),
+    coldRequestToFirstPaintMs: timingSummary(cold, 'firstPaintMs'),
+    coldRequestToModelMs: timingSummary(cold, 'requestToModelMs')
   }
   console.log('HAN_FLOW_APP_BENCHMARK', JSON.stringify(result))
 } finally {

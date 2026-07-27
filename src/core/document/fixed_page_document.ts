@@ -13,6 +13,23 @@ export interface FixedPageDocument {
   pages: FixedPageDescriptor[]
 }
 
+export interface FixedPageTextRun {
+  text: string
+  x: number
+  y: number
+  width: number
+  height: number
+  fontFamily?: string
+  fontSize: number
+  ratio: number
+}
+
+export interface FixedPageTextLayout {
+  runs: FixedPageTextRun[]
+  text: string
+  nonWhitespaceCharacters: number
+}
+
 export interface FixedPageOpenTimings {
   wasmInitMs: number
   parseMs: number

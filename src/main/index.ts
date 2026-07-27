@@ -4,8 +4,6 @@ import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { Worker } from 'worker_threads'
 import { serializeToHWPX } from '../core/parser/serialization'
-import AdmZip from 'adm-zip'
-import fontList from 'font-list'
 import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 import { shouldLoadProgressively } from '../core/parser/progressive_loading'
@@ -75,6 +73,7 @@ function pathFromArguments(arguments_: string[]): string | undefined {
 function captureVisualState(window: BrowserWindow): void {
   const capturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
+  const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
@@ -82,20 +81,39 @@ function captureVisualState(window: BrowserWindow): void {
   const startedAt = Date.now()
   let previousSignature = ''
   let stableSamples = 0
+  let searchTriggered = !searchQuery
   const captureWhenReady = async () => {
     const readiness = await window.webContents.executeJavaScript(`(() => {
       const pages = document.querySelector('.viewer-pages')
       const errorVisible = Boolean(document.querySelector('.viewer-error'))
       const mountedPages = Array.from(document.querySelectorAll('.viewer-page'))
       const fixedPagesReady = mountedPages.every((page) => !page.classList.contains('viewer-fixed-page') || page.dataset.pageReady === 'true')
+      const searchStatus = document.querySelector('[data-searching]')
       return {
-        ready: errorVisible || Boolean(pages && pages.dataset.documentLoading === 'false' && pages.dataset.layoutMeasured === 'true' && fixedPagesReady),
-        signature: errorVisible ? 'error' : pages ? [pages.dataset.totalPages, mountedPages.length, mountedPages.filter((page) => page.dataset.pageReady === 'true').length, pages.dataset.documentLoading, pages.dataset.layoutMeasured].join(':') : 'empty'
+        ready: errorVisible || Boolean(pages && pages.dataset.documentLoading === 'false' && pages.dataset.layoutMeasured === 'true' && fixedPagesReady && (!${searchTriggered} || searchStatus?.dataset.searching === 'false')),
+        signature: errorVisible ? 'error' : pages ? [pages.dataset.totalPages, mountedPages.length, mountedPages.filter((page) => page.dataset.pageReady === 'true').length, pages.dataset.documentLoading, pages.dataset.layoutMeasured, document.querySelectorAll('.viewer-fixed-page-search-hit').length, searchStatus?.dataset.searching].join(':') : 'empty'
       }
     })()`)
     stableSamples = readiness.ready && readiness.signature === previousSignature ? stableSamples + 1 : readiness.ready ? 1 : 0
     previousSignature = readiness.signature
     if (stableSamples < 3 && Date.now() - startedAt < readyTimeoutMs) {
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
+    if (!searchTriggered && searchQuery) {
+      searchTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      await window.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[aria-label="검색"]')?.click()
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        const input = document.querySelector('[aria-label="HWP 문서 검색"]')
+        if (!input) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        setter?.call(input, ${JSON.stringify(searchQuery)})
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        return true
+      })()`)
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
@@ -112,6 +130,30 @@ function captureVisualState(window: BrowserWindow): void {
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       errorVisible: Boolean(document.querySelector('.viewer-error')),
       errorMessageLength: document.querySelector('.viewer-error')?.textContent?.trim().length || 0,
+      search: {
+        open: Boolean(document.querySelector('.viewer-search')),
+        pages: Number(document.querySelector('[data-search-pages]')?.dataset.searchPages || 0),
+        occurrences: Number(document.querySelector('[data-search-occurrences]')?.dataset.searchOccurrences || 0),
+        highlights: document.querySelectorAll('.viewer-fixed-page-search-hit').length,
+        activePages: document.querySelectorAll('.viewer-fixed-page-search-active').length
+      },
+      selectionCharacters: (() => {
+        const run = document.querySelector('.viewer-fixed-page-text-run')
+        const selection = window.getSelection()
+        if (!run || !selection) return 0
+        const range = document.createRange()
+        range.selectNodeContents(run)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        const count = Array.from(selection.toString()).length
+        selection.removeAllRanges()
+        return count
+      })(),
+      accessibility: {
+        documentPages: document.querySelectorAll('.viewer-fixed-page[role="document"][aria-label]').length,
+        hiddenImages: document.querySelectorAll('.viewer-fixed-page-image[aria-hidden="true"]').length,
+        labeledTextLayers: document.querySelectorAll('.viewer-fixed-page-text-layer[aria-label]').length
+      },
       status: document.querySelector('.viewer-status')?.textContent,
       timing: document.querySelector('.viewer-status')?.getAttribute('title')
     })`)
@@ -255,6 +297,7 @@ app.whenReady().then(() => {
   // 시스템 폰트 목록 가져오기
   ipcMain.handle('system:getFonts', async () => {
     try {
+      const { default: fontList } = await import('font-list')
       return await fontList.getFonts()
     } catch (error) {
       console.error('Font error:', error)
@@ -418,6 +461,7 @@ app.whenReady().then(() => {
   // 문서 저장 핸들러
   ipcMain.handle('hwpx:save', async (_, { filePath, doc }: { filePath: string, doc: any }) => {
     try {
+      const { default: AdmZip } = await import('adm-zip')
       const xmlFiles = serializeToHWPX(doc)
       const zip = new AdmZip()
 
