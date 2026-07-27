@@ -20,6 +20,10 @@
 - kordoc 구조 oracle·rhwp SVG·패키지 앱·PDF를 잇는 `verify:hwp-matrix`
 - PDF 출력 전 모든 fixed-page SVG decode를 기다려 마지막 페이지 누락 race 수정
 - private AIDA HWP 7쪽·혼합 용지·PDF 텍스트 99.08% 재검증
+- HWP CFB·FileHeader signature·5.x version main-process preflight
+- 암호·배포용·DRM·비지원 version·손상 HWP 구조화 오류 코드와 사용자 안내
+- 공개 HWP 변형 5종의 production 오류 E2E와 임시 저장소 정리 재시도
+- 포트폴리오에 재사용할 수 있는 날짜별 검증 이력 문서
 
 ## 1.0.0-rc.1 - 2026-07-23
 

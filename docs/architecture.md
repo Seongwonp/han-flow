@@ -203,12 +203,15 @@ V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. private AIDA
 oracle로 확정했다. 자동 fallback은 두지 않으며 결정 근거는
 [ADR-0001](adr/0001-hwp-parser-roles.md)에 있다.
 
-현재 비신뢰 HWP binary는 main이 200 MiB 제한과 CFB magic을 확인한 뒤 전용 Web Worker로
-전달한다. rhwp document 생성과 모든 페이지 작업은 renderer UI thread 밖에서 실행하고
+현재 비신뢰 HWP binary는 main이 200 MiB 제한, CFB 무결성, `FileHeader` signature와 5.x
+version을 확인한 뒤 전용 Web Worker로 전달한다. 암호·배포용·DRM·비지원 version·손상
+container는 구조화된 오류 코드와 사용자 문구로 거부한다. rhwp document 생성과 모든 페이지
+작업은 renderer UI thread 밖에서 실행하고
 timeout·새 load는 Worker 강제 종료로 처리한다. WASM 컴파일을 위해 CSP
 `wasm-unsafe-eval`만 추가했으며 외부 script는 계속 허용하지 않는다. SVG는 검증 후 blob
-image 경계에서 표시한다. 다음 보안 milestone은 HWP `FileHeader` signature/version,
-암호·배포용·DRM 감지와 분류된 오류 UX다. Scripts, OLE와 외부 link는 실행하지 않는다.
+image 경계에서 표시한다. `containsScripts`는 진단하되 Scripts, OLE와 외부 link는 실행하지
+않는다. 다음 importer milestone은 이 HWP 결과와 HWPX 결과를 format-neutral IPC 계약으로
+모으는 것이다.
 
 현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text

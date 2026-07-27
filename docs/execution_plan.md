@@ -33,12 +33,16 @@
 - [x] `verify:hwp-matrix`에 생성 결정성·앱·반복 머리말·PDF 관문 통합
 - [x] PDF 인쇄 전 모든 SVG image decode를 기다려 마지막 페이지 누락 race 제거
 - [x] private AIDA HWP 7쪽 PDF 텍스트 99.08% 재검증
+- [x] CFB 무결성·FileHeader signature·5.x version preflight
+- [x] 암호·배포용·DRM·비지원 version·손상 HWP 구조화 오류 UX
+- [x] 공개 HWP를 변형한 5종 오류 production E2E matrix
+- [x] 날짜·명령·수치·실패/수정 내용을 모은 검증 이력 문서
 
 ### 다음 작업 순서
 
-1. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
-2. format-neutral `DocumentImporter`와 IPC event
-3. 공개 지원 불가·손상 HWP corpus를 matrix에 추가
+1. format-neutral `DocumentImporter`와 IPC event
+2. 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
+3. V2 완료 조건 전체 재검증
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -83,13 +87,13 @@
 
 ## 진행 중 milestone: V2-1 importer 경계
 
-- [x] 확장자 분기와 CFB magic 기반 HWP preflight
+- [x] 확장자·CFB·FileHeader 기반 HWP preflight
 - [ ] `DocumentImporter`와 format-neutral IPC event
 - [x] HWP parser 전용 Web Worker 격리
 - [x] 200 MiB 입력 제한
 - [x] 30초 open·15초 page timeout과 Worker 강제 종료형 load cancellation
 - [x] `.hwp` Finder association, dialog, drop
-- [ ] 암호·DRM·배포용·손상 입력 오류 UX
+- [x] 암호·DRM·배포용·비지원 version·손상 입력 오류 UX
 - [ ] 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
 
 ## 매 milestone 공통 완료 규칙

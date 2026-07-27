@@ -26,12 +26,12 @@ V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명
 ## 로드맵
 
 - **V1 — HWPX 뷰어:** 로컬 RC 완료. 열기, read-only 렌더, 점진 로딩, PDF와 macOS UX
-- **V2 — HWP 5.0 읽기:** `@rhwp/core`를 채택해 같은 viewer/PDF 경험에 연결, 오류 UX 마무리 중
+- **V2 — HWP 5.0 읽기:** `@rhwp/core` 기반 viewer/PDF와 오류 UX 완료, importer 경계 진행 중
 - **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
 - **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
 
-남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 85%, V3 0%, V4 5%이며 최종 배포
-전체로는 약 **42%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
+남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 92%, V3 0%, V4 5%이며 최종 배포
+전체로는 약 **44%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
 산정 기준은 [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)에 있습니다.
 
 V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
@@ -62,12 +62,18 @@ single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력�
 개인용 패키지로 사용하며, 편집은 V3 범위입니다.
 
 V2 실험 경로에서는 `.hwp`도 Finder 인자, 열기 대화상자와 드래그앤드롭으로 받을 수 있습니다.
-main process는 200 MiB 제한과 CFB magic을 검사하고, 전용 Web Worker의 `@rhwp/core` WASM이
+main process는 200 MiB 제한과 CFB·FileHeader를 검사하고, 전용 Web Worker의 `@rhwp/core` WASM이
 페이지 정보를 만든 뒤 첫 페이지 SVG를 우선 표시하고 나머지 페이지를 이어서 렌더링합니다.
 새 문서를 열거나 30초 open·15초 page 제한을 넘기면 Worker를 강제 종료해 UI thread와 이전
 작업을 보호합니다. SVG는 script·event handler·외부 resource를 거부하고 blob image 경계로
 표시합니다. 별도로 좌표가 있는 텍스트 run을 React text layer로 만들어 `⌘F` 검색,
 하이라이트, 텍스트 선택과 페이지 접근성 label을 제공합니다.
+
+main process는 CFB magic뿐 아니라 `FileHeader` signature와 5.x version도 확인합니다. 암호,
+배포용, DRM, 비지원 version과 손상 container는 WASM에 전달하지 않고 각각 안정적인 오류
+코드와 사용자 안내를 표시합니다. 공개 HWP를 안전하게 변형한 production E2E에서
+`HWP_ENCRYPTED`, `HWP_DISTRIBUTION`, `HWP_DRM`, `HWP_UNSUPPORTED_VERSION`,
+`HWP_CORRUPTED`를 검증했습니다.
 
 AIDA HWP는 production build에서 7페이지, 3구역, 세로/가로 용지와 overflow 0을 확인했습니다.
 텍스트 layer는 비공백 6,074자를 보존해 기준 PDF 6,077자와 3자 차이이며, 패키지 앱에서 검색
@@ -162,7 +168,7 @@ mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 
 `fixture:hwp`는 개인정보 없는 공개 HWP를 결정적으로 다시 생성합니다. `verify:hwp-matrix`는
 이 결과가 커밋된 SHA-256과 같은지 확인한 뒤 두 parser의 구조·렌더 진단, production 앱,
-PDF 내보내기를 한 번에 실행합니다.
+PDF 내보내기와 FileHeader 오류 5종을 한 번에 실행합니다.
 
 `verify:pdf`는 HWP/HWPX production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지
 수, 페이지별 용지 크기와 글자 보존을 비교하고 첫·중간·끝·가로 페이지를 PNG로 재렌더링합니다.
@@ -212,6 +218,7 @@ HWP만 사용합니다.
 - [v1 기준선과 구현 현황](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
 - [v1 Release Candidate 체크리스트](docs/release_checklist.md)
+- [날짜별 검증 이력과 포트폴리오 근거](docs/verification_history.md)
 - [변경 기록](CHANGELOG.md)
 
 ## HWP 5.0 규격 고지

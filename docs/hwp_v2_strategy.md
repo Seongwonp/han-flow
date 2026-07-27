@@ -181,12 +181,12 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 
 ### V2-1 importer 경계와 안전한 열기
 
-- [x] `.hwp` 확장자 분기와 200 MiB·CFB magic preflight
-- [ ] HWP `FileHeader` signature/version까지 포함한 format-neutral 감지
+- [x] `.hwp` 확장자 분기와 200 MiB·CFB/`FileHeader` preflight
+- [x] HWP `FileHeader` signature/version 감지
 - [ ] `DocumentImporter`와 format-neutral IPC
 - [x] parser Web Worker 격리, 강제 종료형 timeout·load cancellation과 기본 오류 taxonomy
 - [x] Finder association, dialog, drop에 `.hwp` 추가
-- [ ] 암호·DRM·배포용·손상 문서 오류 UX
+- [x] 암호·DRM·배포용·비지원 version·손상 문서 오류 UX
 
 ### V2-2 본문과 스타일
 

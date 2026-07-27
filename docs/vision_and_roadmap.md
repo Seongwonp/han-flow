@@ -43,7 +43,7 @@ fallback이다. V2가 이를 무관하게 깨뜨리면 안 된다.
 
 ## V2 — HWP 5.0 읽기
 
-상태: **production parser·공개 회귀 관문 완료, 오류 UX 진행 중**
+상태: **production parser·공개 회귀·오류 UX 완료, importer 경계 진행 중**
 
 목표는 `.hwp` 파일을 V1과 같은 shell에서 읽고 PDF로 내보내는 것이다. 직접 binary parser를
 완성하는 대신 `@rhwp/core`를 production visual engine으로 사용하고 `kordoc`은
@@ -59,8 +59,9 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 현재 AIDA HWP의 화면·검색·PDF, Worker timeout·취소, package·성능·메모리 관문을 통과했다.
 개인정보 없는 2쪽 HWP 고정 fixture와 `verify:hwp-matrix`도 생성 결정성·두 parser 교차
-검사·production 앱·PDF release gate에 연결했다. 남은 핵심은 format-neutral importer와
-암호·DRM·배포용·손상 입력의 정확한 오류 UX다. parser 역할은
+검사·production 앱·PDF release gate에 연결했다. 암호·DRM·배포용·비지원 version·손상
+입력도 main preflight와 production 오류 matrix로 분류한다. 남은 핵심은 format-neutral
+importer와 과거 prototype 정리다. parser 역할은
 [ADR-0001](adr/0001-hwp-parser-roles.md)에서 확정했다.
 
 ## V3 — 편집
@@ -96,10 +97,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 ## 현재 다음 작업
 
-1. HWP `FileHeader`와 암호·DRM·배포용·손상 입력 오류 UX
-2. format-neutral `DocumentImporter`와 IPC
-3. 공개 matrix에 지원 불가·손상 HWP corpus 추가
-4. V2 완료 조건 전체 재검증
+1. format-neutral `DocumentImporter`와 IPC
+2. 과거 `hwp_parser.ts` prototype 제거 또는 명시적 격리
+3. V2 완료 조건 전체 재검증
 
 ## 진행률 스냅샷
 
@@ -109,10 +109,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | 단계 | 전체 가중치 | 현재 진행 | 전체 기여 |
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
-| V2 HWP 읽기 | 25% | 85% | 21.3% |
+| V2 HWP 읽기 | 25% | 92% | 23.0% |
 | V3 편집 | 40% | 0% | 0.0% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 42%** |
+| **최종 배포 전체** | **100%** | | **약 44%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질

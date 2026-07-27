@@ -277,6 +277,7 @@ HWP다. 자체 문자열, Canvas PNG, 3×3 표와 두 쪽 반복 머리말을 �
 | rhwp SVG | 2쪽, 이미지 요소 1, 위험 요소·속성 0 |
 | production 앱 | 2쪽, overflow 0, 반복 머리말 2쪽·2회 검색 |
 | production PDF | 2쪽 A4, 텍스트 보존율 98.6% |
+| 지원 불가 입력 | 암호·배포용·DRM·비지원 version·손상 오류 코드 5종 |
 
 private AIDA HWP 재검증에서는 인쇄 직전 마지막 SVG image decode가 끝나기 전에
 `printToPDF`가 시작될 수 있는 race를 발견했다. 모든 fixed page DOM과 `naturalWidth > 0`인
@@ -285,6 +286,6 @@ private AIDA HWP 재검증에서는 인쇄 직전 마지막 SVG image decode가 
 
 ## 다음 판정 작업
 
-1. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
-2. format-neutral `DocumentImporter`와 IPC 경계
-3. 지원 불가·손상 HWP 공개 corpus를 `verify:hwp-matrix`에 추가
+1. format-neutral `DocumentImporter`와 IPC 경계
+2. 과거 `hwp_parser.ts` prototype 제거 또는 명시적 격리
+3. V2 완료 조건 전체 재검증

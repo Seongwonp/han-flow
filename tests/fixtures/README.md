@@ -14,7 +14,9 @@
 시작한다. serializer 실행 결과는 byte 단위로 결정적이며 manifest의 전체 SHA-256과 비교한다.
 구조 기대값은 같은 엔진의 자기 검증에만 의존하지 않고 `kordoc` development oracle로도
 표·셀·이미지·resource 수를 교차 검사한다. production 경로에서는 페이지 SVG, 반복 머리말
-검색, 접근성 layer와 PDF 페이지·텍스트 보존을 확인한다.
+검색, 접근성 layer와 PDF 페이지·텍스트 보존을 확인한다. 같은 공개 binary의 FileHeader를
+임시 경로에서만 변형해 암호·배포용·DRM·비지원 version 오류를 만들고, 잘린 CFB로 손상
+오류를 만든다. 변형 fixture는 검증 직후 삭제하며 저장소에는 추가 binary를 남기지 않는다.
 
 fixture의 본문과 Canvas 그림, 생성 스크립트는 Han-Flow Apache-2.0 범위다. HWP 컨테이너
 직렬화에는 MIT 라이선스의 [`@rhwp/core`](https://github.com/edwardkim/rhwp)를 사용했고
