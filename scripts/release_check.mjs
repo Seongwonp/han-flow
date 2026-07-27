@@ -14,6 +14,7 @@ const steps = [
   { name: 'macOS production 패키지', command: npm, arguments_: ['run', 'package:mac'] },
   { name: '라이선스와 배포 고지', command: npm, arguments_: ['run', 'verify:notices'] },
   { name: '공개 호환성 matrix', command: npm, arguments_: ['run', 'verify:matrix'] },
+  { name: '공개 HWP 렌더/PDF matrix', command: npm, arguments_: ['run', 'verify:hwp-matrix'] },
   { name: 'private 앱 smoke test', command: npm, arguments_: ['run', 'verify:app', '--', resolve(fixture)] },
   { name: 'private 화면/PDF 일치', command: npm, arguments_: ['run', 'verify:pdf', '--', resolve(fixture)] }
 ]

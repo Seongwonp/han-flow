@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "fixture": "synthetic-layout.hwp",
+  "generator": "scripts/fixtures/generate_public_hwp_preload.cjs",
+  "license": "Apache-2.0",
+  "containsPersonalData": false,
+  "hwpVersion": "5.0.3.2",
+  "sha256": "b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e",
+  "sizeBytes": 12800,
+  "expected": {
+    "sections": 1,
+    "pages": 2,
+    "tables": 1,
+    "cells": 9,
+    "images": 1,
+    "resources": 1,
+    "headerSearchPages": 2,
+    "headerSearchOccurrences": 2,
+    "minimumPdfTextPreservation": 0.98
+  }
+}
