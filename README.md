@@ -59,8 +59,8 @@ V2 실험 경로에서는 `.hwp`도 Finder 인자, 열기 대화상자와 드래
 main process는 200 MiB 제한과 CFB magic만 검사하고, renderer의 `@rhwp/core` WASM이 페이지
 정보를 만든 뒤 화면에 보이는 SVG만 순차 렌더링합니다. SVG는 script·event handler·외부
 resource를 거부하고 blob image 경계로 표시합니다. AIDA HWP는 production build에서 7페이지,
-3구역, 세로/가로 용지와 overflow 0을 확인했습니다. 첫 화면은 앱 내부 요청 기준 약 1.1초로,
-1초 목표 최적화가 다음 과제입니다.
+3구역, 세로/가로 용지와 overflow 0을 확인했습니다. 패키지 앱 20회 기준 첫 화면은 warm
+p50/p95 327/393ms, cold p50/p95 797/873ms이고 cold 최악값도 898ms로 1초 목표를 통과했습니다.
 
 남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템

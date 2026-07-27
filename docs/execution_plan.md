@@ -25,6 +25,7 @@
 - [ ] peak memory와 production package 증가량 측정
 - [x] fixed-page variant로 기존 zoom·page virtualization shell 연결
 - [x] 실제 AIDA HWP의 7페이지·3구역·세로/가로 용지·overflow 0 확인
+- [x] 패키지 HWP cold/warm 20회 측정과 첫 화면 1초 관문 통과
 - [ ] mixed-orientation PDF 출력 검증
 
 ### 3. `kordoc` probe

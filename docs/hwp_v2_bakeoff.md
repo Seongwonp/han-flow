@@ -156,15 +156,20 @@ build smoke test 결과는 다음과 같다.
 | HWP 읽기 | 약 2 ms |
 | WASM 초기화 | 약 47–117 ms |
 | HWP parse | 약 125–256 ms |
-| 앱 요청→첫 화면 | 약 1.1초 |
+| warm 첫 화면 p50 / p95 (20회) | 327 / 393 ms |
+| cold 첫 화면 p50 / p95 (20회) | 797 / 873 ms |
+| cold 최소 / 최대 | 757 / 898 ms |
 | production WASM asset | 약 6.96 MB |
 | renderer adapter chunk | 약 0.28 MB |
 | unsigned arm64 `.app` / `app.asar` | 약 332 MB / 112.8 MB |
 
-연결 가능성은 통과했지만 1초 목표에는 약 0.1초 부족하다. 또한 blob image 경계는 SVG text
-selection/search를 제공하지 않고, 현재 `printToPDF`의 단일 custom page size로는 세로·가로
-혼합 문서의 출력 일치를 아직 보증할 수 없다. `.app`과 `app.asar` 값은 현재 절대 크기이며
-V1 기준 대비 증가량은 다음 package 측정에서 분리한다.
+`electron-vite preview` 시각 검증에서는 요청→첫 화면이 약 1.1초였지만, 실제 unsigned
+패키지 앱의 격리된 cold/warm 각 20회 측정에서는 cold p95 873ms와 최대 898ms로 1초 목표를
+통과했다. 따라서 speculative 성능 변경은 하지 않고 이 수치를 V2 기준선으로 고정한다.
+
+blob image 경계는 SVG text selection/search를 제공하지 않고, 현재 `printToPDF`의 단일 custom
+page size로는 세로·가로 혼합 문서의 출력 일치를 아직 보증할 수 없다. `.app`과 `app.asar`
+값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음 package 측정에서 분리한다.
 
 대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
 SVG나 PNG를 파일로 남기지 않는다.
@@ -193,9 +198,8 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 
 ## 다음 판정 작업
 
-1. 첫 페이지 SVG 생성·blob decode를 분리 측정하고 요청→첫 화면 1초 이내로 최적화
-2. rhwp SVG text layer의 검색·접근성 가능성 및 blob image 경계 유지 여부 판정
-3. fixed-page shell의 mixed-orientation PDF 출력, peak memory와 package 증가량 측정
-4. parser의 renderer 격리, timeout과 load cancellation 구현
-5. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-6. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. rhwp SVG text layer의 검색·접근성 가능성 및 blob image 경계 유지 여부 판정
+2. fixed-page shell의 mixed-orientation PDF 출력, peak memory와 package 증가량 측정
+3. parser의 renderer 격리, timeout과 load cancellation 구현
+4. 점수표와 main/oracle 역할을 확정하는 ADR 작성
+5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가

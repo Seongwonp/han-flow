@@ -193,7 +193,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 ### V2-4 성능과 PDF
 
 - [x] 첫 페이지 우선 SVG queue와 세로·가로 혼합 페이지 가상화 계산
-- [ ] 앱 요청→첫 화면 1초 이내
+- [x] 패키지 앱 첫 화면 1초 이내(cold p95 873ms, 20회)
 - [ ] cold/warm p50/p95와 peak memory
 - [ ] 화면/PDF page count·페이지별 글자 수 일치
 - [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
