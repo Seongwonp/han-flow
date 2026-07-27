@@ -16,13 +16,13 @@ const api = {
   },
   onDocumentComplete: (listener: (payload: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload)
-    ipcRenderer.on('hwpx:complete', handler)
-    return () => ipcRenderer.removeListener('hwpx:complete', handler)
+    ipcRenderer.on('document:complete', handler)
+    return () => ipcRenderer.removeListener('document:complete', handler)
   },
   onDocumentError: (listener: (payload: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => listener(payload)
-    ipcRenderer.on('hwpx:error', handler)
-    return () => ipcRenderer.removeListener('hwpx:error', handler)
+    ipcRenderer.on('document:error', handler)
+    return () => ipcRenderer.removeListener('document:error', handler)
   },
   onPreparePdf: (listener: (requestId: string) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId)
@@ -37,9 +37,8 @@ const api = {
   pdfReady: (requestId: string) => ipcRenderer.send('pdf:ready', requestId),
   exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean }) => ipcRenderer.invoke('pdf:export', options),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
-  readHwp: (filePath: string) => ipcRenderer.invoke('hwp:read', filePath),
+  importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl),
-  parseHWPX: (filePath: string, loadId: string) => ipcRenderer.invoke('hwpx:parse', { filePath, loadId }),
   saveHWPX: (filePath: string, doc: any) => ipcRenderer.invoke('hwpx:save', { filePath, doc })
 }
 

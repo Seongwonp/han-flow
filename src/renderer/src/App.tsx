@@ -1,5 +1,6 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
+import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
@@ -344,21 +345,18 @@ export default function App() {
     setFixedDocument(null)
     try {
       if (rhwpAdapter) (await rhwpAdapter).closeRhwpFixedPageDocument()
-      if (path.toLowerCase().endsWith('.hwp')) {
-        const readStartedAt = performance.now()
-        const binary = await api().readHwp(path) as
-          | { ok: true; bytes: Uint8Array; readMs: number }
-          | { ok: false; error: { code: string; message: string } }
-        if (activeLoadId.current !== loadId) return
-        if (!binary.ok) {
-          setErrorCode(binary.error.code)
-          setError(binary.error.message)
-          return
-        }
+      const imported = await api().importDocument({ filePath: path, loadId }) as DocumentImportResult
+      if (activeLoadId.current !== imported.loadId) return
+      if (!imported.ok) {
+        setErrorCode(imported.error.code)
+        setError(imported.error.message)
+        return
+      }
+      if (imported.format === 'hwp') {
         const adapter = await loadRhwpAdapter()
         if (activeLoadId.current !== loadId) return
         const result = await adapter.openRhwpFixedPageDocument(
-          new Uint8Array(binary.bytes),
+          new Uint8Array(imported.bytes),
           async (assetUrl) => {
             if (assetUrl.startsWith('file:')) {
               return new Uint8Array(await api().readRhwpWasm(assetUrl))
@@ -379,21 +377,19 @@ export default function App() {
           requestStartedAt,
           openReceivedAt,
           requestToModelMs: performance.now() - requestStartedAt,
-          packageOpenMs: binary.readMs,
+          packageOpenMs: imported.timings.sourceReadMs,
           packageIndexMs: 0,
           decodeMs: result.timings.parseMs,
-          mainTotalMs: performance.now() - readStartedAt,
+          mainTotalMs: performance.now() - requestStartedAt,
           wasmInitMs: result.timings.wasmInitMs,
           pageInfoMs: result.timings.pageInfoMs
         })
         setFileName(path.split('/').pop() ?? path)
         return
       }
-      const result = await api().parseHWPX(path, loadId) as ViewerParseResult
-      if (activeLoadId.current !== result.loadId) return
-      setDocument(result.document)
-      setSectionProgress({ loaded: result.complete ? result.sectionCount : result.document.sections.length, total: result.sectionCount })
-      setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
+      setDocument(imported.document)
+      setSectionProgress({ loaded: imported.complete ? imported.sectionCount : imported.document.sections.length, total: imported.sectionCount })
+      setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...imported.timings })
       setFileName(path.split('/').pop() ?? path)
     }
     catch (reason) {
@@ -448,14 +444,14 @@ export default function App() {
     const unsubscribe = api().onOpenFile(({ filePath, receivedAt }: { filePath: string; receivedAt: number }) => { void openPath(filePath, receivedAt) })
     return unsubscribe
   }, [])
-  useEffect(() => api().onDocumentComplete((payload: ViewerDocumentComplete) => {
+  useEffect(() => api().onDocumentComplete((payload: DocumentImportComplete) => {
     if (payload.loadId !== activeLoadId.current) return
     setDocument(payload.document)
     setSectionProgress({ loaded: payload.document.sections.length, total: payload.document.sections.length })
   }), [])
-  useEffect(() => api().onDocumentError((payload: { loadId: string; message: string }) => {
+  useEffect(() => api().onDocumentError((payload: DocumentImportBackgroundError) => {
     if (payload.loadId !== activeLoadId.current) return
-    setBackgroundError(payload.message)
+    setBackgroundError(payload.error.message)
   }), [])
   useEffect(() => {
     const stopPrepare = api().onPreparePdf(async (requestId: string) => {

@@ -2,12 +2,8 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
-import { Worker } from 'worker_threads'
 import { serializeToHWPX } from '../core/parser/serialization'
-import { HwpxPackageReader } from '../core/parser/package_reader'
-import { decodeViewerDocument } from '../core/parser/viewer_decoder'
-import { shouldLoadProgressively } from '../core/parser/progressive_loading'
-import { HwpFileError, readHwpContainer } from './hwp_file'
+import { DocumentImporter } from './document_importer'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -22,37 +18,7 @@ const e2eUserData = testValue('HAN_FLOW_E2E_USER_DATA')
 if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData ?? e2eUserData)!)
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
-const decodeWorkers = new Map<number, Worker>()
-const activeLoadIds = new Map<number, string>()
-
-function stopDecodeWorker(senderId: number): void {
-  const worker = decodeWorkers.get(senderId)
-  if (worker) void worker.terminate()
-  decodeWorkers.delete(senderId)
-}
-
-function decodeInWorker(senderId: number, filePath: string, sectionPaths?: string[]): Promise<{ document: Awaited<ReturnType<typeof decodeViewerDocument>>; decodeMs: number }> {
-  stopDecodeWorker(senderId)
-  const worker = new Worker(join(__dirname, 'decoder_worker.js'))
-  decodeWorkers.set(senderId, worker)
-  return new Promise((resolve, reject) => {
-    let settled = false
-    const cleanup = () => { if (decodeWorkers.get(senderId) === worker) decodeWorkers.delete(senderId) }
-    worker.once('message', (result: { document?: Awaited<ReturnType<typeof decodeViewerDocument>>; decodeMs?: number; error?: string }) => {
-      settled = true
-      cleanup()
-      void worker.terminate()
-      if (result.error || !result.document) reject(new Error(result.error ?? 'worker 디코딩 결과가 없습니다.'))
-      else resolve({ document: result.document, decodeMs: result.decodeMs ?? 0 })
-    })
-    worker.once('error', (error) => { settled = true; cleanup(); reject(error) })
-    worker.once('exit', (code) => {
-      cleanup()
-      if (!settled && code !== 0) reject(new Error(`worker가 종료되었습니다: ${code}`))
-    })
-    worker.postMessage({ filePath, sectionPaths })
-  })
-}
+const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
 
 function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
@@ -214,6 +180,8 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     }
   })
 
+  const senderId = mainWindow.webContents.id
+  mainWindow.webContents.once('destroyed', () => documentImporter.cancel(senderId))
   mainWindow.on('closed', () => { mainWindow = null })
 
   mainWindow.on('ready-to-show', () => {
@@ -333,21 +301,6 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('hwp:read', async (_event, filePath: string) => {
-    if (typeof filePath !== 'string' || !isHwpPath(filePath)) throw new Error('HWP 파일만 읽을 수 있습니다.')
-    try {
-      return { ok: true, ...(await readHwpContainer(filePath)) }
-    } catch (error) {
-      if (error instanceof HwpFileError) {
-        return {
-          ok: false,
-          error: { code: error.code, message: error.message }
-        }
-      }
-      throw error
-    }
-  })
-
   ipcMain.handle('resource:readRhwpWasm', async (_event, assetUrl: string) => {
     if (typeof assetUrl !== 'string' || !assetUrl.startsWith('file:')) {
       throw new Error('패키지 내부 WASM 경로만 읽을 수 있습니다.')
@@ -446,54 +399,28 @@ app.whenReady().then(() => {
     }
   })
 
-  // v1은 HWPX 읽기 전용 파싱만 지원한다.
-  ipcMain.handle('hwpx:parse', async (event, { filePath, loadId }: { filePath: string; loadId: string }) => {
-    try {
-      if (!isHwpxPath(filePath)) throw new Error('HWPX 파일만 열 수 있습니다.')
-      const senderId = event.sender.id
-      activeLoadIds.set(senderId, loadId)
-      stopDecodeWorker(senderId)
-      const startedAt = performance.now()
-      const reader = await HwpxPackageReader.open(filePath)
-      const packageOpenedAt = performance.now()
-      const index = await reader.index()
-      const packageIndexedAt = performance.now()
-      const progressive = shouldLoadProgressively(index)
-      const firstResult = progressive
-        ? await decodeInWorker(senderId, filePath, [index.sectionPaths[0]])
-        : { document: await decodeViewerDocument(reader, index), decodeMs: performance.now() - packageIndexedAt }
-      const document = firstResult.document
-      const decodedAt = performance.now()
-      if (progressive && activeLoadIds.get(senderId) === loadId) {
-        setImmediate(async () => {
-          try {
-            const complete = await decodeInWorker(senderId, filePath)
-            if (activeLoadIds.get(senderId) === loadId && !event.sender.isDestroyed()) {
-              event.sender.send('hwpx:complete', { loadId, document: complete.document, decodeMs: complete.decodeMs })
-            }
-          } catch (error) {
-            if (activeLoadIds.get(senderId) === loadId && !event.sender.isDestroyed()) {
-              event.sender.send('hwpx:error', { loadId, message: error instanceof Error ? error.message : String(error) })
-            }
-          }
-        })
-      }
-      return {
-        loadId,
-        document,
-        timings: {
-          packageOpenMs: packageOpenedAt - startedAt,
-          packageIndexMs: packageIndexedAt - packageOpenedAt,
-          decodeMs: firstResult.decodeMs,
-          mainTotalMs: decodedAt - startedAt
-        },
-        sectionCount: index.sectionPaths.length,
-        complete: !progressive
-      }
-    } catch (error) {
-      console.error('Parsing error:', error)
-      throw error
+  ipcMain.handle('document:import', async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      typeof (request as { filePath?: unknown }).filePath !== 'string' ||
+      typeof (request as { loadId?: unknown }).loadId !== 'string'
+    ) {
+      throw new Error('문서 열기 요청 형식이 올바르지 않습니다.')
     }
+    const sender = event.sender
+    return documentImporter.importDocument(
+      request as { filePath: string; loadId: string },
+      {
+        senderId: sender.id,
+        onComplete: (payload) => {
+          if (!sender.isDestroyed()) sender.send('document:complete', payload)
+        },
+        onError: (payload) => {
+          if (!sender.isDestroyed()) sender.send('document:error', payload)
+        }
+      }
+    )
   })
 
   // 문서 저장 핸들러

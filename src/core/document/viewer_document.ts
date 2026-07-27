@@ -32,20 +32,6 @@ export interface ViewerParseTimings {
   mainTotalMs: number
 }
 
-export interface ViewerParseResult {
-  loadId: string
-  document: ViewerDocument
-  timings: ViewerParseTimings
-  sectionCount: number
-  complete: boolean
-}
-
-export interface ViewerDocumentComplete {
-  loadId: string
-  document: ViewerDocument
-  decodeMs: number
-}
-
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; fontId?: string; fontFamily?: string }
