@@ -20,13 +20,15 @@
 - [x] CSS named page 기반 세로·가로 혼합 HWP PDF 출력
 - [x] HWP PDF 7페이지·용지 크기·텍스트 99.08%와 대표 PNG 검증
 - [x] HWPX PDF 8페이지·페이지별 글자 수 회귀 검증
+- [x] AIDA HWP/HWPX cold 5회 aggregate working set peak 기준선
+- [x] V1 RC 재패키징과 현재 `.app`·`app.asar` 논리 크기 증가량 측정
+- [x] 중복 rhwp WASM 제거와 production MIT license 포함
 
 ### 다음 작업 순서
 
-1. HWP peak memory와 V1 대비 package 증가량 측정
-2. parser 전용 worker/utility process 격리와 timeout·load cancellation
-3. 점수표, main/oracle 역할과 third-party notice를 확정하는 ADR
-4. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+1. parser 전용 worker/utility process 격리와 timeout·load cancellation
+2. 점수표, main/oracle 역할과 third-party notice를 확정하는 ADR
+3. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -45,7 +47,7 @@
 - [x] SVG의 script, event handler, 외부 URL 검사
 - [x] 기준 PDF와 privacy-safe 페이지 그룹·문자 보존율 자동 비교
 - [x] PDF 3·4페이지가 합쳐진 SVG를 PNG로 재렌더링해 겹침·잘림 없음 확인
-- [ ] peak memory와 production package 증가량 측정
+- [x] peak memory와 production package 증가량 측정
 - [x] fixed-page variant로 기존 zoom·page virtualization shell 연결
 - [x] 실제 AIDA HWP의 7페이지·3구역·세로/가로 용지·overflow 0 확인
 - [x] 패키지 HWP cold/warm 20회 측정과 첫 화면 1초 관문 통과

@@ -132,8 +132,8 @@ dependency를 포함한 4건(보통 1, 높음 3)이며 probe 후보는 포함되
 기준 PDF 3·4페이지와 대응하는 rhwp 3페이지를 opt-in local PNG로 다시 렌더링했다. 앞쪽 표와
 뒤쪽 본문이 한 페이지 위·아래로 이어지지만 겹침·잘림·테두리 파손 없이 읽을 수 있었다.
 portrait와 landscape viewBox도 모두 생성됐다. 이 결과로 `@rhwp/core`를 **주 visual 후보**로
-승격한다. 최종 채택은 정제된 SVG를 기존 virtualization/PDF shell에 연결하고 package
-크기·peak memory를 측정한 뒤 결정한다.
+승격한다. fixed-page shell, package 크기와 peak memory 관문은 통과했다. 최종 ADR은 parser
+격리와 공개 synthetic HWP fixture를 완료한 뒤 확정한다.
 
 ### fixed-page 앱 연결
 
@@ -160,9 +160,12 @@ build smoke test 결과는 다음과 같다.
 | cold 첫 화면 p50 / p95 (20회) | 604 / 683 ms |
 | cold 최소 / 최대 | 587 / 707 ms |
 | cold 앱 시작 / 요청→첫 화면 p95 | 283 / 400 ms |
-| production WASM asset | 약 6.96 MB |
+| production WASM asset | 6.64 MiB |
 | renderer adapter chunk | 약 0.28 MB |
-| unsigned arm64 `.app` / `app.asar` | 약 332 MB / 112.8 MB |
+| unsigned arm64 `.app` / `app.asar` logical size | 324.27 / 100.67 MiB |
+| V1 RC 대비 `.app` / `app.asar` 증가 | +6.96 MiB / +6.96 MiB |
+| HWP aggregate working set peak p50 / p95 (cold 5회) | 580.9 / 589.6 MiB |
+| HWPX aggregate working set peak p50 / p95 (cold 5회) | 436.8 / 438.3 MiB |
 
 텍스트 layer를 첫 image와 함께 만들면 cold p95가 1초 부근까지 올라갔다. 첫 page SVG image의
 `load`를 첫 화면으로 확정하고, 좌표형 text layer와 2쪽 이후 렌더를 그 다음 유휴 구간에
@@ -195,8 +198,25 @@ print media에서 원점을 고정하고 텍스트 보존 관문으로 이 회�
 가로 5페이지를 Poppler PNG로 재렌더링해 표·이미지·테두리의 잘림과 겹침이 없음을 확인했다.
 동일 경로의 HWPX PDF도 8페이지와 페이지별 글자 수가 화면과 일치한다.
 
-`.app`과 `app.asar` 값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음 package 측정에서
-분리한다.
+### peak memory와 package 증가량
+
+V1 기준은 RC 완료 commit `cd8050d`를 당시 lockfile로 다시 설치·패키징한 unsigned arm64
+앱이다. regular file logical bytes 합계와 `app.asar` 실제 byte를 비교한다. V1 `.app`은
+317.31MiB, 현재 앱은 324.27MiB로 **6.96MiB(+2.19%)** 증가했다. `app.asar`는
+93.71→100.67MiB로 **6.96MiB(+7.42%)** 증가했다.
+
+첫 측정에서는 Vite asset과 production `node_modules`에 같은 6,963,835-byte WASM이 두 번
+들어가 `.app` 증가량이 13.92MiB였다. `@rhwp/core`를 renderer build-time dependency로
+옮겨 중복을 제거했고, 패키지 HWP/HWPX smoke test를 다시 통과했다. MIT license 원문은
+`Contents/Resources/licenses/rhwp-MIT.txt`에 유지한다.
+
+메모리는 격리된 cold 앱을 포맷별 5회 실행하고 visual E2E 시작부터 전체 page가 안정될 때까지
+Electron 4개 process working set을 50ms 간격으로 합산했다. 0.91MiB HWP 7페이지는
+p50/p95 **580.9/589.6MiB**, 0.89MiB HWPX 8페이지는 **436.8/438.3MiB**다. HWP p95가
+151.3MiB 높지만 WASM heap, SVG/blob image와 GPU texture가 포함된 이 문서 쌍의 회귀
+기준선이다. macOS working set은 shared page를 process별로 중복 집계할 수 있어 앱의 고유
+물리 메모리로 해석하지 않는다. 5회 p95는 표본상 최대값이며 공개 대형 HWP fixture가 생기면
+표본 수와 문서 크기를 늘린다.
 
 대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
 SVG나 PNG를 파일로 남기지 않는다.
@@ -216,16 +236,16 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
   만든다. 기준보다 한 페이지 적지만 깨진 화면은 아니므로 주 visual 후보로 올린다.
 - `kordoc`은 production renderer가 아니라 semantic 구조 비교 oracle로 유지한다. rhwp 좌표형
   text layer가 검색·선택·접근성 요구를 충족했으므로 이를 위해 두 parser를 함께 번들하지 않는다.
-- `@rhwp/core`는 fixed-page 연결 실험을 위해 production dependency로 승격했다. Vite는
-  WASM 약 6.96 MB와 adapter 약 0.28 MB를 별도 asset/chunk로 만들어 HWPX 경로에서 지연
-  로딩한다. `kordoc`은 dev dependency와 비교 oracle로만 유지한다.
+- `@rhwp/core`는 fixed-page 연결을 위한 renderer build-time dependency다. Vite는 WASM
+  6.64 MiB와 adapter 약 0.28 MB를 별도 asset/chunk로 만들고 HWPX 경로에서는 지연 로딩한다.
+  production `node_modules` 중복은 제거한다. `kordoc`은 dev dependency와 비교 oracle로만
+  유지한다.
 - `kordoc`의 OCR/PDF 선택 dependency까지 개발 설치에 들어오므로 lockfile·설치 크기와 audit
   결과는 유지보수 감점 항목으로 기록한다. 프로젝트 전체 `omit=optional`은 Rollup의 macOS
   binary도 제거해 V1 build를 깨뜨리므로 사용하지 않는다.
 
 ## 다음 판정 작업
 
-1. peak memory와 V1 대비 package 증가량 측정
-2. parser의 renderer 격리, timeout과 load cancellation 구현
-3. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-4. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. parser의 renderer 격리, timeout과 load cancellation 구현
+2. 점수표와 main/oracle 역할을 확정하는 ADR 작성
+3. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가

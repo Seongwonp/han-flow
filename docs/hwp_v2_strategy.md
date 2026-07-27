@@ -17,8 +17,9 @@ PDF로 내보내는 것**이다. Han-Flow가 HWP 5.0 레코드 전체를 직접 
    정규화해 기존 pagination/renderer를 재사용할 수 있는지 측정한다.
 
 private AIDA `.hwp`·동일 문서 `.hwpx`·기준 PDF 삼쌍 비교 결과 `@rhwp/core`를 **주 visual
-후보**로 앱의 fixed-page 경로에 잠정 연결했다. 이는 최종 ADR이 아니다. PDF, peak memory,
-package 증가량과 공개 synthetic HWP fixture를 통과한 뒤 main/oracle 역할을 확정한다.
+후보**로 앱의 fixed-page 경로에 잠정 연결했다. 이는 최종 ADR이 아니다. PDF, peak memory와
+package 증가량은 통과했고, parser 격리와 공개 synthetic HWP fixture 뒤 main/oracle 역할을
+확정한다.
 라이브러리의 README에 적힌 지원 범위는 호환성 보증으로 간주하지 않는다.
 
 ## 범위
@@ -196,7 +197,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 - [x] 첫 페이지 우선 SVG queue와 세로·가로 혼합 페이지 가상화 계산
 - [x] 패키지 앱 첫 화면 1초 이내(cold p95 683ms, 20회)
 - [x] cold/warm 20회 p50/p95와 시작·문서 처리 구간 분리
-- [ ] peak memory
+- [x] AIDA HWP/HWPX cold 5회 peak working set과 V1 package 증가량
 - [x] 혼합 방향 화면/PDF page count·용지 크기·텍스트 보존과 PNG 재렌더
 - [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
 

@@ -73,6 +73,15 @@ HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 �
 텍스트 추출 99.08% 보존과 세로·가로 대표 PNG의 잘림·겹침 없음을 확인했습니다. 같은 PDF
 경로로 기존 AIDA HWPX 8페이지와 페이지별 글자 수도 계속 일치합니다.
 
+AIDA를 cold 5회 실행해 Electron 4개 프로세스의 working set을 50ms 간격으로 합산한 결과,
+HWP 전체 렌더 peak는 p50/p95 580.9/589.6MiB, HWPX는 436.8/438.3MiB였습니다. shared page가
+프로세스별로 중복 집계될 수 있어 실제 고유 물리 메모리가 아니라 같은 환경의 회귀 기준으로
+사용합니다.
+
+V1 RC `cd8050d`를 lockfile 그대로 재패키징해 비교한 결과 현재 앱의 논리 크기 증가는
+6.96MiB(+2.19%)입니다. renderer build asset과 production dependency에 WASM이 중복되던
+13.92MiB 증가를 제거했고, `@rhwp/core` MIT 라이선스는 앱 resources에 별도로 포함합니다.
+
 남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템
 설치본의 한글·영문 family 이름을 찾아 사용합니다. OFL Noto Serif KR 번들도 실험했지만 페이지
@@ -96,6 +105,9 @@ npm run build
 npm run package:mac
 npm run benchmark:app -- /path/to/document.hwpx
 npm run benchmark:app -- /path/to/document.hwp
+npm run benchmark:memory -- /path/to/document.hwp
+npm run benchmark:memory -- /path/to/document.hwpx
+npm run measure:package -- /path/to/v1/Han-Flow.app
 npm run verify:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwp
 npm run verify:matrix
@@ -112,6 +124,11 @@ npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx --pdf 
 `benchmark:app`은 패키지 앱을 사용해 같은 프로세스의 warm open 20회와 새 프로세스의 cold
 open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. 입력 문서의 본문은 출력하지
 않으며 먼저 `npm run package:mac`을 실행해야 합니다.
+
+`benchmark:memory`는 격리된 cold 패키지 앱을 기본 5회 실행하고, 안정된 전체 페이지 렌더까지
+Electron process working set 합계를 50ms 간격으로 측정합니다. 파일명과 본문은 출력하지
+않습니다. `measure:package`는 V1 기준 앱과 현재 앱의 logical bytes·`app.asar` 크기를 비교하고
+rhwp WASM 중복 포함 여부도 검사합니다.
 
 `verify:app`은 격리된 user-data로 패키지 앱을 열어 페이지 생성, 이미지 decode, background
 loading 완료와 overflow 0을 자동 판정합니다. HWP에는

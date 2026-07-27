@@ -145,6 +145,10 @@ production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1
 visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이미지 decode 상태, 페이지별
 비공백 글자 수, overflow와 timing만 출력한다. HWP 검색 검증도 query 본문이나 일치 문장을
 기록하지 않고 결과 page·occurrence·highlight 수, 선택 글자 수와 접근성 node 수만 남긴다.
+E2E가 시작된 뒤 `app.getAppMetrics()`의 process working set을 50ms 간격으로 합산하고 현재값,
+동시 sampled peak와 process별 lifetime peak 합계를 숫자로만 기록한다. macOS에서는 shared
+page가 여러 process working set에 중복될 수 있으므로 고유 물리 메모리가 아니라 동일 환경의
+회귀 지표로 사용한다.
 같은 페이지별 글자 수를 Poppler PDF 추출 결과와 비교해 화면 pagination과 `printToPDF`
 pagination이 일치하는지 검증한다.
 `verify:app`은 별도 Electron user-data에서 패키지를 실행해 single-instance 충돌을 피하고,
@@ -196,8 +200,13 @@ virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 rend
 run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않으면서 검색·선택·접근성을
 제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
 불러와 cold p95 683ms를 유지한다. CSS named page 기반 mixed-orientation PDF도 page별 크기와
-텍스트 보존, 대표 PNG 관문을 통과했다. peak memory는 아직 판정 전이다. 자세한 결정 기준과 출처는
+텍스트 보존, 대표 PNG 관문을 통과했다. AIDA cold 5회 기준 HWP aggregate working set peak
+p95는 589.6MiB이고 HWPX는 438.3MiB다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
+
+renderer에 bundle되는 `@rhwp/core`는 build-time dependency다. production `node_modules`에
+같은 WASM을 다시 넣지 않고 Vite가 만든 단일 asset만 패키징한다. MIT license 원문은
+`Contents/Resources/licenses/rhwp-MIT.txt`에 별도 포함한다.
 
 텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4
 범위다. 기존 편집 prototype 코드는 현재 런타임 계약으로 간주하지 않는다.

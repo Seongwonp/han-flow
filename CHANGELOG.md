@@ -7,6 +7,8 @@
 - HWP 페이지별 세로·가로 용지 크기를 보존하는 PDF 출력
 - HWP PDF 페이지 크기·텍스트 보존·가로 페이지 PNG 자동 검증
 - 기존 HWPX 화면/PDF 페이지별 글자 수 회귀 관문 유지
+- HWP/HWPX cold peak working set과 V1 대비 package 증가량 측정
+- 중복 rhwp WASM 제거와 MIT license resource 포함
 
 ## 1.0.0-rc.1 - 2026-07-23
 
