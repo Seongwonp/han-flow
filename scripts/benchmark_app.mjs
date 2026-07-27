@@ -7,8 +7,8 @@ const fixture = process.argv[2]
 const appBinary = resolve(process.argv[3] ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 const sampleCount = 20
 
-if (!fixture?.toLowerCase().endsWith('.hwpx')) {
-  console.error('사용법: npm run benchmark:app -- <fixture.hwpx> [Han-Flow 실행 파일]')
+if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
+  console.error('사용법: npm run benchmark:app -- <fixture.hwp|fixture.hwpx> [Han-Flow 실행 파일]')
   process.exit(1)
 }
 

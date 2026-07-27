@@ -37,6 +37,8 @@ const api = {
   pdfReady: (requestId: string) => ipcRenderer.send('pdf:ready', requestId),
   exportPdf: (pageSize: { width: number; height: number }) => ipcRenderer.invoke('pdf:export', pageSize),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
+  readHwp: (filePath: string) => ipcRenderer.invoke('hwp:read', filePath),
+  readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl),
   parseHWPX: (filePath: string, loadId: string) => ipcRenderer.invoke('hwpx:parse', { filePath, loadId }),
   saveHWPX: (filePath: string, doc: any) => ipcRenderer.invoke('hwpx:save', { filePath, doc })
 }

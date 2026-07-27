@@ -1,6 +1,8 @@
 import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerDocumentComplete, ViewerHeaderFooter, ViewerParagraph, ViewerParseResult, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
+import { FixedPageDescriptor, FixedPageDocument } from '../../core/document/fixed_page_document'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
+import { fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
@@ -10,6 +12,7 @@ import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 const api = () => (window as any).api
 
 interface ViewerLoadTiming {
+  format: 'hwp' | 'hwpx'
   requestStartedAt: number
   openReceivedAt: number
   requestToModelMs: number
@@ -17,8 +20,17 @@ interface ViewerLoadTiming {
   packageIndexMs: number
   decodeMs: number
   mainTotalMs: number
+  wasmInitMs?: number
+  pageInfoMs?: number
   firstPaintMs?: number
   openToFirstPaintMs?: number
+}
+
+type RhwpAdapter = typeof import('./rhwp_fixed_page_adapter')
+let rhwpAdapter: Promise<RhwpAdapter> | null = null
+const loadRhwpAdapter = (): Promise<RhwpAdapter> => {
+  rhwpAdapter ??= import('./rhwp_fixed_page_adapter')
+  return rhwpAdapter
 }
 
 const ms = (value: number): string => `${Math.round(value)}ms`
@@ -95,8 +107,62 @@ function TableView({ table, document, measurable = false }: { table: ViewerTable
   })}</tr>)}</tbody></table>
 }
 
+function FixedPageView({
+  page,
+  printSvg,
+  onReady,
+  onError
+}: {
+  page: FixedPageDescriptor
+  printSvg?: string
+  onReady: () => void
+  onError: (message: string) => void
+}) {
+  const [source, setSource] = useState<string | null>(null)
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl: string | undefined
+    setReady(false)
+    const load = async () => {
+      try {
+        const svg = printSvg ?? await (await loadRhwpAdapter()).renderRhwpFixedPage(page.index)
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }))
+        setSource(objectUrl)
+      } catch (reason) {
+        if (!cancelled) onError(reason instanceof Error ? reason.message : String(reason))
+      }
+    }
+    void load()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [page.index, printSvg])
+  return <article
+    className="viewer-page viewer-fixed-page"
+    data-page-index={page.index}
+    data-page-ready={ready}
+    style={{ width: page.width, height: page.height }}
+  >
+    {source && <img
+      className="viewer-fixed-page-image"
+      src={source}
+      alt={`${page.index + 1}페이지`}
+      draggable={false}
+      onLoad={() => {
+        setReady(true)
+        onReady()
+      }}
+      onError={() => onError(`${page.index + 1}페이지 이미지를 표시할 수 없습니다.`)}
+    />}
+  </article>
+}
+
 export default function App() {
   const [document, setDocument] = useState<ViewerDocument | null>(null)
+  const [fixedDocument, setFixedDocument] = useState<FixedPageDocument | null>(null)
   const [fileName, setFileName] = useState('문서를 열어 주세요')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -109,7 +175,9 @@ export default function App() {
   const [backgroundError, setBackgroundError] = useState<string | null>(null)
   const [printing, setPrinting] = useState(false)
   const [pdfStatus, setPdfStatus] = useState<string | null>(null)
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12 })
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12, topSpacer: 0, bottomSpacer: 0 })
+  const [fixedPrintSvgs, setFixedPrintSvgs] = useState<string[] | null>(null)
+  const [fixedFirstPageReady, setFixedFirstPageReady] = useState(false)
   const [layoutMeasurements, setLayoutMeasurements] = useState<LayoutMeasurements | undefined>()
   const measurementRef = useRef<HTMLDivElement>(null)
   const activeLoadId = useRef('')
@@ -130,14 +198,29 @@ export default function App() {
   }, [effectiveDocument, layoutMeasurements])
   const pages = pagination.pages
   const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
-  const virtualized = pages.length > 50 && !printing
+  const pageCount = fixedDocument?.pageCount ?? pages.length
+  const hasDocument = Boolean(effectiveDocument || fixedDocument)
+  const virtualized = pageCount > 50 && !printing
   const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
   const pageStride = (pageHeight + 24) * zoom
   const updateVisibleRange = (scrollTop: number, viewportHeight: number) => {
-    if (!virtualized || pageStride <= 0) return
-    const start = Math.max(Math.floor(scrollTop / pageStride) - 2, 0)
-    const end = Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length)
-    setVisibleRange((current) => current.start === start && current.end === end ? current : { start, end })
+    if (!virtualized) return
+    const next = fixedDocument
+      ? fixedPageVirtualRange(fixedDocument.pages, scrollTop, viewportHeight, zoom)
+      : {
+          start: Math.max(Math.floor(scrollTop / pageStride) - 2, 0),
+          end: Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length),
+          topSpacer: Math.max(Math.floor(scrollTop / pageStride) - 2, 0) * (pageHeight + 24),
+          bottomSpacer: Math.max(pages.length - Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length), 0) * (pageHeight + 24)
+        }
+    setVisibleRange((current) =>
+      current.start === next.start &&
+      current.end === next.end &&
+      current.topSpacer === next.topSpacer &&
+      current.bottomSpacer === next.bottomSpacer
+        ? current
+        : next
+    )
   }
   const changeZoomAt = (nextZoom: number, anchorY?: number) => {
     const stage = stageRef.current
@@ -164,19 +247,66 @@ export default function App() {
     setLoadTiming(null)
     setSectionProgress(null)
     setBackgroundError(null)
+    setFixedPrintSvgs(null)
+    setFixedFirstPageReady(false)
+    setDocument(null)
+    setFixedDocument(null)
     try {
+      if (path.toLowerCase().endsWith('.hwp')) {
+        const readStartedAt = performance.now()
+        const binary = await api().readHwp(path) as { bytes: Uint8Array; readMs: number }
+        const adapter = await loadRhwpAdapter()
+        const result = await adapter.openRhwpFixedPageDocument(
+          new Uint8Array(binary.bytes),
+          async (assetUrl) => {
+            if (assetUrl.startsWith('file:')) {
+              return new Uint8Array(await api().readRhwpWasm(assetUrl))
+            }
+            const response = await fetch(assetUrl)
+            if (!response.ok) throw new Error('HWP WASM을 불러오지 못했습니다.')
+            return new Uint8Array(await response.arrayBuffer())
+          }
+        )
+        if (activeLoadId.current !== loadId) {
+          adapter.closeRhwpFixedPageDocument()
+          return
+        }
+        setFixedDocument(result.document)
+        setSectionProgress({ loaded: result.document.sectionCount, total: result.document.sectionCount })
+        setLoadTiming({
+          format: 'hwp',
+          requestStartedAt,
+          openReceivedAt,
+          requestToModelMs: performance.now() - requestStartedAt,
+          packageOpenMs: binary.readMs,
+          packageIndexMs: 0,
+          decodeMs: result.timings.parseMs,
+          mainTotalMs: performance.now() - readStartedAt,
+          wasmInitMs: result.timings.wasmInitMs,
+          pageInfoMs: result.timings.pageInfoMs
+        })
+        setFileName(path.split('/').pop() ?? path)
+        return
+      }
+      if (fixedDocument) (await loadRhwpAdapter()).closeRhwpFixedPageDocument()
       const result = await api().parseHWPX(path, loadId) as ViewerParseResult
       if (activeLoadId.current !== result.loadId) return
       setDocument(result.document)
       setSectionProgress({ loaded: result.complete ? result.sectionCount : result.document.sections.length, total: result.sectionCount })
-      setLoadTiming({ requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
+      setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...result.timings })
       setFileName(path.split('/').pop() ?? path)
     }
     catch (reason) { if (activeLoadId.current === loadId) setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { if (activeLoadId.current === loadId) setLoading(false) }
   }
   useEffect(() => {
-    if (!document || !loadTiming || loadTiming.firstPaintMs !== undefined || pages.length === 0) return
+    if (
+      !hasDocument ||
+      !loadTiming ||
+      loadTiming.firstPaintMs !== undefined ||
+      pageCount === 0 ||
+      (fixedDocument && !fixedFirstPageReady)
+    ) return
     const requestStartedAt = loadTiming.requestStartedAt
     let secondFrame = 0
     const firstFrame = requestAnimationFrame(() => {
@@ -187,7 +317,7 @@ export default function App() {
       ))
     })
     return () => { cancelAnimationFrame(firstFrame); cancelAnimationFrame(secondFrame) }
-  }, [document, loadTiming, pages.length])
+  }, [hasDocument, loadTiming, pageCount, fixedDocument, fixedFirstPageReady])
   useEffect(() => {
     if (loadTiming?.openToFirstPaintMs === undefined || reportedBenchmark.current === loadTiming.requestStartedAt) return
     reportedBenchmark.current = loadTiming.requestStartedAt
@@ -213,15 +343,22 @@ export default function App() {
   useEffect(() => {
     const stopPrepare = api().onPreparePdf(async (requestId: string) => {
       setPrinting(true)
+      if (fixedDocument) {
+        const svgs = await (await loadRhwpAdapter()).renderAllRhwpFixedPages(fixedDocument.pageCount)
+        setFixedPrintSvgs(svgs)
+      }
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       await globalThis.document.fonts.ready
       await Promise.all(Array.from(globalThis.document.images).map((image) => image.complete ? Promise.resolve() : image.decode().catch(() => undefined)))
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
       api().pdfReady(requestId)
     })
-    const stopFinish = api().onFinishPdf(() => setPrinting(false))
+    const stopFinish = api().onFinishPdf(() => {
+      setPrinting(false)
+      setFixedPrintSvgs(null)
+    })
     return () => { stopPrepare(); stopFinish() }
-  }, [])
+  }, [fixedDocument])
   useEffect(() => {
     if (!document) return
     setLayoutMeasurements(undefined)
@@ -239,6 +376,9 @@ export default function App() {
     })
     return () => { cancelled = true }
   }, [effectiveDocument])
+  useEffect(() => () => {
+    if (rhwpAdapter) void rhwpAdapter.then((adapter) => adapter.closeRhwpFixedPageDocument())
+  }, [])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!event.metaKey) return
@@ -257,16 +397,22 @@ export default function App() {
       setOverflowPages(overflow)
     })
     return () => cancelAnimationFrame(frame)
-  }, [effectiveDocument, pages.length, visibleRange])
+  }, [effectiveDocument, fixedDocument, pages.length, visibleRange])
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
-  const onDrop = async (event: DragEvent) => { event.preventDefault(); const path = (event.dataTransfer.files[0] as any)?.path; if (path?.toLowerCase().endsWith('.hwpx')) await openPath(path); else setError('HWPX 파일만 열 수 있습니다.') }
+  const onDrop = async (event: DragEvent) => {
+    event.preventDefault()
+    const path = (event.dataTransfer.files[0] as any)?.path
+    if (/\.(?:hwp|hwpx)$/iu.test(path ?? '')) await openPath(path)
+    else setError('HWP 또는 HWPX 파일만 열 수 있습니다.')
+  }
   const exportPdf = async () => {
-    if (!effectiveDocument || printing || documentLoading) return
+    if (!hasDocument || printing || documentLoading) return
     setPrinting(true); setPdfStatus('PDF 저장 중…')
     try {
+      const fixedPage = fixedDocument?.pages[0]
       const path = await api().exportPdf({
-        width: hwpUnitToInches(effectiveDocument.page.width),
-        height: hwpUnitToInches(effectiveDocument.page.height)
+        width: fixedPage ? fixedPage.width / 96 : hwpUnitToInches(effectiveDocument!.page.width),
+        height: fixedPage ? fixedPage.height / 96 : hwpUnitToInches(effectiveDocument!.page.height)
       })
       setPdfStatus(path ? 'PDF 저장 완료' : null)
       setPrinting(false)
@@ -276,39 +422,73 @@ export default function App() {
     }
   }
   useEffect(() => {
-    if (!effectiveDocument || documentLoading || automaticPdfStarted.current || new URLSearchParams(window.location.search).get('exportPdf') !== '1') return
+    if (!hasDocument || documentLoading || automaticPdfStarted.current || new URLSearchParams(window.location.search).get('exportPdf') !== '1') return
     automaticPdfStarted.current = true
     void exportPdf()
-  }, [effectiveDocument, documentLoading])
-  const timingDetails = loadTiming ? [
-    `ZIP 열기 ${ms(loadTiming.packageOpenMs)}`,
-    `패키지 인덱스 ${ms(loadTiming.packageIndexMs)}`,
-    `전체 디코딩 ${ms(loadTiming.decodeMs)}`,
-    `main 합계 ${ms(loadTiming.mainTotalMs)}`,
-    `IPC→모델 ${ms(loadTiming.requestToModelMs)}`,
-    `레이아웃 ${ms(pagination.layoutMs)}`,
-    `요청→첫 화면 ${loadTiming.firstPaintMs === undefined ? '측정 중' : ms(loadTiming.firstPaintMs)}`,
-    `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
-  ] : []
+  }, [hasDocument, documentLoading])
+  const timingDetails = loadTiming
+    ? loadTiming.format === 'hwp'
+      ? [
+          `HWP 읽기 ${ms(loadTiming.packageOpenMs)}`,
+          `WASM 초기화 ${ms(loadTiming.wasmInitMs ?? 0)}`,
+          `HWP 해석 ${ms(loadTiming.decodeMs)}`,
+          `페이지 정보 ${ms(loadTiming.pageInfoMs ?? 0)}`,
+          `IPC→모델 ${ms(loadTiming.requestToModelMs)}`,
+          `요청→첫 화면 ${loadTiming.firstPaintMs === undefined ? '측정 중' : ms(loadTiming.firstPaintMs)}`,
+          `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
+        ]
+      : [
+          `ZIP 열기 ${ms(loadTiming.packageOpenMs)}`,
+          `패키지 인덱스 ${ms(loadTiming.packageIndexMs)}`,
+          `전체 디코딩 ${ms(loadTiming.decodeMs)}`,
+          `main 합계 ${ms(loadTiming.mainTotalMs)}`,
+          `IPC→모델 ${ms(loadTiming.requestToModelMs)}`,
+          `레이아웃 ${ms(pagination.layoutMs)}`,
+          `요청→첫 화면 ${loadTiming.firstPaintMs === undefined ? '측정 중' : ms(loadTiming.firstPaintMs)}`,
+          `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
+        ]
+    : []
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
-    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!effectiveDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>HWPX 열기</button></div></header>
+    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions"><button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button></div></header>
     <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error">{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
-      {!loading && !error && !document && <div className="viewer-empty"><div className="viewer-drop-icon">HWPX</div><h1>문서를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
+      {!loading && !error && !hasDocument && <div className="viewer-empty"><div className="viewer-drop-icon">한</div><h1>HWP 또는 HWPX를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
       {effectiveDocument && !loading && <div className={`viewer-pages${virtualized ? ' viewer-pages-virtualized' : ''}`} data-total-pages={pages.length} data-document-loading={documentLoading} data-layout-measured={Boolean(layoutMeasurements)} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
-        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.start * (pageHeight + 24) }} />}
+        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}
         {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
           return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
-        {virtualized && <div className="viewer-page-spacer" style={{ height: Math.max(pages.length - visibleRange.end, 0) * (pageHeight + 24) }} />}
+        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
+      </div>}
+      {fixedDocument && !loading && !error && <div
+        className={`viewer-pages viewer-fixed-pages${virtualized ? ' viewer-pages-virtualized' : ''}`}
+        data-total-pages={fixedDocument.pageCount}
+        data-document-loading="false"
+        data-layout-measured="true"
+        style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
+      >
+        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}
+        {(virtualized
+          ? fixedDocument.pages.slice(visibleRange.start, visibleRange.end)
+          : fixedDocument.pages
+        ).map((page) => <FixedPageView
+          key={page.index}
+          page={page}
+          printSvg={fixedPrintSvgs?.[page.index]}
+          onReady={() => {
+            if (page.index === 0) setFixedFirstPageReady(true)
+          }}
+          onError={setError}
+        />)}
+        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
     </section>
-    {effectiveDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pages.length}페이지</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}<span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span><span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

@@ -1,7 +1,7 @@
 {
   "name": "han-flow",
   "version": "1.0.0-rc.1",
-  "description": "빠르고 가벼운 macOS용 읽기 전용 HWPX 뷰어",
+  "description": "빠르고 가벼운 macOS용 HWP/HWPX 문서 뷰어",
   "author": "Seongwon Park",
   "license": "Apache-2.0",
   "main": "./out/main/index.js",
@@ -21,6 +21,13 @@
       "extendInfo": {
         "CFBundleDisplayName": "Han-Flow",
         "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "HWP 문서",
+            "CFBundleTypeRole": "Viewer",
+            "CFBundleTypeIconFile": "icon.icns",
+            "CFBundleTypeExtensions": ["hwp"],
+            "LSHandlerRank": "Alternate"
+          },
           {
             "CFBundleTypeName": "HWPX 문서",
             "CFBundleTypeRole": "Viewer",
@@ -60,6 +67,7 @@
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
+    "@rhwp/core": "0.7.19",
     "@types/katex": "^0.16.8",
     "adm-zip": "^0.5.17",
     "cfb": "^1.2.2",
@@ -78,7 +86,6 @@
     "@electron-toolkit/eslint-config-ts": "^1.0.1",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@electron-toolkit/utils": "^3.0.0",
-    "@rhwp/core": "0.7.19",
     "@types/adm-zip": "^0.5.8",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.4",

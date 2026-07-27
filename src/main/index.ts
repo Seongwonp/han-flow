@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
-import { writeFile } from 'fs/promises'
+import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
+import { fileURLToPath } from 'url'
+import { readFile, writeFile } from 'fs/promises'
 import { Worker } from 'worker_threads'
 import { serializeToHWPX } from '../core/parser/serialization'
 import AdmZip from 'adm-zip'
@@ -8,6 +9,7 @@ import fontList from 'font-list'
 import { HwpxPackageReader } from '../core/parser/package_reader'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 import { shouldLoadProgressively } from '../core/parser/progressive_loading'
+import { readHwpContainer } from './hwp_file'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -58,8 +60,16 @@ function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
 }
 
+function isHwpPath(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.hwp')
+}
+
+function isDocumentPath(filePath: string): boolean {
+  return isHwpxPath(filePath) || isHwpPath(filePath)
+}
+
 function pathFromArguments(arguments_: string[]): string | undefined {
-  return arguments_.find(isHwpxPath)
+  return arguments_.find(isDocumentPath)
 }
 
 function captureVisualState(window: BrowserWindow): void {
@@ -76,9 +86,11 @@ function captureVisualState(window: BrowserWindow): void {
     const readiness = await window.webContents.executeJavaScript(`(() => {
       const pages = document.querySelector('.viewer-pages')
       const errorVisible = Boolean(document.querySelector('.viewer-error'))
+      const mountedPages = Array.from(document.querySelectorAll('.viewer-page'))
+      const fixedPagesReady = mountedPages.every((page) => !page.classList.contains('viewer-fixed-page') || page.dataset.pageReady === 'true')
       return {
-        ready: errorVisible || Boolean(pages && pages.dataset.documentLoading === 'false' && pages.dataset.layoutMeasured === 'true'),
-        signature: errorVisible ? 'error' : pages ? [pages.dataset.totalPages, document.querySelectorAll('.viewer-page').length, pages.dataset.documentLoading, pages.dataset.layoutMeasured].join(':') : 'empty'
+        ready: errorVisible || Boolean(pages && pages.dataset.documentLoading === 'false' && pages.dataset.layoutMeasured === 'true' && fixedPagesReady),
+        signature: errorVisible ? 'error' : pages ? [pages.dataset.totalPages, mountedPages.length, mountedPages.filter((page) => page.dataset.pageReady === 'true').length, pages.dataset.documentLoading, pages.dataset.layoutMeasured].join(':') : 'empty'
       }
     })()`)
     stableSamples = readiness.ready && readiness.signature === previousSignature ? stableSamples + 1 : readiness.ready ? 1 : 0
@@ -96,7 +108,7 @@ function captureVisualState(window: BrowserWindow): void {
       totalPages: Number(document.querySelector('.viewer-pages')?.dataset.totalPages || 0),
       mountedPages: document.querySelectorAll('.viewer-page').length,
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
-      pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => (page.innerText.match(/\\S/g) || []).length),
+      pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       errorVisible: Boolean(document.querySelector('.viewer-error')),
       errorMessageLength: document.querySelector('.viewer-error')?.textContent?.trim().length || 0,
@@ -111,7 +123,7 @@ function captureVisualState(window: BrowserWindow): void {
 }
 
 function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
-  if (!isHwpxPath(filePath)) return
+  if (!isDocumentPath(filePath)) return
   if (!mainWindow || mainWindow.isDestroyed()) {
     pendingOpen = { filePath, receivedAt }
     return
@@ -250,13 +262,37 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('hwp:read', async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !isHwpPath(filePath)) throw new Error('HWP 파일만 읽을 수 있습니다.')
+    return readHwpContainer(filePath)
+  })
+
+  ipcMain.handle('resource:readRhwpWasm', async (_event, assetUrl: string) => {
+    if (typeof assetUrl !== 'string' || !assetUrl.startsWith('file:')) {
+      throw new Error('패키지 내부 WASM 경로만 읽을 수 있습니다.')
+    }
+    const filePath = resolve(fileURLToPath(assetUrl))
+    const rendererRoot = resolve(join(__dirname, '../renderer'))
+    const assetRelativePath = relative(rendererRoot, filePath)
+    if (
+      !assetRelativePath ||
+      assetRelativePath.startsWith('..') ||
+      isAbsolute(assetRelativePath) ||
+      extname(filePath) !== '.wasm' ||
+      !basename(filePath).startsWith('rhwp_bg')
+    ) {
+      throw new Error('허용되지 않은 WASM 경로입니다.')
+    }
+    return readFile(filePath)
+  })
+
   // 파일 열기 대화상자 핸들러
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '문서 열기',
       properties: ['openFile'],
       filters: [
-        { name: 'HWPX 문서', extensions: ['hwpx'] }
+        { name: '한글 문서', extensions: ['hwp', 'hwpx'] }
       ]
     })
     if (canceled) return null
