@@ -182,7 +182,8 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 
 - [ ] 문단·run·글꼴·크기·색·정렬·간격
 - [ ] section, 용지, margin, header/footer/page number
-- [ ] 텍스트 순서와 페이지별 글자 수 회귀
+- [x] 좌표형 run text layer와 페이지별 글자 수 회귀
+- [x] `⌘F` 검색·하이라이트, DOM 선택과 페이지 접근성 계약
 
 ### V2-3 표와 이미지
 
@@ -193,8 +194,9 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 ### V2-4 성능과 PDF
 
 - [x] 첫 페이지 우선 SVG queue와 세로·가로 혼합 페이지 가상화 계산
-- [x] 패키지 앱 첫 화면 1초 이내(cold p95 873ms, 20회)
-- [ ] cold/warm p50/p95와 peak memory
+- [x] 패키지 앱 첫 화면 1초 이내(cold p95 683ms, 20회)
+- [x] cold/warm 20회 p50/p95와 시작·문서 처리 구간 분리
+- [ ] peak memory
 - [ ] 화면/PDF page count·페이지별 글자 수 일치
 - [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
 

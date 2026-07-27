@@ -12,7 +12,9 @@ Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어이며 V2에서 HWP fixed-page 
 macOS open-file / drag-and-drop / file dialog
   → Electron main process
   ├─ HWPX → HwpxPackageReader → ordered XML → flow ViewerDocument → block pagination
-  └─ HWP  → size/CFB magic → @rhwp/core WASM → FixedPageDocument → page SVG
+  └─ HWP  → size/CFB magic → @rhwp/core WASM → FixedPageDocument
+                                               ├─ sanitized page SVG image
+                                               └─ positioned text run layer
   → shared React zoom / page virtualization / PDF shell
 ```
 
@@ -50,8 +52,9 @@ section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이
 - HWPX `ViewerDocument`를 읽기 전용 flow page로 표시
 - HWP `FixedPageDocument`의 세로·가로 용지와 section index를 보존
 - HWP WASM과 약 7 MB asset을 `.hwp`를 열 때만 지연 로딩
-- 보이는 HWP page SVG를 순차 생성하고 20개 LRU cache로 제한
+- HWP 첫 페이지 SVG를 먼저 생성하고 짧은 유휴 구간 뒤 나머지 페이지를 순차 생성
 - HWP SVG의 실행 요소·event attribute·외부 resource를 거부한 뒤 blob image로 표시
+- SVG image가 표시된 뒤 React text layer를 붙여 `⌘F` 검색·선택·접근성 제공
 - `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
 - 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
@@ -137,8 +140,10 @@ production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1
 가로 `scrollWidth`도 검사하며, 표는 본문 너비를 넘지 않도록 축소한다.
 
 visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이미지 decode 상태, 페이지별
-비공백 글자 수, overflow와 timing만 출력한다. 같은 페이지별 글자 수를 Poppler PDF 추출
-결과와 비교해 화면 pagination과 `printToPDF` pagination이 일치하는지 검증한다.
+비공백 글자 수, overflow와 timing만 출력한다. HWP 검색 검증도 query 본문이나 일치 문장을
+기록하지 않고 결과 page·occurrence·highlight 수, 선택 글자 수와 접근성 node 수만 남긴다.
+같은 페이지별 글자 수를 Poppler PDF 추출 결과와 비교해 화면 pagination과 `printToPDF`
+pagination이 일치하는지 검증한다.
 `verify:app`은 별도 Electron user-data에서 패키지를 실행해 single-instance 충돌을 피하고,
 JSON 상태를 읽은 뒤 임시 파일과 user-data를 제거한다.
 `verify:matrix`는 공개 생성기를 재사용해 기본, cell continuation, 80-section progressive
@@ -182,8 +187,11 @@ timeout과 load cancellation을 production importer에 적용하는 것이다. S
 link는 실행하지 않는다.
 
 현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
-virtualization과 진단 shell을 공유한다. mixed-orientation PDF와 text search/accessibility는
-아직 판정 전이다. 자세한 결정 기준과 출처는
+virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text
+run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않으면서 검색·선택·접근성을
+제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
+불러와 cold p95 683ms를 유지한다. mixed-orientation PDF와 peak memory는 아직 판정 전이다.
+자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
 
 텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4

@@ -156,20 +156,35 @@ build smoke test 결과는 다음과 같다.
 | HWP 읽기 | 약 2 ms |
 | WASM 초기화 | 약 47–117 ms |
 | HWP parse | 약 125–256 ms |
-| warm 첫 화면 p50 / p95 (20회) | 327 / 393 ms |
-| cold 첫 화면 p50 / p95 (20회) | 797 / 873 ms |
-| cold 최소 / 최대 | 757 / 898 ms |
+| warm 첫 화면 p50 / p95 (20회) | 81 / 125 ms |
+| cold 첫 화면 p50 / p95 (20회) | 604 / 683 ms |
+| cold 최소 / 최대 | 587 / 707 ms |
+| cold 앱 시작 / 요청→첫 화면 p95 | 283 / 400 ms |
 | production WASM asset | 약 6.96 MB |
 | renderer adapter chunk | 약 0.28 MB |
 | unsigned arm64 `.app` / `app.asar` | 약 332 MB / 112.8 MB |
 
-`electron-vite preview` 시각 검증에서는 요청→첫 화면이 약 1.1초였지만, 실제 unsigned
-패키지 앱의 격리된 cold/warm 각 20회 측정에서는 cold p95 873ms와 최대 898ms로 1초 목표를
-통과했다. 따라서 speculative 성능 변경은 하지 않고 이 수치를 V2 기준선으로 고정한다.
+텍스트 layer를 첫 image와 함께 만들면 cold p95가 1초 부근까지 올라갔다. 첫 page SVG image의
+`load`를 첫 화면으로 확정하고, 좌표형 text layer와 2쪽 이후 렌더를 그 다음 유휴 구간에
+시작하도록 바꿨다. 실제 unsigned 패키지 앱의 격리된 cold/warm 각 20회 측정에서 cold p95
+683ms와 최대 707ms로 1초 목표를 통과했다. 측정기는 cold 앱 시작, 요청→model과
+요청→첫 화면도 분리해 시작 회귀와 문서 처리 회귀를 구별한다.
 
-blob image 경계는 SVG text selection/search를 제공하지 않고, 현재 `printToPDF`의 단일 custom
-page size로는 세로·가로 혼합 문서의 출력 일치를 아직 보증할 수 없다. `.app`과 `app.asar`
-값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음 package 측정에서 분리한다.
+### 검색·선택용 text layer
+
+rhwp의 page text layout은 page별 `runs`에 text, x/y, width/height, font family/size와 가로
+비율을 제공한다. adapter는 유한 좌표, run·문자 수와 family 길이 상한을 검사하고 page cache에
+보관한다. 화면은 정제된 SVG를 계속 blob image로 표시하며, text는 React가 escape하는 투명
+span으로 별도 렌더링한다. print media에서는 중복 출력을 막기 위해 text layer를 숨긴다.
+
+private AIDA에서 text layout 비공백 글자는 페이지별
+`867, 1650, 1499, 174, 1138, 322, 424`, 합계 6,074자다. 기준 PDF 6,077자와 3자 차이고,
+SVG 내부 text 6,019자보다 55자를 더 보존한다. production 앱 검증은 본문을 출력하지 않고
+검색 4페이지·6건, highlight 6개, DOM 선택 1자와 7개 page의 접근성 계약을 확인했다.
+
+현재 `printToPDF`의 단일 custom page size로는 세로·가로 혼합 문서의 출력 일치를 아직
+보증할 수 없다. `.app`과 `app.asar` 값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음
+package 측정에서 분리한다.
 
 대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
 SVG나 PNG를 파일로 남기지 않는다.
@@ -187,8 +202,8 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
   geometry·테두리·머리말/꼬리말이 없어 단독 renderer 후보에서는 제외한다.
 - `@rhwp/core`는 section·세로/가로 용지·이미지와 본문 한글/영문을 보존하고 읽기 좋은 SVG를
   만든다. 기준보다 한 페이지 적지만 깨진 화면은 아니므로 주 visual 후보로 올린다.
-- `kordoc`은 production renderer가 아니라 semantic 구조 비교 oracle로 유지한다. rhwp SVG의
-  text layer가 검색·접근성 요구를 만족하는지 확인하기 전에는 두 parser를 함께 번들하지 않는다.
+- `kordoc`은 production renderer가 아니라 semantic 구조 비교 oracle로 유지한다. rhwp 좌표형
+  text layer가 검색·선택·접근성 요구를 충족했으므로 이를 위해 두 parser를 함께 번들하지 않는다.
 - `@rhwp/core`는 fixed-page 연결 실험을 위해 production dependency로 승격했다. Vite는
   WASM 약 6.96 MB와 adapter 약 0.28 MB를 별도 asset/chunk로 만들어 HWPX 경로에서 지연
   로딩한다. `kordoc`은 dev dependency와 비교 oracle로만 유지한다.
@@ -198,8 +213,8 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 
 ## 다음 판정 작업
 
-1. rhwp SVG text layer의 검색·접근성 가능성 및 blob image 경계 유지 여부 판정
-2. fixed-page shell의 mixed-orientation PDF 출력, peak memory와 package 증가량 측정
+1. fixed-page shell의 mixed-orientation PDF 출력 검증
+2. peak memory와 V1 대비 package 증가량 측정
 3. parser의 renderer 격리, timeout과 load cancellation 구현
 4. 점수표와 main/oracle 역할을 확정하는 ADR 작성
 5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
