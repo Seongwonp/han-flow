@@ -182,9 +182,21 @@ private AIDA에서 text layout 비공백 글자는 페이지별
 SVG 내부 text 6,019자보다 55자를 더 보존한다. production 앱 검증은 본문을 출력하지 않고
 검색 4페이지·6건, highlight 6개, DOM 선택 1자와 7개 page의 접근성 계약을 확인했다.
 
-현재 `printToPDF`의 단일 custom page size로는 세로·가로 혼합 문서의 출력 일치를 아직
-보증할 수 없다. `.app`과 `app.asar` 값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음
-package 측정에서 분리한다.
+### 세로·가로 혼합 PDF
+
+단일 custom page size를 쓰면 AIDA HWP의 7페이지가 모두 A4 세로로 출력됐다. fixed page마다
+고유한 CSS named page와 원본 px 크기를 부여하고 `preferCSSPageSize`를 사용하도록 바꿨다.
+인쇄 flex container를 좌측 정렬하지 않으면 가로 page의 왼쪽 열이 page 밖으로 밀렸으므로,
+print media에서 원점을 고정하고 텍스트 보존 관문으로 이 회귀를 잡는다.
+
+최종 production PDF는 1-4·6-7페이지가 약 594.96×841.92pt, 5페이지만 약
+841.92×594.96pt다. 화면과 PDF 모두 7페이지이며, PDF 비공백 text는 페이지별
+`866, 1638, 1490, 171, 1107, 322, 424`로 화면 text layer 대비 99.08%다. 첫·중간·끝과
+가로 5페이지를 Poppler PNG로 재렌더링해 표·이미지·테두리의 잘림과 겹침이 없음을 확인했다.
+동일 경로의 HWPX PDF도 8페이지와 페이지별 글자 수가 화면과 일치한다.
+
+`.app`과 `app.asar` 값은 현재 절대 크기이며 V1 기준 대비 증가량은 다음 package 측정에서
+분리한다.
 
 대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
 SVG나 PNG를 파일로 남기지 않는다.
@@ -213,8 +225,7 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 
 ## 다음 판정 작업
 
-1. fixed-page shell의 mixed-orientation PDF 출력 검증
-2. peak memory와 V1 대비 package 증가량 측정
-3. parser의 renderer 격리, timeout과 load cancellation 구현
-4. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. peak memory와 V1 대비 package 증가량 측정
+2. parser의 renderer 격리, timeout과 load cancellation 구현
+3. 점수표와 main/oracle 역할을 확정하는 ADR 작성
+4. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가

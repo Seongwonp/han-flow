@@ -98,8 +98,11 @@ overflow 진단으로 검증한다.
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
 React paint가 끝날 때까지 기다린다. print media에서는 toolbar, status bar, page shadow와 page
-gap을 제거한다. main process는 HWPUNIT 용지 크기를 inch로 변환한 custom page size와 0 margin,
-background 인쇄 옵션으로 `printToPDF`를 실행한다. 완료 또는 오류 후 화면 가상화를 복원한다.
+gap을 제거한다. HWPX는 HWPUNIT 용지 크기를 inch로 변환한 단일 custom page size를 사용한다.
+HWP fixed page는 각 article에 고유한 CSS named page와 px 용지 크기를 부여하고
+`preferCSSPageSize`로 인쇄한다. 인쇄 flex container는 좌측 원점에 정렬해 가로 page가 첫 세로
+page 폭을 기준으로 가운데 정렬되어 잘리는 것을 막는다. main process는 0 margin과 background
+인쇄 옵션으로 `printToPDF`를 실행하고 완료 또는 오류 후 화면 가상화를 복원한다.
 쪽 번호는 화면과 PDF가 동일한 DOM을 사용하므로 두 출력에서 같은 위치와 값을 유지한다.
 pagination 결과는 block 배열과 함께 section index와 section 내부 page index를 보존한다.
 renderer는 이를 이용해 `startNum page > 0`에서 번호를 재시작하고, 새 정의가 없는 section은
@@ -129,7 +132,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 - `npm run benchmark:decoder` 대형 문서 기준선
 - `npm run verify:app -- <fixture.hwpx>` production 앱 smoke test
 - `npm run verify:matrix` 공개 fixture production 회귀 matrix
-- `npm run verify:pdf -- <fixture.hwpx>` 화면/PDF pagination 일치와 Poppler 재렌더
+- `npm run verify:pdf -- <fixture.hwp|fixture.hwpx>` 화면/PDF pagination·용지 크기와 Poppler 재렌더
 - `npm run release:check -- <fixture.hwpx>` v1 RC 통합 관문
 - 화면/PDF 페이지 수, overflow, font substitution 진단
 - 선언 높이와 실제 DOM 높이를 결합한 2-pass pagination 회귀 테스트
@@ -153,8 +156,10 @@ matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 p
 손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
 
 `verify:pdf`는 production 앱의 고정 PDF 출력과 visual state를 같은 격리 실행에서 수집한다.
-Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 페이지별 비공백 글자 수와 대표 PNG
-재렌더를 검사한다. 50페이지 이하 문서는 화면과 PDF의 모든 페이지별 글자 수가 같아야 통과한다.
+Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 각 page MediaBox에 대응하는 용지
+크기, 페이지별 비공백 글자 수와 대표 PNG 재렌더를 검사한다. HWPX는 화면과 PDF의 페이지별
+글자 수가 같아야 한다. HWP는 화면의 별도 text layer와 인쇄 SVG의 추출 경로가 다르므로 전체
+98%, 각 page 96% 이상을 요구한다. 첫·중간·끝 page와 모든 가로 page를 PNG로 다시 만든다.
 
 visual state는 고정 지연 직후 바로 읽지 않는다. background decode가 끝나고 DOM measurement가
 완료된 뒤 전체·mount page signature가 250ms 간격으로 3회 같을 때만 상태를 확정한다. 대형
@@ -190,8 +195,8 @@ link는 실행하지 않는다.
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text
 run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않으면서 검색·선택·접근성을
 제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
-불러와 cold p95 683ms를 유지한다. mixed-orientation PDF와 peak memory는 아직 판정 전이다.
-자세한 결정 기준과 출처는
+불러와 cold p95 683ms를 유지한다. CSS named page 기반 mixed-orientation PDF도 page별 크기와
+텍스트 보존, 대표 PNG 관문을 통과했다. peak memory는 아직 판정 전이다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
 
 텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4

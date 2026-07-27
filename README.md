@@ -68,6 +68,11 @@ AIDA HWP는 production build에서 7페이지, 3구역, 세로/가로 용지와 
 20회 기준 첫 화면은 warm p50/p95 81/125ms, cold p50/p95 604/683ms이고 cold 최악값도
 707ms로 1초 목표를 통과했습니다.
 
+HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 파일 안의 세로·가로
+용지 크기를 그대로 보존합니다. AIDA HWP 출력은 7페이지 중 5페이지만 가로 용지이며, Poppler
+텍스트 추출 99.08% 보존과 세로·가로 대표 PNG의 잘림·겹침 없음을 확인했습니다. 같은 PDF
+경로로 기존 AIDA HWPX 8페이지와 페이지별 글자 수도 계속 일치합니다.
+
 남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
 달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템
 설치본의 한글·영문 family 이름을 찾아 사용합니다. OFL Noto Serif KR 번들도 실험했지만 페이지
@@ -118,9 +123,10 @@ loading 완료와 overflow 0을 자동 판정합니다. HWP에는
 fixture를 임시 생성해 production 앱으로 연속 검증합니다. 대형 fixture는 전체 페이지와 실제
 mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
 
-`verify:pdf`는 production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지 수와
-페이지별 글자 수를 비교하고 대표 페이지를 PNG로 재렌더링합니다. `release:check`는 전체 테스트,
-패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을 순서대로 실행하는 최종 RC 관문입니다.
+`verify:pdf`는 HWP/HWPX production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지
+수, 페이지별 용지 크기와 글자 보존을 비교하고 첫·중간·끝·가로 페이지를 PNG로 재렌더링합니다.
+`release:check`는 전체 테스트, 패키징, 공개 matrix, private 앱 smoke test와 PDF 검증을
+순서대로 실행하는 최종 RC 관문입니다.
 
 `probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱 경로와 독립된 process에서
 비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,

@@ -197,7 +197,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 - [x] 패키지 앱 첫 화면 1초 이내(cold p95 683ms, 20회)
 - [x] cold/warm 20회 p50/p95와 시작·문서 처리 구간 분리
 - [ ] peak memory
-- [ ] 화면/PDF page count·페이지별 글자 수 일치
+- [x] 혼합 방향 화면/PDF page count·용지 크기·텍스트 보존과 PNG 재렌더
 - [ ] `verify:hwp-matrix`를 V1 회귀 관문과 통합
 
 ### V2 완료 조건

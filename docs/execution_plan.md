@@ -17,14 +17,16 @@
 - [x] 패키지 HWP 검색·선택·접근성 자동 검증
 - [x] cold/warm 각 20회 재측정: p95 683ms / 125ms
 - [x] HWPX production 앱 회귀 검증
+- [x] CSS named page 기반 세로·가로 혼합 HWP PDF 출력
+- [x] HWP PDF 7페이지·용지 크기·텍스트 99.08%와 대표 PNG 검증
+- [x] HWPX PDF 8페이지·페이지별 글자 수 회귀 검증
 
 ### 다음 작업 순서
 
-1. 세로·가로가 섞인 HWP의 PDF page size와 페이지별 글자 수 검증
-2. HWP peak memory와 V1 대비 package 증가량 측정
-3. parser 전용 worker/utility process 격리와 timeout·load cancellation
-4. 점수표, main/oracle 역할과 third-party notice를 확정하는 ADR
-5. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+1. HWP peak memory와 V1 대비 package 증가량 측정
+2. parser 전용 worker/utility process 격리와 timeout·load cancellation
+3. 점수표, main/oracle 역할과 third-party notice를 확정하는 ADR
+4. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -48,7 +50,7 @@
 - [x] 실제 AIDA HWP의 7페이지·3구역·세로/가로 용지·overflow 0 확인
 - [x] 패키지 HWP cold/warm 20회 측정과 첫 화면 1초 관문 통과
 - [x] 좌표형 text layer의 검색·선택·접근성 및 blob image 경계 유지 확인
-- [ ] mixed-orientation PDF 출력 검증
+- [x] mixed-orientation PDF 출력과 대표 세로·가로 PNG 검증
 
 ### 3. `kordoc` probe
 
