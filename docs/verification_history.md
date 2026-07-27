@@ -8,6 +8,31 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-27 — V2 공통 importer 완료
+
+관련 구현: `35e26e4` (`문서 가져오기 IPC 경계 통합`)
+
+HWP의 main preflight와 HWPX의 package/점진 decoder를 format-neutral `DocumentImporter`로
+모았다. preload와 React loader가 `document:import`, `document:complete`,
+`document:error` 계약만 사용하도록 변경했고 창 종료 시 진행 중인 decoder Worker를
+정리한다. 실행 경로에 없고 항상 실패하던 과거 HWP prototype은 제거했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 단위·통합 테스트 | `npm test -- --runInBand` | 16 suites, 62 passed, 1 skipped |
+| importer 경계 | `tests/main/document_importer.test.ts` | HWP/HWPX/확장자/오류 4건 통과 |
+| production build | `npm run build` | main/preload/renderer build 성공 |
+| macOS package | `npm run package:mac` | arm64 `.app` 생성 성공 |
+| HWP production matrix | `npm run verify:hwp-matrix` | 2쪽·PDF 98.6%·오류 5종 통과 |
+| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개 통과 |
+| probe 테스트 | `npm run test:probe` | 8 passed |
+| 배포 고지 | `npm run verify:notices` | Apache-2.0, rhwp MIT, notice 일치 |
+
+이 결과로 V2의 parser 선택, 안전한 열기, 화면·검색·PDF, 성능·메모리 기준선, 공개 fixture,
+오류 taxonomy와 importer 경계 완료 조건이 모두 충족됐다. 다음 milestone은 V3 편집 기반
+설계이며, 현재 read-only 모델을 즉시 `contentEditable`로 바꾸지 않고 editable model과
+무손실 저장 계약부터 검증한다.
+
 ## 2026-07-27 — HWP FileHeader 안전한 열기
 
 관련 구현: `8c59b53` (`HWP 지원 불가 문서 오류 분류 추가`)

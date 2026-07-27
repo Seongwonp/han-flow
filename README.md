@@ -5,8 +5,8 @@
 </p>
 
 macOS에서 HWPX와 HWP 5.0 문서를 빠르게 열어 읽고 PDF로 내보내는 도구입니다. V1의 HWPX
-뷰어는 로컬 RC를 마쳤고, 현재 V2의 HWP 5.0 읽기 품질 관문을 완성하고 있습니다. V3에서
-편집을 추가합니다. 상용 편집기를 복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를
+뷰어와 V2의 HWP 5.0 읽기 품질 관문을 마쳤고, 다음 V3에서 편집 기반을 설계합니다. 상용
+편집기를 복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를
 목표로 합니다.
 
 현재 버전은 **1.0.0-rc.1**입니다. 로컬 실사용과 unsigned beta 기준의 v1 기능은 완성됐으며,
@@ -20,18 +20,18 @@ V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명
 - 화면과 같은 페이지 구조로 PDF 내보내기
 - 대형 문서의 worker 기반 점진 파싱과 페이지 가상화
 
-편집 기능은 v3 이후 범위입니다. `.hwp` 5.0 바이너리 직접 파싱은 하지 않으며 v2에서 기존
-파서 활용을 검토합니다. 한컴오피스와 픽셀 단위로 같은 결과도 목표로 하지 않습니다.
+편집 기능은 V3 범위입니다. `.hwp` 5.0 바이너리를 직접 다시 구현하지 않고 V2에서 검증한
+기존 parser를 사용합니다. 한컴오피스와 픽셀 단위로 같은 결과도 목표로 하지 않습니다.
 
 ## 로드맵
 
 - **V1 — HWPX 뷰어:** 로컬 RC 완료. 열기, read-only 렌더, 점진 로딩, PDF와 macOS UX
-- **V2 — HWP 5.0 읽기:** `@rhwp/core` 기반 viewer/PDF와 오류 UX 완료, importer 경계 진행 중
+- **V2 — HWP 5.0 읽기:** `@rhwp/core` 기반 viewer/PDF, 오류 UX와 공통 importer 완료
 - **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
 - **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
 
-남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 92%, V3 0%, V4 5%이며 최종 배포
-전체로는 약 **44%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
+남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 0%, V4 5%이며 최종 배포
+전체로는 약 **46%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
 산정 기준은 [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)에 있습니다.
 
 V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
@@ -74,6 +74,11 @@ main process는 CFB magic뿐 아니라 `FileHeader` signature와 5.x version도 
 코드와 사용자 안내를 표시합니다. 공개 HWP를 안전하게 변형한 production E2E에서
 `HWP_ENCRYPTED`, `HWP_DISTRIBUTION`, `HWP_DRM`, `HWP_UNSUPPORTED_VERSION`,
 `HWP_CORRUPTED`를 검증했습니다.
+
+HWP와 HWPX는 preload에서 각각 다른 IPC를 노출하지 않고 공통 `document:import` 계약으로
+들어옵니다. main의 `DocumentImporter`가 형식을 판별하고 HWP preflight 또는 HWPX
+점진 decoder를 선택하며, React loader는 성공·실패와 background 완료를 같은 경계에서
+처리합니다. 항상 실패하던 과거 CFB stream prototype은 제거했습니다.
 
 AIDA HWP는 production build에서 7페이지, 3구역, 세로/가로 용지와 overflow 0을 확인했습니다.
 텍스트 layer는 비공백 6,074자를 보존해 기준 PDF 6,077자와 3자 차이이며, 패키지 앱에서 검색

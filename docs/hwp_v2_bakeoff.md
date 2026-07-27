@@ -284,8 +284,8 @@ private AIDA HWP 재검증에서는 인쇄 직전 마지막 SVG image decode가 
 이미지 수가 page count와 같을 때만 `pdf:ready`를 보내도록 수정했다. 이후 AIDA HWP는
 7쪽 모두 출력됐고 마지막 쪽 424자를 포함해 전체 텍스트 보존율 99.08%를 회복했다.
 
-## 다음 판정 작업
+## 후속 판정 결과
 
-1. format-neutral `DocumentImporter`와 IPC 경계
-2. 과거 `hwp_parser.ts` prototype 제거 또는 명시적 격리
-3. V2 완료 조건 전체 재검증
+1. [완료] format-neutral `DocumentImporter`와 `document:import` IPC 경계
+2. [완료] 과거 `hwp_parser.ts` prototype 제거
+3. [완료] HWP/HWPX production matrix와 package notice 포함 V2 전체 재검증

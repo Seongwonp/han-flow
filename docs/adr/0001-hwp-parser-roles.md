@@ -112,7 +112,7 @@ MIT는 사용·수정·배포를 허용하며 배포되는 사본 또는 substan
 
 1. [완료] 개인정보 없는 표·이미지·머리말 HWP fixture와 `verify:hwp-matrix`
 2. [완료] HWP `FileHeader` signature/version, 암호·DRM·배포용 flag와 오류 UX
-3. format-neutral `DocumentImporter`와 IPC 계약
+3. [완료] format-neutral `DocumentImporter`와 IPC 계약
 4. V4에서 전체 third-party inventory, 앱 내 정보 화면과 서명·공증 패키지 확인
 
 ## 확인한 출처

@@ -24,6 +24,9 @@
 - 암호·배포용·DRM·비지원 version·손상 HWP 구조화 오류 코드와 사용자 안내
 - 공개 HWP 변형 5종의 production 오류 E2E와 임시 저장소 정리 재시도
 - 포트폴리오에 재사용할 수 있는 날짜별 검증 이력 문서
+- HWP/HWPX를 하나의 `DocumentImporter`와 `document:import` IPC 계약으로 통합
+- preload·React loader의 공통 성공·오류·background 완료 경계
+- 항상 실패하던 과거 HWP CFB stream prototype 제거
 
 ## 1.0.0-rc.1 - 2026-07-23
 

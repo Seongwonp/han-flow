@@ -142,10 +142,11 @@ ADR-0001에서 다음 두 역할을 확정했다.
 - fixed-page adapter: 안전하게 정제된 페이지 표현을 별도 read-only page variant로 받고
   공통 zoom·virtualization·PDF shell을 사용
 
-현재 format 분기는 파일 열기와 React loader에 최소 연결돼 있다. 다음 importer milestone에서
-이를 `DocumentImporter` 경계로 모은다. 기존 `src/core/parser/hwp_parser.ts`는 CFB stream
-이름만 출력하고 항상 실패하는 과거 prototype이므로 V2 구현으로 간주하지 않는다. 첫 구현
-단계에서 격리하거나 제거한다.
+format 분기는 main의 `DocumentImporter` 경계로 모았다. preload는 `document:import` 하나만
+노출하고 React loader는 공통 성공·오류와 background 완료 계약을 처리한다. HWP의
+`FixedPageDocument`와 HWPX의 `ViewerDocument`는 importer 결과의 명시적 variant로 유지한다.
+CFB stream 이름만 출력하고 항상 실패하던 `src/core/parser/hwp_parser.ts` prototype은
+제거했다.
 
 ## 보안 기준
 
@@ -183,7 +184,7 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 
 - [x] `.hwp` 확장자 분기와 200 MiB·CFB/`FileHeader` preflight
 - [x] HWP `FileHeader` signature/version 감지
-- [ ] `DocumentImporter`와 format-neutral IPC
+- [x] `DocumentImporter`와 format-neutral IPC
 - [x] parser Web Worker 격리, 강제 종료형 timeout·load cancellation과 기본 오류 taxonomy
 - [x] Finder association, dialog, drop에 `.hwp` 추가
 - [x] 암호·DRM·배포용·비지원 version·손상 문서 오류 UX

@@ -210,8 +210,9 @@ container는 구조화된 오류 코드와 사용자 문구로 거부한다. rhw
 timeout·새 load는 Worker 강제 종료로 처리한다. WASM 컴파일을 위해 CSP
 `wasm-unsafe-eval`만 추가했으며 외부 script는 계속 허용하지 않는다. SVG는 검증 후 blob
 image 경계에서 표시한다. `containsScripts`는 진단하되 Scripts, OLE와 외부 link는 실행하지
-않는다. 다음 importer milestone은 이 HWP 결과와 HWPX 결과를 format-neutral IPC 계약으로
-모으는 것이다.
+않는다. HWP 결과와 HWPX 결과는 main의 `DocumentImporter`가 format-neutral
+`document:import` IPC 계약으로 반환하며 preload와 React loader는 형식별 IPC를 노출하지
+않는다. HWPX background 완료·오류도 같은 document event namespace를 사용한다.
 
 현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text

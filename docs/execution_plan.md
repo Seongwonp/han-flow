@@ -5,7 +5,7 @@
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
 
-## 현재 milestone: V2 fixed-page 품질 관문
+## 완료한 milestone: V2 fixed-page 품질 관문
 
 ### 방금 완료
 
@@ -37,12 +37,10 @@
 - [x] 암호·배포용·DRM·비지원 version·손상 HWP 구조화 오류 UX
 - [x] 공개 HWP를 변형한 5종 오류 production E2E matrix
 - [x] 날짜·명령·수치·실패/수정 내용을 모은 검증 이력 문서
-
-### 다음 작업 순서
-
-1. format-neutral `DocumentImporter`와 IPC event
-2. 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
-3. V2 완료 조건 전체 재검증
+- [x] format-neutral `DocumentImporter`와 `document:import` IPC
+- [x] preload·React loader의 HWP/HWPX 공통 성공·오류 계약
+- [x] 기존 `hwp_parser.ts` prototype 제거
+- [x] V2 완료 조건 전체 재검증
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
 
@@ -85,16 +83,24 @@
 - [x] MIT license와 third-party notice 확정
 - [x] architecture decision을 V2 전략·아키텍처 문서에 반영
 
-## 진행 중 milestone: V2-1 importer 경계
+## 완료한 milestone: V2-1 importer 경계
 
 - [x] 확장자·CFB·FileHeader 기반 HWP preflight
-- [ ] `DocumentImporter`와 format-neutral IPC event
+- [x] `DocumentImporter`와 format-neutral IPC event
 - [x] HWP parser 전용 Web Worker 격리
 - [x] 200 MiB 입력 제한
 - [x] 30초 open·15초 page timeout과 Worker 강제 종료형 load cancellation
 - [x] `.hwp` Finder association, dialog, drop
 - [x] 암호·DRM·배포용·비지원 version·손상 입력 오류 UX
-- [ ] 기존 `hwp_parser.ts` prototype 제거 또는 명시적 격리
+- [x] 기존 `hwp_parser.ts` prototype 제거
+
+## 다음 milestone: V3-0 편집 기반 설계
+
+1. 남아 있는 editor prototype과 현재 read-only 모델의 의존성을 감사한다.
+2. HWPX 원본 속성을 보존하는 editable model과 loss report 계약을 먼저 정한다.
+3. mutation은 UI 직접 변경이 아닌 command와 transaction 경계로 설계한다.
+4. 한국어 IME composition, selection과 undo/redo를 공개 synthetic fixture로 검증한다.
+5. crash-safe HWPX 저장과 원본 보호가 증명되기 전에는 실제 업무 문서 저장을 열지 않는다.
 
 ## 매 milestone 공통 완료 규칙
 
