@@ -1,4 +1,3 @@
-import initRhwp, { HwpDocument } from '@rhwp/core'
 import rhwpWasmUrl from '@rhwp/core/rhwp_bg.wasm?url'
 import {
   FixedPageDescriptor,
@@ -6,29 +5,34 @@ import {
   FixedPageTextLayout,
   FixedPageTextRun
 } from '../../core/document/fixed_page_document'
+import { HwpWorkerClient, HwpWorkerError } from './hwp_worker_client'
+import {
+  HwpWorkerOpenResult,
+  HwpWorkerOperation
+} from './hwp_worker_protocol'
 
-const MAX_PAGE_COUNT = 10_000
 const PAGE_CACHE_LIMIT = 20
 const TEXT_LAYOUT_CACHE_LIMIT = 20
 const MAX_TEXT_RUNS_PER_PAGE = 100_000
 const MAX_TEXT_CHARACTERS_PER_PAGE = 5_000_000
 const MAX_TEXT_COORDINATE = 1_000_000
 const MAX_FONT_SIZE = 10_000
+const MAX_SVG_CHARACTERS = 50_000_000
+const MAX_TEXT_LAYOUT_CHARACTERS = 50_000_000
+export const HWP_OPEN_TIMEOUT_MS = 30_000
+export const HWP_PAGE_TIMEOUT_MS = 15_000
 
-let initialized: Promise<number> | null = null
-let activeDocument: HwpDocument | null = null
+const workerClient = new HwpWorkerClient(() => new Worker(
+  new URL('./rhwp_worker.ts', import.meta.url),
+  { type: 'module', name: 'han-flow-hwp-parser' }
+))
+let hasActiveDocument = false
 let generation = 0
 let openGeneration = 0
 const pageCache = new Map<number, RenderedRhwpFixedPage>()
 const textLayoutCache = new Map<number, FixedPageTextLayout>()
 const pageJobs = new Map<number, Promise<RenderedRhwpFixedPage>>()
 let renderQueue: Promise<void> = Promise.resolve()
-
-interface RhwpPageInfo {
-  width?: number
-  height?: number
-  sectionIndex?: number
-}
 
 interface RhwpTextLayout {
   runs?: unknown[]
@@ -43,40 +47,35 @@ export interface FixedPageSearchResult {
   occurrences: number
 }
 
-function ensureTextMeasurement(): void {
-  const canvas = globalThis.document.createElement('canvas')
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('HWP 글꼴 측정기를 초기화할 수 없습니다.')
-  ;(globalThis as typeof globalThis & { measureTextWidth?: (font: string, text: string) => number })
-    .measureTextWidth = (font, text) => {
-      context.font = font
-      return context.measureText(text).width
+async function requestWorker<T>(
+  operation: HwpWorkerOperation,
+  payload: unknown,
+  timeoutMs: number,
+  transfer: Transferable[] = []
+): Promise<T> {
+  try {
+    return await workerClient.request<T>(operation, payload, timeoutMs, transfer)
+  } catch (error) {
+    if (
+      error instanceof HwpWorkerError &&
+      ['HWP_TIMEOUT', 'HWP_WORKER_CRASHED', 'HWP_WORKER_FAILED'].includes(error.code)
+    ) {
+      disposeActiveDocument()
     }
-}
-
-async function initializeRhwp(loadLocalAsset: (url: string) => Promise<Uint8Array>): Promise<number> {
-  if (!initialized) {
-    initialized = (async () => {
-      const startedAt = performance.now()
-      const wasm = await loadLocalAsset(rhwpWasmUrl)
-      await initRhwp(wasm)
-      return performance.now() - startedAt
-    })()
+    throw error
   }
-  return initialized
 }
 
-function parsePageInfo(document: HwpDocument, index: number): FixedPageDescriptor {
-  const info = JSON.parse(document.getPageInfo(index)) as RhwpPageInfo
-  const width = Number(info.width)
-  const height = Number(info.height)
+function validPageInfo(page: FixedPageDescriptor, index: number): FixedPageDescriptor {
+  const width = Number(page?.width)
+  const height = Number(page?.height)
   if (![width, height].every((value) => Number.isFinite(value) && value > 0 && value < 100_000)) {
     throw new Error(`${index + 1}페이지의 용지 크기가 올바르지 않습니다.`)
   }
   return {
     index,
-    sectionIndex: Number.isInteger(info.sectionIndex) && Number(info.sectionIndex) >= 0
-      ? Number(info.sectionIndex)
+    sectionIndex: Number.isInteger(page.sectionIndex) && Number(page.sectionIndex) >= 0
+      ? Number(page.sectionIndex)
       : 0,
     width,
     height
@@ -89,41 +88,54 @@ export async function openRhwpFixedPageDocument(
 ): Promise<FixedPageOpenResult> {
   const requestGeneration = ++openGeneration
   disposeActiveDocument()
-  ensureTextMeasurement()
-  const wasmInitMs = await initializeRhwp(loadLocalAsset)
+  const wasm = await loadLocalAsset(rhwpWasmUrl)
   if (requestGeneration !== openGeneration) {
     throw new Error('더 최신 HWP 열기 요청이 있어 이전 요청을 취소했습니다.')
   }
-  const parseStartedAt = performance.now()
-  const document = new HwpDocument(bytes)
-  const parseMs = performance.now() - parseStartedAt
-  const pageCount = document.pageCount()
-  const sectionCount = document.getSectionCount()
-  if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > MAX_PAGE_COUNT) {
-    document.free()
-    throw new Error(`지원할 수 없는 HWP 페이지 수입니다: ${pageCount}`)
-  }
-  const pageInfoStartedAt = performance.now()
-  let pages: FixedPageDescriptor[]
+  const documentBytes = bytes.slice().buffer as ArrayBuffer
+  const wasmBytes = wasm.slice().buffer as ArrayBuffer
+  workerClient.start()
+  let result: HwpWorkerOpenResult
   try {
-    pages = Array.from({ length: pageCount }, (_, index) => parsePageInfo(document, index))
+    result = await requestWorker<HwpWorkerOpenResult>(
+      'open',
+      { bytes: documentBytes, wasm: wasmBytes },
+      HWP_OPEN_TIMEOUT_MS,
+      [documentBytes, wasmBytes]
+    )
   } catch (error) {
-    document.free()
+    if (requestGeneration === openGeneration) disposeActiveDocument()
     throw error
   }
-  const pageInfoMs = performance.now() - pageInfoStartedAt
-  activeDocument = document
+  if (requestGeneration !== openGeneration) {
+    disposeActiveDocument()
+    throw new Error('더 최신 HWP 열기 요청이 있어 이전 요청을 취소했습니다.')
+  }
+  if (
+    !Number.isInteger(result.pageCount) ||
+    result.pageCount < 1 ||
+    result.pageCount > 10_000 ||
+    !Array.isArray(result.pages) ||
+    result.pages.length !== result.pageCount
+  ) {
+    disposeActiveDocument()
+    throw new Error('HWP Worker의 페이지 정보가 올바르지 않습니다.')
+  }
+  const pages = result.pages.map(validPageInfo)
+  hasActiveDocument = true
   generation += 1
   pageCache.clear()
   return {
     document: {
       kind: 'fixed-page',
       format: 'hwp',
-      pageCount,
-      sectionCount,
+      pageCount: result.pageCount,
+      sectionCount: Number.isInteger(result.sectionCount) && result.sectionCount >= 0
+        ? result.sectionCount
+        : 0,
       pages
     },
-    timings: { wasmInitMs, parseMs, pageInfoMs }
+    timings: result.timings
   }
 }
 
@@ -207,13 +219,21 @@ function rememberTextLayout(index: number, layout: FixedPageTextLayout): void {
   }
 }
 
-function pageTextLayout(document: HwpDocument, index: number, cache = true): FixedPageTextLayout {
+async function pageTextLayout(index: number, cache = true): Promise<FixedPageTextLayout> {
   const cached = textLayoutCache.get(index)
   if (cached) {
     rememberTextLayout(index, cached)
     return cached
   }
-  const value = JSON.parse(document.getPageTextLayout(index)) as RhwpTextLayout
+  const serialized = await requestWorker<string>(
+    'text-layout',
+    { index },
+    HWP_PAGE_TIMEOUT_MS
+  )
+  if (typeof serialized !== 'string' || serialized.length > MAX_TEXT_LAYOUT_CHARACTERS) {
+    throw new Error(`${index + 1}페이지의 텍스트 레이아웃 크기가 허용 범위를 넘었습니다.`)
+  }
+  const value = JSON.parse(serialized) as RhwpTextLayout
   if (!Array.isArray(value.runs) || value.runs.length > MAX_TEXT_RUNS_PER_PAGE) {
     throw new Error(`${index + 1}페이지의 텍스트 레이아웃이 올바르지 않습니다.`)
   }
@@ -249,9 +269,8 @@ function rememberPage(index: number, page: RenderedRhwpFixedPage): void {
 }
 
 export function renderRhwpFixedPage(index: number): Promise<RenderedRhwpFixedPage> {
-  const document = activeDocument
   const activeGeneration = generation
-  if (!document) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
+  if (!hasActiveDocument) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
   const cached = pageCache.get(index)
   if (cached) {
     rememberPage(index, cached)
@@ -259,13 +278,18 @@ export function renderRhwpFixedPage(index: number): Promise<RenderedRhwpFixedPag
   }
   const pending = pageJobs.get(index)
   if (pending) return pending
-  const job = renderQueue.then(() => {
-    if (activeDocument !== document || generation !== activeGeneration) {
+  const job = renderQueue.then(async () => {
+    if (!hasActiveDocument || generation !== activeGeneration) {
       throw new Error('HWP 문서가 교체되어 페이지 렌더링을 취소했습니다.')
     }
     const page = {
-      svg: safeSvg(document.renderPageSvg(index))
+      svg: ''
     }
+    const svg = await requestWorker<string>('render-page', { index }, HWP_PAGE_TIMEOUT_MS)
+    if (typeof svg !== 'string' || svg.length > MAX_SVG_CHARACTERS) {
+      throw new Error(`${index + 1}페이지의 SVG 크기가 허용 범위를 넘었습니다.`)
+    }
+    page.svg = safeSvg(svg)
     rememberPage(index, page)
     return page
   })
@@ -282,14 +306,13 @@ export function renderRhwpFixedPage(index: number): Promise<RenderedRhwpFixedPag
 }
 
 export function getRhwpFixedPageTextLayout(index: number): Promise<FixedPageTextLayout> {
-  const document = activeDocument
   const activeGeneration = generation
-  if (!document) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
-  return Promise.resolve().then(() => {
-    if (activeDocument !== document || generation !== activeGeneration) {
+  if (!hasActiveDocument) return Promise.reject(new Error('열린 HWP 문서가 없습니다.'))
+  return Promise.resolve().then(async () => {
+    if (!hasActiveDocument || generation !== activeGeneration) {
       throw new Error('HWP 문서가 교체되어 텍스트 계층 생성을 취소했습니다.')
     }
-    return pageTextLayout(document, index)
+    return pageTextLayout(index)
   })
 }
 
@@ -302,17 +325,16 @@ export async function renderAllRhwpFixedPages(pageCount: number): Promise<Render
 }
 
 export async function searchRhwpFixedPages(query: string, pageCount: number): Promise<FixedPageSearchResult[]> {
-  const document = activeDocument
   const activeGeneration = generation
   const needle = query.normalize('NFC').trim().toLocaleLowerCase('ko-KR')
-  if (!document || !needle) return []
+  if (!hasActiveDocument || !needle) return []
   const results: FixedPageSearchResult[] = []
   for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
-    if (activeDocument !== document || generation !== activeGeneration) {
+    if (!hasActiveDocument || generation !== activeGeneration) {
       throw new Error('HWP 문서가 교체되어 검색을 취소했습니다.')
     }
     let occurrences = 0
-    const layout = pageTextLayout(document, pageIndex, false)
+    const layout = await pageTextLayout(pageIndex, false)
     for (const run of layout.runs) {
       const text = run.text.normalize('NFC').toLocaleLowerCase('ko-KR')
       let offset = 0
@@ -337,6 +359,6 @@ function disposeActiveDocument(): void {
   pageCache.clear()
   textLayoutCache.clear()
   pageJobs.clear()
-  activeDocument?.free()
-  activeDocument = null
+  hasActiveDocument = false
+  workerClient.stop()
 }

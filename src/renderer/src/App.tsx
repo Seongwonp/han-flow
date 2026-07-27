@@ -341,10 +341,13 @@ export default function App() {
     setDocument(null)
     setFixedDocument(null)
     try {
+      if (rhwpAdapter) (await rhwpAdapter).closeRhwpFixedPageDocument()
       if (path.toLowerCase().endsWith('.hwp')) {
         const readStartedAt = performance.now()
         const binary = await api().readHwp(path) as { bytes: Uint8Array; readMs: number }
+        if (activeLoadId.current !== loadId) return
         const adapter = await loadRhwpAdapter()
+        if (activeLoadId.current !== loadId) return
         const result = await adapter.openRhwpFixedPageDocument(
           new Uint8Array(binary.bytes),
           async (assetUrl) => {
@@ -377,7 +380,6 @@ export default function App() {
         setFileName(path.split('/').pop() ?? path)
         return
       }
-      if (fixedDocument) (await loadRhwpAdapter()).closeRhwpFixedPageDocument()
       const result = await api().parseHWPX(path, loadId) as ViewerParseResult
       if (activeLoadId.current !== result.loadId) return
       setDocument(result.document)
