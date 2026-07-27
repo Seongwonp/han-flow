@@ -13,6 +13,7 @@
 ```bash
 npm run probe:hwp -- /path/to/document.hwp
 npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx
+npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx --pdf /path/to/reference.pdf
 npm run test:probe
 ```
 
@@ -22,6 +23,7 @@ npm run test:probe
 - `kordoc adapter`: section tag와 병합 grid를 정규화한 최소 `ViewerDocument` 구조를 요약
 - `@rhwp/core`: hidden Electron renderer에서 실제 Canvas font metric으로 모든 page SVG 생성
 - `--hwpx`: build된 Han-Flow decoder로 HWPX `ViewerDocument` 구조를 같은 schema로 요약
+- `--pdf`: Poppler text layer와 rhwp SVG를 본문 없이 페이지 그룹·문자 다중집합으로 비교
 - 공통 preflight: CFB magic, HWP signature/version, 보안 flag, stream 크기
 - 공통 제한: 200 MiB 입력 상한, 60초 timeout, signal 전달
 
@@ -103,19 +105,54 @@ dependency를 포함한 4건(보통 1, 높음 3)이며 probe 후보는 포함되
 | total SVG | 약 4.57 MB |
 | script/foreignObject/외부 URL | 0 |
 
-기준 HWPX와 PDF는 8페이지이고 PDF 비공백 text는 6,077자다. 첫 페이지 867자와 마지막 두
-페이지 322·424자는 기준과 같지만 중간 pagination이 합쳐졌고 총 58자가 적다. portrait와
-landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-page renderer를 바로
-채택할 수 없다.
+기준 HWPX와 PDF는 8페이지이고 PDF 비공백 text는 6,077자다. privacy-safe 정렬기는 공백을
+제거하고 NFC 정규화한 text를 페이지 길이로 먼저 정렬한 뒤, 순서 기반 edit 통계와 순서에
+영향받지 않는 문자 다중집합 보존율을 함께 계산한다. 표는 PDF와 SVG의 DOM 읽기 순서가 다를
+수 있으므로 콘텐츠 보존 판정에는 문자 다중집합을 우선한다.
+
+| 기준 PDF | rhwp | PDF 글자 | rhwp 글자 | 문자 다중집합 보존율 |
+| --- | --- | ---: | ---: | ---: |
+| 1 | 1 | 867 | 867 | 100% |
+| 2 | 2 | 1,650 | 1,638 | 99.27% |
+| 3–4 | 3 | 1,502 | 1,490 | 99.20% |
+| 5 | 4 | 174 | 171 | 97.70% |
+| 6 | 5 | 1,138 | 1,107 | 97.19% |
+| 7 | 6 | 322 | 322 | 99.69% |
+| 8 | 7 | 424 | 424 | 99.76% |
+
+문서 전체는 PDF 6,077자 중 rhwp에 6,019자가 있고 추가 문자는 없다. 다중집합 보존율은
+**99.05%**다. 빠진 58자는 문장부호 57자와 숫자 1자이며 **한글과 영문 누락은 0자**다.
+따라서 58자 차이는 본문 단어 유실이 아니라 불릿·표식·쪽 번호 계열의 text layer 차이다.
+
+`getSectionCount()`와 숫자 필드만 남긴 `getPageInfo()`도 함께 검사했다. rhwp는 section 3개를
+보존하며 페이지 소속은 첫 세로 section 4장, 가로 section 1장, 마지막 세로 section 2장이다.
+기준 PDF에서 첫 section이 5장이던 것만 4장으로 줄었다. 즉 8→7페이지 차이는 section 경계
+유실이 아니라 글꼴 폭·행 높이 차이로 첫 section이 한 장 적게 조판된 결과다.
+
+기준 PDF 3·4페이지와 대응하는 rhwp 3페이지를 opt-in local PNG로 다시 렌더링했다. 앞쪽 표와
+뒤쪽 본문이 한 페이지 위·아래로 이어지지만 겹침·잘림·테두리 파손 없이 읽을 수 있었다.
+portrait와 landscape viewBox도 모두 생성됐다. 이 결과로 `@rhwp/core`를 **주 visual 후보**로
+승격한다. 최종 채택은 정제된 SVG를 기존 virtualization/PDF shell에 연결하고 package
+크기·peak memory를 측정한 뒤 결정한다.
+
+대표 페이지를 저장소 밖에서 확인할 때만 아래 opt-in 환경 변수를 사용한다. 기본 probe는
+SVG나 PNG를 파일로 남기지 않는다.
+
+```bash
+HAN_FLOW_HWP_PROBE_VISUAL_DIR=/tmp/han-flow-rhwp \
+HAN_FLOW_HWP_PROBE_VISUAL_PAGES=3 \
+npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
+```
 
 ## 현재 판단
 
 - `kordoc`은 빠르고 section 경계, 병합 cell 원점, semantic text와 image resource를
   `ViewerDocument` 모양으로 정규화할 수 있다. 그러나 문단 102개와 표 2개가 부족하고 layout
   geometry·테두리·머리말/꼬리말이 없어 단독 renderer 후보에서는 제외한다.
-- `@rhwp/core`는 이미지와 실제 page SVG를 제공하지만 AIDA page/text 기준에서 차이가 있다.
-- 두 후보를 결합하거나 fork하기 전에 차이가 발생한 구조를 **본문 없이 count와 source
-  위치로** 좁힌다.
+- `@rhwp/core`는 section·세로/가로 용지·이미지와 본문 한글/영문을 보존하고 읽기 좋은 SVG를
+  만든다. 기준보다 한 페이지 적지만 깨진 화면은 아니므로 주 visual 후보로 올린다.
+- `kordoc`은 production renderer가 아니라 semantic 구조 비교 oracle로 유지한다. rhwp SVG의
+  text layer가 검색·접근성 요구를 만족하는지 확인하기 전에는 두 parser를 함께 번들하지 않는다.
 - 후보 package는 dev dependency로만 고정해 production import graph에서 제외한다. `kordoc`의
   OCR/PDF 선택 dependency까지 개발 설치에 들어오므로 lockfile·설치 크기와 audit 결과는
   유지보수 감점 항목으로 기록한다. 프로젝트 전체 `omit=optional`은 Rollup의 macOS binary도
@@ -125,8 +162,8 @@ landscape page viewBox는 모두 생성됐다. 현재 결과만으로는 fixed-p
 
 ## 다음 판정 작업
 
-1. rhwp page별 text count가 기준 8페이지에서 합쳐지거나 누락되는 지점 진단
-2. rhwp SVG와 Kordoc semantic text를 결합할 때 search·접근성·PDF shell 경계 설계
-3. 후보별 PDF 출력과 section별 자동 비교
-4. 같은 HWP를 한컴에서 직접 출력한 PDF인지 reference provenance 재확인
+1. 정제된 rhwp SVG를 기존 page virtualization shell에 넣는 fixed-page adapter probe
+2. rhwp SVG text layer의 검색·접근성 가능성 및 Kordoc 동시 번들 필요 여부 판정
+3. fixed-page shell의 PDF 출력, peak memory와 package 증가량 측정
+4. 점수표와 main/oracle 역할을 확정하는 ADR 작성
 5. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가

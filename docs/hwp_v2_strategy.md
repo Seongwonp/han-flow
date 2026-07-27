@@ -66,7 +66,7 @@ Mini FAT, sector chain과 directory entry의 무결성 조건을 둔다. 따라�
 
 | 후보 | 확인 버전 | 런타임·라이선스 | 장점 | Han-Flow 관점의 위험 | 판정 |
 | --- | --- | --- | --- | --- | --- |
-| `@rhwp/core` | 0.7.19 | Rust/WASM, MIT | HWP/HWPX parse, page count, 페이지 SVG renderer 제공. macOS Electron renderer에서 별도 JVM 없이 실행 가능 | WASM 약 7 MB, 0.x API, 기존 semantic renderer를 우회할 수 있음. SVG 주입 경계와 PDF 일치 검증 필요 | **1차 layout 후보** |
+| `@rhwp/core` | 0.7.19 | Rust/WASM, MIT | HWP/HWPX parse, page count, 페이지 SVG renderer 제공. macOS Electron renderer에서 별도 JVM 없이 실행 가능 | WASM 약 7 MB, 0.x API, 기존 semantic renderer를 우회할 수 있음. SVG 주입 경계와 PDF 일치 검증 필요 | **선두 visual 후보** |
 | `kordoc` | 4.2.7 | TypeScript, MIT | Node 18+, CFB 기반 HWP parse, 문단·표·중첩 cell·이미지·일부 style을 구조화된 IR로 반환 | IR은 추출 중심이며 HWP 페이지 좌표·전체 문단/테두리 속성이 부족함. 현재 unpacked 약 11.1 MB이고 불필요한 기능 분리 확인 필요 | **1차 semantic 후보** |
 | `hwp.js` | 0.0.3 | TypeScript, Apache-2.0 | 현재 프로젝트와 같은 `cfb`를 사용하고 paragraph, line segment, table, picture 모델을 노출 | 최신 release가 2020-10-01. 공개 타입과 오류 처리 범위가 작고 유지보수·보안 부담이 큼 | 비교·fallback |
 | `hwplib` | 1.1.10 | Java, Apache-2.0 | 장기간 축적된 HWP read/write 구현과 표·그림·머리말 사례, 2026-07에도 저장소 활동 | JVM 번들·프로세스 기동이 1초 목표와 작은 macOS 앱에 불리함 | differential oracle |
@@ -162,6 +162,7 @@ unsandboxed process에서 읽거나 처리하지 말 것을 권고한다. V2 par
 
 - [x] AIDA `.hwp` 공통 비노출 진단기와 HWPX `ViewerDocument` 자동 비교
 - [x] `@rhwp/core` 첫 페이지·전체 페이지 SVG probe
+- [x] `@rhwp/core`와 기준 PDF의 privacy-safe 페이지 정렬·문자 보존·대표 페이지 시각 검증
 - [x] `kordoc` IR 구조 요약과 첫 gap 분석
 - [x] `kordoc` `ViewerDocument` 최소 adapter probe
 - [ ] 후보별 PDF 출력과 section별 자동 비교

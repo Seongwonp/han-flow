@@ -20,7 +20,9 @@
 - [x] WASM을 hidden Electron renderer에서 초기화하는 독립 실험
 - [x] AIDA page count와 전체 page SVG 생성
 - [x] SVG의 script, event handler, 외부 URL 검사
-- [ ] 전체 페이지 생성 시간, memory와 production bundle 증가량 측정
+- [x] 기준 PDF와 privacy-safe 페이지 그룹·문자 보존율 자동 비교
+- [x] PDF 3·4페이지가 합쳐진 SVG를 PNG로 재렌더링해 겹침·잘림 없음 확인
+- [ ] peak memory와 production bundle 증가량 측정
 - [ ] 기존 page virtualization/PDF shell 연결 가능성 기록
 
 ### 3. `kordoc` probe

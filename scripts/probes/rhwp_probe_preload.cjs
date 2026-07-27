@@ -6,6 +6,13 @@ const { performance } = require('node:perf_hooks')
 const RESULT_CHANNEL = 'han-flow:hwp-probe-result'
 const fileArgument = process.argv.find((argument) => argument.startsWith('--han-flow-probe-file='))
 const filePath = fileArgument?.slice('--han-flow-probe-file='.length)
+const captureArgument = process.argv.find((argument) => argument.startsWith('--han-flow-probe-capture-pages='))
+const capturePages = new Set(
+  (captureArgument?.slice('--han-flow-probe-capture-pages='.length) ?? '')
+    .split(',')
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0)
+)
 
 function svgDiagnostics(svg) {
   const document = new DOMParser().parseFromString(svg, 'image/svg+xml')
@@ -24,12 +31,28 @@ function svgDiagnostics(svg) {
   }
   return {
     svgBytes: Buffer.byteLength(svg),
-    textCharacters: (root.textContent ?? '').replace(/\s/gu, '').length,
+    normalizedText: (root.textContent ?? '').normalize('NFC').replace(/\s/gu, ''),
     imageElements: document.querySelectorAll('image').length,
     unsafeElements,
     unsafeAttributes,
     viewBox: root.getAttribute('viewBox') ?? null
   }
+}
+
+function numericDiagnostics(value, depth = 0) {
+  if (depth > 4) return undefined
+  if (typeof value === 'number' || typeof value === 'boolean' || value === null) return value
+  if (Array.isArray(value)) {
+    return value.slice(0, 50).map((item) => numericDiagnostics(item, depth + 1)).filter((item) => item !== undefined)
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, item]) => [key, numericDiagnostics(item, depth + 1)])
+        .filter(([, item]) => item !== undefined)
+    )
+  }
+  return undefined
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -57,11 +80,21 @@ window.addEventListener('DOMContentLoaded', async () => {
     const documentModel = new rhwp.HwpDocument(new Uint8Array(bytes))
     const parseMs = performance.now() - parseStarted
     const pageCount = documentModel.pageCount()
+    const sectionCount = documentModel.getSectionCount()
     const pageLimit = Math.min(pageCount, 500)
     const pageDiagnostics = []
+    const pageInfos = []
+    const privateSvgPages = []
     const renderStarted = performance.now()
     for (let page = 0; page < pageLimit; page += 1) {
-      pageDiagnostics.push(svgDiagnostics(documentModel.renderPageSvg(page)))
+      const svg = documentModel.renderPageSvg(page)
+      pageDiagnostics.push(svgDiagnostics(svg))
+      try {
+        pageInfos.push(numericDiagnostics(JSON.parse(documentModel.getPageInfo(page))))
+      } catch {
+        pageInfos.push(null)
+      }
+      if (capturePages.has(page + 1)) privateSvgPages.push({ page: page + 1, svg })
     }
     const renderMs = performance.now() - renderStarted
     documentModel.free()
@@ -74,15 +107,19 @@ window.addEventListener('DOMContentLoaded', async () => {
       result: {
         success: true,
         pageCount,
+        sectionCount,
         renderedPages: pageLimit,
         truncated: pageLimit < pageCount,
-        pageTextCounts: pageDiagnostics.map((page) => page.textCharacters),
+        pageTextCounts: pageDiagnostics.map((page) => Array.from(page.normalizedText).length),
         imageElements: pageDiagnostics.reduce((sum, page) => sum + page.imageElements, 0),
         totalSvgBytes: pageDiagnostics.reduce((sum, page) => sum + page.svgBytes, 0),
         unsafeElements: pageDiagnostics.reduce((sum, page) => sum + page.unsafeElements, 0),
         unsafeAttributes: pageDiagnostics.reduce((sum, page) => sum + page.unsafeAttributes, 0),
-        pageViewBoxes: [...new Set(pageDiagnostics.map((page) => page.viewBox).filter(Boolean))]
-      }
+        pageViewBoxes: [...new Set(pageDiagnostics.map((page) => page.viewBox).filter(Boolean))],
+        pageInfos
+      },
+      privatePageTexts: pageDiagnostics.map((page) => page.normalizedText),
+      privateSvgPages
     })
   } catch {
     ipcRenderer.send(RESULT_CHANNEL, {

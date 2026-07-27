@@ -5,8 +5,10 @@ import { outputProbe } from './hwp_probe_common.mjs'
 const filePath = process.argv[2]
 const hwpxFlag = process.argv.indexOf('--hwpx')
 const hwpxPath = hwpxFlag >= 0 ? process.argv[hwpxFlag + 1] : undefined
+const pdfFlag = process.argv.indexOf('--pdf')
+const pdfPath = pdfFlag >= 0 ? process.argv[pdfFlag + 1] : undefined
 if (!filePath) {
-  console.error('사용법: npm run probe:hwp -- <document.hwp> [--hwpx <reference.hwpx>]')
+  console.error('사용법: npm run probe:hwp -- <document.hwp> [--hwpx <reference.hwpx>] [--pdf <reference.pdf>]')
   process.exit(1)
 }
 
@@ -72,7 +74,7 @@ const root = resolve(import.meta.dirname, '../..')
 const electron = resolve(root, 'node_modules/.bin/electron')
 const [kordoc, rhwp, hwpx] = await Promise.all([
   run(process.execPath, [resolve(import.meta.dirname, 'kordoc_probe.mjs'), filePath]),
-  run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath]),
+  run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath, ...(pdfPath ? [pdfPath] : [])]),
   hwpxPath
     ? run(process.execPath, [resolve(import.meta.dirname, 'hwpx_reference_probe.mjs'), hwpxPath])
     : Promise.resolve({ code: 0, payload: null })
@@ -82,6 +84,7 @@ const results = [kordoc.payload, rhwp.payload, hwpx.payload].filter(Boolean)
 const kordocResult = kordoc.payload.result
 const kordocAdapter = kordocResult?.adapter?.structure
 const rhwpResult = rhwp.payload.result
+const rhwpReference = rhwpResult?.referencePdf
 const reference = hwpx.payload?.result?.structure
 const referenceTotal = reference?.total
 outputProbe('HAN_FLOW_HWP_BAKEOFF', {
@@ -98,8 +101,25 @@ outputProbe('HAN_FLOW_HWP_BAKEOFF', {
     kordocAdapterResources: kordocAdapter?.resources ?? null,
     kordocAdapterTextCharacters: kordocAdapter?.textCharacters ?? null,
     rhwpPageCount: rhwpResult?.pageCount ?? null,
+    rhwpSectionCount: rhwpResult?.sectionCount ?? null,
+    rhwpPageSectionIndexes: rhwpResult?.pageInfos?.map((page) => page?.sectionIndex ?? null) ?? null,
     rhwpTextCharacters: rhwpResult?.pageTextCounts?.reduce((sum, count) => sum + count, 0) ?? null,
     rhwpImageElements: rhwpResult?.imageElements ?? null,
+    referencePdfPageCount: rhwpReference?.referencePageCount ?? null,
+    rhwpReferenceCharacterDelta: rhwpReference?.characterDelta ?? null,
+    rhwpReferenceEditDistance: rhwpReference?.editDistance ?? null,
+    rhwpReferenceSimilarity: rhwpReference?.similarity ?? null,
+    rhwpReferenceCharacterBag: rhwpReference?.characterBag ?? null,
+    rhwpReferencePageGroups: rhwpReference?.groups?.map((group) => ({
+      reference: group.reference,
+      candidate: group.candidate,
+      referenceCharacters: group.referenceCharacters,
+      candidateCharacters: group.candidateCharacters,
+      characterDelta: group.characterDelta,
+      characterBag: group.characterBag,
+      editDistance: group.edit.distance,
+      similarity: group.edit.similarity
+    })) ?? null,
     referenceSectionCount: reference?.sectionCount ?? null,
     referenceTables: referenceTotal?.tables ?? null,
     referenceImages: referenceTotal?.images ?? null,

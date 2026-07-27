@@ -11,6 +11,12 @@ import {
   summarizeKordocViewerDocument,
   tableOriginCells
 } from './kordoc_viewer_adapter.mjs'
+import {
+  alignTextPages,
+  characterBagStatistics,
+  editStatistics,
+  normalizeProbeText
+} from './text_alignment.mjs'
 import { HwpProbeError, inspectHwpContainer } from './hwp_probe_common.mjs'
 
 test('semantic block 요약은 표 cell의 중첩 block을 중복 집계하지 않는다', () => {
@@ -153,6 +159,78 @@ test('Kordoc grid의 span 범위에 들어간 중복 slot은 cell 원점에서 �
     [0, 2],
     [1, 2]
   ])
+})
+
+test('privacy-safe 페이지 정렬은 기준 두 페이지가 후보 한 페이지로 합쳐진 구간을 찾는다', () => {
+  const alignment = alignTextPages(
+    ['첫 페이지', '둘째 페이지', '셋째 페이지', '넷째 페이지'],
+    ['첫 페이지', '둘째 페이지셋째 페이지', '넷째 페이']
+  )
+
+  assert.deepEqual(
+    alignment.groups.map((group) => ({
+      reference: group.reference,
+      candidate: group.candidate,
+      characterDelta: group.characterDelta
+    })),
+    [
+      {
+        reference: { startPage: 1, endPage: 1 },
+        candidate: { startPage: 1, endPage: 1 },
+        characterDelta: 0
+      },
+      {
+        reference: { startPage: 2, endPage: 3 },
+        candidate: { startPage: 2, endPage: 2 },
+        characterDelta: 0
+      },
+      {
+        reference: { startPage: 4, endPage: 4 },
+        candidate: { startPage: 3, endPage: 3 },
+        characterDelta: -1
+      }
+    ]
+  )
+  assert.equal(alignment.characterDelta, -1)
+  assert.equal(alignment.editDistance, 1)
+  assert.equal(JSON.stringify(alignment).includes('첫 페이지'), false)
+})
+
+test('text edit 통계는 원문을 노출하지 않고 삽입·삭제·치환 수만 반환한다', () => {
+  assert.equal(normalizeProbeText(' 가\n나 '), '가나')
+  assert.deepEqual(editStatistics('가나다라', '가마라'), {
+    distance: 2,
+    insertions: 0,
+    deletions: 1,
+    substitutions: 1,
+    similarity: 0.5,
+    commonPrefix: 1,
+    commonSuffix: 1,
+    exact: false,
+    matrixLimited: false
+  })
+  assert.deepEqual(characterBagStatistics('가나다라', '라마가'), {
+    common: 2,
+    missing: 2,
+    extra: 1,
+    similarity: 0.5,
+    missingCategories: {
+      hangul: 2,
+      latin: 0,
+      number: 0,
+      punctuation: 0,
+      symbol: 0,
+      other: 0
+    },
+    extraCategories: {
+      hangul: 1,
+      latin: 0,
+      number: 0,
+      punctuation: 0,
+      symbol: 0,
+      other: 0
+    }
+  })
 })
 
 test('HWP FileHeader의 version과 보안 flag만 진단한다', async () => {
