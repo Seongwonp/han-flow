@@ -29,10 +29,15 @@ V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명
 - **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
 - **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
 
+남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 80%, V3 0%, V4 5%이며 최종 배포
+전체로는 약 **41%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
+산정 기준은 [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)에 있습니다.
+
 V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
-WASM/page SVG 경로를 fixed-page 주 후보로 앱에 연결했고, `kordoc`의 TypeScript semantic
-IR은 비교 oracle로 남겼습니다. 최종 채택은 PDF·메모리·패키지 크기 관문 뒤 확정합니다.
-근거와 전체 실험 계획은 [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)에 있습니다.
+WASM/page SVG 경로를 production fixed-page engine으로 채택했고, `kordoc`의 TypeScript
+semantic IR은 development-only 비교 oracle로 남겼습니다. 자동 fallback은 사용하지 않습니다.
+근거는 [ADR-0001](docs/adr/0001-hwp-parser-roles.md)과
+[V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)에 있습니다.
 
 ## 현재 상태
 
@@ -109,6 +114,7 @@ npm run benchmark:app -- /path/to/document.hwp
 npm run benchmark:memory -- /path/to/document.hwp
 npm run benchmark:memory -- /path/to/document.hwpx
 npm run measure:package -- /path/to/v1/Han-Flow.app
+npm run verify:notices
 npm run verify:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwp
 npm run verify:matrix
@@ -130,6 +136,9 @@ open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. �
 Electron process working set 합계를 50ms 간격으로 측정합니다. 파일명과 본문은 출력하지
 않습니다. `measure:package`는 V1 기준 앱과 현재 앱의 logical bytes·`app.asar` 크기를 비교하고
 rhwp WASM 중복 포함 여부도 검사합니다.
+
+`verify:notices`는 패키지의 Han-Flow Apache-2.0, rhwp MIT와 Third-Party Notices가 저장소
+원문과 byte 단위로 일치하는지 검사합니다.
 
 `verify:app`은 격리된 user-data로 패키지 앱을 열어 페이지 생성, 이미지 decode, background
 loading 완료와 overflow 0을 자동 판정합니다. HWP에는
@@ -183,6 +192,7 @@ docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
 - [파싱 전략](docs/parsing_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP V2-0 parser bake-off 결과](docs/hwp_v2_bakeoff.md)
+- [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)
 - [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
 - [v1 기준선과 구현 현황](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
@@ -198,3 +208,4 @@ Han-Flow는 한글과컴퓨터와 제휴하거나 한글과컴퓨터의 보증�
 ## 라이선스
 
 Han-Flow는 [Apache License 2.0](LICENSE)으로 배포합니다.
+HWP parser를 포함한 배포 고지는 [Third-Party Notices](THIRD_PARTY_NOTICES.md)에 기록합니다.

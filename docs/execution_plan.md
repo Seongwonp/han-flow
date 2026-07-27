@@ -25,11 +25,14 @@
 - [x] 중복 rhwp WASM 제거와 production MIT license 포함
 - [x] rhwp 전용 Web Worker 격리와 강제 종료형 timeout·load cancellation
 - [x] Worker 요청 ID, crash/timeout 오류와 SVG·text layout 응답 상한
+- [x] ADR-0001에서 rhwp production visual / kordoc development oracle 확정
+- [x] MIT 원문과 third-party notice production package 포함
+- [x] `verify:notices`와 release gate에서 세 고지 원문 일치 자동 검증
 
 ### 다음 작업 순서
 
-1. Worker 메모리 비용을 포함한 점수표, main/oracle 역할과 third-party notice ADR
-2. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+1. 개인정보 없는 표·이미지·머리말 HWP fixture 추가
+2. `verify:hwp-matrix`를 package·PDF 회귀 관문에 연결
 3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX
 
 ## 완료한 milestone: V2-0 HWP parser bake-off
@@ -63,14 +66,14 @@
 - [x] AIDA의 HWPX decoder와 문서 전체 구조 count 자동 비교
 - [x] `pageNumber` tag로 section 경계를 복원하고 병합 cell 중복을 제거하는 최소 adapter
 - [x] AIDA adapter의 section·semantic text·image/resource 보존 가능성 판정
-- [ ] 직접 dependency와 필요한 HWP parser code만 분리하는 경우의 bundle 비교
+- [x] kordoc production 미채택으로 parser code bundle 분리 실험 종료
 
 ### 4. 결정
 
-- [ ] [V2 전략 점수표](hwp_v2_strategy.md#점수표) 작성
-- [ ] main/fallback/oracle 역할 결정
-- [ ] license와 third-party notice 확정
-- [ ] architecture decision을 V2 전략 문서에 반영
+- [x] [V2 전략 점수표](hwp_v2_strategy.md#점수표)와 ADR-0001 작성
+- [x] rhwp main, 자동 fallback 없음, kordoc development oracle 역할 결정
+- [x] MIT license와 third-party notice 확정
+- [x] architecture decision을 V2 전략·아키텍처 문서에 반영
 
 ## 진행 중 milestone: V2-1 importer 경계
 

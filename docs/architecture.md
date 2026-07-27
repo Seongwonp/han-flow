@@ -198,9 +198,10 @@ file path
   → shared macOS viewer shell and PDF export
 ```
 
-V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. `@rhwp/core`의 fixed-page SVG 경로와
-`kordoc`의 semantic IR 경로를 private AIDA 삼쌍으로 비교한 뒤 하나를 선택한다. 선택 전에는
-현재 `ViewerDocument`를 후보 API에 맞춰 바꾸지 않는다.
+V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. private AIDA 삼쌍 비교와 품질 관문
+결과 `@rhwp/core`를 production fixed-page engine, `kordoc`을 development-only semantic
+oracle로 확정했다. 자동 fallback은 두지 않으며 결정 근거는
+[ADR-0001](adr/0001-hwp-parser-roles.md)에 있다.
 
 현재 비신뢰 HWP binary는 main이 200 MiB 제한과 CFB magic을 확인한 뒤 전용 Web Worker로
 전달한다. rhwp document 생성과 모든 페이지 작업은 renderer UI thread 밖에서 실행하고
@@ -222,7 +223,9 @@ working set peak p95는 647.6MiB이고 HWPX 기준선은 438.3MiB다. 격리 전
 
 renderer에 bundle되는 `@rhwp/core`는 build-time dependency다. production `node_modules`에
 같은 WASM을 다시 넣지 않고 Vite가 만든 단일 asset만 패키징한다. MIT license 원문은
-`Contents/Resources/licenses/rhwp-MIT.txt`에 별도 포함한다.
+`Contents/Resources/licenses/rhwp-MIT.txt`에, 배포 고지는 같은 디렉터리의
+`THIRD_PARTY_NOTICES.md`에 포함한다. Han-Flow 자체 Apache-2.0 원문도
+`Han-Flow-Apache-2.0.txt`로 함께 넣는다.
 
 텍스트·표·이미지 편집과 안전한 HWPX 재저장은 V3 범위다. 사용자 배포·서명·공증은 V4
 범위다. 기존 편집 prototype 코드는 현재 런타임 계약으로 간주하지 않는다.

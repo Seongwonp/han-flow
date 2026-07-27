@@ -132,8 +132,9 @@ dependency를 포함한 4건(보통 1, 높음 3)이며 probe 후보는 포함되
 기준 PDF 3·4페이지와 대응하는 rhwp 3페이지를 opt-in local PNG로 다시 렌더링했다. 앞쪽 표와
 뒤쪽 본문이 한 페이지 위·아래로 이어지지만 겹침·잘림·테두리 파손 없이 읽을 수 있었다.
 portrait와 landscape viewBox도 모두 생성됐다. 이 결과로 `@rhwp/core`를 **주 visual 후보**로
-승격한다. fixed-page shell, package 크기와 peak memory 관문은 통과했다. 최종 ADR은 parser
-격리를 통과했으며 공개 synthetic HWP fixture를 완료한 뒤 확정한다.
+승격한다. fixed-page shell, package 크기, peak memory와 parser 격리 관문을 통과했다.
+이 결과를 근거로 [ADR-0001](adr/0001-hwp-parser-roles.md)에서 production visual engine으로
+최종 채택했다.
 
 ### fixed-page 앱 연결
 
@@ -262,6 +263,6 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 
 ## 다음 판정 작업
 
-1. 점수표와 main/oracle 역할을 확정하는 ADR 작성
-2. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+1. 표·이미지·머리말 중심의 개인정보 없는 HWP fixture 추가
+2. `verify:hwp-matrix`를 package·PDF 회귀 관문에 연결
 3. `FileHeader`·암호·DRM·배포용 문서 감지와 오류 UX

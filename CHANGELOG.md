@@ -13,6 +13,9 @@
 - 새 문서 열기 취소, Worker 강제 종료형 timeout과 crash 오류 격리
 - Worker 격리 후 HWP cold/warm 20회 첫 화면 p95 614/237ms 검증
 - Worker 격리 후 HWP cold 5회 aggregate working set peak p95 647.6MiB 기록
+- ADR-0001에서 rhwp production visual engine과 kordoc development oracle 역할 확정
+- HWP parser MIT 원문과 third-party notice를 production package에 포함
+- package license·notice 원문 일치를 release gate에서 자동 검증
 
 ## 1.0.0-rc.1 - 2026-07-23
 

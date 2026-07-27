@@ -1,6 +1,6 @@
 # Han-Flow V2 HWP 5.0 조사와 도입 전략
 
-기준일: 2026-07-26
+기준일: 2026-07-27
 
 ## 결론
 
@@ -9,18 +9,18 @@ PDF로 내보내는 것**이다. Han-Flow가 HWP 5.0 레코드 전체를 직접 
 규격은 후보 파서의 출력 검증, 보안 경계 정의, Han-Flow 문서 모델로의 adapter 작성에
 사용한다.
 
-현 시점의 1차 실험 후보는 다음 두 개다.
+평가한 두 후보는 다음과 같다.
 
 1. `@rhwp/core`: Rust/WASM 파서와 페이지 SVG renderer를 함께 사용해 레이아웃 보존 가능성을
    측정한다.
 2. `kordoc`: TypeScript HWP 5.0 파서의 구조화된 IR을 Han-Flow `ViewerDocument`로
    정규화해 기존 pagination/renderer를 재사용할 수 있는지 측정한다.
 
-private AIDA `.hwp`·동일 문서 `.hwpx`·기준 PDF 삼쌍 비교 결과 `@rhwp/core`를 **주 visual
-후보**로 앱의 fixed-page 경로에 잠정 연결했다. 이는 최종 ADR이 아니다. PDF, peak memory와
-package 증가량은 통과했고, parser 격리와 공개 synthetic HWP fixture 뒤 main/oracle 역할을
-확정한다.
-라이브러리의 README에 적힌 지원 범위는 호환성 보증으로 간주하지 않는다.
+private AIDA `.hwp`·동일 문서 `.hwpx`·기준 PDF 삼쌍과 production 앱 검증 결과
+`@rhwp/core` 0.7.19를 **production visual engine**, `kordoc` 4.2.7을
+**development-only semantic oracle**로 확정했다. 자동 fallback은 두지 않는다. 전체 근거와
+92/54점 점수표는 [ADR-0001](adr/0001-hwp-parser-roles.md)에 있다. 라이브러리 README의
+지원 범위는 호환성 보증으로 간주하지 않는다.
 
 ## 범위
 
@@ -58,7 +58,8 @@ Mini FAT, sector chain과 directory entry의 무결성 조건을 둔다. 따라�
 순서대로 확인해야 한다.
 
 공개 HWP 5.0 규격은 이를 참고해 만든 결과물에 아래 문구를 UI, 매뉴얼, 도움말과 소스 중
-존재하는 구성물에 표시하도록 요구한다. V2 구현과 동시에 앱의 정보 화면에도 넣는다.
+존재하는 구성물에 표시하도록 요구한다. 현재 README와 production third-party notice에
+기록하며 앱 내 정보 화면은 V4 배포 UI에서 연결한다.
 
 > 본 제품은 한글과컴퓨터의 한/글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
 
@@ -68,8 +69,8 @@ Mini FAT, sector chain과 directory entry의 무결성 조건을 둔다. 따라�
 
 | 후보 | 확인 버전 | 런타임·라이선스 | 장점 | Han-Flow 관점의 위험 | 판정 |
 | --- | --- | --- | --- | --- | --- |
-| `@rhwp/core` | 0.7.19 | Rust/WASM, MIT | HWP/HWPX parse, page count, 페이지 SVG renderer 제공. macOS Electron renderer에서 별도 JVM 없이 실행 가능 | WASM 약 7 MB, 0.x API, 기존 semantic renderer를 우회할 수 있음. SVG 주입 경계와 PDF 일치 검증 필요 | **선두 visual 후보** |
-| `kordoc` | 4.2.7 | TypeScript, MIT | Node 18+, CFB 기반 HWP parse, 문단·표·중첩 cell·이미지·일부 style을 구조화된 IR로 반환 | IR은 추출 중심이며 HWP 페이지 좌표·전체 문단/테두리 속성이 부족함. 현재 unpacked 약 11.1 MB이고 불필요한 기능 분리 확인 필요 | **1차 semantic 후보** |
+| `@rhwp/core` | 0.7.19 | Rust/WASM, MIT | HWP/HWPX parse, page count, 페이지 SVG renderer 제공. macOS Electron renderer에서 별도 JVM 없이 실행 가능 | WASM 약 7 MB, 0.x API, 기존 semantic renderer를 우회함. Web Worker memory 비용이 있음 | **production visual engine** |
+| `kordoc` | 4.2.7 | TypeScript, MIT | Node 18+, CFB 기반 HWP parse, 문단·표·중첩 cell·이미지·일부 style을 구조화된 IR로 반환 | IR은 추출 중심이며 HWP 페이지 좌표·전체 문단/테두리 속성이 부족함. 현재 unpacked 약 11.1 MB | **development semantic oracle** |
 | `hwp.js` | 0.0.3 | TypeScript, Apache-2.0 | 현재 프로젝트와 같은 `cfb`를 사용하고 paragraph, line segment, table, picture 모델을 노출 | 최신 release가 2020-10-01. 공개 타입과 오류 처리 범위가 작고 유지보수·보안 부담이 큼 | 비교·fallback |
 | `hwplib` | 1.1.10 | Java, Apache-2.0 | 장기간 축적된 HWP read/write 구현과 표·그림·머리말 사례, 2026-07에도 저장소 활동 | JVM 번들·프로세스 기동이 1초 목표와 작은 macOS 앱에 불리함 | differential oracle |
 | `unhwp` | 0.6.0 | Rust/native, MIT | macOS arm64/x64 binary, section streaming, structured JSON과 자원 추출 | Markdown/추출 중심이고 page renderer가 아님. native binary의 서명·패키징·IPC가 추가됨 | 성능·구조 oracle |
@@ -106,13 +107,19 @@ HWP fixture를 직접 만들어 CI에 추가한다.
 총점뿐 아니라 콘텐츠 유실이나 임의 코드 실행 가능성이 있으면 탈락시킨다. 직접 SVG 경로가
 채택되면 semantic 검색·접근성 데이터가 별도로 확보되는지도 확인한다.
 
+최종 점수는 `@rhwp/core` 92점, `kordoc` 54점이다. rhwp는 7쪽·3구역·혼합 용지,
+PDF 문자 99.05%, cold p95 614ms와 공통 viewer/PDF shell을 보존했다. kordoc은 adapter의
+semantic text가 기준과 같지만 문단 102개·표 2개와 visual geometry가 부족해 production
+renderer 탈락 조건에 해당한다. 세부 배점은 [ADR-0001](adr/0001-hwp-parser-roles.md)을
+단일 결정 기록으로 사용한다.
+
 ### 실험 산출물
 
-- 앱 채택 전 후보를 production dependency에 넣지 않는 독립 probe
+- production 채택 경로와 분리된 후보별 독립 probe
 - 같은 JSON schema로 된 후보별 진단 결과
 - AIDA와 공개 fixture의 비교표
 - dependency, license, binary size, cold/warm timing 기록
-- `docs/hwp_v2_strategy.md`의 최종 ADR 갱신
+- `docs/adr/0001-hwp-parser-roles.md`의 최종 결정 기록
 
 ## 목표 아키텍처
 
@@ -128,7 +135,7 @@ macOS open-file / drop / dialog
 ```
 
 기존 flow `ViewerDocument`는 바꾸지 않고 HWP에 별도 `FixedPageDocument` variant를 추가했다.
-최종 ADR에서는 다음 두 역할을 확정한다.
+ADR-0001에서 다음 두 역할을 확정했다.
 
 - semantic adapter: HWP IR을 현재 `ViewerDocument`로 변환하고 기존 layout을 사용
 - fixed-page adapter: 안전하게 정제된 페이지 표현을 별도 read-only page variant로 받고
@@ -168,8 +175,8 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 - [x] `@rhwp/core`와 기준 PDF의 privacy-safe 페이지 정렬·문자 보존·대표 페이지 시각 검증
 - [x] `kordoc` IR 구조 요약과 첫 gap 분석
 - [x] `kordoc` `ViewerDocument` 최소 adapter probe
-- [ ] 후보별 PDF 출력과 section별 자동 비교
-- [ ] 정확도·속도·bundle·license 비교 후 하나의 ADR 작성
+- [x] 주 visual 후보의 PDF 출력과 section별 자동 비교
+- [x] 정확도·속도·bundle·license 비교 후 ADR-0001 승인
 
 ### V2-1 importer 경계와 안전한 열기
 
@@ -212,7 +219,7 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
 
 ## 출처
 
-모든 링크는 2026-07-24에 확인했다.
+모든 링크는 2026-07-27에 다시 확인했다.
 
 ### 규격과 보안
 
@@ -239,3 +246,6 @@ ID가 있는 직렬화 가능한 read-only 결과만 오간다.
   [releases](https://github.com/iyulab/unhwp/releases)
 - [`openhwp/openhwp`](https://github.com/openhwp/openhwp)
 - [`mete0r/pyhwp`](https://github.com/mete0r/pyhwp)
+
+평가 재현성을 위해 lockfile의 kordoc 4.2.7을 유지한다. 2026-07-27 확인 시 upstream main은
+4.2.9였으며 아직 Han-Flow probe 관문을 통과하지 않았으므로 이 문서의 평가 결과에 섞지 않는다.
