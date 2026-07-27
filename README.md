@@ -4,114 +4,157 @@
   <img src="build/icon.png" width="160" alt="Han-Flow 앱 아이콘" />
 </p>
 
-macOS에서 HWPX와 HWP 5.0 문서를 빠르게 열어 읽고 PDF로 내보내는 도구입니다. V1의 HWPX
-뷰어와 V2의 HWP 5.0 읽기 품질 관문을 마쳤고, 다음 V3에서 편집 기반을 설계합니다. 상용
-편집기를 복제하기보다 실제로 매주 쓸 수 있는 작고 안정적인 도구를
-목표로 합니다.
+<p align="center">
+  macOS에서 HWPX와 HWP 5.0 문서를 빠르게 열어 읽고 PDF로 내보내는 데스크톱 도구
+</p>
 
-현재 버전은 **1.0.0-rc.1**입니다. 로컬 실사용과 unsigned beta 기준의 v1 기능은 완성됐으며,
-V4 전까지 개인용으로 검증합니다. 공개 배포, Developer ID 서명과 Apple notarization은 V4에서
-진행합니다.
+Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공공기관과 학교에서 받은 한글
+문서를 Mac에서 매주 실제로 열어볼 수 있는 작고 안정적인 도구를 목표로 합니다.
 
-## v1 목표
+V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. 다음 V3에서 HWPX 편집
+기반을 설계하며, 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
+`1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
 
-- Finder에서 HWPX 파일을 열어 1초 안에 첫 화면 표시
-- 문단·글자 스타일, 표, 이미지, 머리말·꼬리말과 쪽 번호를 읽기 좋게 렌더링
-- 화면과 같은 페이지 구조로 PDF 내보내기
-- 대형 문서의 worker 기반 점진 파싱과 페이지 가상화
+## 현재 지원 범위
 
-편집 기능은 V3 범위입니다. `.hwp` 5.0 바이너리를 직접 다시 구현하지 않고 V2에서 검증한
-기존 parser를 사용합니다. 한컴오피스와 픽셀 단위로 같은 결과도 목표로 하지 않습니다.
+### HWPX
+
+- OWPML XML 자식 순서를 보존하는 read-only 문서 모델
+- 문단·글자 스타일, 표·병합 셀, 테두리·배경색과 이미지
+- 목록, 구역별 머리말·꼬리말과 쪽 번호 재시작
+- 실제 DOM 높이를 사용하는 2-pass pagination
+- 긴 표 셀의 continuation 행과 반복 머리글
+- Worker 기반 점진 decode와 페이지 가상화
+
+### HWP 5.0
+
+- `@rhwp/core` WASM 기반 fixed-page 화면과 PDF
+- 첫 페이지 우선 렌더링과 전용 Web Worker 격리
+- 좌표형 React text layer를 사용한 `⌘F` 검색·선택·접근성
+- 세로·가로 혼합 용지와 페이지별 크기를 보존하는 PDF
+- 200 MiB 제한, CFB·`FileHeader`·5.x version 사전 검사
+- 암호·배포용·DRM·비지원 version·손상 문서의 구조화된 오류
+
+### macOS 뷰어 UX
+
+- Finder 열기와 single-instance 파일 전달
+- 열기 대화상자와 드래그앤드롭
+- 트랙패드 pinch zoom과 dark mode chrome
+- 화면의 페이지 구조를 사용하는 PDF 내보내기
+
+HWP와 HWPX는 preload에서 형식별 IPC를 노출하지 않습니다. main의 `DocumentImporter`가
+공통 `document:import` 요청을 받아 HWP preflight 또는 HWPX 점진 decoder를 선택하고,
+React loader는 성공·실패와 background 완료를 같은 계약으로 처리합니다.
+
+## 처리 구조
+
+```text
+Finder / dialog / drop
+          │
+          ▼
+  DocumentImporter
+    ├─ HWPX package → ordered XML → ViewerDocument
+    └─ HWP preflight → rhwp Worker → FixedPageDocument
+          │
+          ▼
+ read-only page boundary
+          │
+          ▼
+ React viewer → virtualization → PDF
+```
+
+HWP 5.0 레코드 parser를 처음부터 다시 구현하지 않았습니다. 비교 실험과 ADR을 거쳐
+`@rhwp/core`를 production fixed-page engine으로, `kordoc`을 development-only semantic
+oracle로 사용합니다. 자동 fallback은 두지 않습니다.
+
+## 검증 결과
+
+완료 주장은 단위 테스트만이 아니라 개인정보 없는 공개 fixture, 저장소 밖 실사용 기준 문서,
+production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. 최신 상세 이력은
+[검증 이력](docs/verification_history.md)에 기록합니다.
+
+### 자동 검증
+
+| 관문 | 결과 |
+| --- | ---: |
+| Jest | 16 suites, 62 passed, 1 skipped |
+| parser probe | 8 passed |
+| production build | main/preload/renderer 성공 |
+| macOS arm64 package | unsigned `.app` 생성 성공 |
+| 배포 고지 | Apache-2.0, rhwp MIT, Third-Party Notices 일치 |
+
+### 성능과 대형 문서
+
+| 검증 | 결과 |
+| --- | ---: |
+| HWP cold open 20회 | p50 535ms / p95 614ms / max 722ms |
+| HWP warm open 20회 | p50 203ms / p95 237ms |
+| 대형 synthetic HWPX | 9,767페이지 |
+| 대형 문서 실제 mount | DOM 12페이지 |
+| 대형 문서 overflow | 0 |
+
+열기 성능은 동일한 로컬 macOS arm64 환경의 패키지 앱에서 측정한 회귀 기준이며 모든 Mac의
+절대 성능을 보장하는 수치는 아닙니다.
+
+### HWP production matrix
+
+개인정보 없는 고정 HWP는 자체 생성한 본문, 3×3 표, PNG 이미지와 반복 머리말로 구성하며
+생성 코드와 SHA-256 manifest를 저장소에 함께 둡니다.
+
+| 검증 | 결과 |
+| --- | ---: |
+| HWP version | 5.0.3.2 |
+| 화면/PDF | 2쪽 / 2쪽 |
+| 구조 oracle | 표 1개, 셀 9개, 이미지 1개 |
+| 반복 머리말 | 2회 |
+| PDF 텍스트 보존율 | 98.6% |
+| 오류 입력 | 암호·배포용·DRM·비지원 version·손상 5종 통과 |
+
+저장소 밖의 실사용 기준 HWP에서는 7쪽, 3개 구역, 세로·가로 혼합 용지와 overflow 0을
+확인했습니다. PDF도 7쪽을 보존했고 Poppler 텍스트 추출 기준 전체 보존율은 99.08%였습니다.
+이 검증 과정에서 마지막 페이지 이미지 decode 전에 인쇄가 시작되던 race를 발견해 수정했습니다.
+파일명·본문·캡처와 생성 PDF는 공개 저장소에 포함하지 않습니다.
+
+### HWPX production matrix
+
+| fixture | 결과 |
+| --- | --- |
+| baseline | 3쪽, overflow 0 |
+| 15문단 표 cell | 2쪽, 8+7 문단 분할, 반복 머리글 |
+| 이미지·`rowSpan` | 이미지 12개, 1쪽, overflow 0 |
+| large progressive | 9,767쪽 중 DOM 12개 mount |
+| invalid package | crash 없는 사용자 오류 |
 
 ## 로드맵
 
-- **V1 — HWPX 뷰어:** 로컬 RC 완료. 열기, read-only 렌더, 점진 로딩, PDF와 macOS UX
-- **V2 — HWP 5.0 읽기:** `@rhwp/core` 기반 viewer/PDF, 오류 UX와 공통 importer 완료
-- **V3 — 편집:** 한글 IME, undo/redo와 무손실 저장을 별도 품질 관문으로 개발
-- **V4 — 배포:** 서명·공증, 업데이트, 개인정보 없는 호환성 corpus와 사용자 배포
+| 단계 | 상태 | 범위 |
+| --- | --- | --- |
+| V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
+| V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
+| V3 — 편집 | 예정 | HWPX editable model, IME, undo/redo, 안전 저장 |
+| V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 0%, V4 5%이며 최종 배포
-전체로는 약 **46%**입니다. 편집 범위가 가장 커서 V3의 가중치를 높게 계산했습니다. 자세한
-산정 기준은 [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)에 있습니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 0%, V4 5%이며
+최종 배포 전체로는 약 46%입니다. V3 편집의 가중치가 가장 큽니다.
 
-V2는 공개 HWP 5.0 레코드를 처음부터 다시 구현하지 않습니다. 현재 `@rhwp/core`의
-WASM/page SVG 경로를 production fixed-page engine으로 채택했고, `kordoc`의 TypeScript
-semantic IR은 development-only 비교 oracle로 남겼습니다. 자동 fallback은 사용하지 않습니다.
-근거는 [ADR-0001](docs/adr/0001-hwp-parser-roles.md)과
-[V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)에 있습니다.
+V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
+속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
+selection·undo/redo와 crash-safe 저장을 별도 품질 관문으로 개발합니다. `.hwp` 저장은
+V3의 기본 약속이 아닙니다.
 
-## 현재 상태
+## 알려진 제한
 
-OWPML의 XML 자식 순서를 보존해 읽기 전용 문서 모델로 변환하고, HWPUNIT 기반 페이지에
-문단·표·병합 셀·테두리·배경·이미지·목록·구역별 머리말/꼬리말/쪽 번호를 렌더링합니다.
-현재 글꼴로 실제 block·표 행 높이를 재는 2-pass pagination과 macOS `open-file`,
-single-instance 전달, 드래그앤드롭, 트랙패드 핀치 줌, PDF 출력도 연결되어 있습니다.
+- 편집 기능은 아직 제공하지 않습니다.
+- 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
+- 원문 글꼴이 없으면 대체 글꼴 폭에 따라 HWPX 줄바꿈과 페이지 분배가 달라질 수 있습니다.
+- 한 문단 내부의 줄 단위 페이지 분할은 아직 지원하지 않습니다.
+- 복잡한 `rowSpan`과 단일 초대형 문단은 내용 보존을 우선한 fallback을 사용합니다.
+- 암호·DRM·배포용 HWP는 해제하거나 렌더링하지 않고 분류된 오류를 표시합니다.
+- 현재 macOS 패키지는 Developer ID 서명과 Apple notarization을 하지 않았습니다.
 
-실사용 AIDA 기준 문서는 production 패키지에서 8페이지, 이미지 4개, 페이지 overflow 0으로
-검증했습니다. 첫 실행은 약 0.6초, 실행 중인 앱으로 다시 열기는 약 0.1초였습니다. 원문에서
-보이는 텍스트는 기준 PDF 6,077자 중 6,076자가 일치하며 남은 한 글자는 화면에 보이지 않는
-채움 문자입니다.
-
-표 셀의 여러 문단은 현재 글꼴로 측정한 높이를 기준으로 페이지 사이에서 continuation 행으로
-나눕니다. 공개 15문단 HWPX에서 반복 헤더, 8+7 문단 분배, 뒤쪽 표 위치와 overflow 0을
-검증했습니다. 세로 병합 셀이 있는 표와 문단 하나가 페이지보다 큰 경우는 내용 보존을 우선해
-행 단위 fallback 또는 overflow 진단을 사용합니다.
-
-현재 v1 핵심인 열기·read-only 렌더·점진 로딩·PDF 출력과 macOS 로컬 UX는 구현되어 있습니다.
-정확도 후속 과제는 대체 글꼴 metric과 한 문단 내부의 줄 단위 페이지 분할입니다. V4 전에는
-개인용 패키지로 사용하며, 편집은 V3 범위입니다.
-
-V2 실험 경로에서는 `.hwp`도 Finder 인자, 열기 대화상자와 드래그앤드롭으로 받을 수 있습니다.
-main process는 200 MiB 제한과 CFB·FileHeader를 검사하고, 전용 Web Worker의 `@rhwp/core` WASM이
-페이지 정보를 만든 뒤 첫 페이지 SVG를 우선 표시하고 나머지 페이지를 이어서 렌더링합니다.
-새 문서를 열거나 30초 open·15초 page 제한을 넘기면 Worker를 강제 종료해 UI thread와 이전
-작업을 보호합니다. SVG는 script·event handler·외부 resource를 거부하고 blob image 경계로
-표시합니다. 별도로 좌표가 있는 텍스트 run을 React text layer로 만들어 `⌘F` 검색,
-하이라이트, 텍스트 선택과 페이지 접근성 label을 제공합니다.
-
-main process는 CFB magic뿐 아니라 `FileHeader` signature와 5.x version도 확인합니다. 암호,
-배포용, DRM, 비지원 version과 손상 container는 WASM에 전달하지 않고 각각 안정적인 오류
-코드와 사용자 안내를 표시합니다. 공개 HWP를 안전하게 변형한 production E2E에서
-`HWP_ENCRYPTED`, `HWP_DISTRIBUTION`, `HWP_DRM`, `HWP_UNSUPPORTED_VERSION`,
-`HWP_CORRUPTED`를 검증했습니다.
-
-HWP와 HWPX는 preload에서 각각 다른 IPC를 노출하지 않고 공통 `document:import` 계약으로
-들어옵니다. main의 `DocumentImporter`가 형식을 판별하고 HWP preflight 또는 HWPX
-점진 decoder를 선택하며, React loader는 성공·실패와 background 완료를 같은 경계에서
-처리합니다. 항상 실패하던 과거 CFB stream prototype은 제거했습니다.
-
-AIDA HWP는 production build에서 7페이지, 3구역, 세로/가로 용지와 overflow 0을 확인했습니다.
-텍스트 layer는 비공백 6,074자를 보존해 기준 PDF 6,077자와 3자 차이이며, 패키지 앱에서 검색
-4페이지·6건과 6개 하이라이트를 자동 검증했습니다. 첫 페이지 우선 렌더링을 적용한 패키지 앱
-20회 기준 첫 화면은 Worker 격리 후 warm p50/p95 203/237ms, cold p50/p95 535/614ms이고
-cold 최악값도 722ms로 1초 목표를 통과했습니다.
-
-HWP PDF는 페이지별 CSS named page와 `preferCSSPageSize`를 사용해 한 파일 안의 세로·가로
-용지 크기를 그대로 보존합니다. AIDA HWP 출력은 7페이지 중 5페이지만 가로 용지이며, Poppler
-텍스트 추출 99.08% 보존과 세로·가로 대표 PNG의 잘림·겹침 없음을 확인했습니다. 같은 PDF
-경로로 기존 AIDA HWPX 8페이지와 페이지별 글자 수도 계속 일치합니다.
-
-개인정보 없는 고정 HWP도 저장소에 포함합니다. 자체 생성한 본문·3×3 표·PNG 그림·두 쪽에
-반복되는 머리말로 구성되며, 생성 결과 SHA-256까지 manifest에 고정합니다.
-`verify:hwp-matrix`는 생성 결정성, `kordoc` 구조 oracle의 표 1개·셀 9개·이미지 1개,
-`@rhwp/core`의 2쪽 SVG, 패키지 앱의 검색·접근성과 PDF 2쪽·텍스트 보존율을 함께 검사합니다.
-이 관문을 만들며 발견한 PDF 마지막 페이지 decode race도 수정했고, AIDA HWP 7쪽의 PDF
-텍스트가 페이지별 `[866, 1638, 1490, 171, 1107, 322, 424]`자로 모두 보존됨을 재검증했습니다.
-
-AIDA를 cold 5회 실행해 Electron 4개 프로세스의 working set을 50ms 간격으로 합산한 결과,
-Worker 격리 후 HWP 전체 렌더 peak는 p50/p95 619.9/647.6MiB, HWPX 기준선은
-436.8/438.3MiB였습니다. HWP p95는 격리 전보다 58.0MiB 늘었습니다. shared page가 프로세스별로
-중복 집계될 수 있어 실제 고유 물리 메모리가 아니라 같은 환경의 회귀 기준으로 사용합니다.
-
-V1 RC `cd8050d`를 lockfile 그대로 재패키징해 비교한 결과 현재 앱의 논리 크기 증가는
-6.96MiB(+2.19%)입니다. renderer build asset과 production dependency에 WASM이 중복되던
-13.92MiB 증가를 제거했고, `@rhwp/core` MIT 라이선스는 앱 resources에 별도로 포함합니다.
-
-남은 주요 차이는 원문 글꼴이 없는 Mac에서 대체 글꼴 폭에 따라 줄바꿈과 페이지별 콘텐츠 분배가
-달라지는 점입니다. 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않고, 시스템
-설치본의 한글·영문 family 이름을 찾아 사용합니다. OFL Noto Serif KR 번들도 실험했지만 페이지
-분배가 개선되지 않아 채택하지 않았습니다. 자세한 결정은
-[글꼴 전략](docs/font_strategy.md)을 참고하세요.
+함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않습니다. 시스템 설치본의
+한글·영문 family 이름을 찾아 사용하며 자세한 근거는 [글꼴 전략](docs/font_strategy.md)에
+기록했습니다.
 
 ## 개발
 
@@ -122,107 +165,79 @@ npm install
 npm run dev
 ```
 
-검증과 macOS용 비서명 앱 패키징:
+프로덕션 빌드와 비서명 macOS 앱:
 
 ```bash
 npm test -- --runInBand
 npm run build
 npm run package:mac
-npm run benchmark:app -- /path/to/document.hwpx
-npm run benchmark:app -- /path/to/document.hwp
-npm run benchmark:memory -- /path/to/document.hwp
-npm run benchmark:memory -- /path/to/document.hwpx
-npm run measure:package -- /path/to/v1/Han-Flow.app
-npm run verify:notices
-npm run verify:app -- /path/to/document.hwpx
-npm run verify:app -- /path/to/document.hwp
-npm run verify:matrix
-npm run verify:hwp-matrix
-npm run verify:pdf -- /path/to/document.hwpx
-npm run fixture:hwp
-npm run release:check -- /path/to/private-reference.hwpx
-npm run probe:hwp -- /path/to/document.hwp
-npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx
-npm run probe:hwp -- /path/to/document.hwp --hwpx /path/to/reference.hwpx --pdf /path/to/reference.pdf
 ```
 
-패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. 현재 개인용 검증 빌드로 서명·공증되지
-않았으며, 전용 아이콘은 적용되어 있습니다. 서명과 notarization은 V4 배포 관문입니다.
+패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다.
 
-`benchmark:app`은 패키지 앱을 사용해 같은 프로세스의 warm open 20회와 새 프로세스의 cold
-open 20회를 측정하고 `열기 → 첫 paint` p50/p95를 출력합니다. 입력 문서의 본문은 출력하지
-않으며 먼저 `npm run package:mac`을 실행해야 합니다.
+주요 회귀 관문:
 
-`benchmark:memory`는 격리된 cold 패키지 앱을 기본 5회 실행하고, 안정된 전체 페이지 렌더까지
-Electron process working set 합계를 50ms 간격으로 측정합니다. 파일명과 본문은 출력하지
-않습니다. `measure:package`는 V1 기준 앱과 현재 앱의 logical bytes·`app.asar` 크기를 비교하고
-rhwp WASM 중복 포함 여부도 검사합니다.
+```bash
+npm run test:probe
+npm run verify:notices
+npm run verify:matrix
+npm run verify:hwp-matrix
+npm run verify:app -- /path/to/document.hwpx
+npm run verify:app -- /path/to/document.hwp
+npm run verify:pdf -- /path/to/document.hwpx
+npm run verify:pdf -- /path/to/document.hwp
+```
 
-`verify:notices`는 패키지의 Han-Flow Apache-2.0, rhwp MIT와 Third-Party Notices가 저장소
-원문과 byte 단위로 일치하는지 검사합니다.
+전체 RC 관문은 private reference HWPX 경로를 받아 test, package, HWPX/HWP 공개 matrix,
+실사용 문서 smoke test와 PDF 검증을 순서대로 실행합니다.
 
-`verify:app`은 격리된 user-data로 패키지 앱을 열어 페이지 생성, 이미지 decode, background
-loading 완료와 overflow 0을 자동 판정합니다. HWP에는
-`HAN_FLOW_VERIFY_SEARCH_QUERY=<query>`를 함께 주어 검색·하이라이트·선택·접근성 layer까지
-검증할 수 있습니다. 본문 문자열 대신 페이지별 비공백 글자 수와 숫자 통계만 출력하며 임시
-상태 파일은 종료 시 삭제합니다.
+```bash
+npm run release:check -- /path/to/private-reference.hwpx
+```
 
-`verify:matrix`는 기본 표·이미지, 15문단 continuation, 80-section 대형 progressive 공개
-fixture를 임시 생성해 production 앱으로 연속 검증합니다. 대형 fixture는 전체 페이지와 실제
-mount 페이지 수를 비교해 page virtualization 적용도 확인합니다.
+성능·메모리와 parser 비교 명령:
 
-`fixture:hwp`는 개인정보 없는 공개 HWP를 결정적으로 다시 생성합니다. `verify:hwp-matrix`는
-이 결과가 커밋된 SHA-256과 같은지 확인한 뒤 두 parser의 구조·렌더 진단, production 앱,
-PDF 내보내기와 FileHeader 오류 5종을 한 번에 실행합니다.
+```bash
+npm run benchmark:app -- /path/to/document.hwp
+npm run benchmark:memory -- /path/to/document.hwp
+npm run measure:package -- /path/to/v1/Han-Flow.app
+npm run probe:hwp -- /path/to/document.hwp
+npm run probe:hwp -- /path/to/document.hwp \
+  --hwpx /path/to/reference.hwpx \
+  --pdf /path/to/reference.pdf
+```
 
-`verify:pdf`는 HWP/HWPX production 앱이 출력한 PDF를 Poppler로 다시 열어 화면/PDF 페이지
-수, 페이지별 용지 크기와 글자 보존을 비교하고 첫·중간·끝·가로 페이지를 PNG로 재렌더링합니다.
-`release:check`는 전체 테스트, 패키징, HWPX/HWP 공개 matrix, private 앱 smoke test와 PDF
-검증을 순서대로 실행하는 최종 RC 관문입니다.
+검증 명령은 본문 대신 페이지·구조 count, 비공백 문자 수, timing과 안정적인 오류 코드만
+출력합니다. 임시 visual state와 Electron user-data는 검증 종료 후 삭제합니다.
 
-`probe:hwp`는 V2 후보인 `kordoc`과 `@rhwp/core`를 앱 경로와 독립된 process에서
-비교합니다. 파일명·본문·SVG는 출력하지 않고 HWP version과 보안 flag, 구조·페이지 count,
-페이지별 비공백 글자 수와 timing만 기록합니다. `--hwpx`를 주면 현재 Han-Flow decoder의
-section·문단·표·cell·이미지 기준과 delta도 함께 계산합니다. Kordoc 최소 adapter는 AIDA의
-section 3개, semantic text 6,053자와 이미지 resource 2개를 정확히 보존했지만 문단·표와 layout
-정보가 부족해 단독 renderer가 아닌 semantic 보조 후보로 좁혀졌습니다. `--pdf`를 함께 주면
-본문을 출력하지 않고 rhwp SVG와 기준 PDF의 페이지 그룹·문자 보존율을 비교합니다. 현재 결과는
-[HWP V2-0 parser bake-off](docs/hwp_v2_bakeoff.md)에 있습니다.
-
-macOS 문서 연결은 확장자 기반 HWP Viewer 선언과 Han-Flow의 `com.hanflow.hwpx`, 기존 한컴 제품이 등록하는
-`com.haansoft.hancomofficeviewer.mac.hwpx`를 모두 Viewer 대상으로 선언합니다. 앱은 사용자의
-기본 앱 설정을 자동으로 변경하지 않습니다.
-
-## 구조
+## 저장소 구조
 
 ```text
 src/
-├── main/          # macOS 파일 열기, worker, IPC, PDF 출력
+├── main/          # 파일 열기, DocumentImporter, IPC와 PDF 출력
 ├── core/
-│   ├── parser/    # HWPX package와 ordered XML 해석
-│   ├── document/  # flow ViewerDocument와 HWP FixedPageDocument
+│   ├── parser/    # HWPX package와 ordered XML decoder
+│   ├── document/  # ViewerDocument, FixedPageDocument와 import 계약
 │   ├── fonts/     # 시스템 글꼴 해석과 대체 진단
 │   └── layout/    # 페이지·표 분할과 단위 변환
-└── renderer/      # React flow/fixed-page 렌더러와 공통 뷰어 UI
+└── renderer/      # React flow/fixed-page renderer와 공통 viewer UI
 tests/             # 공개 synthetic fixture 기반 회귀 테스트
-docs/              # 아키텍처, 파싱 전략, 기준선과 실험 기록
+scripts/           # 성능, 앱·PDF·라이선스 검증과 parser probe
+docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 ```
-
-실사용 fixture와 캡처에는 개인정보가 포함될 수 있어 저장소에 넣지 않습니다. 공개 테스트는
-결정적으로 생성되는 synthetic HWPX와, 생성 코드·SHA-256 manifest를 함께 둔 고정 synthetic
-HWP만 사용합니다.
 
 ## 문서
 
+- [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
+- [실행 계획](docs/execution_plan.md)
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
-- [HWP V2-0 parser bake-off 결과](docs/hwp_v2_bakeoff.md)
+- [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
 - [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)
-- [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
-- [v1 기준선과 구현 현황](docs/v1_baseline.md)
+- [V1 기준선](docs/v1_baseline.md)
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
-- [v1 Release Candidate 체크리스트](docs/release_checklist.md)
+- [Release Candidate 체크리스트](docs/release_checklist.md)
 - [날짜별 검증 이력과 포트폴리오 근거](docs/verification_history.md)
 - [변경 기록](CHANGELOG.md)
 
@@ -234,5 +249,5 @@ Han-Flow는 한글과컴퓨터와 제휴하거나 한글과컴퓨터의 보증�
 
 ## 라이선스
 
-Han-Flow는 [Apache License 2.0](LICENSE)으로 배포합니다.
-HWP parser를 포함한 배포 고지는 [Third-Party Notices](THIRD_PARTY_NOTICES.md)에 기록합니다.
+Han-Flow는 [Apache License 2.0](LICENSE)으로 배포합니다. HWP parser를 포함한 배포 고지는
+[Third-Party Notices](THIRD_PARTY_NOTICES.md)에 기록합니다.
