@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerParagraph } from '../../src/core/document/viewer_document'
-import { cellFragmentKey, FixedPageTextLayer, ParagraphView } from '../../src/renderer/src/App'
+import { cellFragmentKey, fixedPagePrintCss, FixedPageTextLayer, ParagraphView } from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
@@ -109,5 +109,15 @@ describe('fixed-page text layer', () => {
     expect(markup).toContain('&lt;한글 ')
     expect(markup).toContain('<mark class="viewer-fixed-page-search-hit">검색</mark>')
     expect(markup).not.toContain('<한글')
+  })
+
+  test('각 fixed page에 고유한 인쇄 용지 크기를 만든다', () => {
+    const css = fixedPagePrintCss([
+      { index: 0, sectionIndex: 0, width: 793, height: 1122 },
+      { index: 1, sectionIndex: 1, width: 1122, height: 793 }
+    ])
+    expect(css).toContain('@page han-flow-fixed-page-0 { size: 793px 1122px; margin: 0; }')
+    expect(css).toContain('@page han-flow-fixed-page-1 { size: 1122px 793px; margin: 0; }')
+    expect(css).toContain('[data-page-index="1"] { page: han-flow-fixed-page-1; }')
   })
 })

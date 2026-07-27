@@ -124,7 +124,9 @@ function captureVisualState(window: BrowserWindow): void {
     const visualState = await window.webContents.executeJavaScript(`({
       images: Array.from(document.querySelectorAll('.viewer-page img')).map((image) => ({ complete: image.complete, naturalWidth: image.naturalWidth, srcLength: image.src.length })),
       totalPages: Number(document.querySelector('.viewer-pages')?.dataset.totalPages || 0),
+      documentFormat: document.querySelector('.viewer-pages')?.dataset.documentFormat,
       mountedPages: document.querySelectorAll('.viewer-page').length,
+      pageSizes: Array.from(document.querySelectorAll('.viewer-page')).map((page) => ({ width: page.clientWidth, height: page.clientHeight })),
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
@@ -256,8 +258,13 @@ app.whenReady().then(() => {
     app.quit()
     return true
   })
-  ipcMain.handle('pdf:export', async (event, pageSize: { width: number; height: number }) => {
-    if (![pageSize.width, pageSize.height].every((value) => Number.isFinite(value) && value >= 0.1 && value <= 200)) {
+  ipcMain.handle('pdf:export', async (event, options: { width: number; height: number; preferCssPageSize?: boolean }) => {
+    if (
+      !options ||
+      typeof options !== 'object' ||
+      ![options.width, options.height].every((value) => Number.isFinite(value) && value >= 0.1 && value <= 200) ||
+      (options.preferCssPageSize !== undefined && typeof options.preferCssPageSize !== 'boolean')
+    ) {
       throw new Error('PDF 용지 크기가 올바르지 않습니다.')
     }
     const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
@@ -281,12 +288,15 @@ app.whenReady().then(() => {
         ipcMain.on('pdf:ready', ready)
         event.sender.send('pdf:prepare', requestId)
       })
-      const pdf = await event.sender.printToPDF({
+      const printOptions: Electron.PrintToPDFOptions = {
         printBackground: true,
-        preferCSSPageSize: false,
-        pageSize,
+        preferCSSPageSize: options.preferCssPageSize === true,
         margins: { top: 0, bottom: 0, left: 0, right: 0 }
-      })
+      }
+      if (!printOptions.preferCSSPageSize) {
+        printOptions.pageSize = { width: options.width, height: options.height }
+      }
+      const pdf = await event.sender.printToPDF(printOptions)
       await writeFile(targetPath, pdf)
       return targetPath
     } finally {

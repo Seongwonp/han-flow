@@ -35,7 +35,7 @@ const api = {
     return () => ipcRenderer.removeListener('pdf:finish', handler)
   },
   pdfReady: (requestId: string) => ipcRenderer.send('pdf:ready', requestId),
-  exportPdf: (pageSize: { width: number; height: number }) => ipcRenderer.invoke('pdf:export', pageSize),
+  exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean }) => ipcRenderer.invoke('pdf:export', options),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
   readHwp: (filePath: string) => ipcRenderer.invoke('hwp:read', filePath),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl),

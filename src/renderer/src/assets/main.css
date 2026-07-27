@@ -52,7 +52,7 @@ button { font: inherit; }
   html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }
   .viewer-toolbar, .viewer-status { display: none !important; }
   .viewer-stage { overflow: visible; padding: 0; background: white; }
-  .viewer-pages { gap: 0; transform: none !important; }
+  .viewer-pages { align-items: flex-start; gap: 0; transform: none !important; }
   .viewer-page { box-shadow: none; break-after: page; page-break-after: always; }
   .viewer-fixed-page-text-layer { visibility: hidden; }
   .viewer-page:last-child { break-after: auto; page-break-after: auto; }

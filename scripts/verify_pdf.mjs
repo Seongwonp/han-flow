@@ -7,8 +7,8 @@ const fixture = process.argv[2]
 const appBinary = resolve(process.argv[3] ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 const keepArtifacts = process.env.HAN_FLOW_KEEP_VERIFY_OUTPUT === '1'
 
-if (!fixture?.toLowerCase().endsWith('.hwpx')) {
-  console.error('사용법: npm run verify:pdf -- <fixture.hwpx> [Han-Flow 실행 파일]')
+if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
+  console.error('사용법: npm run verify:pdf -- <fixture.hwp|fixture.hwpx> [Han-Flow 실행 파일]')
   process.exit(1)
 }
 
@@ -52,12 +52,20 @@ try {
   const pageSize = info.match(/^Page size:\s+(.+)$/m)?.[1]?.trim()
   const pdfVersion = info.match(/^PDF version:\s+(.+)$/m)?.[1]?.trim()
   const pdfTextCounts = []
+  const pdfPageSizes = []
   for (let page = 1; page <= pdfPages; page += 1) {
+    const { standardOutput: pageInfo } = await run('pdfinfo', ['-f', String(page), '-l', String(page), pdfPath])
+    const match = pageInfo.match(/^Page\s+\d+\s+size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/m)
+      ?? pageInfo.match(/^Page size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/m)
+    pdfPageSizes.push(match ? { widthPoints: Number(match[1]), heightPoints: Number(match[2]) } : null)
     const { standardOutput } = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', pdfPath, '-'])
     pdfTextCounts.push((standardOutput.match(/\S/gu) ?? []).length)
   }
 
-  const renderPages = [...new Set([1, Math.ceil(pdfPages / 2), pdfPages])].filter((page) => page > 0)
+  const landscapePages = (state.pageSizes ?? [])
+    .map((size, index) => size.width > size.height ? index + 1 : 0)
+    .filter(Boolean)
+  const renderPages = [...new Set([1, Math.ceil(pdfPages / 2), pdfPages, ...landscapePages])].filter((page) => page > 0)
   const renderedBytes = []
   for (const page of renderPages) {
     const prefix = join(directory, `page-${page}`)
@@ -66,15 +74,44 @@ try {
   }
 
   const compareAllPages = state.totalPages <= 50 && state.mountedPages === state.totalPages
+  const expectedPageSizes = (state.pageSizes ?? []).map(({ width, height }) => ({
+    widthPoints: width * 72 / 96,
+    heightPoints: height * 72 / 96
+  }))
+  const compareAllPageSizes = expectedPageSizes.length === pdfPages
+  const pageSizeMismatches = compareAllPageSizes ? pdfPageSizes.flatMap((actual, index) => {
+    const expected = expectedPageSizes[index]
+    if (
+      !actual ||
+      !expected ||
+      Math.abs(actual.widthPoints - expected.widthPoints) > 1.5 ||
+      Math.abs(actual.heightPoints - expected.heightPoints) > 1.5
+    ) return [index + 1]
+    return []
+  }) : []
+  const screenTextTotal = state.pageTextCounts.reduce((sum, count) => sum + count, 0)
+  const pdfTextTotal = pdfTextCounts.reduce((sum, count) => sum + count, 0)
+  const hwpTextPreservation = screenTextTotal ? pdfTextTotal / screenTextTotal : 0
+  const hwpLowTextPages = state.pageTextCounts.flatMap((screenCount, index) => {
+    if (!screenCount || (pdfTextCounts[index] ?? 0) / screenCount >= 0.96) return []
+    return [index + 1]
+  })
   const failures = [
     state.errorVisible ? '화면에 사용자 오류가 표시됨' : undefined,
     state.documentLoading ? '백그라운드 문서 로딩이 끝나지 않음' : undefined,
     state.overflowPages.length ? `화면 overflow: ${state.overflowPages.join(', ')}` : undefined,
     state.totalPages === pdfPages ? undefined : `화면 ${state.totalPages}페이지 / PDF ${pdfPages}페이지`,
+    pageSizeMismatches.length ? `PDF 용지 크기 불일치: ${pageSizeMismatches.join(', ')}페이지` : undefined,
     pdfBytes > 0 ? undefined : 'PDF 파일이 비어 있음',
     renderedBytes.every((bytes) => bytes > 0) ? undefined : 'PDF PNG 재렌더 실패',
-    compareAllPages && JSON.stringify(state.pageTextCounts) !== JSON.stringify(pdfTextCounts)
+    compareAllPages && state.documentFormat === 'hwpx' && JSON.stringify(state.pageTextCounts) !== JSON.stringify(pdfTextCounts)
       ? '화면과 PDF의 페이지별 글자 수가 다름'
+      : undefined,
+    compareAllPages && state.documentFormat === 'hwp' && hwpTextPreservation < 0.98
+      ? `HWP PDF 텍스트 보존율 부족: ${(hwpTextPreservation * 100).toFixed(1)}%`
+      : undefined,
+    compareAllPages && state.documentFormat === 'hwp' && hwpLowTextPages.length
+      ? `HWP PDF 페이지별 텍스트 보존율 부족: ${hwpLowTextPages.join(', ')}페이지`
       : undefined
   ].filter(Boolean)
   const result = {
@@ -83,9 +120,13 @@ try {
     screenPages: state.totalPages,
     pdfPages,
     pageSize,
+    pageSizes: pdfPageSizes,
+    expectedPageSizes,
     pdfVersion,
     pdfBytes,
+    comparedPageSizes: compareAllPageSizes,
     comparedPageText: compareAllPages,
+    textPreservation: state.documentFormat === 'hwp' ? Number(hwpTextPreservation.toFixed(4)) : undefined,
     pageTextCounts: pdfTextCounts,
     renderedPages: renderPages,
     failures,
