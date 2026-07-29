@@ -8,6 +8,11 @@
 - KS X 6101·HWPX package, IME event, transaction과 안전 저장 1차 출처 조사
 - source package·editable model·viewer projection 분리 전략
 - loss report, 한국어 IME matrix와 단계별 round-trip 품질 관문
+- 모든 HWPX entry의 bytes·compression·CRC를 보존하는 `HwpxSourcePackage`
+- path traversal·duplicate·encrypted entry·압축 해제 크기 제한
+- unknown XML·binary 공개 fixture와 entry SHA-256 identity round-trip
+- 실사용 AIDA HWPX의 privacy-safe identity 검증
+- 잘못된 mimetype과 package 손실을 만들던 과거 serializer·저장 IPC 제거
 
 ### V2 HWP fixed-page
 

@@ -50,6 +50,13 @@ Git에 커밋하지 않는다.
 나뉘는지, 문단 ID가 빠지거나 중복되지 않는지, 뒤쪽 표가 추가 페이지로 밀리지 않는지를
 개인정보 없는 입력으로 검증한다.
 
+`createRoundTripHwpx`는 표준 package entry와 함께 알 수 없는 namespace·attribute·XML node,
+미지 binary와 명시적 directory entry를 넣는다. `HwpxSourcePackage` identity round-trip 뒤
+entry 순서·compression·CRC·uncompressed SHA-256과 sentinel이 모두 같은지 검증한다.
+`mimetype`은 다른 공개 fixture를 포함해 `application/hwp+zip`을 stored 방식으로 기록한다.
+저장소 밖 실문서는 `HAN_FLOW_PRIVATE_HWPX` 환경 변수로 같은 테스트를 선택 실행하며 본문이나
+파일명은 assertion과 로그에 포함하지 않는다.
+
 `createSyntheticHwpx`의 `sectionCount`, `paragraphsPerExtraSection`, `imageBytes` 옵션으로
 대형 문서를 만들 수 있다. `npm run benchmark:decoder`는 80 sections, 약 1만 9천 문단,
 5MiB image resource 조건에서 첫 section과 전체 디코딩을 각각 20회 실행하고 p50/p95를

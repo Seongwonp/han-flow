@@ -8,6 +8,29 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-1 HWPX source package identity
+
+모든 ZIP entry를 원본 순서와 uncompressed bytes, compression, CRC로 보유하는
+`HwpxSourcePackage`를 추가했다. 과거 serializer는 header와 section만 재생성해 unknown XML,
+이미지와 package entry를 잃었고 잘못된 mimetype을 기록했으므로 preload/main 저장 IPC와 함께
+제거했다. 사용자 저장 기능은 아직 노출하지 않는다.
+
+공개 round-trip fixture에는 unknown namespace·attribute·XML node, PNG, stored binary,
+directory entry, Preview와 META-INF를 넣었다. 재패킹 전후 entry metadata와 각 파일 SHA-256이
+일치하고 기존 HWPX reader가 결과를 다시 여는지 확인했다. 저장소 밖 AIDA HWPX도 파일명·본문을
+assertion이나 결과에 출력하지 않는 선택 테스트로 같은 identity 관문을 통과했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 단위·통합 테스트 | `npm test -- --runInBand` | 17 suites, 75 passed, 1 suite skipped |
+| private identity | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/parser/source_package.test.ts` | entry metadata·SHA-256 일치 |
+| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
+| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
+
+Windows 한/글에서 identity 결과를 다시 여는 외부 호환성 확인은 남아 있다. 그 전까지
+V3-1을 저장 UI 완료로 표현하지 않으며, 다음 구현은 source anchor 기반 한 text node patch와
+검증된 Save As다.
+
 ## 2026-07-27 — V2 공통 importer 완료
 
 관련 구현: `35e26e4` (`문서 가져오기 IPC 경계 통합`)

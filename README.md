@@ -11,8 +11,8 @@
 Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공공기관과 학교에서 받은 한글
 문서를 Mac에서 매주 실제로 열어볼 수 있는 작고 안정적인 도구를 목표로 합니다.
 
-V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. 다음 V3에서 HWPX 편집
-기반을 설계하며, 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
+V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package를
+손실 없이 보존하는 기반 구현을 시작했으며, 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
 `1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
 
 ## 현재 지원 범위
@@ -77,7 +77,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 16 suites, 62 passed, 1 skipped |
+| Jest | 17 suites, 75 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -131,16 +131,17 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | --- | --- | --- |
 | V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
-| V3 — 편집 | 예정 | HWPX editable model, IME, undo/redo, 안전 저장 |
+| V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 0%, V4 5%이며
-최종 배포 전체로는 약 46%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 10%, V4 5%이며
+최종 배포 전체로는 약 50%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
 selection·undo/redo와 crash-safe 저장을 별도 품질 관문으로 개발합니다. `.hwp` 저장은
-V3의 기본 약속이 아닙니다.
+V3의 기본 약속이 아닙니다. 현재는 모든 HWPX ZIP entry와 unknown XML·binary를 identity
+round-trip하는 `HwpxSourcePackage`까지만 구현됐으며 편집 UI나 저장 버튼은 아직 없습니다.
 
 ## 알려진 제한
 
@@ -216,7 +217,7 @@ npm run probe:hwp -- /path/to/document.hwp \
 src/
 ├── main/          # 파일 열기, DocumentImporter, IPC와 PDF 출력
 ├── core/
-│   ├── parser/    # HWPX package와 ordered XML decoder
+│   ├── parser/    # HWPX source package 보존과 ordered XML decoder
 │   ├── document/  # ViewerDocument, FixedPageDocument와 import 계약
 │   ├── fonts/     # 시스템 글꼴 해석과 대체 진단
 │   └── layout/    # 페이지·표 분할과 단위 변환

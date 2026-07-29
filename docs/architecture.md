@@ -43,6 +43,16 @@ commit한다. 저장은 같은 디렉터리의 임시 package를 다시 열어 �
 기존 코드 폐기 판정과 품질 관문은
 [V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)에 기록한다.
 
+V3-1에서 `HwpxSourcePackage`를 구현했다. ZIP central directory를 먼저 검사해 절대 경로,
+`..`, 역슬래시, NUL, duplicate, encrypted entry, 미지원 compression과 개수·개별·전체
+압축 해제 크기 초과를 거부한다. 허용된 entry는 원본 순서, uncompressed bytes, CRC와
+stored/deflate 방식을 source snapshot에 보유한다. `mimetype`은 정확한
+`application/hwp+zip` bytes와 stored 방식을 모두 요구한다.
+
+identity writer는 이 snapshot만 재패킹한다. ZIP timestamp나 압축 결과 bytes 자체는 동일성
+기준이 아니며, entry 순서·경로·compression·CRC와 각 uncompressed content SHA-256을
+재개봉 후 비교한다. 아직 이 writer를 사용자 저장 IPC에 노출하지 않는다.
+
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를

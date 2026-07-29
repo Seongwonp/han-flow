@@ -67,7 +67,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **V3-0 조사·설계 완료, 기능 구현 전**
+상태: **V3-1 package preservation 구현, Windows 한/글 재열기 확인 대기**
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -100,10 +100,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 ## 현재 다음 작업
 
-1. 기존 손실 저장 IPC를 제거하거나 experimental guard로 차단
-2. 모든 ZIP entry를 보존하는 `HwpxSourcePackage`와 identity round-trip
-3. unknown XML·entry sentinel을 가진 공개 편집 fixture
-4. 한 text node patch와 검증된 `Save As` vertical slice
+1. 공개 identity fixture를 Windows 한/글에서 재열기
+2. `hp:t` source anchor와 한 text node patch
+3. 수정 section 외 entry hash가 유지되는 `Save As` vertical slice
+4. 임시 파일 재개봉 검증과 원본 보호
 
 ## 진행률 스냅샷
 
@@ -114,9 +114,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
-| V3 편집 | 40% | 0% | 0.0% |
+| V3 편집 | 40% | 10% | 4.0% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 46%** |
+| **최종 배포 전체** | **100%** | | **약 50%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질

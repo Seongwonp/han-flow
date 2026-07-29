@@ -109,14 +109,16 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 
 ## 현재 milestone: V3-1 package preservation
 
-1. 사용되지 않는 `hwpx:save` IPC를 제거하거나 명시적으로 차단한다.
-2. 모든 entry bytes·compression·CRC를 제한된 형태로 읽는 `HwpxSourcePackage`를 만든다.
-3. path traversal, duplicate entry와 압축 해제 크기 상한을 검증한다.
-4. 수정 없는 identity round-trip에서 entry set과 content SHA-256을 비교한다.
-5. unknown namespace·attribute·entry sentinel 공개 fixture를 추가한다.
-6. Han-Flow와 Windows 한/글 재열기 결과를 기록한다.
+1. [x] 사용되지 않는 손실성 `hwpx:save` IPC와 과거 serializer를 제거한다.
+2. [x] 모든 entry bytes·compression·CRC를 제한된 형태로 읽는 `HwpxSourcePackage`를 만든다.
+3. [x] path traversal, duplicate, encrypted entry와 압축 해제 크기 상한을 검증한다.
+4. [x] 수정 없는 identity round-trip에서 entry set·compression·CRC·content SHA-256을 비교한다.
+5. [x] unknown namespace·attribute·entry sentinel 공개 fixture를 추가한다.
+6. [x] Han-Flow 재열기와 기존 production matrix 회귀를 확인한다.
+7. [ ] Windows 한/글 재열기 결과를 기록한다.
 
-텍스트 입력 UI는 V3-1 package preservation이 통과하기 전에 시작하지 않는다.
+코드 관문과 실사용 AIDA HWPX의 privacy-safe identity 검증은 통과했다. Windows 한/글
+재열기를 외부 호환성 관문으로 남기며, 다음 구현은 한 text node patch와 검증된 Save As다.
 
 ## 매 milestone 공통 완료 규칙
 

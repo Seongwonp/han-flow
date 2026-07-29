@@ -1,5 +1,7 @@
 # V3 HWPX 편집 조사와 구현 전략
 
+상태: V3-1 source package 코드 관문 완료, Windows 한/글 identity 재열기 확인 대기
+
 기준일: 2026-07-29
 
 ## 1. 목표와 범위
@@ -160,8 +162,8 @@ V3의 저장 순서는 다음과 같다.
 | `src/renderer/src/store.ts` | 폐기 후보 | 실행 경로에서 import되지 않는다. `NormalizedDocument` 전체 deep copy history, `any`, `Date.now()` ID와 action 내부 store update를 사용한다. V3 store의 근거로 쓰지 않는다. |
 | `src/shared/types.ts`의 `NormalizedDocument` | 참고만 유지 | 초기 parser/editor용 모델이다. 원본 package와 알 수 없는 XML을 소유하지 않아 저장 원본으로 부적합하다. |
 | `src/core/parser/parser.ts`·`normalization.ts` | 격리 후보 | 현재 `DocumentImporter` 경로에서 사용되지 않는 초기 parser다. 조기 normalization으로 원본 구조가 손실된다. |
-| `src/core/parser/serialization.ts` | 사용 금지 | header와 section만 새로 만들며 package entry·이미지·미지원 XML을 보존하지 않는다. 실제 OWPML attribute/구조와 다른 임시 표현도 포함한다. |
-| main의 `hwpx:save` | 사용 금지 | renderer의 `any` payload를 받아 목적지에 직접 동기 write한다. 현재 `mimetype` 값도 `application/ovf+xml`로 잘못 기록한다. schema, sender, 원본 보호와 저장 후 검증이 없다. |
+| 과거 `src/core/parser/serialization.ts` | 제거 완료 | header와 section만 새로 만들며 package entry·이미지·미지원 XML을 보존하지 않았다. 실제 OWPML attribute/구조와 다른 임시 표현도 포함했다. |
+| 과거 main `hwpx:save` | 제거 완료 | renderer의 `any` payload를 받아 목적지에 직접 동기 write했다. `mimetype` 값도 `application/ovf+xml`로 잘못 기록했고 schema, sender, 원본 보호와 저장 후 검증이 없었다. |
 | `HwpxPackageReader` | 확장해 재사용 | mimetype·필수 entry·section·resource index와 byte read는 검증됐다. 모든 entry snapshot, duplicate/path/size 제한과 compression metadata를 추가한다. |
 | `ordered_xml.ts` | 확장 후보 | 자식 순서 보존은 V3에도 필요하다. source span과 serializer round-trip 가능성을 spike로 검증한다. |
 | `viewer_decoder.ts`·`ViewerDocument` | 그대로 재사용 | 편집 원본이 아니라 read-only projection으로 유지한다. |
@@ -296,6 +298,21 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - unknown sentinel 100% 보존
 - Han-Flow와 한/글에서 다시 열림
 - 기존 HWPX production matrix 회귀 없음
+
+2026-07-29 구현 결과:
+
+- 사용되지 않던 `hwpx:save` preload/main IPC와 손실성 serializer를 제거했다.
+- `HwpxSourcePackage`가 모든 entry의 원본 순서·bytes·compression·CRC를 보유한다.
+- 10,000 entries, 개별 128 MiB, 전체 512 MiB 상한과 경로·duplicate·암호화·compression
+  preflight를 적용했다.
+- unknown XML·binary·directory sentinel 공개 fixture가 entry metadata와 SHA-256 identity
+  round-trip을 통과했다.
+- 저장소 밖 AIDA HWPX도 본문을 출력하지 않는 같은 관문을 통과했다.
+- 재패킹 결과를 기존 Han-Flow reader로 다시 열었고 전체 Jest 75개와 9,767쪽 production
+  matrix를 통과했다.
+
+남은 외부 관문은 identity 결과의 Windows 한/글 재열기다. 사용자 저장 IPC와 편집 UI는
+아직 노출하지 않는다.
 
 ### V3-2 text patch와 Save As
 
