@@ -434,6 +434,14 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 - 표 cell text부터 시작해 행·열·병합을 별도 관문으로 확장
 - 각 기능의 package/visual/PDF round-trip
 
+2026-07-29 공개 구현 비교 결과는
+[HWP/HWPX 오픈소스 참고 프로젝트 검토](open_source_reference_review.md)에 분리했다.
+Kordoc의 source-map splice와 재파싱 관문, Alhangeul의 macOS 제품·배포 운영,
+hwp-mcp의 작은 ZIP mutation 구현을 비교했다. 첫 style slice는 임의 문자열 검색이나
+첫 style 복제가 아니라 현재 source anchor, 실제 원본 style clone, 결정적 ID allocation과
+header list/reference의 원자적 변경으로 구현한다. 세 저장소의 코드는 이번 조사에서
+이식하지 않았고 새 dependency도 추가하지 않았다.
+
 ### V3-6 저장 복구와 실사용 관문
 
 - in-place save, backup, crash/fault injection
@@ -546,3 +554,8 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
   비신뢰 콘텐츠 격리, IPC sender 검증과 최소 권한 API
 - [Electron, Context Isolation](https://www.electronjs.org/docs/latest/tutorial/context-isolation):
   renderer에 일반 IPC를 직접 노출하지 않고 메시지별 제한 API를 제공하는 원칙
+
+### 비교한 공개 구현
+
+- [HWP/HWPX 오픈소스 참고 프로젝트 검토](open_source_reference_review.md):
+  Kordoc, Alhangeul for macOS와 hwp-mcp의 고정 commit, 라이선스, 적용·비채택 판단

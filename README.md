@@ -249,6 +249,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
 - [V3 HWPX 편집 조사와 구현 전략](docs/v3_editing_strategy.md)
+- [HWP/HWPX 오픈소스 참고 프로젝트 검토](docs/open_source_reference_review.md)
 - [V3 macOS 한국어 IME 수동 검증 matrix](docs/v3_ime_manual_matrix.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
