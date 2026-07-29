@@ -120,7 +120,7 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 코드 관문과 실사용 AIDA HWPX의 privacy-safe identity 검증은 통과했다. Windows 한/글
 재열기는 V3 전체의 외부 호환성 관문으로 계속 추적한다.
 
-## 현재 milestone: V3-2 text patch와 Save As
+## 완료한 코드 관문: V3-2 text patch와 Save As
 
 1. [x] UTF-8 section에서 단순 `hp:t` source span과 결정적 text node ID를 만든다.
 2. [x] revision·UTF-16 범위를 검증하는 `ReplaceTextCommand`와 inverse를 만든다.
@@ -132,7 +132,22 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 8. [ ] 사용자 저장 확인 UI와 제한된 IPC는 transaction/history 이후 연결한다.
 
 공개 fixture와 저장소 밖 AIDA HWPX 모두 한 text patch·Save As·재개봉을 통과했다. 현재
-코어는 사용자 UI에 노출하지 않으며 다음 구현은 command transaction과 bounded history다.
+코어는 사용자 UI에 노출하지 않는다.
+
+## 현재 milestone: V3-3 transaction과 history
+
+1. [x] base revision·command 배열·전후 selection을 가진 원자적 transaction을 만든다.
+2. [x] 중간 command 실패와 stale revision에서 부분 결과를 반환하지 않는다.
+3. [x] 역순 inverse transaction으로 여러 text edit를 byte 단위 복원한다.
+4. [x] transaction 결과를 기존 `ViewerDocument` projection으로 다시 decode한다.
+5. [x] package snapshot 대신 forward/inverse delta만 저장한다.
+6. [x] 기본 100 entries·8 MiB와 transaction 1,000 commands 상한을 둔다.
+7. [x] `inputType`·selection·anchor·시간·composition 경계를 모두 사용해 typing을 묶는다.
+8. [x] undo/redo selection, branch, savepoint·dirty와 undo/redo 후 Save As를 검증한다.
+9. [ ] 실제 DOM selection과 IME event는 V3-4 input surface에서 연결한다.
+
+공개 fixture와 AIDA 실문서에서 transaction → undo → redo → Save As와 원본 hash 불변을
+통과했다. 다음 구현은 paragraph input surface, native composition과 selection mapping이다.
 
 ## 매 milestone 공통 완료 규칙
 

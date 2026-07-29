@@ -18,6 +18,12 @@
 - preserved/modified entry와 Preview 상태를 구분하는 `LossReport`
 - 임시 파일 flush·재개봉·viewer 검증 후 새 목적지에만 commit하는 Save As 코어
 - 실사용 AIDA HWPX 한 text patch·Save As와 원본 hash 불변 검증
+- 여러 text command의 원자적 transaction과 역순 inverse
+- transaction 결과의 기존 `ViewerDocument` projection 재생성
+- snapshot 없는 100 entries·8 MiB bounded undo/redo history
+- input type·selection·anchor·시간·composition 기반 typing grouping
+- logical savepoint·dirty, undo branch와 redo 폐기
+- 실사용 AIDA HWPX transaction·undo·redo·Save As 검증
 
 ### V2 HWP fixed-page
 

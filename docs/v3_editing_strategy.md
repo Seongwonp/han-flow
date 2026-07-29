@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-2 text patch·검증형 Save As 코어 완료, transaction/history 구현 전
+상태: V3-3 transaction·bounded history 코어 완료, paragraph IME surface 구현 전
 
 기준일: 2026-07-29
 
@@ -354,6 +354,26 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - selection before/after
 - bounded delta history와 dirty/savepoint
 - undo 후 저장, redo 후 저장 round-trip
+
+2026-07-29 구현 결과:
+
+- `EditTransaction`이 base revision, 최대 1,000 commands, 전후 UTF-16 selection,
+  `inputType`, composition ID와 timestamp를 가진다.
+- 여러 command는 evolving immutable package에 순서대로 적용되며 하나라도 실패하면 호출자
+  source에는 부분 결과가 남지 않는다. inverse는 command 역순으로 원문 bytes를 복원한다.
+- 수정된 `HwpxSourcePackage`가 `HwpxReadablePackage`를 구현해 파일 재작성 없이 기존
+  `ViewerDocument` projection을 다시 생성한다.
+- `HwpxEditHistory`는 전체 package snapshot 대신 forward/inverse delta만 기본 100 entries,
+  추정 8 MiB 안에서 보유한다. 한 entry가 byte limit보다 크면 commit 자체를 거부한다.
+- 같은 input type·anchor, 연속 selection, 1초 이내 timestamp와 composition 밖이라는 조건이
+  모두 맞는 연속 입력만 한 undo 단위로 묶는다. command 1,000개에서 새 단위를 시작한다.
+- logical state ID 기반 savepoint로 undo가 저장 상태에 돌아오면 dirty가 해제되며,
+  undo 뒤 새 edit는 redo branch를 폐기한다.
+- 공개 fixture와 AIDA 실문서에서 transaction·undo·redo·projection·Save As와 원본 hash
+  불변을 검증했다.
+
+DOM event와 한국어 IME는 아직 연결하지 않았다. composition 중간값은 history에 넣지 않고
+V3-4 input adapter가 `compositionend`에서 완성 transaction 하나만 commit해야 한다.
 
 ### V3-4 한국어 IME와 selection
 

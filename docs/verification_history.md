@@ -8,6 +8,28 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-3 transaction과 bounded history
+
+여러 `ReplaceTextCommand`를 base revision과 전후 selection을 가진 하나의 원자적
+`EditTransaction`으로 묶었다. 성공 결과는 inverse transaction과 loss report를 만들고,
+수정 source package를 기존 viewer decoder로 즉시 projection한다.
+
+history는 문서 snapshot 대신 forward/inverse delta만 기본 100 entries·추정 8 MiB로 제한한다.
+연속 typing grouping은 input type, 같은 anchor, selection 연속성, 시간 창과 composition 경계를
+함께 사용한다. savepoint는 logical state ID로 추적해 package revision이 계속 증가해도
+undo가 저장 상태로 돌아오면 dirty가 정확히 해제된다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 단위·통합 테스트 | `npm test -- --runInBand` | 19 suites, 89 passed, 1 suite skipped |
+| transaction/history | `tests/editing/transaction_history.test.ts` | atomicity·inverse·grouping·limit·savepoint·Save As 8건 통과 |
+| private history | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/editing/transaction_history.test.ts` | undo·redo·Save As·원본 hash 불변 |
+| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
+| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
+
+사용자 입력 UI는 아직 없다. 다음 관문은 paragraph surface에서 native composition과 selection을
+source anchor transaction으로 변환하고 실제 macOS 두벌식 입력을 검증하는 V3-4다.
+
 ## 2026-07-29 — V3-2 source text patch와 검증형 Save As
 
 UTF-8 section 원문에서 단순 `hp:t` content span만 수정하는 `ReplaceTextCommand`를 구현했다.

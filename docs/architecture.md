@@ -65,6 +65,18 @@ Han-Flow decoder를 다시 통과시킨다. 추가 semantic verifier까지 성�
 목적지 이름을 원자적으로 생성하고 임시 이름을 제거한다. 이 코어 역시 아직 preload에
 노출하지 않는다.
 
+V3-3의 `EditTransaction`은 base revision, command 배열, 전후 selection, `inputType`과
+composition ID를 가진다. command는 순서대로 immutable package에 적용하며 중간 command가
+실패하면 부분 package를 반환하지 않는다. 성공 transaction은 역순 inverse command와
+`LossReport`를 만들고, 수정된 `HwpxSourcePackage` 자체를 기존 decoder의
+`HwpxReadablePackage` 계약으로 다시 projection할 수 있다.
+
+`HwpxEditHistory`는 package snapshot을 저장하지 않고 forward/inverse transaction만 최대
+100 entries, 추정 8 MiB로 제한한다. 연속 타이핑은 같은 input type·text anchor, selection
+연속성과 1초 이내 시간 창이 모두 맞고 composition 밖일 때만 묶는다. savepoint 직후에는
+grouping하지 않아 undo가 저장 상태를 건너뛰지 않는다. dirty 판정은 계속 증가하는 package
+revision이 아니라 logical state ID와 savepoint ID를 비교한다.
+
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를
