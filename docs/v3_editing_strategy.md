@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-3 transaction·bounded history 코어 완료, paragraph IME surface 구현 전
+상태: V3-4 첫 slice 완료 — 제한된 paragraph IME surface와 packaged undo/redo 연결
 
 기준일: 2026-07-29
 
@@ -372,8 +372,9 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - 공개 fixture와 AIDA 실문서에서 transaction·undo·redo·projection·Save As와 원본 hash
   불변을 검증했다.
 
-DOM event와 한국어 IME는 아직 연결하지 않았다. composition 중간값은 history에 넣지 않고
-V3-4 input adapter가 `compositionend`에서 완성 transaction 하나만 commit해야 한다.
+V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
+adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
+하나만 commit한다.
 
 ### V3-4 한국어 IME와 selection
 
@@ -382,6 +383,25 @@ V3-4 input adapter가 `compositionend`에서 완성 transaction 하나만 commit
 - caret·selection source anchor mapping
 - re-pagination 뒤 selection 복원
 - CDP 보조 E2E와 실제 macOS 두벌식 수동 matrix
+
+2026-07-29 첫 구현 결과:
+
+- ordered XML의 모든 `hp:t`에 section 내 ordinal을 부여하고 `ViewerText.sourceAnchor`로
+  projection해 source scanner의 결정적 ID와 일치시켰다.
+- browser가 composition 중 DOM을 소유한다. 중간 `input`은 source·history·pagination에
+  반영하지 않고 `compositionend`에서 UTF-16 최소 diff 하나만 만든다.
+- source package와 bounded history는 main process의 sender-bound session이 소유한다.
+  renderer는 session ID와 제한된 text command만 IPC로 보내며 base revision은 실행 시점에
+  main이 결정한다.
+- 첫 UI는 완전히 로드된 HWPX의 최상위 문단 중 content가 source anchor를 가진 단일
+  `ViewerText`인 경우만 `plaintext-only` surface로 연다. 표 cell, 머리말·꼬리말, 복합 run,
+  line break와 `.hwp`는 읽기 전용이다.
+- 패키지 AIDA 기준 8쪽·이미지 4개·overflow 0을 유지하며 composition commit → undo → redo를
+  privacy-safe probe로 검증했다.
+
+남은 V3-4 관문은 실제 macOS 두벌식 키보드 수동 matrix, 범위 selection 교체와
+re-pagination 후 caret 복원의 확대 검증이다. Save As UI는 이 입력 관문을 잠근 뒤 별도
+후속 slice로 연결한다.
 
 ### V3-5 style과 표 편집
 

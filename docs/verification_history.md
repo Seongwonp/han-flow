@@ -8,6 +8,30 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-4 paragraph IME surface 첫 slice
+
+ordered XML `hp:t`의 section ordinal을 `ViewerText.sourceAnchor`에 보존하고, renderer의
+`plaintext-only` 문단 surface가 native `beforeinput`·composition·input event를 source
+transaction으로 바꾸도록 연결했다. browser가 조합 중 DOM을 소유하며 중간값은 commit하지
+않고 `compositionend`에서 완성된 UTF-16 최소 diff 하나만 main process로 보낸다.
+
+source package와 bounded history는 sender/session에 묶인 main-process manager가 소유한다.
+commit·undo·redo는 sender별 queue로 직렬화하며 renderer에는 raw package bytes와 base
+revision을 노출하지 않는다. 첫 UI 범위는 완전히 로드된 HWPX의 최상위 단일 text 문단이고
+표·머리말·꼬리말·복합 run·HWP는 계속 읽기 전용이다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 단위·통합 테스트 | `npm test -- --runInBand` | 21 suites, 97 passed, 1 suite skipped |
+| IME adapter | `tests/editing/composition_input.test.ts` | 조합 중 0회·종료 1회 commit, 삭제·취소·emoji 경계 통과 |
+| main session | `tests/main/editing_session.test.ts` | sender binding·commit·undo·redo projection 3건 통과 |
+| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
+| packaged IME probe | `HAN_FLOW_VERIFY_EDIT_TEXT=한 npm run verify:app -- <private.hwpx>` | 8쪽·이미지 4개·overflow 0, 편집·undo·redo 일치 |
+
+probe 결과에는 원문이나 수정 본문을 남기지 않고 길이와 일치 여부, editable count만 기록한다.
+실제 물리 키보드 두벌식 입력과 범위 selection·re-pagination caret matrix는 남아 있으므로
+V3-4 전체 완료로 표현하지 않는다. 저장 UI도 아직 연결하지 않았다.
+
 ## 2026-07-29 — V3-3 transaction과 bounded history
 
 여러 `ReplaceTextCommand`를 base revision과 전후 selection을 가진 하나의 원자적

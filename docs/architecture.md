@@ -77,6 +77,18 @@ composition ID를 가진다. command는 순서대로 immutable package에 적용
 grouping하지 않아 undo가 저장 상태를 건너뛰지 않는다. dirty 판정은 계속 증가하는 package
 revision이 아니라 logical state ID와 savepoint ID를 비교한다.
 
+V3-4에서 source package와 history의 실제 소유자를 Electron main으로 확정했다. 각
+`webContents.id`에는 하나의 무작위 session ID만 연결되고 commit은 sender별 queue에서
+직렬 실행된다. renderer는 source ZIP bytes나 revision을 소유하지 않으며 text node ID,
+UTF-16 diff와 전후 selection만 보낸다. 창 종료나 새 문서 열기에서는 session을 폐기한다.
+
+`ViewerText.sourceAnchor`는 section path와 ordered XML의 `hp:t` ordinal로 만든 결정적 ID다.
+React의 `plaintext-only` surface는 composition 동안 browser DOM을 그대로 두고,
+`compositionend`에서 한 transaction을 main에 보낸다. projection 응답이 돌아오기 전에는
+낡은 React text로 DOM을 덮어쓰지 않으며 마지막 응답 뒤 selection을 복원한다. 현재 editable
+surface는 최상위 단일 text 문단에만 적용되고 measurement tree, 표, 머리말·꼬리말과 HWP
+fixed page에는 적용하지 않는다.
+
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를

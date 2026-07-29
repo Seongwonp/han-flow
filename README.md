@@ -12,7 +12,8 @@ Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공�
 문서를 Mac에서 매주 실제로 열어볼 수 있는 작고 안정적인 도구를 목표로 합니다.
 
 V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package
-보존, text patch·검증형 Save As와 transaction 기반 undo/redo 코어를 구현했으며,
+보존, text patch·검증형 Save As와 transaction 기반 undo/redo 코어를 구현했고 제한된
+plain-text 문단 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 연결했습니다.
 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
 `1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
 
@@ -26,6 +27,8 @@ V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V
 - 실제 DOM 높이를 사용하는 2-pass pagination
 - 긴 표 셀의 continuation 행과 반복 머리글
 - Worker 기반 점진 decode와 페이지 가상화
+- 원본 `hp:t` source anchor 기반의 제한된 단일 텍스트 문단 편집
+- 조합 종료 단위 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 
 ### HWP 5.0
 
@@ -78,7 +81,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 19 suites, 89 passed, 1 suite skipped |
+| Jest | 21 suites, 97 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -135,8 +138,8 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 30%, V4 5%이며
-최종 배포 전체로는 약 58%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 42%, V4 5%이며
+최종 배포 전체로는 약 63%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -144,12 +147,14 @@ selection·undo/redo와 crash-safe 저장을 별도 품질 관문으로 개발�
 V3의 기본 약속이 아닙니다. 현재는 모든 HWPX ZIP entry와 unknown XML·binary를 identity
 round-trip하고 source anchor로 단일 `hp:t`를 수정한 뒤 검증된 새 파일로 저장하는 코어까지
 구현됐습니다. 여러 command의 원자적 transaction, selection 복원, bounded undo/redo와
-savepoint·dirty 상태도 검증했습니다. 이 경로는 아직 IPC·편집 UI·저장 버튼에 연결하지
-않았습니다.
+savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 session과 제한된 IPC를 통해
+최상위 단일 `ViewerText` 문단만 편집 UI에 연결했고, 패키지 앱에서 composition
+commit·undo·redo를 검증했습니다. 저장 버튼은 아직 노출하지 않았습니다.
 
 ## 알려진 제한
 
-- 편집 기능은 아직 제공하지 않습니다.
+- HWPX 편집은 최상위 단일 텍스트 문단만 지원하며 표·머리말·꼬리말·복합 run은 읽기 전용입니다.
+- 편집 결과를 파일로 저장하는 UI는 아직 제공하지 않으므로 앱을 닫으면 변경 내용이 사라집니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
 - 원문 글꼴이 없으면 대체 글꼴 폭에 따라 HWPX 줄바꿈과 페이지 분배가 달라질 수 있습니다.
 - 한 문단 내부의 줄 단위 페이지 분할은 아직 지원하지 않습니다.

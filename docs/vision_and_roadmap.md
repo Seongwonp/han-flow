@@ -67,7 +67,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **V3-3 transaction·bounded undo/redo 코어 완료, IME UI 연결 전**
+상태: **V3-4 첫 slice 완료 — 제한된 HWPX 문단 IME·undo/redo UI 연결**
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -100,10 +100,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 ## 현재 다음 작업
 
-1. 공개 identity fixture를 Windows 한/글에서 재열기
-2. paragraph 단위 plain-text input surface
-3. native `beforeinput`·composition event adapter
-4. DOM selection과 source anchor mapping·복원
+1. 실제 macOS 두벌식 삽입·삭제·범위 교체·조합 취소 수동 matrix
+2. re-pagination 뒤 caret·selection 복원 확대 검증
+3. 검증형 Save As 확인 UI와 제한된 IPC
+4. 공개 identity fixture를 Windows 한/글에서 재열기
 
 ## 진행률 스냅샷
 
@@ -114,9 +114,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
-| V3 편집 | 40% | 30% | 12.0% |
+| V3 편집 | 40% | 42% | 16.8% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 58%** |
+| **최종 배포 전체** | **100%** | | **약 63%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질
