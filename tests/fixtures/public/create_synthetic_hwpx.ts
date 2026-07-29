@@ -24,6 +24,12 @@ const section1 = `<?xml version="1.0" encoding="UTF-8"?>
 </hs:sec>`
 
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
+const HWPX_MIMETYPE = 'application/hwp+zip'
+
+function addMimetype(zip: AdmZip): void {
+  const entry = zip.addFile('mimetype', Buffer.from(HWPX_MIMETYPE))
+  entry.header.method = 0
+}
 
 const cellFragmentHeader = header.replace('height="1000"', 'height="500"')
 const fragmentParagraphs = Array.from({ length: 15 }, (_, index) =>
@@ -73,7 +79,7 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
   const paragraphsPerExtraSection = options.paragraphsPerExtraSection ?? 1
   const path = join(directory, options.fileName ?? 'han-flow-public.hwpx')
   const zip = new AdmZip()
-  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section1.xml', Buffer.from(section1))
   const firstSection = section0.replace('</hs:sec>', `${paragraphs(0, options.firstSectionExtraParagraphs ?? 0)}</hs:sec>`)
@@ -90,7 +96,7 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
 export function createCellFragmentHwpx(directory: string, fileName = 'han-flow-cell-fragment.hwpx'): string {
   const path = join(directory, fileName)
   const zip = new AdmZip()
-  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
   zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
   zip.writeZip(path)
@@ -100,7 +106,7 @@ export function createCellFragmentHwpx(directory: string, fileName = 'han-flow-c
 export function createCompatibilityHwpx(directory: string, fileName = 'han-flow-compatibility.hwpx'): string {
   const path = join(directory, fileName)
   const zip = new AdmZip()
-  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
   zip.addFile('Contents/section0.xml', Buffer.from(compatibilitySection))
   for (let index = 1; index <= 12; index += 1) {
@@ -113,8 +119,57 @@ export function createCompatibilityHwpx(directory: string, fileName = 'han-flow-
 export function createInvalidHwpx(directory: string, fileName = 'han-flow-invalid.hwpx'): string {
   const path = join(directory, fileName)
   const zip = new AdmZip()
-  zip.addFile('mimetype', Buffer.from('application/hwp+zip'))
+  addMimetype(zip)
   zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
+  zip.writeZip(path)
+  return path
+}
+
+export const roundTripSentinels = {
+  headerAttribute: 'han-flow-unknown-attribute',
+  headerNode: 'han-flow-unknown-header-node',
+  sectionAttribute: 'han-flow-unknown-section-attribute',
+  sectionNode: 'han-flow-unknown-section-node',
+  binary: Buffer.from([0x48, 0x46, 0x58, 0x00, 0xff, 0x10, 0x20])
+} as const
+
+export function createRoundTripHwpx(
+  directory: string,
+  fileName = 'han-flow-round-trip.hwpx'
+): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+
+  const roundTripHeader = header
+    .replace(
+      '<hh:head ',
+      `<hh:head xmlns:hfx="urn:han-flow:unknown" hfx:sentinel="${roundTripSentinels.headerAttribute}" `
+    )
+    .replace(
+      '</hh:head>',
+      `<hfx:preserve>${roundTripSentinels.headerNode}</hfx:preserve></hh:head>`
+    )
+  const roundTripSection = section0
+    .replace(
+      '<hs:sec ',
+      `<hs:sec xmlns:hfx="urn:han-flow:unknown" hfx:sentinel="${roundTripSentinels.sectionAttribute}" `
+    )
+    .replace(
+      '</hs:sec>',
+      `<hfx:preserve>${roundTripSentinels.sectionNode}</hfx:preserve></hs:sec>`
+    )
+
+  zip.addFile('version.xml', Buffer.from('<?xml version="1.0"?><hv:HCFVersion xmlns:hv="urn:han-flow:version" version="1.4"/>'))
+  zip.addFile('Contents/content.hpf', Buffer.from('<?xml version="1.0"?><opf:package xmlns:opf="http://www.idpf.org/2007/opf"/>'))
+  zip.addFile('Contents/header.xml', Buffer.from(roundTripHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(roundTripSection))
+  zip.addFile('BinData/image1.png', transparentPng)
+  zip.addFile('META-INF/container.xml', Buffer.from('<?xml version="1.0"?><container/>'))
+  zip.addFile('Preview/PrvText.txt', Buffer.from('공개 round-trip fixture'))
+  zip.addFile('Unknown/', Buffer.alloc(0))
+  const unknownEntry = zip.addFile('Unknown/custom.bin', roundTripSentinels.binary)
+  unknownEntry.header.method = 0
   zip.writeZip(path)
   return path
 }

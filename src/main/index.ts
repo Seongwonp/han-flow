@@ -2,7 +2,6 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
-import { serializeToHWPX } from '../core/parser/serialization'
 import { DocumentImporter } from './document_importer'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -421,29 +420,6 @@ app.whenReady().then(() => {
         }
       }
     )
-  })
-
-  // 문서 저장 핸들러
-  ipcMain.handle('hwpx:save', async (_, { filePath, doc }: { filePath: string, doc: any }) => {
-    try {
-      const { default: AdmZip } = await import('adm-zip')
-      const xmlFiles = serializeToHWPX(doc)
-      const zip = new AdmZip()
-
-      // HWPX 필수 파일들 추가 (mimetype은 압축 없이 저장하는 것이 정석이나 AdmZip의 기본 방식으로 처리)
-      zip.addFile('mimetype', Buffer.from('application/ovf+xml'));
-      
-      for (const [path, content] of Object.entries(xmlFiles)) {
-        zip.addFile(path, Buffer.from(content));
-      }
-
-      // 실제 파일 저장
-      zip.writeZip(filePath);
-      return true
-    } catch (error) {
-      console.error('Save error:', error)
-      throw error
-    }
   })
 
   const commandLinePath = pathFromArguments(process.argv)
