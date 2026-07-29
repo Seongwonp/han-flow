@@ -416,6 +416,17 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 - packaged AIDA에서 edit → Save As → dirty 해제 → 원본 SHA-256 불변 → 저장본 재열기
   8쪽·이미지 4개·overflow 0을 privacy-safe probe로 검증했다.
 
+2026-07-29 dirty lifecycle 연결 결과:
+
+- dialog, drag-and-drop과 Finder 전달은 새 import 전에 `editing:resolveDirty`를 호출한다.
+- 창 닫기와 `⌘Q`는 main이 history dirty를 직접 확인해 renderer lifecycle과 무관하게
+  Save As, discard, cancel을 처리한다.
+- 비동기 결정 중 반복 close를 막는 상태와 승인된 close를 분리했다. 처음 구현에서는
+  `resolvingClose`가 승인 후 두 번째 close까지 막는 결함을 packaged probe가 발견했고,
+  `closeApproved` 우선 조건과 BrowserWindow `closed` 뒤 quit 재개로 수정했다.
+- packaged discard는 새 파일 없이 종료되고 close-save는 원본 SHA-256 불변, 저장본 8쪽,
+  overflow 0 재열기를 통과했다.
+
 ### V3-5 style과 표 편집
 
 - 글자·문단 style command

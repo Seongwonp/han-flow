@@ -96,6 +96,15 @@ queue에 저장을 넣어 진행 중 edit와 경쟁하지 않게 하며 `saveHwp
 `HwpxEditHistory.markSaved()`를 호출한다. 기존의 무제한 `dialog:saveFile`과
 `dialog:confirmSave` preload API는 제거했다.
 
+dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
+`file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
+`close` handler는 renderer가 응답할 수 없는 `⌘Q`와 창 닫기를 직접 보호한다. 선택지는
+Save As, discard, cancel이며 Save As는 위와 같은 검증 writer를 재사용한다.
+
+비동기 결정을 기다리는 동안 반복 close는 `resolvingClose`로 막지만, 결정 후 호출하는 두
+번째 close는 `closeApproved`가 우선해 통과해야 한다. 앱 종료 요청을 처음 막은 경우에는
+BrowserWindow `closed` 뒤 `app.quit()`을 재개해 macOS Dock에 빈 프로세스가 남지 않게 한다.
+
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를

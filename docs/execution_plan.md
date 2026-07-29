@@ -172,6 +172,15 @@ Save As는 Preview stale 경고 → 목적지 선택 → 같은 디렉터리 임
 identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 뒤에만 savepoint를 옮기며
 패키지 AIDA에서 원본 hash 불변, 저장본 8쪽·이미지 4개·overflow 0 재열기를 통과했다.
 
+### 완료한 후속 관문: dirty 문서 교체·종료 보호
+
+1. [x] dialog·drop·Finder 전달 전에 저장/버리기/취소 결정을 받는다.
+2. [x] BrowserWindow close와 `⌘Q`를 main-process history의 dirty 상태로 보호한다.
+3. [x] Save 선택은 검증형 Save As를 재사용하고 성공 뒤에만 종료한다.
+4. [x] cancel은 현재 session과 화면을 유지하고 discard만 명시적으로 폐기한다.
+5. [x] 중복 close를 막되 승인된 두 번째 close는 통과시키는 lifecycle 순서를 검증한다.
+6. [x] 패키지에서 discard 종료와 close-save 원본 불변·저장본 재열기를 검증한다.
+
 ## 매 milestone 공통 완료 규칙
 
 1. 실제 fixture와 공개 synthetic fixture를 각각 통과한다.

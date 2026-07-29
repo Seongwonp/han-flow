@@ -8,6 +8,27 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3 dirty 문서 교체·종료 보호
+
+main history의 dirty 상태를 파일 교체와 BrowserWindow lifecycle에 연결했다. 열기 dialog,
+drop과 Finder `file:open`은 새 import 전에 저장/버리기/취소 결과를 기다리고, 창 닫기와
+`⌘Q`는 main이 같은 결정을 직접 처리한다.
+
+첫 packaged discard probe는 비동기 결정 뒤 승인된 두 번째 `window.close()`도
+`resolvingClose`가 막아 macOS 프로세스가 남는 결함을 찾았다. 승인 상태를 중복 결정 상태보다
+먼저 판정하고, 앱 종료 요청이면 BrowserWindow `closed` 이후 quit을 재개하도록 수정했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 99 passed, 1 suite skipped |
+| dirty discard | `HAN_FLOW_VERIFY_EDIT_TEXT=한 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION=discard npm run verify:app -- <private.hwpx>` | 새 파일 없이 정상 종료 |
+| dirty close-save | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=교체 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION=save npm run verify:app -- <private.hwpx>` | 원본 hash 불변·저장본 생성·재열기 통과 |
+| 저장본 화면 | close-save 두 번째 프로세스 | 8쪽·overflow 0 |
+
+programmatic composition은 환경에 따라 commit event 주입이 불안정할 수 있어 lifecycle
+probe에는 결정적인 역방향 범위 교체를 사용했다. 실제 composition 관문과 물리 두벌식 수동
+matrix는 별도로 유지한다.
+
 ## 2026-07-29 — V3-4 검증형 Save As UI
 
 main-process 편집 session에 검증형 Save As를 연결했다. 사용자는 Preview가 갱신되지 않을 수
