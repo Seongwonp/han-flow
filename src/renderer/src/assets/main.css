@@ -16,6 +16,10 @@ button { font: inherit; }
 .viewer-search button { height: 26px; min-width: 26px; border: 0; }
 .viewer-actions .viewer-open { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
 .viewer-actions .viewer-save-as { padding: 0 10px; }
+.viewer-style-actions { display: flex; align-items: center; gap: 3px; padding: 2px; border: 1px solid #c7ccd3; border-radius: 8px; background: rgba(255,255,255,.7); }
+.viewer-style-actions button { height: 25px; min-width: 25px; border: 0; border-radius: 5px; }
+.viewer-style-actions button[aria-pressed="true"] { color: #244fd1; background: #dfe7ff; box-shadow: inset 0 0 0 1px rgba(51,94,234,.28); }
+.viewer-style-bold { font-weight: 800; }
 .viewer-stage { flex: 1; overflow: auto; padding: 32px; }
 .viewer-pages { display: flex; flex-direction: column; align-items: center; gap: 24px; transition: transform .12s ease; }
 .viewer-pages-virtualized { gap: 24px; }

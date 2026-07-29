@@ -14,6 +14,7 @@ interface ParagraphInputSurfaceProps {
   desiredSelection?: TextSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
+  onSelectionChange: (anchor: ViewerSourceAnchor, selection: TextSelection) => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -66,7 +67,8 @@ export function ParagraphInputSurface({
   pending,
   desiredSelection,
   onCommit,
-  onComposingChange
+  onComposingChange,
+  onSelectionChange
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -101,10 +103,15 @@ export function ParagraphInputSurface({
         return
       }
       inputTypeRef.current = event.inputType
-      if (!controller.isComposing) controller.updateSelection(textSelection(element))
+      if (!controller.isComposing) {
+        const selection = textSelection(element)
+        controller.updateSelection(selection)
+        onSelectionChange(sourceAnchor, selection)
+      }
     }
     const compositionStart = () => {
       const snapshot = read()
+      onSelectionChange(sourceAnchor, snapshot.selection)
       controller.reset(snapshot.text, snapshot.selection)
       controller.compositionStart(snapshot.text, snapshot.selection)
       onComposingChange(true)
@@ -129,18 +136,36 @@ export function ParagraphInputSurface({
       onComposingChange(false)
       if (intent) onCommit(sourceAnchor, intent)
     }
+    const selectionChanged = () => {
+      if (globalThis.document.activeElement !== element || controller.isComposing) return
+      const selection = textSelection(element)
+      controller.updateSelection(selection)
+      onSelectionChange(sourceAnchor, selection)
+    }
     element.addEventListener('beforeinput', beforeInput)
     element.addEventListener('compositionstart', compositionStart)
     element.addEventListener('input', input)
     element.addEventListener('compositionend', compositionEnd)
+    element.addEventListener('focus', selectionChanged)
+    element.addEventListener('keyup', selectionChanged)
+    element.addEventListener('mouseup', selectionChanged)
     return () => {
       element.removeEventListener('beforeinput', beforeInput)
       element.removeEventListener('compositionstart', compositionStart)
       element.removeEventListener('input', input)
       element.removeEventListener('compositionend', compositionEnd)
+      element.removeEventListener('focus', selectionChanged)
+      element.removeEventListener('keyup', selectionChanged)
+      element.removeEventListener('mouseup', selectionChanged)
       onComposingChange(false)
     }
-  }, [sourceAnchor.sectionPath, sourceAnchor.textNodeId, onCommit, onComposingChange])
+  }, [
+    sourceAnchor.sectionPath,
+    sourceAnchor.textNodeId,
+    onCommit,
+    onComposingChange,
+    onSelectionChange
+  ])
 
   return (
     <span

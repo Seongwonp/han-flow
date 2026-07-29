@@ -4,7 +4,11 @@ import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
 import { EditingSessionManager } from './editing_session'
-import type { EditingCommitRequest } from '../core/editing/editing_contract'
+import type {
+  EditingCharacterStyleRequest,
+  EditingCommitRequest,
+  EditingParagraphStyleRequest
+} from '../core/editing/editing_contract'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -22,6 +26,31 @@ let pendingOpen: { filePath: string; receivedAt: number } | null = null
 let applicationQuitRequested = false
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
 const editingSessions = new EditingSessionManager()
+
+function isEditingSelection(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    ['sectionPath', 'textNodeId'].every(
+      (field) => typeof (value as Record<string, unknown>)[field] === 'string'
+    ) &&
+    ['anchorOffset', 'focusOffset'].every(
+      (field) => Number.isFinite((value as Record<string, unknown>)[field])
+    )
+  )
+}
+
+function isStyleRequestBase(request: unknown): request is Record<string, unknown> {
+  return (
+    request !== null &&
+    typeof request === 'object' &&
+    ['sessionId', 'transactionId', 'sectionPath', 'textNodeId'].every(
+      (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+    ) &&
+    Number.isFinite((request as Record<string, unknown>)['timestamp']) &&
+    isEditingSelection((request as Record<string, unknown>)['selection'])
+  )
+}
 
 async function showMessageBox(
   window: BrowserWindow | null,
@@ -129,6 +158,7 @@ function captureVisualState(window: BrowserWindow): void {
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
+  const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
   const editSavePath = testValue('HAN_FLOW_EDIT_SAVE_PATH')
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
@@ -294,6 +324,48 @@ function captureVisualState(window: BrowserWindow): void {
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
         })
         const redoSelection = getSelection(redoneTarget)
+        let styleProbe
+        if (${styleProbeEnabled}) {
+          phase = 'style-buttons'
+          const button = (label) => document.querySelector('[aria-label="' + label + '"]')
+          const boldButton = await waitFor(() => {
+            const candidate = button('현재 텍스트 블록 굵게')
+            return candidate && !candidate.disabled ? candidate : undefined
+          })
+          const originalBold = boldButton.getAttribute('aria-pressed') === 'true'
+          const alignLabels = ['왼쪽 정렬', '가운데 정렬', '오른쪽 정렬', '양쪽 정렬']
+          const originalAlign = alignLabels.find((label) => button(label)?.getAttribute('aria-pressed') === 'true') ?? '왼쪽 정렬'
+          const desiredAlign = originalAlign === '가운데 정렬' ? '오른쪽 정렬' : '가운데 정렬'
+          boldButton.click()
+          phase = 'style-bold'
+          await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
+          const boldApplied = button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
+          button(desiredAlign)?.click()
+          phase = 'style-align'
+          await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
+          const alignApplied = button(desiredAlign)?.getAttribute('aria-pressed') === 'true'
+          document.querySelector('[aria-label="실행 취소"]')?.click()
+          phase = 'style-align-undo'
+          await waitFor(() => button(originalAlign)?.getAttribute('aria-pressed') === 'true')
+          document.querySelector('[aria-label="실행 취소"]')?.click()
+          phase = 'style-bold-undo'
+          await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold))
+          const undoRestored = button(originalAlign)?.getAttribute('aria-pressed') === 'true' &&
+            button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold)
+          document.querySelector('[aria-label="다시 실행"]')?.click()
+          phase = 'style-bold-redo'
+          await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
+          document.querySelector('[aria-label="다시 실행"]')?.click()
+          phase = 'style-align-redo'
+          await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
+          styleProbe = {
+            boldApplied,
+            alignApplied,
+            undoRestored,
+            redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
+              button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
+          }
+        }
         let saveStatusMatches
         let dirtyCleared
         if (${autoSaveEdit}) {
@@ -317,6 +389,7 @@ function captureVisualState(window: BrowserWindow): void {
           projectedSelectionMatches: selectionAfterProjection.anchorOffset === selectionAfter.anchorOffset && selectionAfterProjection.focusOffset === selectionAfter.focusOffset,
           undoSelectionMatches: undoSelection.anchorOffset === selectionBefore.anchorOffset && undoSelection.focusOffset === selectionBefore.focusOffset,
           redoSelectionMatches: redoSelection.anchorOffset === selectionAfter.anchorOffset && redoSelection.focusOffset === selectionAfter.focusOffset,
+          styleProbe,
           saveStatusMatches,
           dirtyCleared,
           editableCount: document.querySelectorAll('[aria-label="HWPX 문단 편집"]').length
@@ -687,22 +760,35 @@ app.whenReady().then(() => {
         (key) => Number.isFinite((request as Record<string, unknown>)[key])
       ) ||
       !['selectionBefore', 'selectionAfter'].every((key) => {
-        const selection = (request as Record<string, unknown>)[key]
-        return (
-          selection !== null &&
-          typeof selection === 'object' &&
-          ['sectionPath', 'textNodeId'].every(
-            (field) => typeof (selection as Record<string, unknown>)[field] === 'string'
-          ) &&
-          ['anchorOffset', 'focusOffset'].every(
-            (field) => Number.isFinite((selection as Record<string, unknown>)[field])
-          )
-        )
+        return isEditingSelection((request as Record<string, unknown>)[key])
       })
     ) {
       throw new Error('HWPX 편집 commit 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.commit(event.sender.id, request as EditingCommitRequest)
+  })
+
+  ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {
+    if (!isStyleRequestBase(request) || typeof request['bold'] !== 'boolean') {
+      throw new Error('HWPX 글자 style 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.applyCharacterStyle(
+      event.sender.id,
+      request as unknown as EditingCharacterStyleRequest
+    )
+  })
+
+  ipcMain.handle('editing:applyParagraphStyle', async (event, request: unknown) => {
+    if (
+      !isStyleRequestBase(request) ||
+      !['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(request['align']))
+    ) {
+      throw new Error('HWPX 문단 style 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.applyParagraphStyle(
+      event.sender.id,
+      request as unknown as EditingParagraphStyleRequest
+    )
   })
 
   ipcMain.handle('editing:undo', (event, sessionId: unknown) => {

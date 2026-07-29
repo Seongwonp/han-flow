@@ -5,6 +5,7 @@ import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../
 import { EditingActionResult, EditingHistoryStatus, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import { EditorSelection } from '../../core/editing/transaction'
+import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
@@ -77,6 +78,10 @@ interface ParagraphEditingProps {
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
+  onSelectionChange: (
+    anchor: ViewerSourceAnchor,
+    selection: { anchorOffset: number; focusOffset: number }
+  ) => void
 }
 
 export function ParagraphView({
@@ -120,6 +125,7 @@ export function ParagraphView({
         }
         onCommit={editing.onCommit}
         onComposingChange={editing.onComposingChange}
+        onSelectionChange={editing.onSelectionChange}
       />
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} />)}</div>
 }
@@ -655,6 +661,16 @@ export default function App() {
     } : current)
     setEditingSelection(result.selection)
   }, [])
+  const updateEditingSelection = useCallback((
+    anchor: ViewerSourceAnchor,
+    selection: { anchorOffset: number; focusOffset: number }
+  ) => {
+    setEditingSelection({
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      ...selection
+    })
+  }, [])
   const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
     if (!editing) return
     const sessionId = editing.sessionId
@@ -694,6 +710,68 @@ export default function App() {
   const onComposingChange = useCallback((composing: boolean) => {
     editingComposing.current = composing
   }, [])
+  const activeStyle = useMemo(() => {
+    if (!document || !editingSelection) return undefined
+    for (const section of document.sections) {
+      for (const paragraph of section.blocks) {
+        if (paragraph.content.length !== 1 || paragraph.content[0].type !== 'text') continue
+        const text = paragraph.content[0]
+        if (
+          text.sourceAnchor?.sectionPath !== editingSelection.sectionPath ||
+          text.sourceAnchor.textNodeId !== editingSelection.textNodeId
+        ) {
+          continue
+        }
+        return {
+          bold: document.charStyles[text.charStyleId]?.bold ?? false,
+          align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment
+        }
+      }
+    }
+    return undefined
+  }, [document, editingSelection?.sectionPath, editingSelection?.textNodeId])
+  const applyCharacterStyle = useCallback(async (bold: boolean) => {
+    if (!editing || !editingSelection || editingPending || editingComposing.current) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('글자 모양 반영 중…')
+    try {
+      applyEditingResult(await api().applyCharacterStyle({
+        sessionId: editing.sessionId,
+        transactionId: `ui-style-${++editSequence.current}`,
+        sectionPath: editingSelection.sectionPath,
+        textNodeId: editingSelection.textNodeId,
+        selection: editingSelection,
+        bold,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus(bold ? '굵게 적용' : '굵게 해제')
+    } catch (reason) {
+      setEditingStatus(`글자 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [editing?.sessionId, editingSelection, editingPending, applyEditingResult])
+  const applyParagraphStyle = useCallback(async (align: ParagraphAlignment) => {
+    if (!editing || !editingSelection || editingPending || editingComposing.current) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('문단 모양 반영 중…')
+    try {
+      applyEditingResult(await api().applyParagraphStyle({
+        sessionId: editing.sessionId,
+        transactionId: `ui-style-${++editSequence.current}`,
+        sectionPath: editingSelection.sectionPath,
+        textNodeId: editingSelection.textNodeId,
+        selection: editingSelection,
+        align,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('문단 정렬 적용')
+    } catch (reason) {
+      setEditingStatus(`문단 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [editing?.sessionId, editingSelection, editingPending, applyEditingResult])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -765,6 +843,11 @@ export default function App() {
         return
       }
       if (!event.metaKey) return
+      if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle) {
+        event.preventDefault()
+        void applyCharacterStyle(!activeStyle.bold)
+        return
+      }
       if (event.key.toLocaleLowerCase() === 's' && editing) {
         event.preventDefault()
         void saveEditingAs()
@@ -787,7 +870,18 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoom, fixedDocument, searchOpen, searchResults.length, editing, undoEditing, redoEditing, saveEditingAs])
+  }, [
+    zoom,
+    fixedDocument,
+    searchOpen,
+    searchResults.length,
+    editing,
+    activeStyle,
+    applyCharacterStyle,
+    undoEditing,
+    redoEditing,
+    saveEditingAs
+  ])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
@@ -884,6 +978,29 @@ export default function App() {
       </div>}
       {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
       {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
+      {editing && <div className="viewer-style-actions" role="toolbar" aria-label="제한된 문단과 글자 모양">
+        <button
+          aria-label="현재 텍스트 블록 굵게"
+          aria-pressed={activeStyle?.bold ?? false}
+          className="viewer-style-bold"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void applyCharacterStyle(!(activeStyle?.bold ?? false))}
+          disabled={!activeStyle || Boolean(editingPending)}
+        >B</button>
+        {([
+          ['LEFT', '왼쪽 정렬', '⇤'],
+          ['CENTER', '가운데 정렬', '↔'],
+          ['RIGHT', '오른쪽 정렬', '⇥'],
+          ['JUSTIFY', '양쪽 정렬', '☰']
+        ] as const).map(([align, label, icon]) => <button
+          key={align}
+          aria-label={label}
+          aria-pressed={activeStyle?.align === align}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void applyParagraphStyle(align)}
+          disabled={!activeStyle || Boolean(editingPending)}
+        >{icon}</button>)}
+      </div>}
       {editing && <button aria-label="HWPX 변경본 저장" className="viewer-save-as" onClick={() => void saveEditingAs()} disabled={!editing.isDirty || Boolean(editingPending)}>다른 이름으로 저장</button>}
       {editing && <button aria-label="실행 취소" onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>}
       {editing && <button aria-label="다시 실행" onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>}
@@ -899,7 +1016,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}

@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  EditingCharacterStyleRequest,
   EditingCommitRequest,
+  EditingParagraphStyleRequest,
   EditingStartRequest
 } from '../core/editing/editing_contract'
 
@@ -42,6 +44,10 @@ const api = {
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
   startEditing: (request: EditingStartRequest) => ipcRenderer.invoke('editing:start', request),
   commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
+  applyCharacterStyle: (request: EditingCharacterStyleRequest) =>
+    ipcRenderer.invoke('editing:applyCharacterStyle', request),
+  applyParagraphStyle: (request: EditingParagraphStyleRequest) =>
+    ipcRenderer.invoke('editing:applyParagraphStyle', request),
   undoEditing: (sessionId: string) => ipcRenderer.invoke('editing:undo', sessionId),
   redoEditing: (sessionId: string) => ipcRenderer.invoke('editing:redo', sessionId),
   saveEditingAs: (sessionId: string) => ipcRenderer.invoke('editing:saveAsDialog', sessionId),
