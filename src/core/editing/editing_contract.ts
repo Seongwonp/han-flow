@@ -32,11 +32,17 @@ export interface EditingCommitRequest {
   timestamp: number
 }
 
-export interface EditingActionRequest {
-  sessionId: string
-}
-
 export interface EditingActionResult extends EditingHistoryStatus {
   document: ViewerDocument
   selection?: EditorSelection
 }
+
+export interface EditingSavedResult extends EditingHistoryStatus {
+  destinationPath: string
+  entryCount: number
+  previewStatus: 'stale' | 'omitted'
+}
+
+export type EditingSaveAsDialogResult =
+  | { outcome: 'cancelled' }
+  | ({ outcome: 'saved' } & EditingSavedResult)

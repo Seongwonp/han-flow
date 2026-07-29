@@ -1,11 +1,13 @@
 import { randomUUID } from 'crypto'
-import { extname } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import {
   EditingActionResult,
   EditingCommitRequest,
+  EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
 import { HwpxEditHistory } from '../core/editing/history'
+import { saveHwpxAs } from '../core/editing/save_as'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
 import { HwpxSourcePackage } from '../core/parser/source_package'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
@@ -105,6 +107,36 @@ export class EditingSessionManager {
       return {
         document: await decodeViewerDocument(session.history.package),
         selection: action?.selection ?? session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  suggestedSaveAsPath(senderId: number, sessionId: string): string {
+    const session = this.requireSession(senderId, sessionId)
+    const sourcePath = session.history.package.sourcePath
+    const extension = extname(sourcePath)
+    const stem = basename(sourcePath, extension)
+    return join(dirname(sourcePath), `${stem}_수정본.hwpx`)
+  }
+
+  async saveAs(
+    senderId: number,
+    sessionId: string,
+    destinationPath: string
+  ): Promise<EditingSavedResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, sessionId)
+      if (!session.history.isDirty) throw new Error('저장할 HWPX 변경 내용이 없습니다.')
+      const result = await saveHwpxAs(session.history.package, destinationPath)
+      session.history.markSaved()
+      const hasPreview = session.history.package
+        .listEntries()
+        .some((entry) => entry.path.startsWith('Preview/'))
+      return {
+        destinationPath: result.destinationPath,
+        entryCount: result.entryCount,
+        previewStatus: hasPreview ? 'stale' : 'omitted',
         ...status(session)
       }
     })
