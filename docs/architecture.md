@@ -1,10 +1,9 @@
 # Han-Flow 기술 아키텍처
 
-Han-Flow v1은 macOS용 읽기 전용 HWPX 뷰어이며 V2에서 HWP fixed-page 경로를 연결 중이다.
-편집 상태나 Undo/Redo를 관리하지 않고,
+Han-Flow는 V1의 읽기 전용 HWPX flow renderer와 V2의 HWP fixed-page renderer를 공통
+macOS shell에 연결했다. 현재 production 경로는 편집 상태나 Undo/Redo를 관리하지 않고,
 받은 문서를 빠르게 열어 레이아웃이 깨지지 않게 표시하고 PDF로 내보내는 데 집중한다.
-이 문서의 본문은 현재 동작하는 V1 구조를 설명한다. V2의 HWP 5.0 경계는 마지막 절의 계획이며
-후보 bake-off가 끝나기 전에는 구현 완료로 간주하지 않는다.
+V3 편집은 이 read-only 경계를 변경하지 않고 source package와 command layer를 별도로 둔다.
 
 ## 파이프라인
 
@@ -22,6 +21,27 @@ macOS open-file / drag-and-drop / file dialog
 parser는 React와 CSS를 모르고 renderer는 ZIP/XML을 해석하지 않는다. 길이는 문서 모델에서
 HWPUNIT 정수로 유지하고 화면 경계에서만 CSS px로 변환한다. 동일 입력은 source 위치 기반의
 결정적 ID를 만들어 테스트와 캐시가 재현 가능해야 한다.
+
+## V3 편집 경계
+
+V3는 `ViewerDocument`를 저장 원본으로 사용하지 않는다. HWPX의 모든 ZIP entry와 알 수 없는
+XML을 보존하는 `SourcePackage`, command·transaction·selection을 가진
+`EditableDocument`, 기존 `ViewerDocument` projection을 분리한다.
+
+```text
+SourcePackage → EditTransaction → EditableDocument
+                                      │
+                                      ▼
+                              ViewerDocument projection
+                                      │
+                                      ▼
+                         pagination / renderer / PDF
+```
+
+조합 중인 paragraph input surface는 browser가 소유하고 `compositionend`에서 한 transaction을
+commit한다. 저장은 같은 디렉터리의 임시 package를 다시 열어 검증한 뒤 교체한다. 세부 모델,
+기존 코드 폐기 판정과 품질 관문은
+[V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)에 기록한다.
 
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,

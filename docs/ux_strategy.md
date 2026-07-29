@@ -1,8 +1,10 @@
 # 사용자 경험(UX) 차별화 전략 및 개발 환경 설정
 
-> 초기 prototype의 아이디어 기록이다. 현재 구현 상태와 범위는
+> 초기 prototype의 아이디어를 보존한 문서이며 현재 설계 근거로 사용하지 않는다.
+> 아래의 pixel-perfect·hybrid canvas·outline 제안은 채택된 기능이 아니다. 현재 구현 상태와 범위는
 > [제품 비전과 로드맵](vision_and_roadmap.md)을 기준으로 한다. V1은 read-only HWPX,
-> V2는 read-only HWP 5.0, 편집은 V3, 공개 배포는 V4 범위다.
+> V2는 read-only HWP 5.0, 편집 설계는
+> [V3 HWPX 편집 전략](v3_editing_strategy.md), 공개 배포는 V4 범위다.
 
 기존 HWP 뷰어의 고질적인 문제인 'UI 깨짐'과 '느린 로딩'을 해결하기 위한 Han-Flow만의 고유한 전략입니다.
 

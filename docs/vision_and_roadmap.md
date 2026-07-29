@@ -1,6 +1,6 @@
 # Han-Flow 제품 비전과 로드맵
 
-기준일: 2026-07-27
+기준일: 2026-07-29
 
 ## 비전
 
@@ -67,7 +67,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **계획만 유지**
+상태: **V3-0 조사·설계 완료, 기능 구현 전**
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -80,6 +80,8 @@ V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기
 - crash-safe 저장, 임시 파일, 원본 보호
 
 `.hwp` 저장은 V3의 기본 약속이 아니다. HWPX 안전 저장이 검증된 뒤 별도 결정한다.
+구체적인 source package, command, IME와 안전 저장 계약은
+[V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)을 따른다.
 
 ## V4 — 사용자 배포
 
@@ -98,9 +100,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 ## 현재 다음 작업
 
-1. V3 이전 editor prototype과 read-only 모델 의존성 감사
-2. HWPX editable model·command·transaction·loss report 설계
-3. 한국어 IME composition과 selection/undo/redo 공개 fixture 실험
+1. 기존 손실 저장 IPC를 제거하거나 experimental guard로 차단
+2. 모든 ZIP entry를 보존하는 `HwpxSourcePackage`와 identity round-trip
+3. unknown XML·entry sentinel을 가진 공개 편집 fixture
+4. 한 text node patch와 검증된 `Save As` vertical slice
 
 ## 진행률 스냅샷
 

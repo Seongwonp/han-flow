@@ -232,6 +232,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [실행 계획](docs/execution_plan.md)
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
+- [V3 HWPX 편집 조사와 구현 전략](docs/v3_editing_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
 - [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)

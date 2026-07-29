@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### V3 HWPX 편집 기반
+
+- 과거 editor store·normalized model·serializer와 저장 IPC 감사
+- KS X 6101·HWPX package, IME event, transaction과 안전 저장 1차 출처 조사
+- source package·editable model·viewer projection 분리 전략
+- loss report, 한국어 IME matrix와 단계별 round-trip 품질 관문
+
 ### V2 HWP fixed-page
 
 - HWP 페이지별 세로·가로 용지 크기를 보존하는 PDF 출력

@@ -94,13 +94,29 @@
 - [x] 암호·DRM·배포용·비지원 version·손상 입력 오류 UX
 - [x] 기존 `hwp_parser.ts` prototype 제거
 
-## 다음 milestone: V3-0 편집 기반 설계
+## 완료한 milestone: V3-0 편집 기반 조사
 
-1. 남아 있는 editor prototype과 현재 read-only 모델의 의존성을 감사한다.
-2. HWPX 원본 속성을 보존하는 editable model과 loss report 계약을 먼저 정한다.
-3. mutation은 UI 직접 변경이 아닌 command와 transaction 경계로 설계한다.
-4. 한국어 IME composition, selection과 undo/redo를 공개 synthetic fixture로 검증한다.
-5. crash-safe HWPX 저장과 원본 보호가 증명되기 전에는 실제 업무 문서 저장을 열지 않는다.
+- [x] 과거 `store.ts`, `NormalizedDocument`, serializer와 저장 IPC 실행 경로 감사
+- [x] KS X 6101·한컴 HWPX package 구조와 OWPML 공개 모델 조사
+- [x] W3C composition/input/selection event와 React 입력 경계 조사
+- [x] transaction history와 안전한 파일 교체 근거 조사
+- [x] source package·editable model·viewer projection 분리
+- [x] `LossReport`, IME matrix와 단계별 품질 관문 문서화
+
+감사 결과 과거 editor store와 serializer는 재사용하지 않는다. 현재 serializer는 package
+entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서 저장 경로로 사용할 수 없다.
+세부 근거는 [V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)에 있다.
+
+## 현재 milestone: V3-1 package preservation
+
+1. 사용되지 않는 `hwpx:save` IPC를 제거하거나 명시적으로 차단한다.
+2. 모든 entry bytes·compression·CRC를 제한된 형태로 읽는 `HwpxSourcePackage`를 만든다.
+3. path traversal, duplicate entry와 압축 해제 크기 상한을 검증한다.
+4. 수정 없는 identity round-trip에서 entry set과 content SHA-256을 비교한다.
+5. unknown namespace·attribute·entry sentinel 공개 fixture를 추가한다.
+6. Han-Flow와 Windows 한/글 재열기 결과를 기록한다.
+
+텍스트 입력 UI는 V3-1 package preservation이 통과하기 전에 시작하지 않는다.
 
 ## 매 milestone 공통 완료 규칙
 
