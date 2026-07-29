@@ -1,5 +1,8 @@
 import AdmZip from 'adm-zip'
 import * as unzipper from 'unzipper'
+import { parseOrderedXml } from './ordered_xml'
+import type { OrderedXmlNode } from './ordered_xml'
+import type { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 
 export const HWPX_MIMETYPE = 'application/hwp+zip'
 export const MAX_HWPX_ENTRY_COUNT = 10_000
@@ -108,7 +111,7 @@ function validateRequiredEntries(entries: readonly HwpxSourceEntry[]): void {
   }
 }
 
-export class HwpxSourcePackage {
+export class HwpxSourcePackage implements HwpxReadablePackage {
   private constructor(
     readonly sourcePath: string,
     private readonly sourceEntries: readonly HwpxSourceEntry[],
@@ -152,6 +155,37 @@ export class HwpxSourcePackage {
     const entry = this.sourceEntries.find((candidate) => candidate.path === path)
     if (!entry || entry.type !== 'file') throw new Error(`HWPX entry가 없습니다: ${path}`)
     return Buffer.from(entry.bytes)
+  }
+
+  async index(): Promise<HwpxPackageIndex> {
+    const entries = this.listEntries()
+    const sectionPaths = entries
+      .map((entry) => entry.path)
+      .filter((path) => /^Contents\/section\d+\.xml$/.test(path))
+      .sort((a, b) => Number(a.match(/\d+/)?.[0]) - Number(b.match(/\d+/)?.[0]))
+    return {
+      mimetype: HWPX_MIMETYPE,
+      headerPath: 'Contents/header.xml',
+      sectionPaths,
+      sectionSizes: Object.fromEntries(
+        sectionPaths.map((path) => [
+          path,
+          entries.find((entry) => entry.path === path)?.uncompressedSize ?? 0
+        ])
+      ),
+      resourcePaths: entries
+        .map((entry) => entry.path)
+        .filter((path) => path.startsWith('BinData/') && !path.endsWith('/'))
+        .sort()
+    }
+  }
+
+  async readOrderedXml(path: string): Promise<OrderedXmlNode[]> {
+    return parseOrderedXml(this.readEntry(path))
+  }
+
+  async readBuffer(path: string): Promise<Buffer> {
+    return this.readEntry(path)
   }
 
   withEntry(path: string, bytes: Buffer): HwpxSourcePackage {

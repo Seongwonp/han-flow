@@ -9,7 +9,13 @@ export interface HwpxPackageIndex {
   resourcePaths: string[]
 }
 
-export class HwpxPackageReader {
+export interface HwpxReadablePackage {
+  index(): Promise<HwpxPackageIndex>
+  readOrderedXml(path: string): Promise<OrderedXmlNode[]>
+  readBuffer(path: string): Promise<Buffer>
+}
+
+export class HwpxPackageReader implements HwpxReadablePackage {
   private constructor(private readonly directory: unzipper.CentralDirectory) {}
 
   static async open(filePath: string): Promise<HwpxPackageReader> {

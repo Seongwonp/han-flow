@@ -1,6 +1,6 @@
 import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
-import { HwpxPackageIndex, HwpxPackageReader } from './package_reader'
+import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 
 const num = (value?: string): number => Number(value ?? 0)
 const children = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => node.children.filter((child) => child.name === name)
@@ -173,7 +173,7 @@ function applyParagraphMarkers(paragraphs: ViewerParagraph[], paraStyles: Record
   })
 }
 
-export async function decodeViewerDocument(reader: HwpxPackageReader, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
+export async function decodeViewerDocument(reader: HwpxReadablePackage, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
   const index = knownIndex ?? await reader.index()
   const sectionPaths = options.sectionPaths ?? index.sectionPaths
   const resourcePaths = options.resourcePaths ?? index.resourcePaths

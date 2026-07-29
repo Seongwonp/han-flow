@@ -1,0 +1,192 @@
+import {
+  applyReplaceTextCommand,
+  HwpxEditConflictError,
+  HwpxLossReport,
+  listHwpxTextAnchors,
+  ReplaceTextCommand
+} from './text_patch'
+import { ViewerDocument } from '../document/viewer_document'
+import { HwpxSourcePackage } from '../parser/source_package'
+import { decodeViewerDocument } from '../parser/viewer_decoder'
+
+export type EditCommand = Omit<ReplaceTextCommand, 'revision'>
+
+export interface EditorSelection {
+  sectionPath: string
+  textNodeId: string
+  anchorOffset: number
+  focusOffset: number
+}
+
+export interface EditTransaction {
+  id: string
+  baseRevision: number
+  commands: readonly EditCommand[]
+  selectionBefore: EditorSelection
+  selectionAfter: EditorSelection
+  inputType?: string
+  compositionId?: string
+  timestamp: number
+}
+
+export interface EditTransactionResult {
+  package: HwpxSourcePackage
+  inverse?: EditTransaction
+  lossReport: HwpxLossReport
+  changed: boolean
+}
+
+export const MAX_TRANSACTION_COMMANDS = 1_000
+
+function stripRevision(command: ReplaceTextCommand): EditCommand {
+  const { revision: _revision, ...operation } = command
+  return operation
+}
+
+function isTextBoundary(text: string, offset: number): boolean {
+  return !(
+    offset > 0 &&
+    offset < text.length &&
+    /[\uD800-\uDBFF]/.test(text[offset - 1]) &&
+    /[\uDC00-\uDFFF]/.test(text[offset])
+  )
+}
+
+function validateSelection(sourcePackage: HwpxSourcePackage, selection: EditorSelection): void {
+  const anchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
+    (candidate) => candidate.textNodeId === selection.textNodeId
+  )
+  if (!anchor) throw new HwpxEditConflictError(`selection anchor를 찾을 수 없습니다: ${selection.textNodeId}`)
+  for (const offset of [selection.anchorOffset, selection.focusOffset]) {
+    if (
+      !Number.isInteger(offset) ||
+      offset < 0 ||
+      offset > anchor.text.length ||
+      !isTextBoundary(anchor.text, offset)
+    ) {
+      throw new HwpxEditConflictError(`selection 범위가 올바르지 않습니다: ${offset}`)
+    }
+  }
+}
+
+function validateTransactionShape(transaction: EditTransaction): void {
+  if (!transaction.id.trim()) throw new Error('편집 transaction ID가 비어 있습니다.')
+  if (!Number.isSafeInteger(transaction.baseRevision) || transaction.baseRevision < 0) {
+    throw new Error('편집 transaction base revision이 올바르지 않습니다.')
+  }
+  if (transaction.commands.length === 0) throw new Error('편집 transaction에 command가 없습니다.')
+  if (transaction.commands.length > MAX_TRANSACTION_COMMANDS) {
+    throw new Error(`편집 transaction command 수가 제한(${MAX_TRANSACTION_COMMANDS})을 초과합니다.`)
+  }
+  if (!Number.isFinite(transaction.timestamp) || transaction.timestamp < 0) {
+    throw new Error('편집 transaction timestamp가 올바르지 않습니다.')
+  }
+}
+
+export function applyEditTransaction(
+  sourcePackage: HwpxSourcePackage,
+  transaction: EditTransaction
+): EditTransactionResult {
+  validateTransactionShape(transaction)
+  if (sourcePackage.revision !== transaction.baseRevision) {
+    throw new HwpxEditConflictError(
+      `transaction revision이 변경되었습니다: expected ${transaction.baseRevision}, actual ${sourcePackage.revision}`
+    )
+  }
+  validateSelection(sourcePackage, transaction.selectionBefore)
+
+  let currentPackage = sourcePackage
+  const inverseCommands: EditCommand[] = []
+  const modifiedEntries = new Set<string>()
+  let previewStatus: HwpxLossReport['previewStatus'] = sourcePackage
+    .listEntries()
+    .some((entry) => entry.path.startsWith('Preview/'))
+    ? 'current'
+    : 'omitted'
+
+  for (const command of transaction.commands) {
+    const result = applyReplaceTextCommand(currentPackage, {
+      ...command,
+      revision: currentPackage.revision
+    })
+    if (result.package !== currentPackage) {
+      inverseCommands.unshift(stripRevision(result.inverse))
+      result.lossReport.modifiedEntries.forEach((path) => modifiedEntries.add(path))
+      if (result.lossReport.previewStatus === 'stale') previewStatus = 'stale'
+      currentPackage = result.package
+    }
+  }
+
+  validateSelection(currentPackage, transaction.selectionAfter)
+  const allEntries = sourcePackage.listEntries().map((entry) => entry.path)
+  const changed = currentPackage !== sourcePackage
+  return {
+    package: currentPackage,
+    inverse: changed
+      ? {
+          id: `${transaction.id}:inverse`,
+          baseRevision: currentPackage.revision,
+          commands: inverseCommands,
+          selectionBefore: transaction.selectionAfter,
+          selectionAfter: transaction.selectionBefore,
+          inputType: 'historyUndo',
+          compositionId: transaction.compositionId,
+          timestamp: transaction.timestamp
+        }
+      : undefined,
+    lossReport: {
+      preservedEntries: allEntries.filter((path) => !modifiedEntries.has(path)),
+      modifiedEntries: [...modifiedEntries],
+      regeneratedEntries: [],
+      omittedEntries: [],
+      unsupportedFeatures: [],
+      previewStatus
+    },
+    changed
+  }
+}
+
+export async function projectEditTransaction(result: EditTransactionResult): Promise<ViewerDocument> {
+  return decodeViewerDocument(result.package)
+}
+
+export function rebaseTransaction(transaction: EditTransaction, revision: number): EditTransaction {
+  return { ...transaction, baseRevision: revision }
+}
+
+function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
+  return (
+    left.sectionPath === right.sectionPath &&
+    left.textNodeId === right.textNodeId &&
+    left.anchorOffset === right.anchorOffset &&
+    left.focusOffset === right.focusOffset
+  )
+}
+
+const GROUPABLE_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward'])
+
+export function shouldGroupTransactions(previous: EditTransaction, next: EditTransaction, windowMs = 1_000): boolean {
+  if (
+    previous.commands.length === 0 ||
+    next.commands.length !== 1 ||
+    previous.commands.length + next.commands.length > MAX_TRANSACTION_COMMANDS ||
+    !previous.inputType ||
+    previous.inputType !== next.inputType ||
+    !GROUPABLE_INPUT_TYPES.has(previous.inputType) ||
+    previous.compositionId ||
+    next.compositionId ||
+    next.timestamp < previous.timestamp ||
+    next.timestamp - previous.timestamp > windowMs ||
+    !sameSelection(previous.selectionAfter, next.selectionBefore)
+  ) {
+    return false
+  }
+  const previousCommand = previous.commands[previous.commands.length - 1]
+  const nextCommand = next.commands[0]
+  return (
+    previousCommand.type === 'replace-text' &&
+    nextCommand.type === 'replace-text' &&
+    previousCommand.sectionPath === nextCommand.sectionPath &&
+    previousCommand.textNodeId === nextCommand.textNodeId
+  )
+}
