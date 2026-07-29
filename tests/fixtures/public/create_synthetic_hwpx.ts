@@ -157,7 +157,7 @@ export function createRoundTripHwpx(
     )
     .replace(
       '</hs:sec>',
-      `<hfx:preserve>${roundTripSentinels.sectionNode}</hfx:preserve></hs:sec>`
+      `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t></hp:t></hp:run></hp:p><hfx:preserve>${roundTripSentinels.sectionNode}</hfx:preserve></hs:sec>`
     )
 
   zip.addFile('version.xml', Buffer.from('<?xml version="1.0"?><hv:HCFVersion xmlns:hv="urn:han-flow:version" version="1.4"/>'))

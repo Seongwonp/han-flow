@@ -21,6 +21,22 @@ interface HwpxSourceEntry extends HwpxSourceEntryMetadata {
   bytes: Buffer
 }
 
+const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, value) => {
+  let crc = value
+  for (let bit = 0; bit < 8; bit += 1) {
+    crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+  }
+  return crc >>> 0
+})
+
+function crc32(bytes: Buffer): number {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
 function invalidEntry(message: string): never {
   throw new Error(`안전하지 않은 HWPX package입니다: ${message}`)
 }
@@ -95,7 +111,8 @@ function validateRequiredEntries(entries: readonly HwpxSourceEntry[]): void {
 export class HwpxSourcePackage {
   private constructor(
     readonly sourcePath: string,
-    private readonly sourceEntries: readonly HwpxSourceEntry[]
+    private readonly sourceEntries: readonly HwpxSourceEntry[],
+    readonly revision: number
   ) {}
 
   static async open(filePath: string): Promise<HwpxSourcePackage> {
@@ -124,7 +141,7 @@ export class HwpxSourcePackage {
       entries.push({ ...entryMetadata, bytes })
     }
     validateRequiredEntries(entries)
-    return new HwpxSourcePackage(filePath, entries)
+    return new HwpxSourcePackage(filePath, entries, 0)
   }
 
   listEntries(): readonly HwpxSourceEntryMetadata[] {
@@ -135,6 +152,26 @@ export class HwpxSourcePackage {
     const entry = this.sourceEntries.find((candidate) => candidate.path === path)
     if (!entry || entry.type !== 'file') throw new Error(`HWPX entry가 없습니다: ${path}`)
     return Buffer.from(entry.bytes)
+  }
+
+  withEntry(path: string, bytes: Buffer): HwpxSourcePackage {
+    const entryIndex = this.sourceEntries.findIndex((candidate) => candidate.path === path)
+    if (entryIndex < 0 || this.sourceEntries[entryIndex].type !== 'file') {
+      throw new Error(`HWPX entry가 없습니다: ${path}`)
+    }
+    const current = this.sourceEntries[entryIndex]
+    if (current.bytes.equals(bytes)) return this
+
+    const replacement: HwpxSourceEntry = {
+      ...current,
+      bytes: Buffer.from(bytes),
+      crc32: crc32(bytes),
+      uncompressedSize: bytes.byteLength
+    }
+    const entries = this.sourceEntries.map((entry, index) => (index === entryIndex ? replacement : entry))
+    validateHwpxSourceEntryMetadata(entries)
+    validateRequiredEntries(entries)
+    return new HwpxSourcePackage(this.sourcePath, entries, this.revision + 1)
   }
 
   toBuffer(): Buffer {
