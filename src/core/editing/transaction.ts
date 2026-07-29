@@ -8,9 +8,11 @@ import {
 import {
   applyCharacterStyleCommand,
   applyParagraphStyleCommand,
+  applyRestoreCharacterRunCommand,
   applyRestoreStyleCommand,
   ApplyCharacterStyleCommand,
   ApplyParagraphStyleCommand,
+  RestoreCharacterRunCommand,
   RestoreStyleCommand
 } from './style_patch'
 import { ViewerDocument } from '../document/viewer_document'
@@ -22,6 +24,7 @@ export type EditCommand =
   | ApplyCharacterStyleCommand
   | ApplyParagraphStyleCommand
   | RestoreStyleCommand
+  | RestoreCharacterRunCommand
 
 export interface EditorSelection {
   sectionPath: string
@@ -127,7 +130,9 @@ export function applyEditTransaction(
           ? applyCharacterStyleCommand(currentPackage, command)
           : command.type === 'apply-paragraph-style'
             ? applyParagraphStyleCommand(currentPackage, command)
-            : applyRestoreStyleCommand(currentPackage, command)
+            : command.type === 'restore-style'
+              ? applyRestoreStyleCommand(currentPackage, command)
+              : applyRestoreCharacterRunCommand(currentPackage, command)
     if (result.package !== currentPackage) {
       const inverse =
         command.type === 'replace-text'

@@ -59,6 +59,20 @@ function commandBytes(transaction: EditTransaction): number {
       if (command.type === 'apply-character-style' || command.type === 'apply-paragraph-style') {
         return sum + common + 32
       }
+      if (command.type === 'restore-character-run') {
+        const headerBytes = command.headerMutation
+          ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
+            Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
+            Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
+          : 0
+        return (
+          sum +
+          common +
+          headerBytes +
+          Buffer.byteLength(command.expectedFragment, 'utf8') +
+          Buffer.byteLength(command.replacementFragment, 'utf8')
+        )
+      }
       const headerBytes = command.headerMutation
         ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
           Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +

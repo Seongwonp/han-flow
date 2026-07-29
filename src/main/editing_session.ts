@@ -11,6 +11,7 @@ import {
 import { HwpxEditHistory } from '../core/editing/history'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
+import { listHwpxTextAnchors } from '../core/editing/text_patch'
 import { HwpxSourcePackage } from '../core/parser/source_package'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
@@ -97,6 +98,25 @@ export class EditingSessionManager {
   ): Promise<EditingActionResult> {
     return this.enqueue(senderId, async () => {
       const session = this.requireSession(senderId, request.sessionId)
+      const from = Math.min(request.selection.anchorOffset, request.selection.focusOffset)
+      const to = Math.max(request.selection.anchorOffset, request.selection.focusOffset)
+      const anchor = listHwpxTextAnchors(session.history.package, request.sectionPath).find(
+        (candidate) => candidate.textNodeId === request.textNodeId
+      )
+      if (!anchor) throw new Error(`글자 style anchor를 찾을 수 없습니다: ${request.textNodeId}`)
+      const splitSelection =
+        from !== to && (from > 0 || to < anchor.text.length)
+          ? {
+              sectionPath: request.sectionPath,
+              textNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
+              anchorOffset: request.selection.anchorOffset <= request.selection.focusOffset
+                ? 0
+                : to - from,
+              focusOffset: request.selection.anchorOffset <= request.selection.focusOffset
+                ? to - from
+                : 0
+            }
+          : { ...request.selection }
       const transaction: EditTransaction = {
         id: request.transactionId,
         baseRevision: session.history.package.revision,
@@ -105,11 +125,13 @@ export class EditingSessionManager {
             type: 'apply-character-style',
             sectionPath: request.sectionPath,
             textNodeId: request.textNodeId,
-            bold: request.bold
+            bold: request.bold,
+            from,
+            to
           }
         ],
         selectionBefore: { ...request.selection },
-        selectionAfter: { ...request.selection },
+        selectionAfter: splitSelection,
         inputType: 'formatBold',
         timestamp: request.timestamp
       }

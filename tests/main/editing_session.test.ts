@@ -121,6 +121,70 @@ describe('main process HWPX editing session', () => {
     expect(await manager.redo(21, started.sessionId)).toMatchObject({ isDirty: true })
   })
 
+  test('부분 선택 글자 style은 선택 구간 run을 분할하고 선택과 undo·redo를 이동한다', async () => {
+    const manager = new EditingSessionManager(() => 'partial-style-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === ''
+    )!
+    const started = await manager.start(23, fixture)
+    const emptyCaret = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusOffset: 0
+    }
+    await manager.commit(23, {
+      sessionId: started.sessionId,
+      transactionId: 'partial-text',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: 0,
+      to: 0,
+      insert: '부분굵게검증',
+      selectionBefore: emptyCaret,
+      selectionAfter: { ...emptyCaret, anchorOffset: 6, focusOffset: 6 },
+      inputType: 'insertText',
+      timestamp: 1
+    })
+    const selected = { ...emptyCaret, anchorOffset: 4, focusOffset: 2 }
+    const styled = await manager.applyCharacterStyle(23, {
+      sessionId: started.sessionId,
+      transactionId: 'partial-bold',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: selected,
+      bold: false,
+      timestamp: 2
+    })
+    const content = styled.document.sections[0].blocks.at(-1)?.content
+    expect(content).toMatchObject([
+      { type: 'text', text: '부분' },
+      { type: 'text', text: '굵게' },
+      { type: 'text', text: '검증' }
+    ])
+    expect(styled.selection).toEqual({
+      ...selected,
+      textNodeId: `${anchor.sectionPath}#hp:t:${anchor.ordinal + 1}`,
+      anchorOffset: 2,
+      focusOffset: 0
+    })
+    expect(
+      content?.[1]?.type === 'text'
+        ? styled.document.charStyles[content[1].charStyleId]?.bold
+        : undefined
+    ).toBe(false)
+
+    const undone = await manager.undo(23, started.sessionId)
+    expect(undone.document.sections[0].blocks.at(-1)?.content).toMatchObject([
+      { type: 'text', text: '부분굵게검증' }
+    ])
+    expect(undone.selection).toEqual(selected)
+    const redone = await manager.redo(23, started.sessionId)
+    expect(redone.document.sections[0].blocks.at(-1)?.content).toHaveLength(3)
+    expect(redone.selection).toEqual(styled.selection)
+  })
+
   test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {
     const manager = new EditingSessionManager(() => 'caret-session')
     const source = await HwpxSourcePackage.open(fixture)

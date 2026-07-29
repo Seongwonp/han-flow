@@ -5,6 +5,7 @@ import { HwpxEditHistory } from '../../src/core/editing/history'
 import {
   applyCharacterStyleCommand,
   applyParagraphStyleCommand,
+  applyRestoreCharacterRunCommand,
   applyRestoreStyleCommand
 } from '../../src/core/editing/style_patch'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
@@ -47,6 +48,15 @@ describe('HWPX 문단·글자 style patch', () => {
     const anchor = listHwpxTextAnchors(source, sectionPath).find((candidate) => candidate.text === '')
     if (!anchor) throw new Error('공개 style fixture anchor가 없습니다.')
     return anchor
+  }
+
+  async function sourceWithEditableText(): Promise<HwpxSourcePackage> {
+    const source = await sourceWithCounts()
+    const xml = source
+      .readEntry(sectionPath)
+      .toString('utf8')
+      .replace('<hp:t></hp:t>', '<hp:t>앞&lt;&amp;중간뒤</hp:t>')
+    return source.withEntry(sectionPath, Buffer.from(xml))
   }
 
   test('원본 charPr를 복제해 굵기를 바꾸고 inverse로 header·section bytes를 복원한다', async () => {
@@ -109,6 +119,54 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(
       reused.package.readEntry(sectionPath).toString('utf8')
     ).toContain('<hp:run charPrIDRef="1"><hp:t></hp:t></hp:run>')
+  })
+
+  test('hp:t 일부 선택을 세 run으로 나누고 entity 의미와 원본 bytes를 undo·redo한다', async () => {
+    const source = await sourceWithEditableText()
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '앞<&중간뒤'
+    )!
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const originalSection = source.readEntry(sectionPath)
+    const result = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      bold: false,
+      from: 1,
+      to: 5
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.inverse?.type).toBe('restore-character-run')
+    expect(listHwpxTextAnchors(result.package, sectionPath).slice(anchor.ordinal, anchor.ordinal + 3))
+      .toMatchObject([
+        { text: '앞' },
+        { text: '<&중간' },
+        { text: '뒤' }
+      ])
+    const section = result.package.readEntry(sectionPath).toString('utf8')
+    expect(section).toContain(
+      '<hp:run charPrIDRef="0"><hp:t>앞</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="1"><hp:t>&lt;&amp;중간</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="0"><hp:t>뒤</hp:t></hp:run>'
+    )
+    const projected = await decodeViewerDocument(result.package)
+    const content = projected.sections[0].blocks.at(-1)?.content
+    expect(content).toMatchObject([
+      { type: 'text', text: '앞', charStyleId: '0' },
+      { type: 'text', text: '<&중간', charStyleId: '1' },
+      { type: 'text', text: '뒤', charStyleId: '0' }
+    ])
+
+    if (result.inverse?.type !== 'restore-character-run') throw new Error('run inverse가 없습니다.')
+    const restored = applyRestoreCharacterRunCommand(result.package, result.inverse)
+    expect(restored.package.readEntry('Contents/header.xml')).toEqual(originalHeader)
+    expect(restored.package.readEntry(sectionPath)).toEqual(originalSection)
+    expect(restored.inverse?.type).toBe('restore-character-run')
+    if (restored.inverse?.type !== 'restore-character-run') throw new Error('redo inverse가 없습니다.')
+    const redone = applyRestoreCharacterRunCommand(restored.package, restored.inverse)
+    expect(redone.package.readEntry(sectionPath)).toEqual(result.package.readEntry(sectionPath))
   })
 
   test('paraPr를 복제해 가운데 정렬하고 history undo·redo가 style definition까지 원복한다', async () => {
@@ -181,4 +239,3 @@ describe('HWPX 문단·글자 style patch', () => {
     ).toThrow('최상위 일반 문단')
   })
 })
-
