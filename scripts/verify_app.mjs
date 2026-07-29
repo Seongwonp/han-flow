@@ -11,6 +11,7 @@ const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
+const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
@@ -38,10 +39,12 @@ async function launch(output, userData, options = {}) {
         HAN_FLOW_VISUAL_EXIT: '1',
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
+        HAN_FLOW_DIRTY_ACTION: options.dirtyAction ?? 'discard',
         ...(interactive && searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
         ...(interactive && editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
         ...(interactive && editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {}),
-        ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {})
+        ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
+        ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -64,7 +67,7 @@ async function launch(output, userData, options = {}) {
     const timeout = setTimeout(() => {
       child.kill('SIGTERM')
       finish(new Error(`패키지 앱 검증 시간이 초과되었습니다. ${standardError.trim()}`))
-    }, 60_000)
+    }, 120_000)
     child.once('error', (error) => finish(error))
     child.once('exit', (code) => {
       if (code === 0) finish()
@@ -77,14 +80,19 @@ async function launch(output, userData, options = {}) {
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-app-verify-'))
 try {
   const resolvedFixture = resolve(fixture)
-  const sourceHashBefore = editSave ? hash(await readFile(resolvedFixture)) : undefined
-  const saveDestination = editSave ? join(directory, 'han-flow-edited.hwpx') : undefined
+  const verifiesSavedFile = editSave || closeDirtyAction === 'save'
+  const sourceHashBefore = verifiesSavedFile ? hash(await readFile(resolvedFixture)) : undefined
+  const saveDestination = verifiesSavedFile ? join(directory, 'han-flow-edited.hwpx') : undefined
   const state = await launch(
     join(directory, 'visual-state.json'),
     join(directory, 'user-data'),
-    { saveDestination }
+    {
+      saveDestination,
+      autoSave: editSave,
+      dirtyAction: closeDirtyAction ?? 'discard'
+    }
   )
-  const sourceUnchanged = editSave
+  const sourceUnchanged = verifiesSavedFile
     ? hash(await readFile(resolvedFixture)) === sourceHashBefore
     : undefined
   let savedState
@@ -133,11 +141,11 @@ try {
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
     editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
     editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
-    editSave && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
-    editSave && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
-    editSave && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
-    editSave && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
-    editSave && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined
+    verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
+    verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
+    verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
+    verifiesSavedFile && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
+    verifiesSavedFile && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined
   ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -158,6 +166,13 @@ try {
       savedFileExists,
       reopenedPages: savedState?.totalPages,
       reopenedImages: savedState?.images?.length,
+      reopenedOverflowPages: savedState?.overflowPages
+    } : undefined,
+    dirtyClose: closeDirtyAction ? {
+      action: closeDirtyAction,
+      sourceUnchanged,
+      savedFileExists,
+      reopenedPages: savedState?.totalPages,
       reopenedOverflowPages: savedState?.overflowPages
     } : undefined,
     failures

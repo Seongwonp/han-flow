@@ -46,3 +46,8 @@ export interface EditingSavedResult extends EditingHistoryStatus {
 export type EditingSaveAsDialogResult =
   | { outcome: 'cancelled' }
   | ({ outcome: 'saved' } & EditingSavedResult)
+
+export type EditingResolveDirtyResult =
+  | { outcome: 'cancelled' }
+  | { outcome: 'discarded' }
+  | ({ outcome: 'saved' } & EditingSavedResult)

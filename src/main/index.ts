@@ -19,8 +19,93 @@ const e2eUserData = testValue('HAN_FLOW_E2E_USER_DATA')
 if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData ?? e2eUserData)!)
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
+let applicationQuitRequested = false
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
 const editingSessions = new EditingSessionManager()
+
+async function showMessageBox(
+  window: BrowserWindow | null,
+  options: Electron.MessageBoxOptions
+): Promise<Electron.MessageBoxReturnValue> {
+  return window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options)
+}
+
+async function showSaveDialog(
+  window: BrowserWindow | null,
+  options: Electron.SaveDialogOptions
+): Promise<Electron.SaveDialogReturnValue> {
+  return window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options)
+}
+
+async function saveEditingSessionWithDialog(
+  senderId: number,
+  sessionId: string,
+  window: BrowserWindow | null,
+  confirmPreview: boolean
+) {
+  const testDestination = testValue('HAN_FLOW_EDIT_SAVE_PATH')
+  if (confirmPreview && !testDestination) {
+    const confirmation = await showMessageBox(window, {
+      type: 'warning',
+      buttons: ['다른 이름으로 저장', '취소'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      title: 'HWPX 변경본 저장',
+      message: '원본은 그대로 두고 새 HWPX 파일을 만듭니다.',
+      detail:
+        '문서 본문 변경은 저장되지만 HWPX의 Preview 미리보기는 갱신되지 않을 수 있습니다. ' +
+        '알 수 없는 XML과 이미지 등 원본 package 항목은 그대로 보존합니다.'
+    })
+    if (confirmation.response !== 0) return { outcome: 'cancelled' as const }
+  }
+
+  let destinationPath = testDestination
+  if (!destinationPath) {
+    const selection = await showSaveDialog(window, {
+      title: 'HWPX 변경본을 다른 이름으로 저장',
+      defaultPath: editingSessions.suggestedSaveAsPath(senderId, sessionId),
+      filters: [{ name: 'HWPX 문서', extensions: ['hwpx'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation']
+    })
+    if (selection.canceled || !selection.filePath) return { outcome: 'cancelled' as const }
+    destinationPath = selection.filePath
+  }
+
+  return {
+    outcome: 'saved' as const,
+    ...(await editingSessions.saveAs(senderId, sessionId, destinationPath))
+  }
+}
+
+async function resolveDirtyEditing(
+  senderId: number,
+  sessionId: string,
+  window: BrowserWindow | null
+) {
+  if (!editingSessions.isDirty(senderId, sessionId)) return { outcome: 'discarded' as const }
+  const testAction = testValue('HAN_FLOW_DIRTY_ACTION')
+  let response: number
+  if (testAction) {
+    response = testAction === 'save' ? 0 : testAction === 'discard' ? 1 : 2
+  } else {
+    const confirmation = await showMessageBox(window, {
+      type: 'warning',
+      buttons: ['다른 이름으로 저장', '저장하지 않음', '취소'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: '저장하지 않은 HWPX 변경',
+      message: '이 문서의 변경 내용을 어떻게 처리하시겠습니까?',
+      detail:
+        '저장하면 원본은 그대로 두고 새 HWPX를 만듭니다. Preview 미리보기는 갱신되지 않을 수 있습니다.'
+    })
+    response = confirmation.response
+  }
+  if (response === 2) return { outcome: 'cancelled' as const }
+  if (response === 1) return { outcome: 'discarded' as const }
+  return saveEditingSessionWithDialog(senderId, sessionId, window, false)
+}
 
 function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
@@ -45,6 +130,7 @@ function captureVisualState(window: BrowserWindow): void {
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editSavePath = testValue('HAN_FLOW_EDIT_SAVE_PATH')
+  const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
@@ -103,6 +189,7 @@ function captureVisualState(window: BrowserWindow): void {
       stableSamples = 0
       previousSignature = ''
       editProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-button'
         const waitFor = async (predicate, timeout = 30000) => {
           const started = performance.now()
           while (performance.now() - started < timeout) {
@@ -110,12 +197,13 @@ function captureVisualState(window: BrowserWindow): void {
             if (result) return result
             await new Promise((resolve) => setTimeout(resolve, 25))
           }
-          throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다.')
+          throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
         }
         const editButton = await waitFor(() =>
           Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
         )
         editButton.click()
+        phase = 'editable-surface'
         const target = await waitFor(() => document.querySelector('[aria-label="HWPX 문단 편집"]'))
         target.focus()
         const original = target.textContent ?? ''
@@ -173,16 +261,20 @@ function captureVisualState(window: BrowserWindow): void {
           target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: ${JSON.stringify(editText)}, isComposing: true }))
           target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
         }
+        phase = 'commit'
         await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('편집 중') && document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨'))
+        phase = 'projection'
         const editedTarget = await waitFor(currentTarget)
         const edited = editedTarget.textContent
         const selectionAfterProjection = getSelection(editedTarget)
         const undo = document.querySelector('[aria-label="실행 취소"]')
         undo?.click()
+        phase = 'undo-text'
         const undoneTarget = await waitFor(() => {
           const candidate = currentTarget()
           return candidate?.textContent === original ? candidate : undefined
         })
+        phase = 'undo-selection'
         await waitFor(() => {
           const value = getSelection(undoneTarget)
           return value.anchorOffset === selectionBefore.anchorOffset && value.focusOffset === selectionBefore.focusOffset
@@ -191,10 +283,12 @@ function captureVisualState(window: BrowserWindow): void {
         const undoneMatches = undoneTarget.textContent === original
         const redo = document.querySelector('[aria-label="다시 실행"]')
         redo?.click()
+        phase = 'redo-text'
         const redoneTarget = await waitFor(() => {
           const candidate = currentTarget()
           return candidate?.textContent === expected ? candidate : undefined
         })
+        phase = 'redo-selection'
         await waitFor(() => {
           const value = getSelection(redoneTarget)
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
@@ -202,12 +296,14 @@ function captureVisualState(window: BrowserWindow): void {
         const redoSelection = getSelection(redoneTarget)
         let saveStatusMatches
         let dirtyCleared
-        if (${Boolean(editSavePath)}) {
+        if (${autoSaveEdit}) {
+          phase = 'save-button'
           const saveButton = await waitFor(() => {
             const button = document.querySelector('[aria-label="HWPX 변경본 저장"]')
             return button && !button.disabled ? button : undefined
           })
           saveButton.click()
+          phase = 'save-complete'
           await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 완료'))
           saveStatusMatches = document.querySelector('.viewer-status')?.textContent?.includes('Preview 갱신 안 됨')
           dirtyCleared = !document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨') && saveButton.disabled
@@ -320,9 +416,39 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   })
 
   const senderId = mainWindow.webContents.id
+  let closeApproved = false
+  let resolvingClose = false
   mainWindow.webContents.once('destroyed', () => {
     documentImporter.cancel(senderId)
     editingSessions.stop(senderId)
+  })
+  mainWindow.on('close', (event) => {
+    if (closeApproved || !editingSessions.isDirty(senderId)) return
+    if (resolvingClose) {
+      event.preventDefault()
+      return
+    }
+    event.preventDefault()
+    const sessionId = editingSessions.currentSessionId(senderId)
+    if (!sessionId) return
+    resolvingClose = true
+    const window = mainWindow
+    void resolveDirtyEditing(senderId, sessionId, window)
+      .then((result) => {
+        if (result.outcome === 'cancelled') {
+          applicationQuitRequested = false
+          return
+        }
+        if (!window || window.isDestroyed()) return
+        closeApproved = true
+        editingSessions.stop(senderId)
+        const resumeApplicationQuit = applicationQuitRequested
+        if (resumeApplicationQuit) window.once('closed', () => app.quit())
+        window.close()
+      })
+      .finally(() => {
+        resolvingClose = false
+      })
   })
   mainWindow.on('closed', () => { mainWindow = null })
 
@@ -593,46 +719,23 @@ app.whenReady().then(() => {
     if (typeof sessionId !== 'string') {
       throw new Error('HWPX Save As 요청 형식이 올바르지 않습니다.')
     }
-    const senderWindow = BrowserWindow.fromWebContents(event.sender)
-    const testDestination = testValue('HAN_FLOW_EDIT_SAVE_PATH')
-    if (!testDestination) {
-      const messageOptions: Electron.MessageBoxOptions = {
-        type: 'warning',
-        buttons: ['다른 이름으로 저장', '취소'],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-        title: 'HWPX 변경본 저장',
-        message: '원본은 그대로 두고 새 HWPX 파일을 만듭니다.',
-        detail:
-          '문서 본문 변경은 저장되지만 HWPX의 Preview 미리보기는 갱신되지 않을 수 있습니다. ' +
-          '알 수 없는 XML과 이미지 등 원본 package 항목은 그대로 보존합니다.'
-      }
-      const confirmation = senderWindow
-        ? await dialog.showMessageBox(senderWindow, messageOptions)
-        : await dialog.showMessageBox(messageOptions)
-      if (confirmation.response !== 0) return { outcome: 'cancelled' as const }
-    }
+    return saveEditingSessionWithDialog(
+      event.sender.id,
+      sessionId,
+      BrowserWindow.fromWebContents(event.sender),
+      true
+    )
+  })
 
-    let destinationPath = testDestination
-    if (!destinationPath) {
-      const saveOptions: Electron.SaveDialogOptions = {
-        title: 'HWPX 변경본을 다른 이름으로 저장',
-        defaultPath: editingSessions.suggestedSaveAsPath(event.sender.id, sessionId),
-        filters: [{ name: 'HWPX 문서', extensions: ['hwpx'] }],
-        properties: ['createDirectory', 'showOverwriteConfirmation']
-      }
-      const selection = senderWindow
-        ? await dialog.showSaveDialog(senderWindow, saveOptions)
-        : await dialog.showSaveDialog(saveOptions)
-      if (selection.canceled || !selection.filePath) return { outcome: 'cancelled' as const }
-      destinationPath = selection.filePath
+  ipcMain.handle('editing:resolveDirty', async (event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      throw new Error('HWPX dirty 확인 요청 형식이 올바르지 않습니다.')
     }
-
-    return {
-      outcome: 'saved' as const,
-      ...(await editingSessions.saveAs(event.sender.id, sessionId, destinationPath))
-    }
+    return resolveDirtyEditing(
+      event.sender.id,
+      sessionId,
+      BrowserWindow.fromWebContents(event.sender)
+    )
   })
 
   ipcMain.handle('editing:stop', (event) => {
@@ -649,6 +752,10 @@ app.whenReady().then(() => {
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('before-quit', () => {
+  applicationQuitRequested = true
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

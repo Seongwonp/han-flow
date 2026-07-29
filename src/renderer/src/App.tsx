@@ -2,7 +2,7 @@ import { CSSProperties, DragEvent, useCallback, useEffect, useMemo, useRef, useS
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
-import { EditingActionResult, EditingHistoryStatus, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
+import { EditingActionResult, EditingHistoryStatus, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import { EditorSelection } from '../../core/editing/transaction'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
@@ -330,7 +330,11 @@ export default function App() {
   const automaticPdfStarted = useRef(false)
   const editSequence = useRef(0)
   const editingComposing = useRef(false)
+  const editingStateRef = useRef<typeof editing>(null)
+  const editingPendingRef = useRef(0)
   const stageRef = useRef<HTMLElement>(null)
+  editingStateRef.current = editing
+  editingPendingRef.current = editingPending
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -387,6 +391,27 @@ export default function App() {
   const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
 
   const openPath = async (path: string, openReceivedAt = Date.now()) => {
+    const currentEditing = editingStateRef.current
+    if (currentEditing?.isDirty) {
+      if (editingPendingRef.current || editingComposing.current) {
+        setEditingStatus('입력 반영이 끝난 뒤 다시 문서를 열어 주세요.')
+        return
+      }
+      try {
+        const resolution = await api().resolveDirtyEditing(
+          currentEditing.sessionId
+        ) as EditingResolveDirtyResult
+        if (resolution.outcome === 'cancelled') {
+          setEditingStatus('문서 열기 취소 · 편집 내용 유지')
+          return
+        }
+      } catch (reason) {
+        setEditingStatus(
+          `문서 교체 오류: ${reason instanceof Error ? reason.message : String(reason)}`
+        )
+        return
+      }
+    }
     const requestStartedAt = performance.now()
     const loadId = String(++loadSequence.current)
     activeLoadId.current = loadId

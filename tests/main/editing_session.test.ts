@@ -86,6 +86,8 @@ describe('main process HWPX editing session', () => {
       (candidate) => candidate.text === '공개 헤더'
     )!
     const started = await manager.start(11, fixture)
+    expect(manager.currentSessionId(11)).toBe(started.sessionId)
+    expect(manager.isDirty(11, started.sessionId)).toBe(false)
     const before = {
       sectionPath: anchor.sectionPath,
       textNodeId: anchor.textNodeId,
@@ -110,6 +112,7 @@ describe('main process HWPX editing session', () => {
       inputType: 'insertText',
       timestamp: 1
     })
+    expect(manager.isDirty(11, started.sessionId)).toBe(true)
 
     expect(manager.suggestedSaveAsPath(11, started.sessionId)).toBe(
       join(directory, 'han-flow-round-trip_수정본.hwpx')
@@ -125,6 +128,7 @@ describe('main process HWPX editing session', () => {
       previewStatus: 'stale'
     })
     expect(existsSync(destination)).toBe(true)
+    expect(manager.isDirty(11, started.sessionId)).toBe(false)
     expect(readFileSync(fixture)).toEqual(sourceBytes)
     expect(
       listHwpxTextAnchors(

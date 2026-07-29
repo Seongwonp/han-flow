@@ -120,6 +120,16 @@ export class EditingSessionManager {
     return join(dirname(sourcePath), `${stem}_수정본.hwpx`)
   }
 
+  currentSessionId(senderId: number): string | undefined {
+    return this.sessions.get(senderId)?.id
+  }
+
+  isDirty(senderId: number, sessionId?: string): boolean {
+    const session = this.sessions.get(senderId)
+    if (!session || (sessionId !== undefined && session.id !== sessionId)) return false
+    return session.history.isDirty
+  }
+
   async saveAs(
     senderId: number,
     sessionId: string,

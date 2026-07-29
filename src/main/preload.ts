@@ -45,6 +45,7 @@ const api = {
   undoEditing: (sessionId: string) => ipcRenderer.invoke('editing:undo', sessionId),
   redoEditing: (sessionId: string) => ipcRenderer.invoke('editing:redo', sessionId),
   saveEditingAs: (sessionId: string) => ipcRenderer.invoke('editing:saveAsDialog', sessionId),
+  resolveDirtyEditing: (sessionId: string) => ipcRenderer.invoke('editing:resolveDirty', sessionId),
   stopEditing: () => ipcRenderer.invoke('editing:stop'),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl)
 }
