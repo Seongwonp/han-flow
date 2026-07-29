@@ -43,6 +43,7 @@ function captureVisualState(window: BrowserWindow): void {
   const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
+  const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
@@ -117,32 +118,96 @@ function captureVisualState(window: BrowserWindow): void {
         const target = await waitFor(() => document.querySelector('[aria-label="HWPX 문단 편집"]'))
         target.focus()
         const original = target.textContent ?? ''
-        const selection = window.getSelection()
-        const range = document.createRange()
-        range.selectNodeContents(target)
-        range.collapse(false)
-        selection.removeAllRanges()
-        selection.addRange(range)
-        target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
-        target.textContent = original + 'ㅎ'
-        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
-        target.textContent = original + ${JSON.stringify(editText)}
-        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: ${JSON.stringify(editText)}, isComposing: true }))
-        target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
-        await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨'))
-        const edited = target.textContent
+        const textNode = (element) => {
+          if (!element.firstChild) element.append(document.createTextNode(''))
+          return element.firstChild
+        }
+        const setSelection = (element, anchorOffset, focusOffset) => {
+          const selection = window.getSelection()
+          const node = textNode(element)
+          selection.setBaseAndExtent(node, anchorOffset, node, focusOffset)
+        }
+        const getSelection = (element) => {
+          const selection = window.getSelection()
+          const offset = (node, nodeOffset) => {
+            const range = document.createRange()
+            range.selectNodeContents(element)
+            range.setEnd(node, nodeOffset)
+            return range.toString().length
+          }
+          return {
+            anchorOffset: offset(selection.anchorNode, selection.anchorOffset),
+            focusOffset: offset(selection.focusNode, selection.focusOffset)
+          }
+        }
+        const anchorId = target.dataset.sourceTextNodeId
+        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+          .find((element) => element.dataset.sourceTextNodeId === anchorId)
+        const mode = ${JSON.stringify(editMode)}
+        let expected
+        let selectionBefore
+        let selectionAfter
+        if (mode === 'range') {
+          const from = Math.max(0, original.length - 2)
+          const to = original.length
+          selectionBefore = { anchorOffset: to, focusOffset: from }
+          expected = original.slice(0, from) + ${JSON.stringify(editText)} + original.slice(to)
+          selectionAfter = { anchorOffset: from + ${editText.length}, focusOffset: from + ${editText.length} }
+          setSelection(target, selectionBefore.anchorOffset, selectionBefore.focusOffset)
+          target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: ${JSON.stringify(editText)} }))
+          target.textContent = expected
+          setSelection(target, selectionAfter.anchorOffset, selectionAfter.focusOffset)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(editText)} }))
+        } else {
+          selectionBefore = { anchorOffset: original.length, focusOffset: original.length }
+          expected = original + ${JSON.stringify(editText)}
+          selectionAfter = { anchorOffset: expected.length, focusOffset: expected.length }
+          setSelection(target, selectionBefore.anchorOffset, selectionBefore.focusOffset)
+          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+          target.textContent = original + 'ㅎ'
+          setSelection(target, original.length + 1, original.length + 1)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
+          target.textContent = expected
+          setSelection(target, selectionAfter.anchorOffset, selectionAfter.focusOffset)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: ${JSON.stringify(editText)}, isComposing: true }))
+          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
+        }
+        await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('편집 중') && document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨'))
+        const editedTarget = await waitFor(currentTarget)
+        const edited = editedTarget.textContent
+        const selectionAfterProjection = getSelection(editedTarget)
         const undo = document.querySelector('[aria-label="실행 취소"]')
         undo?.click()
-        await waitFor(() => target.textContent === original)
-        const undone = target.textContent
+        const undoneTarget = await waitFor(() => {
+          const candidate = currentTarget()
+          return candidate?.textContent === original ? candidate : undefined
+        })
+        await waitFor(() => {
+          const value = getSelection(undoneTarget)
+          return value.anchorOffset === selectionBefore.anchorOffset && value.focusOffset === selectionBefore.focusOffset
+        })
+        const undoSelection = getSelection(undoneTarget)
+        const undoneMatches = undoneTarget.textContent === original
         const redo = document.querySelector('[aria-label="다시 실행"]')
         redo?.click()
-        await waitFor(() => target.textContent === original + ${JSON.stringify(editText)})
+        const redoneTarget = await waitFor(() => {
+          const candidate = currentTarget()
+          return candidate?.textContent === expected ? candidate : undefined
+        })
+        await waitFor(() => {
+          const value = getSelection(redoneTarget)
+          return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
+        })
+        const redoSelection = getSelection(redoneTarget)
         return {
+          mode,
           originalLength: original.length,
-          editedMatches: edited === original + ${JSON.stringify(editText)},
-          undoneMatches: undone === original,
-          redoneMatches: target.textContent === original + ${JSON.stringify(editText)},
+          editedMatches: edited === expected,
+          undoneMatches,
+          redoneMatches: redoneTarget.textContent === expected,
+          projectedSelectionMatches: selectionAfterProjection.anchorOffset === selectionAfter.anchorOffset && selectionAfterProjection.focusOffset === selectionAfter.focusOffset,
+          undoSelectionMatches: undoSelection.anchorOffset === selectionBefore.anchorOffset && undoSelection.focusOffset === selectionBefore.focusOffset,
+          redoSelectionMatches: redoSelection.anchorOffset === selectionAfter.anchorOffset && redoSelection.focusOffset === selectionAfter.focusOffset,
           editableCount: document.querySelectorAll('[aria-label="HWPX 문단 편집"]').length
         }
       })()`)

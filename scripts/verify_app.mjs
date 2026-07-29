@@ -8,6 +8,7 @@ const expectedError = process.argv.includes('--expect-error')
 const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
+const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
@@ -30,7 +31,8 @@ async function launch(output, userData) {
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
         ...(searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
-        ...(editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {})
+        ...(editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
+        ...(editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -93,7 +95,10 @@ try {
     editText && !state.editingProbe ? '편집 probe 결과가 없음' : undefined,
     editText && !state.editingProbe?.editedMatches ? 'IME 편집 결과 불일치' : undefined,
     editText && !state.editingProbe?.undoneMatches ? '실행 취소 결과 불일치' : undefined,
-    editText && !state.editingProbe?.redoneMatches ? '다시 실행 결과 불일치' : undefined
+    editText && !state.editingProbe?.redoneMatches ? '다시 실행 결과 불일치' : undefined,
+    editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
+    editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
+    editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined
   ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),

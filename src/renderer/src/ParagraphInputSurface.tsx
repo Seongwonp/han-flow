@@ -79,7 +79,8 @@ export function ParagraphInputSurface({
     if (element.textContent !== text) element.textContent = text
     const selection = desiredSelection ?? textSelection(element)
     controller.reset(text, selection)
-    if (desiredSelection && globalThis.document.activeElement === element) {
+    if (desiredSelection) {
+      if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
       restoreSelection(element, desiredSelection)
     }
   }, [text, pending, desiredSelection?.anchorOffset, desiredSelection?.focusOffset])
@@ -147,6 +148,7 @@ export function ParagraphInputSurface({
       className="viewer-editable-text"
       role="textbox"
       aria-label="HWPX 문단 편집"
+      data-source-text-node-id={sourceAnchor.textNodeId}
       aria-multiline="false"
       spellCheck={false}
       suppressContentEditableWarning
