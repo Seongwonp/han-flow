@@ -51,7 +51,7 @@ stored/deflate 방식을 source snapshot에 보유한다. `mimetype`은 정확�
 
 identity writer는 이 snapshot만 재패킹한다. ZIP timestamp나 압축 결과 bytes 자체는 동일성
 기준이 아니며, entry 순서·경로·compression·CRC와 각 uncompressed content SHA-256을
-재개봉 후 비교한다. 아직 이 writer를 사용자 저장 IPC에 노출하지 않는다.
+재개봉 후 비교한다. V3-1 시점에는 이 writer를 사용자 저장 IPC에 노출하지 않았다.
 
 V3-2의 `text_patch`는 UTF-8 section XML을 token 단위로 훑고 단순 `hp:t`의 source span과
 문서 순서 기반 ID를 만든다. command는 package revision, text node ID와 DOM과 같은 UTF-16
@@ -62,8 +62,8 @@ surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict�
 `saveHwpxAs`는 원본 overwrite와 기존 목적지 overwrite를 모두 금지한다. 목적지와 같은
 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음, source package identity와 기존
 Han-Flow decoder를 다시 통과시킨다. 추가 semantic verifier까지 성공한 뒤에만 hard link로
-목적지 이름을 원자적으로 생성하고 임시 이름을 제거한다. 이 코어 역시 아직 preload에
-노출하지 않는다.
+목적지 이름을 원자적으로 생성하고 임시 이름을 제거한다. V3-2 시점에는 이 코어를 preload에
+노출하지 않았다.
 
 V3-3의 `EditTransaction`은 base revision, command 배열, 전후 selection, `inputType`과
 composition ID를 가진다. command는 순서대로 immutable package에 적용하며 중간 command가
@@ -88,6 +88,13 @@ React의 `plaintext-only` surface는 composition 동안 browser DOM을 그대로
 낡은 React text로 DOM을 덮어쓰지 않으며 마지막 응답 뒤 selection을 복원한다. 현재 editable
 surface는 최상위 단일 text 문단에만 적용되고 measurement tree, 표, 머리말·꼬리말과 HWP
 fixed page에는 적용하지 않는다.
+
+V3-4 Save As는 renderer에 경로나 writer 단계를 조합할 권한을 주지 않는다.
+`editing:saveAsDialog` 하나가 sender/session을 검증하고 Preview stale 경고, 네이티브 목적지
+선택, `EditingSessionManager.saveAs`를 순서대로 수행한다. save manager는 sender별 transaction
+queue에 저장을 넣어 진행 중 edit와 경쟁하지 않게 하며 `saveHwpxAs`가 성공한 뒤에만
+`HwpxEditHistory.markSaved()`를 호출한다. 기존의 무제한 `dialog:saveFile`과
+`dialog:confirmSave` preload API는 제거했다.
 
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,

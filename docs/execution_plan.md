@@ -129,7 +129,7 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 5. [x] `LossReport`에 preserved/modified entry와 stale preview를 기록한다.
 6. [x] 같은 directory temp write·flush·재개봉·identity·viewer 검증 후에만 Save As한다.
 7. [x] 원본 불변, 기존 목적지 비덮어쓰기와 검증 실패 cleanup을 fault test로 확인한다.
-8. [ ] 사용자 저장 확인 UI와 제한된 IPC는 transaction/history 이후 연결한다.
+8. [x] 사용자 저장 확인 UI와 제한된 IPC를 main 편집 session에 연결한다.
 
 공개 fixture와 저장소 밖 AIDA HWPX 모두 한 text patch·Save As·재개봉을 통과했다. 현재
 코어는 사용자 UI에 노출하지 않는다.
@@ -161,12 +161,16 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 8. [x] 패키지 AIDA에서 composition → undo → redo, 8쪽·이미지 4개·overflow 0을 검증한다.
 9. [ ] 실제 macOS 두벌식 키보드로 삽입·삭제·범위 교체·조합 취소 matrix를 수동 확인한다.
 10. [x] 실제 page text 분배가 바뀌는 re-pagination 뒤 caret·undo/redo selection을 검증한다.
-11. [ ] 검증형 Save As를 사용자 확인 UI와 제한된 IPC로 연결한다.
+11. [x] 검증형 Save As를 사용자 확인 UI와 제한된 IPC로 연결한다.
 
 자동 packaged probe는 composition caret과 뒤→앞 범위 selection을 각각 projection,
 undo, redo 뒤 비교한다. AIDA에서 1글자 삽입 후 2·3페이지 text 분배가 바뀌었지만
 8페이지·이미지 4개·overflow 0과 source anchor focus가 유지됐다. 물리 키보드 항목은
 [macOS 한국어 IME 수동 matrix](v3_ime_manual_matrix.md)에 분리했다.
+
+Save As는 Preview stale 경고 → 목적지 선택 → 같은 디렉터리 임시 파일·`fsync` → package
+identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 뒤에만 savepoint를 옮기며
+패키지 AIDA에서 원본 hash 불변, 저장본 8쪽·이미지 4개·overflow 0 재열기를 통과했다.
 
 ## 매 milestone 공통 완료 규칙
 

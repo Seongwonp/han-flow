@@ -404,8 +404,17 @@ packaged probe에서 composition caret과 뒤→앞 범위 selection을 projecti
 source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지됐다.
 
 남은 V3-4 관문은 [실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다.
-Save As UI는 이 입력 관문과 별개로 자동 검증을 계속할 수 있으므로 다음 구현 slice에서
-제한된 IPC와 사용자 확인 흐름에 연결한다.
+
+2026-07-29 Save As UI 연결 결과:
+
+- renderer에는 raw package나 임의 writer를 노출하지 않고 sender-bound session ID 하나로
+  확인창, 목적지 선택과 검증 저장을 수행하는 main IPC만 제공한다.
+- 사용자 확인창은 원본 불변, Preview stale 가능성과 unknown XML·이미지 보존 정책을 먼저
+  알린다. 원본 경로와 기존 목적지는 저장 코어에서 거부한다.
+- 저장 성공 뒤에만 history savepoint를 옮긴다. 저장 실패는 dirty와 기존 목적지를 바꾸지
+  않으며 저장 뒤 undo는 dirty, redo로 savepoint에 돌아오면 clean이 된다.
+- packaged AIDA에서 edit → Save As → dirty 해제 → 원본 SHA-256 불변 → 저장본 재열기
+  8쪽·이미지 4개·overflow 0을 privacy-safe probe로 검증했다.
 
 ### V3-5 style과 표 편집
 

@@ -29,6 +29,7 @@ plain-text 문단 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 �
 - Worker 기반 점진 decode와 페이지 가상화
 - 원본 `hp:t` source anchor 기반의 제한된 단일 텍스트 문단 편집
 - 조합 종료 단위 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
+- 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 
 ### HWP 5.0
 
@@ -138,8 +139,8 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 46%, V4 5%이며
-최종 배포 전체로는 약 64%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 52%, V4 5%이며
+최종 배포 전체로는 약 67%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -149,12 +150,14 @@ round-trip하고 source anchor로 단일 `hp:t`를 수정한 뒤 검증된 새 �
 구현됐습니다. 여러 command의 원자적 transaction, selection 복원, bounded undo/redo와
 savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 session과 제한된 IPC를 통해
 최상위 단일 `ViewerText` 문단만 편집 UI에 연결했고, 패키지 앱에서 composition
-commit·undo·redo를 검증했습니다. 저장 버튼은 아직 노출하지 않았습니다.
+commit·undo·redo를 검증했습니다. 변경본은 Preview가 갱신되지 않을 수 있다는 확인 뒤
+새 HWPX 이름으로만 저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다.
 
 ## 알려진 제한
 
 - HWPX 편집은 최상위 단일 텍스트 문단만 지원하며 표·머리말·꼬리말·복합 run은 읽기 전용입니다.
-- 편집 결과를 파일로 저장하는 UI는 아직 제공하지 않으므로 앱을 닫으면 변경 내용이 사라집니다.
+- HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
+- 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
 - 원문 글꼴이 없으면 대체 글꼴 폭에 따라 HWPX 줄바꿈과 페이지 분배가 달라질 수 있습니다.
 - 한 문단 내부의 줄 단위 페이지 분할은 아직 지원하지 않습니다.

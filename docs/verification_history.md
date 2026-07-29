@@ -8,6 +8,25 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-4 검증형 Save As UI
+
+main-process 편집 session에 검증형 Save As를 연결했다. 사용자는 Preview가 갱신되지 않을 수
+있다는 경고를 확인한 뒤 새 `.hwpx` 목적지만 고를 수 있다. renderer에는 raw package,
+destination writer나 범용 저장 IPC를 노출하지 않으며 과거 `dialog:saveFile`과
+`dialog:confirmSave` preload API는 제거했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 99 passed, 1 suite skipped |
+| session Save As | `tests/main/editing_session.test.ts` | 원본 불변·기존 목적지 충돌·savepoint·undo/redo 5건 통과 |
+| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
+| packaged Save As | `HAN_FLOW_VERIFY_EDIT_TEXT=한 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | dirty 해제·원본 hash 불변·저장본 재열기 통과 |
+| 저장본 화면 | 같은 packaged probe의 두 번째 프로세스 | 8쪽·이미지 4개·overflow 0 |
+
+저장 성공 뒤에만 savepoint가 이동한다. 저장 실패나 취소는 현재 package와 dirty 상태를
+바꾸지 않는다. probe는 임시 목적지를 사용하고 원문 대신 길이·hash 불변 여부·구조 count만
+출력한 뒤 저장본을 삭제한다.
+
 ## 2026-07-29 — V3-4 selection과 re-pagination 복원
 
 편집 projection이나 re-pagination으로 기존 DOM이 교체되어도 selection의 source anchor에
