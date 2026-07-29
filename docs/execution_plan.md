@@ -160,8 +160,13 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 7. [x] `⌘Z`·`⇧⌘Z`, dirty 상태와 projection selection 복원을 연결한다.
 8. [x] 패키지 AIDA에서 composition → undo → redo, 8쪽·이미지 4개·overflow 0을 검증한다.
 9. [ ] 실제 macOS 두벌식 키보드로 삽입·삭제·범위 교체·조합 취소 matrix를 수동 확인한다.
-10. [ ] re-pagination으로 문단이 다음 쪽으로 이동한 뒤 caret 복원을 확대 검증한다.
+10. [x] 실제 page text 분배가 바뀌는 re-pagination 뒤 caret·undo/redo selection을 검증한다.
 11. [ ] 검증형 Save As를 사용자 확인 UI와 제한된 IPC로 연결한다.
+
+자동 packaged probe는 composition caret과 뒤→앞 범위 selection을 각각 projection,
+undo, redo 뒤 비교한다. AIDA에서 1글자 삽입 후 2·3페이지 text 분배가 바뀌었지만
+8페이지·이미지 4개·overflow 0과 source anchor focus가 유지됐다. 물리 키보드 항목은
+[macOS 한국어 IME 수동 matrix](v3_ime_manual_matrix.md)에 분리했다.
 
 ## 매 milestone 공통 완료 규칙
 

@@ -399,9 +399,13 @@ adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에
 - 패키지 AIDA 기준 8쪽·이미지 4개·overflow 0을 유지하며 composition commit → undo → redo를
   privacy-safe probe로 검증했다.
 
-남은 V3-4 관문은 실제 macOS 두벌식 키보드 수동 matrix, 범위 selection 교체와
-re-pagination 후 caret 복원의 확대 검증이다. Save As UI는 이 입력 관문을 잠근 뒤 별도
-후속 slice로 연결한다.
+packaged probe에서 composition caret과 뒤→앞 범위 selection을 projection, undo, redo
+단계마다 비교했다. AIDA에서 한 글자 삽입 후 2·3페이지 text 분배가 실제로 달라졌지만
+source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지됐다.
+
+남은 V3-4 관문은 [실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다.
+Save As UI는 이 입력 관문과 별개로 자동 검증을 계속할 수 있으므로 다음 구현 slice에서
+제한된 IPC와 사용자 확인 흐름에 연결한다.
 
 ### V3-5 style과 표 편집
 

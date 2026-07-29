@@ -101,9 +101,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 ## 현재 다음 작업
 
 1. 실제 macOS 두벌식 삽입·삭제·범위 교체·조합 취소 수동 matrix
-2. re-pagination 뒤 caret·selection 복원 확대 검증
-3. 검증형 Save As 확인 UI와 제한된 IPC
-4. 공개 identity fixture를 Windows 한/글에서 재열기
+2. 검증형 Save As 확인 UI와 제한된 IPC
+3. 공개 identity fixture를 Windows 한/글에서 재열기
+4. 문단·글자 style command 설계
 
 ## 진행률 스냅샷
 
@@ -114,9 +114,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
-| V3 편집 | 40% | 42% | 16.8% |
+| V3 편집 | 40% | 46% | 18.4% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 63%** |
+| **최종 배포 전체** | **100%** | | **약 64%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질

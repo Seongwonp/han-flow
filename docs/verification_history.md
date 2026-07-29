@@ -8,6 +8,22 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-4 selection과 re-pagination 복원
+
+편집 projection이나 re-pagination으로 기존 DOM이 교체되어도 selection의 source anchor에
+해당하는 새 surface를 찾아 focus와 UTF-16 anchor/focus offset을 복원하도록 강화했다.
+정방향 caret뿐 아니라 뒤→앞 범위 selection도 방향을 보존한다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 97 passed, 1 suite skipped |
+| composition selection | `HAN_FLOW_VERIFY_EDIT_TEXT=한 npm run verify:app -- <private.hwpx>` | projection·undo·redo caret 일치 |
+| 역방향 범위 교체 | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=교체 npm run verify:app -- <private.hwpx>` | 본문·projection·undo·redo selection 일치 |
+| re-pagination | 같은 composition probe | 2·3페이지 문자 분배 변경, 8쪽·이미지 4개·overflow 0 유지 |
+
+probe는 원문 대신 원문 UTF-16 길이와 각 단계 일치 여부만 출력한다. 실제 키보드 두벌식
+입력은 [수동 matrix](v3_ime_manual_matrix.md)에 남겨 자동 event 주입과 구분한다.
+
 ## 2026-07-29 — V3-4 paragraph IME surface 첫 slice
 
 ordered XML `hp:t`의 section ordinal을 `ViewerText.sourceAnchor`에 보존하고, renderer의

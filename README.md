@@ -138,8 +138,8 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 42%, V4 5%이며
-최종 배포 전체로는 약 63%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 46%, V4 5%이며
+최종 배포 전체로는 약 64%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -243,6 +243,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)
 - [V3 HWPX 편집 조사와 구현 전략](docs/v3_editing_strategy.md)
+- [V3 macOS 한국어 IME 수동 검증 matrix](docs/v3_ime_manual_matrix.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
 - [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)
