@@ -714,14 +714,13 @@ export default function App() {
     if (!document || !editingSelection) return undefined
     for (const section of document.sections) {
       for (const paragraph of section.blocks) {
-        if (paragraph.content.length !== 1 || paragraph.content[0].type !== 'text') continue
-        const text = paragraph.content[0]
-        if (
-          text.sourceAnchor?.sectionPath !== editingSelection.sectionPath ||
-          text.sourceAnchor.textNodeId !== editingSelection.textNodeId
-        ) {
-          continue
-        }
+        const text = paragraph.content.find(
+          (item) =>
+            item.type === 'text' &&
+            item.sourceAnchor?.sectionPath === editingSelection.sectionPath &&
+            item.sourceAnchor.textNodeId === editingSelection.textNodeId
+        )
+        if (!text || text.type !== 'text') continue
         return {
           bold: document.charStyles[text.charStyleId]?.bold ?? false,
           align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment

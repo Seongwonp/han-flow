@@ -144,6 +144,7 @@ try {
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,
     styleProbe && !state.editingProbe?.styleProbe ? 'style 편집 probe 결과가 없음' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.boldApplied ? '굵게 style 적용 불일치' : undefined,
+    styleProbe && !state.editingProbe?.styleProbe?.partialRunSplit ? '부분 선택 run 분할 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.alignApplied ? '문단 정렬 적용 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.undoRestored ? 'style undo 원복 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.redoRestored ? 'style redo 복원 불일치' : undefined,

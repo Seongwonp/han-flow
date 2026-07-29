@@ -292,7 +292,11 @@ function captureVisualState(window: BrowserWindow): void {
           target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
         }
         phase = 'commit'
-        await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('편집 중') && document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨'))
+        await waitFor(() => {
+          const undoButton = document.querySelector('[aria-label="실행 취소"]')
+          return undoButton && !undoButton.disabled &&
+            document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨')
+        })
         phase = 'projection'
         const editedTarget = await waitFor(currentTarget)
         const edited = editedTarget.textContent
@@ -336,10 +340,19 @@ function captureVisualState(window: BrowserWindow): void {
           const alignLabels = ['왼쪽 정렬', '가운데 정렬', '오른쪽 정렬', '양쪽 정렬']
           const originalAlign = alignLabels.find((label) => button(label)?.getAttribute('aria-pressed') === 'true') ?? '왼쪽 정렬'
           const desiredAlign = originalAlign === '가운데 정렬' ? '오른쪽 정렬' : '가운데 정렬'
-          boldButton.click()
+          const partialStart = Math.max(0, expected.length - ${editText.length})
+          redoneTarget.focus()
+          setSelection(redoneTarget, partialStart, expected.length)
+          redoneTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          button('현재 텍스트 블록 굵게')?.click()
           phase = 'style-bold'
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
           const boldApplied = button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
+          const partialRunSplit = await waitFor(() => Array.from(document.querySelectorAll('.viewer-paragraph'))
+            .some((paragraph) => paragraph.textContent === expected &&
+              !paragraph.querySelector('.viewer-editable-text') &&
+              paragraph.querySelectorAll(':scope > span').length >= 2))
           button(desiredAlign)?.click()
           phase = 'style-align'
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
@@ -360,6 +373,7 @@ function captureVisualState(window: BrowserWindow): void {
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
           styleProbe = {
             boldApplied,
+            partialRunSplit,
             alignApplied,
             undoRestored,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
