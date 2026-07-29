@@ -53,6 +53,18 @@ identity writer는 이 snapshot만 재패킹한다. ZIP timestamp나 압축 결�
 기준이 아니며, entry 순서·경로·compression·CRC와 각 uncompressed content SHA-256을
 재개봉 후 비교한다. 아직 이 writer를 사용자 저장 IPC에 노출하지 않는다.
 
+V3-2의 `text_patch`는 UTF-8 section XML을 token 단위로 훑고 단순 `hp:t`의 source span과
+문서 순서 기반 ID를 만든다. command는 package revision, text node ID와 DOM과 같은 UTF-16
+범위를 함께 검증한다. target text content만 XML escape해 교체하므로 target 밖의 tag, attribute,
+공백과 unknown node는 byte 단위로 유지된다. 복합 자식, 잘못된 entity, 비 UTF-8 XML,
+surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict로 끝낸다.
+
+`saveHwpxAs`는 원본 overwrite와 기존 목적지 overwrite를 모두 금지한다. 목적지와 같은
+directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음, source package identity와 기존
+Han-Flow decoder를 다시 통과시킨다. 추가 semantic verifier까지 성공한 뒤에만 hard link로
+목적지 이름을 원자적으로 생성하고 임시 이름을 제거한다. 이 코어 역시 아직 preload에
+노출하지 않는다.
+
 paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHead` pattern과
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를

@@ -8,6 +8,27 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-2 source text patch와 검증형 Save As
+
+UTF-8 section 원문에서 단순 `hp:t` content span만 수정하는 `ReplaceTextCommand`를 구현했다.
+문서 순서 기반 source ID, package revision과 UTF-16 range를 함께 확인하고 inverse command를
+만든다. target 밖 XML과 다른 entry는 재직렬화하지 않는다.
+
+Save As는 같은 directory의 배타적 임시 파일을 flush하고 package identity, 기존 viewer decode,
+선택 semantic 검증을 모두 통과한 뒤 hard link로 존재하지 않는 목적지 이름만 만든다. 원본
+overwrite와 기존 목적지 overwrite는 차단한다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 단위·통합 테스트 | `npm test -- --runInBand` | 18 suites, 81 passed, 1 suite skipped |
+| text fixture | `tests/editing/text_patch.test.ts` | escape·빈 node·unsupported node·inverse·conflict·fault 6건 통과 |
+| private patch | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/editing/text_patch.test.ts` | 한 text patch·Save As·원본 hash 불변 |
+| production build | `npm run build` | main/preload/renderer 성공 |
+| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
+
+사용자 저장 버튼은 아직 없다. 다음 품질 관문은 여러 command를 하나의 transaction으로 묶고
+delta history, undo/redo와 savepoint를 검증하는 V3-3이다.
+
 ## 2026-07-29 — V3-1 HWPX source package identity
 
 모든 ZIP entry를 원본 순서와 uncompressed bytes, compression, CRC로 보유하는

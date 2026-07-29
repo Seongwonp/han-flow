@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-1 source package 코드 관문 완료, Windows 한/글 identity 재열기 확인 대기
+상태: V3-2 text patch·검증형 Save As 코어 완료, transaction/history 구현 전
 
 기준일: 2026-07-29
 
@@ -328,6 +328,24 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - 수정 text와 기존 표·이미지·style·header/footer 구조 보존
 - 원본 파일 hash 불변
 - 잘못된 package는 목적지에 나타나지 않음
+
+2026-07-29 구현 결과:
+
+- UTF-8 원본 XML token scanner가 단순 `hp:t`의 content span과 section 내 ordinal 기반
+  source ID를 만든다. section 전체 AST 재직렬화는 하지 않는다.
+- `ReplaceTextCommand`는 package revision, anchor와 UTF-16 range를 검사하며 inverse command를
+  반환한다. stale revision, surrogate pair 중간과 XML 1.0 금지 문자는 차단한다.
+- entity, tab, line break, emoji와 빈 text node를 공개 fixture로 왕복하고 inverse 뒤 section
+  bytes가 원본과 같은지 검증했다.
+- `LossReport`는 수정 section, 보존 entry와 stale/omitted Preview 상태를 구분한다.
+- `saveHwpxAs`는 같은 directory의 배타적 임시 파일을 flush한 뒤 package identity, 기존
+  Han-Flow viewer decode와 semantic verifier를 재실행한다. 성공 결과만 hard link로 새
+  목적지에 commit하며 원본과 기존 목적지는 덮어쓰지 않는다.
+- 저장소 밖 AIDA HWPX도 본문을 출력하지 않고 한 text patch·Save As·재개봉과 원본 hash
+  불변을 통과했다.
+
+이 단계는 저장 코어의 vertical slice다. renderer IPC, 사용자 확인, selection과 입력 UI는
+아직 연결하지 않으며 V3-3 transaction/history와 V3-4 IME 관문 뒤에 노출한다.
 
 ### V3-3 transaction과 history
 

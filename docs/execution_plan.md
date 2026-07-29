@@ -107,7 +107,7 @@
 entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서 저장 경로로 사용할 수 없다.
 세부 근거는 [V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)에 있다.
 
-## 현재 milestone: V3-1 package preservation
+## 완료한 코드 관문: V3-1 package preservation
 
 1. [x] 사용되지 않는 손실성 `hwpx:save` IPC와 과거 serializer를 제거한다.
 2. [x] 모든 entry bytes·compression·CRC를 제한된 형태로 읽는 `HwpxSourcePackage`를 만든다.
@@ -118,7 +118,21 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 7. [ ] Windows 한/글 재열기 결과를 기록한다.
 
 코드 관문과 실사용 AIDA HWPX의 privacy-safe identity 검증은 통과했다. Windows 한/글
-재열기를 외부 호환성 관문으로 남기며, 다음 구현은 한 text node patch와 검증된 Save As다.
+재열기는 V3 전체의 외부 호환성 관문으로 계속 추적한다.
+
+## 현재 milestone: V3-2 text patch와 Save As
+
+1. [x] UTF-8 section에서 단순 `hp:t` source span과 결정적 text node ID를 만든다.
+2. [x] revision·UTF-16 범위를 검증하는 `ReplaceTextCommand`와 inverse를 만든다.
+3. [x] XML escape, 공백·tab·line break, 빈 node와 Unicode 경계를 검증한다.
+4. [x] 수정 section 외 entry bytes와 unknown XML·binary를 그대로 보존한다.
+5. [x] `LossReport`에 preserved/modified entry와 stale preview를 기록한다.
+6. [x] 같은 directory temp write·flush·재개봉·identity·viewer 검증 후에만 Save As한다.
+7. [x] 원본 불변, 기존 목적지 비덮어쓰기와 검증 실패 cleanup을 fault test로 확인한다.
+8. [ ] 사용자 저장 확인 UI와 제한된 IPC는 transaction/history 이후 연결한다.
+
+공개 fixture와 저장소 밖 AIDA HWPX 모두 한 text patch·Save As·재개봉을 통과했다. 현재
+코어는 사용자 UI에 노출하지 않으며 다음 구현은 command transaction과 bounded history다.
 
 ## 매 milestone 공통 완료 규칙
 

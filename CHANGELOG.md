@@ -13,6 +13,11 @@
 - unknown XML·binary 공개 fixture와 entry SHA-256 identity round-trip
 - 실사용 AIDA HWPX의 privacy-safe identity 검증
 - 잘못된 mimetype과 package 손실을 만들던 과거 serializer·저장 IPC 제거
+- source span 기반 단일 `hp:t` text patch와 inverse command
+- XML entity·공백·빈 node·Unicode boundary 검증
+- preserved/modified entry와 Preview 상태를 구분하는 `LossReport`
+- 임시 파일 flush·재개봉·viewer 검증 후 새 목적지에만 commit하는 Save As 코어
+- 실사용 AIDA HWPX 한 text patch·Save As와 원본 hash 불변 검증
 
 ### V2 HWP fixed-page
 

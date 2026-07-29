@@ -11,8 +11,9 @@
 Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공공기관과 학교에서 받은 한글
 문서를 Mac에서 매주 실제로 열어볼 수 있는 작고 안정적인 도구를 목표로 합니다.
 
-V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package를
-손실 없이 보존하는 기반 구현을 시작했으며, 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
+V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package
+보존과 단일 text patch·검증형 Save As 코어를 구현했으며, 서명·공증을 포함한 사용자 배포는
+V4에서 진행합니다. 현재 패키지 버전은
 `1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
 
 ## 현재 지원 범위
@@ -77,7 +78,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 17 suites, 75 passed, 1 suite skipped |
+| Jest | 18 suites, 81 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -134,14 +135,15 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 10%, V4 5%이며
-최종 배포 전체로는 약 50%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 20%, V4 5%이며
+최종 배포 전체로는 약 54%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
 selection·undo/redo와 crash-safe 저장을 별도 품질 관문으로 개발합니다. `.hwp` 저장은
 V3의 기본 약속이 아닙니다. 현재는 모든 HWPX ZIP entry와 unknown XML·binary를 identity
-round-trip하는 `HwpxSourcePackage`까지만 구현됐으며 편집 UI나 저장 버튼은 아직 없습니다.
+round-trip하고 source anchor로 단일 `hp:t`를 수정한 뒤 검증된 새 파일로 저장하는 코어까지
+구현됐습니다. 이 경로는 아직 IPC·편집 UI·저장 버튼에 연결하지 않았습니다.
 
 ## 알려진 제한
 

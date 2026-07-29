@@ -54,6 +54,8 @@ Git에 커밋하지 않는다.
 미지 binary와 명시적 directory entry를 넣는다. `HwpxSourcePackage` identity round-trip 뒤
 entry 순서·compression·CRC·uncompressed SHA-256과 sentinel이 모두 같은지 검증한다.
 `mimetype`은 다른 공개 fixture를 포함해 `application/hwp+zip`을 stored 방식으로 기록한다.
+같은 fixture의 일반 text와 빈 `<hp:t></hp:t>`는 entity·tab·line break·Unicode patch,
+inverse byte 복원, stale revision과 검증형 Save As 테스트에 사용한다.
 저장소 밖 실문서는 `HAN_FLOW_PRIVATE_HWPX` 환경 변수로 같은 테스트를 선택 실행하며 본문이나
 파일명은 assertion과 로그에 포함하지 않는다.
 
