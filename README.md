@@ -31,7 +31,7 @@ plain-text 문단 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 �
 - 조합 종료 단위 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
-- 활성 단일 run의 굵게와 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬
+- 단일 `hp:t` 전체 또는 부분 선택의 굵게와 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬
 
 ### HWP 5.0
 
@@ -84,7 +84,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 105 passed, 1 suite skipped |
+| Jest | 22 suites, 107 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -141,8 +141,8 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 63%, V4 5%이며
-최종 배포 전체로는 약 71%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 67%, V4 5%이며
+최종 배포 전체로는 약 73%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -160,7 +160,8 @@ commit·undo·redo를 검증했습니다. 변경본은 Preview가 갱신되지 �
 ## 알려진 제한
 
 - HWPX 편집은 최상위 단일 텍스트 문단만 지원하며 표·머리말·꼬리말·복합 run은 읽기 전용입니다.
-- 글자 모양은 활성 단일 run 전체의 굵게만 지원하며 부분 선택, 글꼴·크기·색상은 아직 지원하지 않습니다.
+- 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게만 지원하며 글꼴·크기·색상은 아직 지원하지 않습니다.
+- 부분 스타일 적용으로 여러 run이 된 문단은 읽기와 style 재적용·undo는 가능하지만 직접 text 입력 surface는 아직 다시 열리지 않습니다.
 - 문단 모양은 최상위 일반 문단의 정렬 4종만 지원하며 표 cell과 목록 모양은 아직 편집하지 않습니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.

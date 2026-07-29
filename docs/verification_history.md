@@ -8,30 +8,37 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
-## 2026-07-29 — V3-5 제한된 문단·글자 style
+## 2026-07-29 — V3-5 부분 selection 문단·글자 style
 
 최상위 일반 문단의 단일 `hp:t` source anchor에서 실제 run과 paragraph를 찾고, 원본
 `charPr`·`paraPr`를 복제해 굵게와 정렬 4종만 바꾸는 첫 style slice를 연결했다. 같은
 definition은 재사용하며 새 ID는 기존 숫자 ID 최대값 다음 값으로 결정적으로 할당한다.
 header collection count, definition과 section reference를 함께 변경하고 undo에서는 두
-entry의 원본 bytes를 복원한다.
+entry의 원본 bytes를 복원한다. 이어서 `hp:t` 내부 부분 selection을 좌·선택·우 최대 3개
+run으로 분할하고 선택 run만 새 글자 style을 참조하도록 확장했다.
 
 | 관문 | 명령 | 결과 |
 | --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 105 passed, 1 suite skipped |
-| style 코어 | `tests/editing/style_patch.test.ts` | clone·reuse·item count·no-op·범위 차단·byte 원복 통과 |
-| main session | `tests/main/editing_session.test.ts` | style IPC·undo/redo와 caret 이동 뒤 text commit 통과 |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 107 passed, 1 suite skipped |
+| style 코어 | `tests/editing/style_patch.test.ts` | clone·reuse·run split·entity 의미·byte undo/redo 통과 |
+| main session | `tests/main/editing_session.test.ts` | 새 anchor 선택 이동·부분 style undo/redo와 caret 이동 통과 |
 | production build | `npm run build` | main·preload·renderer 성공 |
 | macOS package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
-| packaged style | `HAN_FLOW_VERIFY_EDIT_TEXT=스타일검증 HAN_FLOW_VERIFY_STYLE=1 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | 굵게·정렬·undo/redo·Save As 통과 |
+| packaged style | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=스타일검증 HAN_FLOW_VERIFY_STYLE=1 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | 부분 run split·굵게·정렬·undo/redo·Save As 통과 |
 | 저장본 화면 | 같은 packaged probe의 두 번째 프로세스 | 8쪽·이미지 4개·overflow 0 |
 | 공개 HWPX matrix | `npm run verify:matrix` | 5종 통과, 최대 9,767쪽·DOM 12개·overflow 0 |
 | 배포 고지 | `npm run verify:notices` | Apache-2.0·rhwp MIT·third-party notice 일치 |
 
-packaged probe는 원문이나 캡처를 남기지 않고 style 버튼 상태, projection 뒤 결과, undo/redo
-원복 여부와 구조 count만 수집했다. 원본 SHA-256은 변하지 않았으며 임시 저장본을 다시 연
-뒤 삭제했다. 현재 글자 모양은 단일 run 전체의 굵게, 문단 모양은 최상위 일반 문단 정렬만
-지원한다. 부분 selection, 표 cell, 복합 run과 다른 style 속성은 계속 차단한다.
+packaged probe는 원문이나 캡처를 남기지 않고 부분 run 생성, style 버튼 상태, projection 뒤
+결과, undo/redo 원복 여부와 구조 count만 수집했다. 원본 SHA-256은 변하지 않았으며 임시
+저장본을 다시 연 뒤 삭제했다. 프로그램으로 주입한 composition commit은 실행 환경에 따라
+간헐적으로 늦어질 수 있어 이 관문은 결정적인 범위 교체를 사용했고, composition-only
+패키지 probe는 별도로 통과했다.
+
+현재 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 selection의 굵게, 문단 모양은 최상위
+일반 문단 정렬만 지원한다. 분할 뒤 여러 run의 style 재적용과 undo는 가능하지만 하나의
+연속 text 입력 surface는 아직 제공하지 않는다. 표 cell, 머리말·꼬리말, 원래부터 복합인
+run과 다른 style 속성은 계속 차단한다.
 
 ## 2026-07-29 — V3 dirty 문서 교체·종료 보호
 

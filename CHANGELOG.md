@@ -29,6 +29,10 @@
 - `charProperties`·`paraProperties` item count와 section reference 원자적 변경
 - 굵게와 문단 정렬 4종의 제한된 toolbar, `⌘B`와 selection 동기화
 - style definition·reference를 함께 복원하는 undo/redo와 AIDA Save As 재열기 검증
+- 단일 `hp:t` 부분 선택을 좌·선택·우 run으로 분할하는 글자 style command
+- XML entity 의미와 선택 방향을 보존하는 새 source anchor 이동
+- 분할 fragment와 추가 style definition을 byte 단위로 복원하는 undo/redo
+- 패키지 AIDA의 부분 선택·저장·재열기 E2E 관문
 
 ### V2 HWP fixed-page
 

@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-5 첫 style slice 완료 — 제한된 굵게·문단 정렬과 packaged round-trip 연결
+상태: V3-5 부분 selection style 완료 — run split·굵게·문단 정렬과 packaged round-trip 연결
 
 기준일: 2026-07-29
 
@@ -431,7 +431,7 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 
 - [x] 단일 run 굵게와 최상위 일반 문단 정렬 command
 - [x] 새 style ID allocation과 header reference 무결성
-- [ ] 단일 `hp:t` 내부 부분 selection의 run split
+- [x] 단일 `hp:t` 내부 부분 selection의 run split
 - [ ] 글꼴·크기·색상과 추가 글자 모양
 - 표 cell text부터 시작해 행·열·병합을 별도 관문으로 확장
 - 각 기능의 package/visual/PDF round-trip
@@ -460,8 +460,24 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 - packaged AIDA에서 text commit → 굵게 → 정렬 → 두 단계 undo/redo → Save As → 저장본
   재열기를 검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
 
-다음 style 범위는 부분 selection을 위해 한 run을 좌·선택·우 run으로 안전하게 나누는
-작업이다. 표 cell text 편집은 이 작업과 별도 commit·검증 관문으로 진행한다.
+2026-07-29 부분 selection slice 구현 결과:
+
+- 선택 범위가 `hp:t` 일부이면 원본 run open/close와 text tag 속성을 보존한 채 좌·선택·우
+  최대 3개 run으로 나눈다. 선택 구간만 새 `charPrIDRef`를 사용한다.
+- XML entity가 있는 text는 decode된 UTF-16 경계로 선택을 검증하고 각 fragment를 다시
+  escape해 문자 의미를 유지한다. surrogate pair 중간 선택은 차단한다.
+- 분할 뒤 selection은 선택 run의 새 `hp:t` ordinal과 상대 offset으로 이동하며 역방향
+  selection 방향도 유지한다.
+- inverse는 예상 split fragment가 그대로인지 확인한 뒤 원본 run bytes와 추가 style
+  definition을 함께 복원한다. redo는 같은 fragment를 다시 생성한다.
+- renderer toolbar는 분할 뒤 새 source anchor의 굵기와 문단 정렬을 계속 표시한다. 다만
+  여러 run을 하나의 안전한 입력 surface로 합치는 모델은 아직 없으므로 분할 문단의 직접
+  text 입력은 undo로 원상 복구하기 전까지 읽기 전용이다.
+- packaged AIDA의 범위 교체 → 부분 굵게 → 정렬 → undo/redo → Save As → 저장본 재열기를
+  검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
+
+다음 관문은 표 cell text의 source anchor와 transaction이다. 여러 run 문단의 연속 text
+입력 surface는 표 cell 이후 별도 편집 모델 관문으로 다룬다.
 
 ### V3-6 저장 복구와 실사용 관문
 

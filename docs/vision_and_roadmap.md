@@ -67,7 +67,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **V3-5 첫 style slice 완료 — 단일 run 굵게와 일반 문단 정렬**
+상태: **V3-5 부분 selection style 완료 — run split, 굵게와 일반 문단 정렬**
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -102,9 +102,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 1. 실제 macOS 두벌식 삽입·삭제·범위 교체·조합 취소 수동 matrix
 2. 공개 identity·편집 결과를 Windows 한/글에서 재열기
-3. 단일 `hp:t` 부분 selection의 run split과 추가 글자 모양
-4. 표 cell text 편집의 source anchor와 transaction 관문
-5. 저장 중 crash/fault injection과 복구 정책
+3. 표 cell text 편집의 source anchor와 transaction 관문
+4. 여러 run 문단의 연속 text 입력 surface
+5. 추가 글자 모양과 저장 중 crash/fault injection·복구 정책
 
 ## 진행률 스냅샷
 
@@ -115,9 +115,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
-| V3 편집 | 40% | 63% | 25.2% |
+| V3 편집 | 40% | 67% | 26.8% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 71%** |
+| **최종 배포 전체** | **100%** | | **약 73%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질

@@ -192,7 +192,7 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 7. [x] caret 이동 뒤 다음 transaction selection을 main history와 동기화한다.
 8. [x] 공개 fixture에서 style reuse, no-op, 표 cell 차단과 undo/redo를 검증한다.
 9. [x] 패키지 AIDA에서 굵게·정렬·undo/redo·Save As와 8쪽 재열기를 검증한다.
-10. [ ] 단일 `hp:t` 내부 부분 selection을 좌·선택·우 run으로 분할한다.
+10. [x] 단일 `hp:t` 내부 부분 selection을 좌·선택·우 run으로 분할한다.
 11. [ ] 표 cell text source anchor와 transaction을 별도 관문으로 구현한다.
 
 ## 매 milestone 공통 완료 규칙
