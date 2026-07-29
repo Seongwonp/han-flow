@@ -1,5 +1,6 @@
 import { ViewerDocument } from '../document/viewer_document'
 import { EditorSelection } from './transaction'
+import type { ParagraphAlignment } from './style_patch'
 
 export interface EditingHistoryStatus {
   revision: number
@@ -30,6 +31,23 @@ export interface EditingCommitRequest {
   inputType?: string
   compositionId?: string
   timestamp: number
+}
+
+interface EditingStyleRequestBase {
+  sessionId: string
+  transactionId: string
+  sectionPath: string
+  textNodeId: string
+  selection: EditorSelection
+  timestamp: number
+}
+
+export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
+  bold: boolean
+}
+
+export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {
+  align: ParagraphAlignment
 }
 
 export interface EditingActionResult extends EditingHistoryStatus {

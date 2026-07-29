@@ -2,7 +2,9 @@ import { randomUUID } from 'crypto'
 import { basename, dirname, extname, join } from 'path'
 import {
   EditingActionResult,
+  EditingCharacterStyleRequest,
   EditingCommitRequest,
+  EditingParagraphStyleRequest,
   EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
@@ -77,6 +79,75 @@ export class EditingSessionManager {
         compositionId: request.compositionId,
         timestamp: request.timestamp
       }
+      session.history.setSelection(transaction.selectionBefore)
+      const result = session.history.commit(transaction)
+      return {
+        document: result.changed
+          ? await projectEditTransaction(result)
+          : await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async applyCharacterStyle(
+    senderId: number,
+    request: EditingCharacterStyleRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [
+          {
+            type: 'apply-character-style',
+            sectionPath: request.sectionPath,
+            textNodeId: request.textNodeId,
+            bold: request.bold
+          }
+        ],
+        selectionBefore: { ...request.selection },
+        selectionAfter: { ...request.selection },
+        inputType: 'formatBold',
+        timestamp: request.timestamp
+      }
+      session.history.setSelection(transaction.selectionBefore)
+      const result = session.history.commit(transaction)
+      return {
+        document: result.changed
+          ? await projectEditTransaction(result)
+          : await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async applyParagraphStyle(
+    senderId: number,
+    request: EditingParagraphStyleRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [
+          {
+            type: 'apply-paragraph-style',
+            sectionPath: request.sectionPath,
+            textNodeId: request.textNodeId,
+            align: request.align
+          }
+        ],
+        selectionBefore: { ...request.selection },
+        selectionAfter: { ...request.selection },
+        inputType: `formatAlign${request.align}`,
+        timestamp: request.timestamp
+      }
+      session.history.setSelection(transaction.selectionBefore)
       const result = session.history.commit(transaction)
       return {
         document: result.changed

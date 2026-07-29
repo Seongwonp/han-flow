@@ -5,11 +5,23 @@ import {
   listHwpxTextAnchors,
   ReplaceTextCommand
 } from './text_patch'
+import {
+  applyCharacterStyleCommand,
+  applyParagraphStyleCommand,
+  applyRestoreStyleCommand,
+  ApplyCharacterStyleCommand,
+  ApplyParagraphStyleCommand,
+  RestoreStyleCommand
+} from './style_patch'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
 
-export type EditCommand = Omit<ReplaceTextCommand, 'revision'>
+export type EditCommand =
+  | Omit<ReplaceTextCommand, 'revision'>
+  | ApplyCharacterStyleCommand
+  | ApplyParagraphStyleCommand
+  | RestoreStyleCommand
 
 export interface EditorSelection {
   sectionPath: string
@@ -52,7 +64,7 @@ function isTextBoundary(text: string, offset: number): boolean {
   )
 }
 
-function validateSelection(sourcePackage: HwpxSourcePackage, selection: EditorSelection): void {
+export function validateEditorSelection(sourcePackage: HwpxSourcePackage, selection: EditorSelection): void {
   const anchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
     (candidate) => candidate.textNodeId === selection.textNodeId
   )
@@ -93,7 +105,7 @@ export function applyEditTransaction(
       `transaction revision이 변경되었습니다: expected ${transaction.baseRevision}, actual ${sourcePackage.revision}`
     )
   }
-  validateSelection(sourcePackage, transaction.selectionBefore)
+  validateEditorSelection(sourcePackage, transaction.selectionBefore)
 
   let currentPackage = sourcePackage
   const inverseCommands: EditCommand[] = []
@@ -105,19 +117,31 @@ export function applyEditTransaction(
     : 'omitted'
 
   for (const command of transaction.commands) {
-    const result = applyReplaceTextCommand(currentPackage, {
-      ...command,
-      revision: currentPackage.revision
-    })
+    const result =
+      command.type === 'replace-text'
+        ? applyReplaceTextCommand(currentPackage, {
+            ...command,
+            revision: currentPackage.revision
+          })
+        : command.type === 'apply-character-style'
+          ? applyCharacterStyleCommand(currentPackage, command)
+          : command.type === 'apply-paragraph-style'
+            ? applyParagraphStyleCommand(currentPackage, command)
+            : applyRestoreStyleCommand(currentPackage, command)
     if (result.package !== currentPackage) {
-      inverseCommands.unshift(stripRevision(result.inverse))
+      const inverse =
+        command.type === 'replace-text'
+          ? stripRevision(result.inverse as ReplaceTextCommand)
+          : result.inverse
+      if (!inverse) throw new Error('변경된 command에 inverse가 없습니다.')
+      inverseCommands.unshift(inverse)
       result.lossReport.modifiedEntries.forEach((path) => modifiedEntries.add(path))
       if (result.lossReport.previewStatus === 'stale') previewStatus = 'stale'
       currentPackage = result.package
     }
   }
 
-  validateSelection(currentPackage, transaction.selectionAfter)
+  validateEditorSelection(currentPackage, transaction.selectionAfter)
   const allEntries = sourcePackage.listEntries().map((entry) => entry.path)
   const changed = currentPackage !== sourcePackage
   return {

@@ -1,0 +1,184 @@
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { HwpxEditHistory } from '../../src/core/editing/history'
+import {
+  applyCharacterStyleCommand,
+  applyParagraphStyleCommand,
+  applyRestoreStyleCommand
+} from '../../src/core/editing/style_patch'
+import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
+import { EditTransaction, EditorSelection } from '../../src/core/editing/transaction'
+import { HwpxSourcePackage } from '../../src/core/parser/source_package'
+import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
+import { createRoundTripHwpx, roundTripSentinels } from '../fixtures/public/create_synthetic_hwpx'
+
+const sectionPath = 'Contents/section0.xml'
+
+function selection(textNodeId: string): EditorSelection {
+  return {
+    sectionPath,
+    textNodeId,
+    anchorOffset: 0,
+    focusOffset: 0
+  }
+}
+
+describe('HWPX 문단·글자 style patch', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-style-'))
+  const fixture = createRoundTripHwpx(directory)
+
+  afterAll(() => {
+    rmSync(directory, { recursive: true, force: true })
+  })
+
+  async function sourceWithCounts(): Promise<HwpxSourcePackage> {
+    const source = await HwpxSourcePackage.open(fixture)
+    const headerPath = 'Contents/header.xml'
+    const header = source
+      .readEntry(headerPath)
+      .toString('utf8')
+      .replace('<hh:charProperties>', '<hh:charProperties itemCnt="1">')
+      .replace('<hh:paraProperties>', '<hh:paraProperties itemCnt="4">')
+    return source.withEntry(headerPath, Buffer.from(header))
+  }
+
+  function editableAnchor(source: HwpxSourcePackage) {
+    const anchor = listHwpxTextAnchors(source, sectionPath).find((candidate) => candidate.text === '')
+    if (!anchor) throw new Error('공개 style fixture anchor가 없습니다.')
+    return anchor
+  }
+
+  test('원본 charPr를 복제해 굵기를 바꾸고 inverse로 header·section bytes를 복원한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const originalSection = source.readEntry(sectionPath)
+    const result = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      bold: false
+    })
+
+    expect(result.changed).toBe(true)
+    expect(result.package.revision).toBe(source.revision + 2)
+    expect(result.lossReport.modifiedEntries).toEqual(['Contents/header.xml', sectionPath])
+    const header = result.package.readEntry('Contents/header.xml').toString('utf8')
+    expect(header).toContain('<hh:charProperties itemCnt="2">')
+    expect(header.match(/<hh:charPr\b/g)).toHaveLength(2)
+    expect(header).toContain(roundTripSentinels.headerNode)
+    const section = result.package.readEntry(sectionPath).toString('utf8')
+    expect(section).toContain(roundTripSentinels.sectionNode)
+    expect(section).toContain('<hp:run charPrIDRef="1"><hp:t></hp:t></hp:run>')
+
+    const projected = await decodeViewerDocument(result.package)
+    expect(projected.charStyles['1']).toMatchObject({ id: '1', bold: false })
+    expect(projected.sections[0].blocks.at(-1)?.content[0]).toMatchObject({ charStyleId: '1' })
+
+    const restored = applyRestoreStyleCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry('Contents/header.xml')).toEqual(originalHeader)
+    expect(restored.package.readEntry(sectionPath)).toEqual(originalSection)
+  })
+
+  test('동일한 charPr가 있으면 definition을 늘리지 않고 reference만 재사용한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const first = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      bold: false
+    })
+    const backToBold = applyCharacterStyleCommand(first.package, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      bold: true
+    })
+    const headerBeforeReuse = backToBold.package.readEntry('Contents/header.xml')
+    const reused = applyCharacterStyleCommand(backToBold.package, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      bold: false
+    })
+
+    expect(reused.package.readEntry('Contents/header.xml')).toEqual(headerBeforeReuse)
+    expect(reused.lossReport.modifiedEntries).toEqual([sectionPath])
+    expect(
+      reused.package.readEntry(sectionPath).toString('utf8')
+    ).toContain('<hp:run charPrIDRef="1"><hp:t></hp:t></hp:run>')
+  })
+
+  test('paraPr를 복제해 가운데 정렬하고 history undo·redo가 style definition까지 원복한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const originalSection = source.readEntry(sectionPath)
+    const caret = selection(anchor.textNodeId)
+    const transaction: EditTransaction = {
+      id: 'align-center',
+      baseRevision: source.revision,
+      commands: [
+        {
+          type: 'apply-paragraph-style',
+          sectionPath,
+          textNodeId: anchor.textNodeId,
+          align: 'CENTER'
+        }
+      ],
+      selectionBefore: caret,
+      selectionAfter: caret,
+      inputType: 'formatAlignCENTER',
+      timestamp: 1
+    }
+    const history = new HwpxEditHistory(source)
+    const committed = history.commit(transaction)
+
+    expect(committed.changed).toBe(true)
+    expect(history.package.readEntry('Contents/header.xml').toString('utf8')).toContain(
+      '<hh:paraProperties itemCnt="5">'
+    )
+    expect(history.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '<hp:p paraPrIDRef="4">'
+    )
+    const projected = await decodeViewerDocument(history.package)
+    expect(projected.paraStyles['4']).toMatchObject({ id: '4', align: 'CENTER' })
+    expect(projected.sections[0].blocks.at(-1)?.paraStyleId).toBe('4')
+
+    expect(history.undo()?.selection).toEqual(caret)
+    expect(history.package.readEntry('Contents/header.xml')).toEqual(originalHeader)
+    expect(history.package.readEntry(sectionPath)).toEqual(originalSection)
+    history.redo()
+    expect(history.package.readEntry('Contents/header.xml').toString('utf8')).toContain(
+      '<hh:paraPr id="4">'
+    )
+  })
+
+  test('이미 같은 문단 정렬은 no-op이고 표 셀처럼 제한 밖 anchor는 거부한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const noOp = applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      align: 'LEFT'
+    })
+    expect(noOp.changed).toBe(false)
+    expect(noOp.package).toBe(source)
+
+    const tableAnchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '공개 헤더'
+    )!
+    expect(() =>
+      applyCharacterStyleCommand(source, {
+        type: 'apply-character-style',
+        sectionPath,
+        textNodeId: tableAnchor.textNodeId,
+        bold: false
+      })
+    ).toThrow('최상위 일반 문단')
+  })
+})
+

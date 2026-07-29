@@ -64,6 +64,106 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('공개 헤더 수정')
   })
 
+  test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {
+    const manager = new EditingSessionManager(() => 'style-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === ''
+    )!
+    const started = await manager.start(21, fixture)
+    const caret = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusOffset: 0
+    }
+    const boldOff = await manager.applyCharacterStyle(21, {
+      sessionId: started.sessionId,
+      transactionId: 'style-bold-off',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: caret,
+      bold: false,
+      timestamp: 1
+    })
+    const charItem = boldOff.document.sections[0].blocks.at(-1)?.content[0]
+    expect(charItem?.type).toBe('text')
+    expect(
+      charItem?.type === 'text'
+        ? boldOff.document.charStyles[charItem.charStyleId]?.bold
+        : undefined
+    ).toBe(false)
+    expect(boldOff).toMatchObject({ canUndo: true, isDirty: true, selection: caret })
+
+    const centered = await manager.applyParagraphStyle(21, {
+      sessionId: started.sessionId,
+      transactionId: 'style-center',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: caret,
+      align: 'CENTER',
+      timestamp: 2
+    })
+    const paragraph = centered.document.sections[0].blocks.at(-1)!
+    expect(centered.document.paraStyles[paragraph.paraStyleId]?.align).toBe('CENTER')
+
+    const undoParagraph = await manager.undo(21, started.sessionId)
+    const undoParagraphBlock = undoParagraph.document.sections[0].blocks.at(-1)!
+    expect(undoParagraph.document.paraStyles[undoParagraphBlock.paraStyleId]?.align).toBe('LEFT')
+    const undoCharacter = await manager.undo(21, started.sessionId)
+    const undoCharacterItem = undoCharacter.document.sections[0].blocks.at(-1)?.content[0]
+    expect(
+      undoCharacterItem?.type === 'text'
+        ? undoCharacter.document.charStyles[undoCharacterItem.charStyleId]?.bold
+        : undefined
+    ).toBe(true)
+    expect(undoCharacter.isDirty).toBe(false)
+    expect(await manager.redo(21, started.sessionId)).toMatchObject({ isDirty: true })
+  })
+
+  test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {
+    const manager = new EditingSessionManager(() => 'caret-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === '공개 헤더'
+    )!
+    const started = await manager.start(22, fixture)
+    const atEnd = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: anchor.text.length,
+      focusOffset: anchor.text.length
+    }
+    await manager.commit(22, {
+      sessionId: started.sessionId,
+      transactionId: 'caret-first',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: anchor.text.length,
+      to: anchor.text.length,
+      insert: 'A',
+      selectionBefore: atEnd,
+      selectionAfter: { ...atEnd, anchorOffset: anchor.text.length + 1, focusOffset: anchor.text.length + 1 },
+      inputType: 'insertText',
+      timestamp: 1
+    })
+    const movedToStart = { ...atEnd, anchorOffset: 0, focusOffset: 0 }
+    const second = await manager.commit(22, {
+      sessionId: started.sessionId,
+      transactionId: 'caret-second',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: 0,
+      to: 0,
+      insert: 'B',
+      selectionBefore: movedToStart,
+      selectionAfter: { ...movedToStart, anchorOffset: 1, focusOffset: 1 },
+      inputType: 'insertText',
+      timestamp: 2
+    })
+    expect(JSON.stringify(second.document)).toContain('B공개 헤더A')
+  })
+
   test('sender와 session ID가 다르면 편집 상태에 접근하지 못한다', async () => {
     const manager = new EditingSessionManager(() => 'bound-session')
     await manager.start(1, fixture)

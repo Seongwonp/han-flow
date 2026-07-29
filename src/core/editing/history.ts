@@ -6,7 +6,8 @@ import {
   EditTransactionResult,
   EditorSelection,
   rebaseTransaction,
-  shouldGroupTransactions
+  shouldGroupTransactions,
+  validateEditorSelection
 } from './transaction'
 
 export interface EditHistoryOptions {
@@ -47,12 +48,30 @@ export class HwpxHistoryLimitError extends Error {
 
 function commandBytes(transaction: EditTransaction): number {
   return transaction.commands.reduce(
-    (sum, command) =>
-      sum +
-      Buffer.byteLength(command.insert, 'utf8') +
-      Buffer.byteLength(command.sectionPath, 'utf8') +
-      Buffer.byteLength(command.textNodeId, 'utf8') +
-      64,
+    (sum, command) => {
+      const common =
+        Buffer.byteLength(command.sectionPath, 'utf8') +
+        Buffer.byteLength(command.textNodeId, 'utf8') +
+        64
+      if (command.type === 'replace-text') {
+        return sum + common + Buffer.byteLength(command.insert, 'utf8')
+      }
+      if (command.type === 'apply-character-style' || command.type === 'apply-paragraph-style') {
+        return sum + common + 32
+      }
+      const headerBytes = command.headerMutation
+        ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
+          Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
+          Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
+        : 0
+      return (
+        sum +
+        common +
+        headerBytes +
+        Buffer.byteLength(command.expectedReferenceTag, 'utf8') +
+        Buffer.byteLength(command.replacementReferenceTag, 'utf8')
+      )
+    },
     256
   )
 }
@@ -127,6 +146,11 @@ export class HwpxEditHistory {
 
   get isDirty(): boolean {
     return this.currentStateId !== this.savedStateId
+  }
+
+  setSelection(selection: EditorSelection): void {
+    validateEditorSelection(this.currentPackage, selection)
+    this.currentSelection = { ...selection }
   }
 
   stats(): EditHistoryStats {
