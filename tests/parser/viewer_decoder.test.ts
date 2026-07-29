@@ -1,8 +1,14 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
-import { ViewerTable } from '../../src/core/document/viewer_document'
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { ViewerTable, ViewerText } from '../../src/core/document/viewer_document'
+import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
+import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
+import { createRoundTripHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 const fixture = resolve(__dirname, '../fixtures/private/m1-weekly.hwpx')
 const privateTest = existsSync(fixture) ? test : test.skip
@@ -53,5 +59,49 @@ describe('AIDA ViewerDocument decoder', () => {
       top: { type: 'SOLID', widthMm: 0.4, color: '#000000' },
       bottom: { type: 'SOLID', widthMm: 0.12, color: '#000000' }
     })
+  })
+})
+
+describe('ViewerDocument source anchor', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-viewer-anchor-'))
+  const publicFixture = createRoundTripHwpx(directory)
+
+  afterAll(() => {
+    rmSync(directory, { recursive: true, force: true })
+  })
+
+  test('빈 hp:t를 포함해 원본 XML ordinal과 ViewerText anchor가 일치한다', async () => {
+    const source = await HwpxSourcePackage.open(publicFixture)
+    const anchors = listHwpxTextAnchors(source, 'Contents/section0.xml')
+    const document = await decodeViewerDocument(source)
+    const viewerTexts: ViewerText[] = []
+    const collect = (paragraphs: typeof document.sections[0]['blocks']): void => {
+      for (const paragraph of paragraphs) {
+        for (const item of paragraph.content) {
+          if (item.type === 'text') viewerTexts.push(item)
+          if (item.type === 'table') {
+            item.rows.forEach((row) => row.cells.forEach((cell) => collect(cell.paragraphs)))
+          }
+        }
+      }
+    }
+    for (const section of document.sections) {
+      collect(section.blocks)
+      section.headers.forEach((header) => collect(header.paragraphs))
+      section.footers.forEach((footer) => collect(footer.paragraphs))
+    }
+
+    for (const text of viewerTexts.filter((item) => item.sourceAnchor)) {
+      expect(
+        anchors.find((anchor) => anchor.textNodeId === text.sourceAnchor!.textNodeId)
+      ).toMatchObject({ text: text.text })
+    }
+    expect(viewerTexts.find((item) => item.text === '공개 헤더')?.sourceAnchor).toEqual({
+      sectionPath: 'Contents/section0.xml',
+      textNodeId: anchors.find((anchor) => anchor.text === '공개 헤더')?.textNodeId
+    })
+    expect(viewerTexts.find((item) => item.text === '')?.sourceAnchor?.textNodeId).toBe(
+      anchors.find((anchor) => anchor.text === '')?.textNodeId
+    )
   })
 })

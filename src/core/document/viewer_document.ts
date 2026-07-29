@@ -43,7 +43,13 @@ export interface ViewerResource { id: string; path: string; mime: string; data: 
 export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
 export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutTop?: HwpUnit; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
-export interface ViewerText { type: 'text'; text: string; charStyleId: string }
+export interface ViewerSourceAnchor { sectionPath: string; textNodeId: string }
+export interface ViewerText {
+  type: 'text'
+  text: string
+  charStyleId: string
+  sourceAnchor?: ViewerSourceAnchor
+}
 export interface ViewerImage { type: 'image'; resourceId?: string; width?: HwpUnit; height?: HwpUnit }
 export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; pageBreak?: string; repeatHeader: boolean; rows: ViewerTableRow[] }
 export interface ViewerTableRow { cells: ViewerTableCell[]; fragmentHeight?: HwpUnit }

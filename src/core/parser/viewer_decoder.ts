@@ -22,13 +22,26 @@ export interface ViewerDecodeOptions {
   resourcePaths?: string[]
 }
 
-function decodeParagraph(node: OrderedXmlNode, id: string): ViewerParagraph {
+function decodeParagraph(node: OrderedXmlNode, id: string, sectionPath?: string): ViewerParagraph {
   const content: ViewerContent[] = []
   children(node, 'hp:run').forEach((run) => {
     const charStyleId = run.attributes.charPrIDRef ?? '0'
     run.children.forEach((item) => {
-      if (item.name === 'hp:t') content.push({ type: 'text', text: textOf(item), charStyleId })
-      if (item.name === 'hp:tbl') content.push(decodeTable(item, `${id}:tbl${content.length}`))
+      if (item.name === 'hp:t') {
+        content.push({
+          type: 'text',
+          text: textOf(item),
+          charStyleId,
+          sourceAnchor:
+            sectionPath !== undefined && item.sourceOrdinal !== undefined
+              ? {
+                  sectionPath,
+                  textNodeId: `${sectionPath}#hp:t:${item.sourceOrdinal}`
+                }
+              : undefined
+        })
+      }
+      if (item.name === 'hp:tbl') content.push(decodeTable(item, `${id}:tbl${content.length}`, sectionPath))
       if (item.name === 'hp:pic') content.push(decodeImage(item))
       if (item.name === 'hp:tab') content.push({ type: 'text', text: '\t', charStyleId })
       if (item.name === 'hp:lineBreak') content.push({ type: 'text', text: '\n', charStyleId })
@@ -48,7 +61,7 @@ function decodeImage(node: OrderedXmlNode): ViewerImage {
   return { type: 'image', resourceId: resource?.attributes.binaryItemIDRef, width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined }
 }
 
-function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
+function decodeTable(node: OrderedXmlNode, id: string, sectionPath?: string): ViewerTable {
   const size = child(node, 'hp:sz')
   const rows = children(node, 'hp:tr').map((row, rowIndex) => ({
     cells: children(row, 'hp:tc').map((cell, cellIndex): ViewerTableCell => {
@@ -70,7 +83,11 @@ function decodeTable(node: OrderedXmlNode, id: string): ViewerTable {
         verticalAlign: subList?.attributes.vertAlign,
         header: cell.attributes.header === '1',
         sourceCellId: `${id}:r${actualRow}c${column}`,
-        paragraphs: subList ? children(subList, 'hp:p').map((p, index) => decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`)) : []
+        paragraphs: subList
+          ? children(subList, 'hp:p').map((p, index) =>
+              decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`, sectionPath)
+            )
+          : []
       }
     })
   }))
@@ -93,14 +110,23 @@ function decodePageNumber(nodes: OrderedXmlNode[]): ViewerPageNumber | undefined
   }
 }
 
-function decodeHeaderFooters(nodes: OrderedXmlNode[], name: 'hp:header' | 'hp:footer', sectionIndex: number): ViewerHeaderFooter[] {
+function decodeHeaderFooters(
+  nodes: OrderedXmlNode[],
+  name: 'hp:header' | 'hp:footer',
+  sectionIndex: number,
+  sectionPath: string
+): ViewerHeaderFooter[] {
   return walkOrderedXml(nodes).filter((node) => node.name === name).map((node, controlIndex) => {
     const subList = child(node, 'hp:subList')
     const kind = name === 'hp:header' ? 'header' : 'footer'
     return {
       id: node.attributes.id ?? `s${sectionIndex}:${kind}${controlIndex}`,
       applyPageType: node.attributes.applyPageType ?? 'BOTH',
-      paragraphs: subList ? children(subList, 'hp:p').map((paragraph, index) => decodeParagraph(paragraph, `s${sectionIndex}:${kind}${controlIndex}:p${index}`)) : []
+      paragraphs: subList
+        ? children(subList, 'hp:p').map((paragraph, index) =>
+            decodeParagraph(paragraph, `s${sectionIndex}:${kind}${controlIndex}:p${index}`, sectionPath)
+          )
+        : []
     }
   })
 }
@@ -187,10 +213,21 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
     const root = nodes.find((node) => node.name === 'hs:sec')
     return {
       id: `section-${sectionIndex}`,
-      blocks: root ? applyParagraphMarkers(children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`)), header.paraStyles) : [],
+      blocks: root
+        ? applyParagraphMarkers(
+            children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, path)),
+            header.paraStyles
+          )
+        : [],
       pageNumber: decodePageNumber(nodes),
-      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex).map((control) => ({ ...control, paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles) })),
-      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex).map((control) => ({ ...control, paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles) }))
+      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, path).map((control) => ({
+        ...control,
+        paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
+      })),
+      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex, path).map((control) => ({
+        ...control,
+        paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
+      }))
     }
   })
   const resources = Object.fromEntries(await Promise.all(resourcePaths.map(async (path) => {

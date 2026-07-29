@@ -37,8 +37,8 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
     expect(document.page).toEqual({ width: 10000, height: 10000, margin: { left: 1000, right: 1000, top: 1000, bottom: 1000 }, headerOffset: 300, footerOffset: 300 })
     expect(document.sections[0].pageNumber).toEqual({ position: 'BOTTOM_CENTER', formatType: 'DIGIT', sideChar: '-', start: undefined, hiddenOnFirstPage: false })
-    expect(document.sections[0].headers[0].paragraphs[0].content).toContainEqual({ type: 'text', text: '공개 머리말', charStyleId: '0' })
-    expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual({ type: 'text', text: '공개 꼬리말', charStyleId: '0' })
+    expect(document.sections[0].headers[0].paragraphs[0].content).toContainEqual(expect.objectContaining({ type: 'text', text: '공개 머리말', charStyleId: '0' }))
+    expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual(expect.objectContaining({ type: 'text', text: '공개 꼬리말', charStyleId: '0' }))
     expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual({ type: 'image', resourceId: 'image1', width: 200, height: 200 })
     expect(document.sections[0].footers[0].paragraphs.map((paragraph) => paragraph.marker)).toEqual(['-', '1.', '2.'])
     expect(document.charStyles['0']).toMatchObject({ fontFamily: 'HanFlow Test Sans', bold: true, color: '#123456' })
@@ -63,9 +63,9 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     const decorations = resolvePageDecorations(document, viewerPages)
     expect(decorations.map((decoration) => decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined)).toEqual(['- 1 -', '- 2 -', '5'])
     expect(decorations.map((decoration) => decoration.header?.paragraphs[0].content[0])).toEqual([
-      { type: 'text', text: '공개 머리말', charStyleId: '0' },
-      { type: 'text', text: '짝수 쪽 머리말', charStyleId: '0' },
-      { type: 'text', text: '둘째 구역 머리말', charStyleId: '0' }
+      expect.objectContaining({ type: 'text', text: '공개 머리말', charStyleId: '0' }),
+      expect.objectContaining({ type: 'text', text: '짝수 쪽 머리말', charStyleId: '0' }),
+      expect.objectContaining({ type: 'text', text: '둘째 구역 머리말', charStyleId: '0' })
     ])
     expect(decorations.every((decoration) => decoration.footer?.id === '2')).toBe(true)
   })
