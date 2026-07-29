@@ -2,7 +2,7 @@ import { CSSProperties, DragEvent, useCallback, useEffect, useMemo, useRef, useS
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
-import { EditingActionResult, EditingHistoryStatus, EditingStartResult } from '../../core/editing/editing_contract'
+import { EditingActionResult, EditingHistoryStatus, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import { EditorSelection } from '../../core/editing/transaction'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
@@ -705,6 +705,33 @@ export default function App() {
       setEditingStatus(`다시 실행 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
     }
   }, [editing?.sessionId, editingPending, applyEditingResult])
+  const saveEditingAs = useCallback(async () => {
+    if (!editing?.isDirty || editingPending || editingComposing.current) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('HWPX 변경본 검증 중…')
+    try {
+      const result = await api().saveEditingAs(editing.sessionId) as EditingSaveAsDialogResult
+      if (result.outcome === 'cancelled') {
+        setEditingStatus('편집 중')
+        return
+      }
+      setEditing((current) => current ? {
+        sessionId: current.sessionId,
+        revision: result.revision,
+        canUndo: result.canUndo,
+        canRedo: result.canRedo,
+        isDirty: result.isDirty
+      } : current)
+      const savedName = result.destinationPath.split('/').pop() ?? result.destinationPath
+      setEditingStatus(
+        `저장 완료 · ${savedName} · Preview ${result.previewStatus === 'stale' ? '갱신 안 됨' : '없음'}`
+      )
+    } catch (reason) {
+      setEditingStatus(`저장 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [editing?.sessionId, editing?.isDirty, editingPending])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && searchOpen) {
@@ -713,6 +740,11 @@ export default function App() {
         return
       }
       if (!event.metaKey) return
+      if (event.key.toLocaleLowerCase() === 's' && editing) {
+        event.preventDefault()
+        void saveEditingAs()
+        return
+      }
       if (event.key.toLocaleLowerCase() === 'z' && editing && !editingComposing.current) {
         event.preventDefault()
         if (event.shiftKey) void redoEditing()
@@ -730,7 +762,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoom, fixedDocument, searchOpen, searchResults.length, editing, undoEditing, redoEditing])
+  }, [zoom, fixedDocument, searchOpen, searchResults.length, editing, undoEditing, redoEditing, saveEditingAs])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
@@ -827,6 +859,7 @@ export default function App() {
       </div>}
       {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
       {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
+      {editing && <button aria-label="HWPX 변경본 저장" className="viewer-save-as" onClick={() => void saveEditingAs()} disabled={!editing.isDirty || Boolean(editingPending)}>다른 이름으로 저장</button>}
       {editing && <button aria-label="실행 취소" onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>}
       {editing && <button aria-label="다시 실행" onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>}
       <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button>

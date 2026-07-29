@@ -8,8 +8,6 @@ import type {
 const api = {
   getFonts: () => ipcRenderer.invoke('system:getFonts'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  saveFile: () => ipcRenderer.invoke('dialog:saveFile'),
-  confirmSave: () => ipcRenderer.invoke('dialog:confirmSave'),
   askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
   openNewWindow: () => ipcRenderer.invoke('window:openNew'),
   openImage: () => ipcRenderer.invoke('dialog:openImage'),
@@ -46,6 +44,7 @@ const api = {
   commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
   undoEditing: (sessionId: string) => ipcRenderer.invoke('editing:undo', sessionId),
   redoEditing: (sessionId: string) => ipcRenderer.invoke('editing:redo', sessionId),
+  saveEditingAs: (sessionId: string) => ipcRenderer.invoke('editing:saveAsDialog', sessionId),
   stopEditing: () => ipcRenderer.invoke('editing:stop'),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl)
 }

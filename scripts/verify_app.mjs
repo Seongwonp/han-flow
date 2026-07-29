@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 
 const fixture = process.argv[2]
 const expectedError = process.argv.includes('--expect-error')
@@ -9,6 +10,7 @@ const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
+const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
@@ -17,7 +19,13 @@ if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
   process.exit(1)
 }
 
-async function launch(output, userData) {
+function hash(bytes) {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+async function launch(output, userData, options = {}) {
+  const launchedFixture = options.fixture ?? fixture
+  const interactive = options.interactive !== false
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
     let settled = false
@@ -25,14 +33,15 @@ async function launch(output, userData) {
       env: {
         ...process.env,
         HAN_FLOW_E2E: '1',
-        HAN_FLOW_VISUAL_TEST_FILE: resolve(fixture),
+        HAN_FLOW_VISUAL_TEST_FILE: resolve(launchedFixture),
         HAN_FLOW_VISUAL_STATE_OUTPUT: output,
         HAN_FLOW_VISUAL_EXIT: '1',
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
-        ...(searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
-        ...(editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
-        ...(editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {})
+        ...(interactive && searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
+        ...(interactive && editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
+        ...(interactive && editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {}),
+        ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -48,8 +57,6 @@ async function launch(output, userData) {
     const outputPoll = setInterval(async () => {
       try {
         JSON.parse(await readFile(output, 'utf8'))
-        child.kill('SIGTERM')
-        finish()
       } catch {
         // 화면 상태 파일이 완전히 기록될 때까지 기다린다.
       }
@@ -69,7 +76,32 @@ async function launch(output, userData) {
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-app-verify-'))
 try {
-  const state = await launch(join(directory, 'visual-state.json'), join(directory, 'user-data'))
+  const resolvedFixture = resolve(fixture)
+  const sourceHashBefore = editSave ? hash(await readFile(resolvedFixture)) : undefined
+  const saveDestination = editSave ? join(directory, 'han-flow-edited.hwpx') : undefined
+  const state = await launch(
+    join(directory, 'visual-state.json'),
+    join(directory, 'user-data'),
+    { saveDestination }
+  )
+  const sourceUnchanged = editSave
+    ? hash(await readFile(resolvedFixture)) === sourceHashBefore
+    : undefined
+  let savedState
+  let savedFileExists = false
+  if (saveDestination) {
+    try {
+      await readFile(saveDestination)
+      savedFileExists = true
+      savedState = await launch(
+        join(directory, 'saved-visual-state.json'),
+        join(directory, 'saved-user-data'),
+        { fixture: saveDestination, interactive: false }
+      )
+    } catch {
+      savedFileExists = false
+    }
+  }
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
   const failures = (expectedError ? [
     state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
@@ -98,7 +130,14 @@ try {
     editText && !state.editingProbe?.redoneMatches ? '다시 실행 결과 불일치' : undefined,
     editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
-    editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined
+    editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
+    editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
+    editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
+    editSave && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
+    editSave && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
+    editSave && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
+    editSave && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
+    editSave && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined
   ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -114,6 +153,13 @@ try {
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,
     accessibility: searchQuery ? state.accessibility : undefined,
     editingProbe: editText ? state.editingProbe : undefined,
+    saveAs: editSave ? {
+      sourceUnchanged,
+      savedFileExists,
+      reopenedPages: savedState?.totalPages,
+      reopenedImages: savedState?.images?.length,
+      reopenedOverflowPages: savedState?.overflowPages
+    } : undefined,
     failures
   }
   console.log('HAN_FLOW_APP_VERIFY', JSON.stringify(result))

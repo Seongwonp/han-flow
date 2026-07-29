@@ -44,6 +44,7 @@ function captureVisualState(window: BrowserWindow): void {
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
+  const editSavePath = testValue('HAN_FLOW_EDIT_SAVE_PATH')
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
@@ -102,7 +103,7 @@ function captureVisualState(window: BrowserWindow): void {
       stableSamples = 0
       previousSignature = ''
       editProbe = await window.webContents.executeJavaScript(`(async () => {
-        const waitFor = async (predicate, timeout = 10000) => {
+        const waitFor = async (predicate, timeout = 30000) => {
           const started = performance.now()
           while (performance.now() - started < timeout) {
             const result = predicate()
@@ -199,6 +200,18 @@ function captureVisualState(window: BrowserWindow): void {
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
         })
         const redoSelection = getSelection(redoneTarget)
+        let saveStatusMatches
+        let dirtyCleared
+        if (${Boolean(editSavePath)}) {
+          const saveButton = await waitFor(() => {
+            const button = document.querySelector('[aria-label="HWPX 변경본 저장"]')
+            return button && !button.disabled ? button : undefined
+          })
+          saveButton.click()
+          await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 완료'))
+          saveStatusMatches = document.querySelector('.viewer-status')?.textContent?.includes('Preview 갱신 안 됨')
+          dirtyCleared = !document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨') && saveButton.disabled
+        }
         return {
           mode,
           originalLength: original.length,
@@ -208,6 +221,8 @@ function captureVisualState(window: BrowserWindow): void {
           projectedSelectionMatches: selectionAfterProjection.anchorOffset === selectionAfter.anchorOffset && selectionAfterProjection.focusOffset === selectionAfter.focusOffset,
           undoSelectionMatches: undoSelection.anchorOffset === selectionBefore.anchorOffset && undoSelection.focusOffset === selectionBefore.focusOffset,
           redoSelectionMatches: redoSelection.anchorOffset === selectionAfter.anchorOffset && redoSelection.focusOffset === selectionAfter.focusOffset,
+          saveStatusMatches,
+          dirtyCleared,
           editableCount: document.querySelectorAll('[aria-label="HWPX 문단 편집"]').length
         }
       })()`)
@@ -460,19 +475,6 @@ app.whenReady().then(() => {
     return filePaths[0]
   })
 
-  // 저장 확인 대화상자
-  ipcMain.handle('dialog:confirmSave', async () => {
-    const { response } = await dialog.showMessageBox({
-      type: 'question',
-      buttons: ['저장', '저장 안 함', '취소'],
-      defaultId: 0,
-      title: '변경 사항 저장',
-      message: '문서의 변경 내용을 저장하시겠습니까?',
-      detail: '저장하지 않으면 변경 내용이 유실됩니다.'
-    })
-    return response // 0: Save, 1: Don't Save, 2: Cancel
-  })
-
   // 새 창에서 열기 대화상자
   ipcMain.handle('dialog:askOpenMode', async () => {
     const { response } = await dialog.showMessageBox({
@@ -489,19 +491,6 @@ app.whenReady().then(() => {
   ipcMain.handle('window:openNew', async () => {
     createWindow()
     return true
-  })
-
-  // 파일 저장 대화상자 핸들러
-  ipcMain.handle('dialog:saveFile', async () => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '문서 저장',
-      defaultPath: '제목_없음.hwpx',
-      filters: [
-        { name: 'HWPX Files', extensions: ['hwpx'] }
-      ]
-    })
-    if (canceled) return null
-    return filePath
   })
 
   // 이미지 열기 대화상자
@@ -598,6 +587,52 @@ app.whenReady().then(() => {
   ipcMain.handle('editing:redo', (event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') throw new Error('HWPX redo 요청 형식이 올바르지 않습니다.')
     return editingSessions.redo(event.sender.id, sessionId)
+  })
+
+  ipcMain.handle('editing:saveAsDialog', async (event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      throw new Error('HWPX Save As 요청 형식이 올바르지 않습니다.')
+    }
+    const senderWindow = BrowserWindow.fromWebContents(event.sender)
+    const testDestination = testValue('HAN_FLOW_EDIT_SAVE_PATH')
+    if (!testDestination) {
+      const messageOptions: Electron.MessageBoxOptions = {
+        type: 'warning',
+        buttons: ['다른 이름으로 저장', '취소'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        title: 'HWPX 변경본 저장',
+        message: '원본은 그대로 두고 새 HWPX 파일을 만듭니다.',
+        detail:
+          '문서 본문 변경은 저장되지만 HWPX의 Preview 미리보기는 갱신되지 않을 수 있습니다. ' +
+          '알 수 없는 XML과 이미지 등 원본 package 항목은 그대로 보존합니다.'
+      }
+      const confirmation = senderWindow
+        ? await dialog.showMessageBox(senderWindow, messageOptions)
+        : await dialog.showMessageBox(messageOptions)
+      if (confirmation.response !== 0) return { outcome: 'cancelled' as const }
+    }
+
+    let destinationPath = testDestination
+    if (!destinationPath) {
+      const saveOptions: Electron.SaveDialogOptions = {
+        title: 'HWPX 변경본을 다른 이름으로 저장',
+        defaultPath: editingSessions.suggestedSaveAsPath(event.sender.id, sessionId),
+        filters: [{ name: 'HWPX 문서', extensions: ['hwpx'] }],
+        properties: ['createDirectory', 'showOverwriteConfirmation']
+      }
+      const selection = senderWindow
+        ? await dialog.showSaveDialog(senderWindow, saveOptions)
+        : await dialog.showSaveDialog(saveOptions)
+      if (selection.canceled || !selection.filePath) return { outcome: 'cancelled' as const }
+      destinationPath = selection.filePath
+    }
+
+    return {
+      outcome: 'saved' as const,
+      ...(await editingSessions.saveAs(event.sender.id, sessionId, destinationPath))
+    }
   })
 
   ipcMain.handle('editing:stop', (event) => {

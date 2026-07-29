@@ -15,6 +15,7 @@ button { font: inherit; }
 .viewer-search span { min-width: 70px; font-size: 11px; text-align: right; white-space: nowrap; }
 .viewer-search button { height: 26px; min-width: 26px; border: 0; }
 .viewer-actions .viewer-open { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
+.viewer-actions .viewer-save-as { padding: 0 10px; }
 .viewer-stage { flex: 1; overflow: auto; padding: 32px; }
 .viewer-pages { display: flex; flex-direction: column; align-items: center; gap: 24px; transition: transform .12s ease; }
 .viewer-pages-virtualized { gap: 24px; }
