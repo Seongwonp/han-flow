@@ -8,6 +8,31 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-29 — V3-5 제한된 문단·글자 style
+
+최상위 일반 문단의 단일 `hp:t` source anchor에서 실제 run과 paragraph를 찾고, 원본
+`charPr`·`paraPr`를 복제해 굵게와 정렬 4종만 바꾸는 첫 style slice를 연결했다. 같은
+definition은 재사용하며 새 ID는 기존 숫자 ID 최대값 다음 값으로 결정적으로 할당한다.
+header collection count, definition과 section reference를 함께 변경하고 undo에서는 두
+entry의 원본 bytes를 복원한다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 105 passed, 1 suite skipped |
+| style 코어 | `tests/editing/style_patch.test.ts` | clone·reuse·item count·no-op·범위 차단·byte 원복 통과 |
+| main session | `tests/main/editing_session.test.ts` | style IPC·undo/redo와 caret 이동 뒤 text commit 통과 |
+| production build | `npm run build` | main·preload·renderer 성공 |
+| macOS package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
+| packaged style | `HAN_FLOW_VERIFY_EDIT_TEXT=스타일검증 HAN_FLOW_VERIFY_STYLE=1 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | 굵게·정렬·undo/redo·Save As 통과 |
+| 저장본 화면 | 같은 packaged probe의 두 번째 프로세스 | 8쪽·이미지 4개·overflow 0 |
+| 공개 HWPX matrix | `npm run verify:matrix` | 5종 통과, 최대 9,767쪽·DOM 12개·overflow 0 |
+| 배포 고지 | `npm run verify:notices` | Apache-2.0·rhwp MIT·third-party notice 일치 |
+
+packaged probe는 원문이나 캡처를 남기지 않고 style 버튼 상태, projection 뒤 결과, undo/redo
+원복 여부와 구조 count만 수집했다. 원본 SHA-256은 변하지 않았으며 임시 저장본을 다시 연
+뒤 삭제했다. 현재 글자 모양은 단일 run 전체의 굵게, 문단 모양은 최상위 일반 문단 정렬만
+지원한다. 부분 selection, 표 cell, 복합 run과 다른 style 속성은 계속 차단한다.
+
 ## 2026-07-29 — V3 dirty 문서 교체·종료 보호
 
 main history의 dirty 상태를 파일 교체와 BrowserWindow lifecycle에 연결했다. 열기 dialog,

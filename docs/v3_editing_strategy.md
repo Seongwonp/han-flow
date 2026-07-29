@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-4 첫 slice 완료 — 제한된 paragraph IME surface와 packaged undo/redo 연결
+상태: V3-5 첫 style slice 완료 — 제한된 굵게·문단 정렬과 packaged round-trip 연결
 
 기준일: 2026-07-29
 
@@ -429,8 +429,10 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 
 ### V3-5 style과 표 편집
 
-- 글자·문단 style command
-- 새 style ID allocation과 header reference 무결성
+- [x] 단일 run 굵게와 최상위 일반 문단 정렬 command
+- [x] 새 style ID allocation과 header reference 무결성
+- [ ] 단일 `hp:t` 내부 부분 selection의 run split
+- [ ] 글꼴·크기·색상과 추가 글자 모양
 - 표 cell text부터 시작해 행·열·병합을 별도 관문으로 확장
 - 각 기능의 package/visual/PDF round-trip
 
@@ -441,6 +443,25 @@ hwp-mcp의 작은 ZIP mutation 구현을 비교했다. 첫 style slice는 임의
 첫 style 복제가 아니라 현재 source anchor, 실제 원본 style clone, 결정적 ID allocation과
 header list/reference의 원자적 변경으로 구현한다. 세 저장소의 코드는 이번 조사에서
 이식하지 않았고 새 dependency도 추가하지 않았다.
+
+2026-07-29 첫 style slice 구현 결과:
+
+- `ApplyCharacterStyleCommand`는 활성 source anchor가 속한 최상위 단일 run 전체의 굵기를
+  바꾼다. `ApplyParagraphStyleCommand`는 같은 범위의 왼쪽·가운데·오른쪽·양쪽 정렬만
+  허용한다.
+- target run의 실제 `charPr` 또는 paragraph의 `paraPr`를 raw XML에서 찾아 unknown
+  attribute·child를 보존한 채 복제한다. 같은 definition signature가 있으면 재사용하고,
+  없으면 해당 collection의 숫자 ID 최대값 다음 값을 결정적으로 할당한다.
+- `itemCnt`, 새 definition과 section reference를 한 transaction으로 갱신한다. inverse는
+  reference와 추가 definition을 함께 제거해 header와 section 원본 bytes를 복원한다.
+- 표 cell, 머리말·꼬리말, 복합 run은 IPC에서 source anchor를 직접 보내도 차단한다.
+- renderer toolbar는 활성 editable surface가 있을 때만 굵게와 정렬 4종을 활성화한다.
+  caret 이동도 다음 transaction의 selectionBefore로 동기화하며 `⌘B`를 지원한다.
+- packaged AIDA에서 text commit → 굵게 → 정렬 → 두 단계 undo/redo → Save As → 저장본
+  재열기를 검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
+
+다음 style 범위는 부분 selection을 위해 한 run을 좌·선택·우 run으로 안전하게 나누는
+작업이다. 표 cell text 편집은 이 작업과 별도 commit·검증 관문으로 진행한다.
 
 ### V3-6 저장 복구와 실사용 관문
 

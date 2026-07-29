@@ -1,6 +1,6 @@
 # Han-Flow 실행 계획
 
-기준일: 2026-07-27
+기준일: 2026-07-29
 
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
@@ -180,6 +180,20 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 4. [x] cancel은 현재 session과 화면을 유지하고 discard만 명시적으로 폐기한다.
 5. [x] 중복 close를 막되 승인된 두 번째 close는 통과시키는 lifecycle 순서를 검증한다.
 6. [x] 패키지에서 discard 종료와 close-save 원본 불변·저장본 재열기를 검증한다.
+
+## 현재 milestone: V3-5 문단·글자 style
+
+1. [x] source anchor에서 최상위 단일 run과 일반 문단을 결정적으로 찾는다.
+2. [x] 원본 `charPr`·`paraPr`를 기준으로 굵게와 정렬만 제한적으로 변경한다.
+3. [x] 동일 definition 재사용과 숫자 style ID의 결정적 할당을 구현한다.
+4. [x] header collection count, definition과 section reference를 함께 갱신한다.
+5. [x] inverse가 추가 definition과 reference를 제거해 원본 bytes를 복원한다.
+6. [x] sender-bound style IPC와 활성 surface에만 열리는 toolbar를 연결한다.
+7. [x] caret 이동 뒤 다음 transaction selection을 main history와 동기화한다.
+8. [x] 공개 fixture에서 style reuse, no-op, 표 cell 차단과 undo/redo를 검증한다.
+9. [x] 패키지 AIDA에서 굵게·정렬·undo/redo·Save As와 8쪽 재열기를 검증한다.
+10. [ ] 단일 `hp:t` 내부 부분 selection을 좌·선택·우 run으로 분할한다.
+11. [ ] 표 cell text source anchor와 transaction을 별도 관문으로 구현한다.
 
 ## 매 milestone 공통 완료 규칙
 

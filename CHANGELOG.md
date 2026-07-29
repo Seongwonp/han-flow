@@ -24,6 +24,11 @@
 - input type·selection·anchor·시간·composition 기반 typing grouping
 - logical savepoint·dirty, undo branch와 redo 폐기
 - 실사용 AIDA HWPX transaction·undo·redo·Save As 검증
+- source anchor 기반 `ApplyCharacterStyleCommand`와 `ApplyParagraphStyleCommand`
+- 원본 style clone, 동일 definition 재사용과 결정적 style ID allocation
+- `charProperties`·`paraProperties` item count와 section reference 원자적 변경
+- 굵게와 문단 정렬 4종의 제한된 toolbar, `⌘B`와 selection 동기화
+- style definition·reference를 함께 복원하는 undo/redo와 AIDA Save As 재열기 검증
 
 ### V2 HWP fixed-page
 
