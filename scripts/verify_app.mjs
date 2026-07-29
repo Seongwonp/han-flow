@@ -7,6 +7,7 @@ const fixture = process.argv[2]
 const expectedError = process.argv.includes('--expect-error')
 const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
+const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
@@ -28,7 +29,8 @@ async function launch(output, userData) {
         HAN_FLOW_VISUAL_EXIT: '1',
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
-        ...(searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {})
+        ...(searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
+        ...(editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -87,7 +89,11 @@ try {
     searchQuery && state.selectionCharacters < 1 ? '텍스트 선택 layer가 동작하지 않음' : undefined,
     searchQuery && state.accessibility?.documentPages !== state.mountedPages ? '페이지 접근성 label이 누락됨' : undefined,
     searchQuery && state.accessibility?.hiddenImages !== state.mountedPages ? '장식 이미지가 접근성 트리에서 숨겨지지 않음' : undefined,
-    searchQuery && state.accessibility?.labeledTextLayers !== state.mountedPages ? '텍스트 접근성 layer가 누락됨' : undefined
+    searchQuery && state.accessibility?.labeledTextLayers !== state.mountedPages ? '텍스트 접근성 layer가 누락됨' : undefined,
+    editText && !state.editingProbe ? '편집 probe 결과가 없음' : undefined,
+    editText && !state.editingProbe?.editedMatches ? 'IME 편집 결과 불일치' : undefined,
+    editText && !state.editingProbe?.undoneMatches ? '실행 취소 결과 불일치' : undefined,
+    editText && !state.editingProbe?.redoneMatches ? '다시 실행 결과 불일치' : undefined
   ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -102,6 +108,7 @@ try {
     search: searchQuery ? state.search : undefined,
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,
     accessibility: searchQuery ? state.accessibility : undefined,
+    editingProbe: editText ? state.editingProbe : undefined,
     failures
   }
   console.log('HAN_FLOW_APP_VERIFY', JSON.stringify(result))

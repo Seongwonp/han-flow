@@ -3,6 +3,8 @@ import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
+import { EditingSessionManager } from './editing_session'
+import type { EditingCommitRequest } from '../core/editing/editing_contract'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -18,6 +20,7 @@ if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData
 let mainWindow: BrowserWindow | null = null
 let pendingOpen: { filePath: string; receivedAt: number } | null = null
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
+const editingSessions = new EditingSessionManager()
 
 function isHwpxPath(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.hwpx')
@@ -39,6 +42,7 @@ function captureVisualState(window: BrowserWindow): void {
   const capturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
+  const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
@@ -47,6 +51,8 @@ function captureVisualState(window: BrowserWindow): void {
   let previousSignature = ''
   let stableSamples = 0
   let searchTriggered = !searchQuery
+  let editTriggered = !editText
+  let editProbe: unknown = null
   let sampledPeakWorkingSetKb = 0
   const sampleMemory = () => {
     const workingSetKb = app.getAppMetrics()
@@ -86,6 +92,59 @@ function captureVisualState(window: BrowserWindow): void {
         setter?.call(input, ${JSON.stringify(searchQuery)})
         input.dispatchEvent(new Event('input', { bubbles: true }))
         return true
+      })()`)
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
+    if (!editTriggered && editText) {
+      editTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      editProbe = await window.webContents.executeJavaScript(`(async () => {
+        const waitFor = async (predicate, timeout = 10000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다.')
+        }
+        const editButton = await waitFor(() =>
+          Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
+        )
+        editButton.click()
+        const target = await waitFor(() => document.querySelector('[aria-label="HWPX 문단 편집"]'))
+        target.focus()
+        const original = target.textContent ?? ''
+        const selection = window.getSelection()
+        const range = document.createRange()
+        range.selectNodeContents(target)
+        range.collapse(false)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+        target.textContent = original + 'ㅎ'
+        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
+        target.textContent = original + ${JSON.stringify(editText)}
+        target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: ${JSON.stringify(editText)}, isComposing: true }))
+        target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
+        await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨'))
+        const edited = target.textContent
+        const undo = document.querySelector('[aria-label="실행 취소"]')
+        undo?.click()
+        await waitFor(() => target.textContent === original)
+        const undone = target.textContent
+        const redo = document.querySelector('[aria-label="다시 실행"]')
+        redo?.click()
+        await waitFor(() => target.textContent === original + ${JSON.stringify(editText)})
+        return {
+          originalLength: original.length,
+          editedMatches: edited === original + ${JSON.stringify(editText)},
+          undoneMatches: undone === original,
+          redoneMatches: target.textContent === original + ${JSON.stringify(editText)},
+          editableCount: document.querySelectorAll('[aria-label="HWPX 문단 편집"]').length
+        }
       })()`)
       setTimeout(() => void captureWhenReady(), 250)
       return
@@ -142,6 +201,7 @@ function captureVisualState(window: BrowserWindow): void {
       sampledPeakWorkingSetKb,
       processPeakSumKb: processMetrics.reduce((sum, metric) => sum + metric.memory.peakWorkingSetSize, 0)
     }
+    visualState.editingProbe = editProbe
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
@@ -180,7 +240,10 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   })
 
   const senderId = mainWindow.webContents.id
-  mainWindow.webContents.once('destroyed', () => documentImporter.cancel(senderId))
+  mainWindow.webContents.once('destroyed', () => {
+    documentImporter.cancel(senderId)
+    editingSessions.stop(senderId)
+  })
   mainWindow.on('closed', () => { mainWindow = null })
 
   mainWindow.on('ready-to-show', () => {
@@ -420,6 +483,61 @@ app.whenReady().then(() => {
         }
       }
     )
+  })
+
+  ipcMain.handle('editing:start', async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      typeof (request as { filePath?: unknown }).filePath !== 'string'
+    ) {
+      throw new Error('HWPX 편집 시작 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.start(event.sender.id, (request as { filePath: string }).filePath)
+  })
+
+  ipcMain.handle('editing:commit', async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId', 'sectionPath', 'textNodeId', 'insert'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !['from', 'to', 'timestamp'].every(
+        (key) => Number.isFinite((request as Record<string, unknown>)[key])
+      ) ||
+      !['selectionBefore', 'selectionAfter'].every((key) => {
+        const selection = (request as Record<string, unknown>)[key]
+        return (
+          selection !== null &&
+          typeof selection === 'object' &&
+          ['sectionPath', 'textNodeId'].every(
+            (field) => typeof (selection as Record<string, unknown>)[field] === 'string'
+          ) &&
+          ['anchorOffset', 'focusOffset'].every(
+            (field) => Number.isFinite((selection as Record<string, unknown>)[field])
+          )
+        )
+      })
+    ) {
+      throw new Error('HWPX 편집 commit 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.commit(event.sender.id, request as EditingCommitRequest)
+  })
+
+  ipcMain.handle('editing:undo', (event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('HWPX undo 요청 형식이 올바르지 않습니다.')
+    return editingSessions.undo(event.sender.id, sessionId)
+  })
+
+  ipcMain.handle('editing:redo', (event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') throw new Error('HWPX redo 요청 형식이 올바르지 않습니다.')
+    return editingSessions.redo(event.sender.id, sessionId)
+  })
+
+  ipcMain.handle('editing:stop', (event) => {
+    editingSessions.stop(event.sender.id)
+    return true
   })
 
   const commandLinePath = pathFromArguments(process.argv)

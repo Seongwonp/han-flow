@@ -1,7 +1,10 @@
-import { CSSProperties, DragEvent, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
+import { CSSProperties, DragEvent, useCallback, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
+import { EditingActionResult, EditingHistoryStatus, EditingStartResult } from '../../core/editing/editing_contract'
+import { TextCommitIntent } from '../../core/editing/composition_input'
+import { EditorSelection } from '../../core/editing/transaction'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
@@ -10,6 +13,7 @@ import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_num
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
+import { ParagraphInputSurface } from './ParagraphInputSurface'
 
 const api = () => (window as any).api
 
@@ -41,6 +45,16 @@ function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
 }
 
+function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerDocument): CSSProperties {
+  const style = document.charStyles[item.charStyleId]
+  return {
+    fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined,
+    fontSize: style ? `${style.height / 100}pt` : undefined,
+    fontWeight: style?.bold ? 700 : 400,
+    color: style?.color
+  }
+}
+
 export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string {
   const fragment = cell.splitTop ? (cell.splitBottom ? 'tb' : 't') : (cell.splitBottom ? 'b' : 'full')
   return `${tableId}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${fragment}`
@@ -48,8 +62,7 @@ export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string 
 
 function Content({ item, document, measurable = false }: { item: ViewerContent; document: ViewerDocument; measurable?: boolean }) {
   if (item.type === 'text') {
-    const style = document.charStyles[item.charStyleId]
-    return <span style={{ fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined, fontSize: style ? `${style.height / 100}pt` : undefined, fontWeight: style?.bold ? 700 : 400, color: style?.color }}>{item.text}</span>
+    return <span style={textCss(item, document)}>{item.text}</span>
   }
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
@@ -59,7 +72,24 @@ function Content({ item, document, measurable = false }: { item: ViewerContent; 
   return <TableView table={item} document={document} measurable={measurable} />
 }
 
-export function ParagraphView({ paragraph, document, measurable = false }: { paragraph: ViewerParagraph; document: ViewerDocument; measurable?: boolean }) {
+interface ParagraphEditingProps {
+  pending: boolean
+  desiredSelection?: EditorSelection
+  onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
+  onComposingChange: (composing: boolean) => void
+}
+
+export function ParagraphView({
+  paragraph,
+  document,
+  measurable = false,
+  editing
+}: {
+  paragraph: ViewerParagraph
+  document: ViewerDocument
+  measurable?: boolean
+  editing?: ParagraphEditingProps
+}) {
   const style = document.paraStyles[paragraph.paraStyleId]
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
@@ -69,7 +99,29 @@ export function ParagraphView({ paragraph, document, measurable = false }: { par
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} />)}</div>
+  const editableText =
+    !measurable &&
+    editing &&
+    paragraph.content.length === 1 &&
+    paragraph.content[0].type === 'text' &&
+    paragraph.content[0].sourceAnchor
+      ? paragraph.content[0]
+      : undefined
+  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableText
+    ? <ParagraphInputSurface
+        text={editableText.text}
+        sourceAnchor={editableText.sourceAnchor!}
+        style={textCss(editableText, document)}
+        pending={editing.pending}
+        desiredSelection={
+          editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
+            ? editing.desiredSelection
+            : undefined
+        }
+        onCommit={editing.onCommit}
+        onComposingChange={editing.onComposingChange}
+      />
+    : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} />)}</div>
 }
 
 function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
@@ -265,12 +317,19 @@ export default function App() {
   const [activeSearchResult, setActiveSearchResult] = useState(0)
   const [searching, setSearching] = useState(false)
   const [layoutMeasurements, setLayoutMeasurements] = useState<LayoutMeasurements | undefined>()
+  const [openedPath, setOpenedPath] = useState<string | null>(null)
+  const [editing, setEditing] = useState<(EditingHistoryStatus & { sessionId: string }) | null>(null)
+  const [editingSelection, setEditingSelection] = useState<EditorSelection | undefined>()
+  const [editingPending, setEditingPending] = useState(0)
+  const [editingStatus, setEditingStatus] = useState<string | null>(null)
   const measurementRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchSequence = useRef(0)
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
   const automaticPdfStarted = useRef(false)
+  const editSequence = useRef(0)
+  const editingComposing = useRef(false)
   const stageRef = useRef<HTMLElement>(null)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
@@ -341,6 +400,12 @@ export default function App() {
     setSearchOpen(false)
     setSearchQuery('')
     setSearchResults([])
+    void api().stopEditing()
+    setEditing(null)
+    setEditingSelection(undefined)
+    setEditingPending(0)
+    setEditingStatus(null)
+    setOpenedPath(null)
     setDocument(null)
     setFixedDocument(null)
     try {
@@ -385,12 +450,14 @@ export default function App() {
           pageInfoMs: result.timings.pageInfoMs
         })
         setFileName(path.split('/').pop() ?? path)
+        setOpenedPath(path)
         return
       }
       setDocument(imported.document)
       setSectionProgress({ loaded: imported.complete ? imported.sectionCount : imported.document.sections.length, total: imported.sectionCount })
       setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...imported.timings })
       setFileName(path.split('/').pop() ?? path)
+      setOpenedPath(path)
     }
     catch (reason) {
       if (activeLoadId.current === loadId) {
@@ -552,6 +619,92 @@ export default function App() {
     if (!searchResults.length) return
     setActiveSearchResult((current) => (current + direction + searchResults.length) % searchResults.length)
   }
+  const applyEditingResult = useCallback((result: EditingActionResult) => {
+    setDocument(result.document)
+    setEditing((current) => current ? {
+      sessionId: current.sessionId,
+      revision: result.revision,
+      canUndo: result.canUndo,
+      canRedo: result.canRedo,
+      isDirty: result.isDirty
+    } : current)
+    setEditingSelection(result.selection)
+  }, [])
+  const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
+    if (!editing) return
+    const sessionId = editing.sessionId
+    const transactionId = `ui-${++editSequence.current}`
+    setEditingPending((current) => current + 1)
+    setEditingStatus('변경 반영 중…')
+    void api().commitEditing({
+      sessionId,
+      transactionId,
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: intent.from,
+      to: intent.to,
+      insert: intent.insert,
+      selectionBefore: {
+        sectionPath: anchor.sectionPath,
+        textNodeId: anchor.textNodeId,
+        ...intent.selectionBefore
+      },
+      selectionAfter: {
+        sectionPath: anchor.sectionPath,
+        textNodeId: anchor.textNodeId,
+        ...intent.selectionAfter
+      },
+      inputType: intent.inputType,
+      compositionId: intent.compositionId,
+      timestamp: intent.timestamp
+    }).then((result: EditingActionResult) => {
+      applyEditingResult(result)
+      setEditingStatus('편집 중')
+    }).catch((reason: unknown) => {
+      setEditingStatus(`편집 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }).finally(() => {
+      setEditingPending((current) => Math.max(0, current - 1))
+    })
+  }, [editing?.sessionId, applyEditingResult])
+  const onComposingChange = useCallback((composing: boolean) => {
+    editingComposing.current = composing
+  }, [])
+  const startEditing = async () => {
+    if (!openedPath || fixedDocument || documentLoading || editing) return
+    setEditingStatus('편집 준비 중…')
+    try {
+      const result = await api().startEditing({ filePath: openedPath }) as EditingStartResult
+      setDocument(result.document)
+      setEditing({
+        sessionId: result.sessionId,
+        revision: result.revision,
+        canUndo: result.canUndo,
+        canRedo: result.canRedo,
+        isDirty: result.isDirty
+      })
+      setEditingStatus('편집 중 · 단일 텍스트 문단')
+    } catch (reason) {
+      setEditingStatus(`편집 시작 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+  const undoEditing = useCallback(async () => {
+    if (!editing || editingPending || editingComposing.current) return
+    try {
+      applyEditingResult(await api().undoEditing(editing.sessionId) as EditingActionResult)
+      setEditingStatus('실행 취소')
+    } catch (reason) {
+      setEditingStatus(`실행 취소 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }, [editing?.sessionId, editingPending, applyEditingResult])
+  const redoEditing = useCallback(async () => {
+    if (!editing || editingPending || editingComposing.current) return
+    try {
+      applyEditingResult(await api().redoEditing(editing.sessionId) as EditingActionResult)
+      setEditingStatus('다시 실행')
+    } catch (reason) {
+      setEditingStatus(`다시 실행 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }, [editing?.sessionId, editingPending, applyEditingResult])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && searchOpen) {
@@ -560,6 +713,12 @@ export default function App() {
         return
       }
       if (!event.metaKey) return
+      if (event.key.toLocaleLowerCase() === 'z' && editing && !editingComposing.current) {
+        event.preventDefault()
+        if (event.shiftKey) void redoEditing()
+        else void undoEditing()
+        return
+      }
       if (event.key.toLocaleLowerCase() === 'f' && fixedDocument) {
         event.preventDefault()
         openSearch()
@@ -571,7 +730,7 @@ export default function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [zoom, fixedDocument, searchOpen, searchResults.length])
+  }, [zoom, fixedDocument, searchOpen, searchResults.length, editing, undoEditing, redoEditing])
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const overflow = Array.from(globalThis.document.querySelectorAll<HTMLElement>('.viewer-page'))
@@ -667,6 +826,9 @@ export default function App() {
         <button aria-label="검색 닫기" onClick={closeSearch}>×</button>
       </div>}
       {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
+      {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
+      {editing && <button aria-label="실행 취소" onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>}
+      {editing && <button aria-label="다시 실행" onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>}
       <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button>
     </div></header>
     <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
@@ -679,7 +841,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
@@ -710,6 +872,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
     </section>
-    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatus && <span className={editingStatus.includes('오류') ? 'viewer-status-error' : editing?.isDirty ? 'viewer-status-warn' : ''}>{editingStatus}{editing?.isDirty ? ' · 저장 안 됨' : ''}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type {
+  EditingCommitRequest,
+  EditingStartRequest
+} from '../core/editing/editing_contract'
 
 // Custom APIs for renderer
 const api = {
@@ -38,6 +42,11 @@ const api = {
   exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean }) => ipcRenderer.invoke('pdf:export', options),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
+  startEditing: (request: EditingStartRequest) => ipcRenderer.invoke('editing:start', request),
+  commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
+  undoEditing: (sessionId: string) => ipcRenderer.invoke('editing:undo', sessionId),
+  redoEditing: (sessionId: string) => ipcRenderer.invoke('editing:redo', sessionId),
+  stopEditing: () => ipcRenderer.invoke('editing:stop'),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl)
 }
 

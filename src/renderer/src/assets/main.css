@@ -34,6 +34,9 @@ button { font: inherit; }
 .viewer-page-number-top-left, .viewer-page-number-top-center, .viewer-page-number-top-right { top: 0; bottom: auto !important; }
 .viewer-header, .viewer-footer { position: absolute; z-index: 1; overflow: hidden; pointer-events: none; }
 .viewer-paragraph { min-height: 1em; white-space: pre-wrap; }
+.viewer-editable-text { min-width: .35em; border-radius: 2px; outline: none; cursor: text; }
+.viewer-editable-text:hover { background: rgba(51,94,234,.06); }
+.viewer-editable-text:focus { background: rgba(51,94,234,.08); box-shadow: 0 0 0 1px rgba(51,94,234,.35); }
 .viewer-table { max-width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
 .viewer-table td { vertical-align: middle; overflow-wrap: anywhere; }
 .viewer-image { display: inline-block; object-fit: contain; max-width: 100%; vertical-align: middle; }
