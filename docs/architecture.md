@@ -86,8 +86,10 @@ UTF-16 diff와 전후 selection만 보낸다. 창 종료나 새 문서 열기에
 React의 `plaintext-only` surface는 composition 동안 browser DOM을 그대로 두고,
 `compositionend`에서 한 transaction을 main에 보낸다. projection 응답이 돌아오기 전에는
 낡은 React text로 DOM을 덮어쓰지 않으며 마지막 응답 뒤 selection을 복원한다. 현재 editable
-surface는 최상위 단일 text 문단에만 적용되고 measurement tree, 표, 머리말·꼬리말과 HWP
-fixed page에는 적용하지 않는다.
+surface는 최상위 text 문단의 source anchor별 run과 안전한 일반 body cell의 단일 run에
+적용된다. 여러 run은 별도 surface로 source style을 유지하고 좌우 경계 navigation으로
+연결한다. measurement tree, 반복·병합·continuation 표, 머리말·꼬리말과 HWP fixed page에는
+적용하지 않는다.
 
 V3-4 Save As는 renderer에 경로나 writer 단계를 조합할 권한을 주지 않는다.
 `editing:saveAsDialog` 하나가 sender/session을 검증하고 Preview stale 경고, 네이티브 목적지
@@ -280,7 +282,7 @@ file path
   → shared macOS viewer shell and PDF export
 ```
 
-V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. private AIDA 삼쌍 비교와 품질 관문
+V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. 저장소 밖 기준 문서 삼쌍 비교와 품질 관문
 결과 `@rhwp/core`를 production fixed-page engine, `kordoc`을 development-only semantic
 oracle로 확정했다. 자동 fallback은 두지 않으며 결정 근거는
 [ADR-0001](adr/0001-hwp-parser-roles.md)에 있다.
@@ -302,7 +304,7 @@ run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않
 제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
 불러온다. Worker 격리 후 cold 20회 첫 화면 p95는 614ms다. CSS named page 기반
 mixed-orientation PDF도 page별 크기와
-텍스트 보존, 대표 PNG 관문을 통과했다. Worker 격리 후 AIDA cold 5회 기준 HWP aggregate
+텍스트 보존, 대표 PNG 관문을 통과했다. Worker 격리 후 실사용 기준 HWP aggregate
 working set peak p95는 647.6MiB이고 HWPX 기준선은 438.3MiB다. 격리 전 HWP p95보다
 58.0MiB 증가한 비용은 다음 최적화 판단에 사용한다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.

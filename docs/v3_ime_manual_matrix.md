@@ -9,7 +9,8 @@
 1. `npm run package:mac`으로 현재 commit의 unsigned 앱을 만든다.
 2. `release/mac-arm64/Han-Flow.app`에서 저장소 밖 실사용 HWPX를 연다.
 3. 전체 section loading이 끝난 뒤 `편집`을 누른다.
-4. 최상위 단일 텍스트 문단에 파란 focus outline이 표시되는지 확인한다.
+4. 최상위 텍스트 문단에 파란 focus outline이 표시되는지 확인한다.
+5. 부분 굵게를 적용해 여러 run을 만든 뒤에도 각 run에 focus를 옮길 수 있는지 확인한다.
 
 원본 파일은 수정되지 않는다. 결과를 남길 때는 `다른 이름으로 저장`을 사용하고 Preview
 stale 경고를 확인한다. 저장하지 않고 앱을 닫은 변경은 사라진다.
@@ -26,6 +27,7 @@ stale 경고를 확인한다. 저장하지 않고 앱을 닫은 변경은 사라
 | SEL-02 | 뒤→앞으로 2글자를 선택해 한글로 교체 | 방향을 포함한 selection이 undo에서 복원 | 미실행 |
 | HIST-01 | `⌘Z`, `⇧⌘Z` 실행 | 원문·수정문과 selection이 각각 정확히 복원 | 미실행 |
 | PAGE-01 | 줄바꿈이 달라질 만큼 연속 입력 | 페이지가 다시 나뉘어도 focus와 caret이 같은 source 문단에 유지 | 미실행 |
+| RUN-01 | 부분 굵게 뒤 좌우 화살표로 run 경계 이동·입력 | 스타일은 유지되고 인접 run의 정확한 경계에서 입력 | 미실행 |
 | LIMIT-01 | Enter와 Shift+Enter 입력 | 현재 제한대로 새 문단·강제 줄바꿈이 삽입되지 않음 | 미실행 |
 | HWP-01 | `.hwp` 문서를 열기 | 편집 버튼과 editable surface가 노출되지 않음 | 미실행 |
 | DIRTY-01 | 수정 뒤 다른 문서를 열고 취소 선택 | 현재 문서·수정 내용·selection 유지 | 미실행 |

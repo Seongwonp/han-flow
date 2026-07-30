@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-5B 표 cell text 완료 — 안전한 body cell 편집과 packaged round-trip 연결
+상태: 자동 코드 관문 완료 — 실제 macOS IME와 Windows 한/글 외부 승인 대기
 
 기준일: 2026-07-29
 
@@ -307,7 +307,7 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
   preflight를 적용했다.
 - unknown XML·binary·directory sentinel 공개 fixture가 entry metadata와 SHA-256 identity
   round-trip을 통과했다.
-- 저장소 밖 AIDA HWPX도 본문을 출력하지 않는 같은 관문을 통과했다.
+- 저장소 밖 실사용 HWPX도 본문을 출력하지 않는 같은 관문을 통과했다.
 - 재패킹 결과를 기존 Han-Flow reader로 다시 열었고 전체 Jest 75개와 9,767쪽 production
   matrix를 통과했다.
 
@@ -341,7 +341,7 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - `saveHwpxAs`는 같은 directory의 배타적 임시 파일을 flush한 뒤 package identity, 기존
   Han-Flow viewer decode와 semantic verifier를 재실행한다. 성공 결과만 hard link로 새
   목적지에 commit하며 원본과 기존 목적지는 덮어쓰지 않는다.
-- 저장소 밖 AIDA HWPX도 본문을 출력하지 않고 한 text patch·Save As·재개봉과 원본 hash
+- 저장소 밖 실사용 HWPX도 본문을 출력하지 않고 한 text patch·Save As·재개봉과 원본 hash
   불변을 통과했다.
 
 이 단계는 저장 코어의 vertical slice다. renderer IPC, 사용자 확인, selection과 입력 UI는
@@ -369,7 +369,7 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
   모두 맞는 연속 입력만 한 undo 단위로 묶는다. command 1,000개에서 새 단위를 시작한다.
 - logical state ID 기반 savepoint로 undo가 저장 상태에 돌아오면 dirty가 해제되며,
   undo 뒤 새 edit는 redo branch를 폐기한다.
-- 공개 fixture와 AIDA 실문서에서 transaction·undo·redo·projection·Save As와 원본 hash
+- 공개 fixture와 저장소 밖 실사용 문서에서 transaction·undo·redo·projection·Save As와 원본 hash
   불변을 검증했다.
 
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
@@ -396,12 +396,12 @@ adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에
 - 첫 UI는 완전히 로드된 HWPX의 최상위 문단 중 content가 source anchor를 가진 단일
   `ViewerText`인 경우만 `plaintext-only` surface로 연다. 표 cell, 머리말·꼬리말, 복합 run,
   line break와 `.hwp`는 읽기 전용이다.
-- 패키지 AIDA 기준 8쪽·이미지 4개·overflow 0을 유지하며 composition commit → undo → redo를
+- 저장소 밖 HWPX에서 페이지·이미지 보존과 overflow 0을 유지하며 composition commit → undo → redo를
   privacy-safe probe로 검증했다.
 
 packaged probe에서 composition caret과 뒤→앞 범위 selection을 projection, undo, redo
-단계마다 비교했다. AIDA에서 한 글자 삽입 후 2·3페이지 text 분배가 실제로 달라졌지만
-source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지됐다.
+단계마다 비교했다. 실사용 문서에서 입력 후 페이지 text 분배가 달라져도
+source anchor focus와 caret, 페이지·이미지 보존과 overflow 0이 유지됐다.
 
 남은 V3-4 관문은 [실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다.
 
@@ -413,8 +413,8 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
   알린다. 원본 경로와 기존 목적지는 저장 코어에서 거부한다.
 - 저장 성공 뒤에만 history savepoint를 옮긴다. 저장 실패는 dirty와 기존 목적지를 바꾸지
   않으며 저장 뒤 undo는 dirty, redo로 savepoint에 돌아오면 clean이 된다.
-- packaged AIDA에서 edit → Save As → dirty 해제 → 원본 SHA-256 불변 → 저장본 재열기
-  8쪽·이미지 4개·overflow 0을 privacy-safe probe로 검증했다.
+- 저장소 밖 HWPX에서 edit → Save As → dirty 해제 → 원본 SHA-256 불변 → 저장본 재열기와
+  구조 보존·overflow 0을 privacy-safe probe로 검증했다.
 
 2026-07-29 dirty lifecycle 연결 결과:
 
@@ -433,8 +433,9 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 - [x] 새 style ID allocation과 header reference 무결성
 - [x] 단일 `hp:t` 내부 부분 selection의 run split
 - [x] 일반 표 body cell의 단일 문단·단일 run text 편집
-- [ ] 글꼴·크기·색상과 추가 글자 모양
-- 행·열·병합과 여러 run 입력 surface를 별도 관문으로 확장
+- [x] 글자 크기·색상과 여러 run 문단의 run별 입력 surface
+- [ ] 실제 macOS 두벌식과 Windows 한/글 재열기 외부 승인
+- 글꼴 family와 행·열·병합은 후속 범위
 - 각 기능의 package/visual/PDF round-trip
 
 2026-07-29 공개 구현 비교 결과는
@@ -458,8 +459,8 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 - 표 cell, 머리말·꼬리말, 복합 run은 IPC에서 source anchor를 직접 보내도 차단한다.
 - renderer toolbar는 활성 editable surface가 있을 때만 굵게와 정렬 4종을 활성화한다.
   caret 이동도 다음 transaction의 selectionBefore로 동기화하며 `⌘B`를 지원한다.
-- packaged AIDA에서 text commit → 굵게 → 정렬 → 두 단계 undo/redo → Save As → 저장본
-  재열기를 검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
+- 저장소 밖 HWPX에서 text commit → 굵게 → 정렬 → 두 단계 undo/redo → Save As → 저장본
+  재열기를 검증했다. 구조 보존·overflow 0과 원본 hash 불변을 유지했다.
 
 2026-07-29 부분 selection slice 구현 결과:
 
@@ -471,11 +472,11 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
   selection 방향도 유지한다.
 - inverse는 예상 split fragment가 그대로인지 확인한 뒤 원본 run bytes와 추가 style
   definition을 함께 복원한다. redo는 같은 fragment를 다시 생성한다.
-- renderer toolbar는 분할 뒤 새 source anchor의 굵기와 문단 정렬을 계속 표시한다. 다만
-  여러 run을 하나의 안전한 입력 surface로 합치는 모델은 아직 없으므로 분할 문단의 직접
-  text 입력은 undo로 원상 복구하기 전까지 읽기 전용이다.
-- packaged AIDA의 범위 교체 → 부분 굵게 → 정렬 → undo/redo → Save As → 저장본 재열기를
-  검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
+- renderer toolbar는 분할 뒤 새 source anchor의 굵기와 문단 정렬을 계속 표시한다.
+  여러 run은 source anchor별 입력 surface를 유지하고 좌우 화살표로 인접 run 경계를
+  이동한다. style 분할로 run 수가 바뀌면 stale DOM selection을 재사용하지 않는다.
+- 저장소 밖 HWPX의 범위 교체 → 부분 굵게 → 정렬 → undo/redo → Save As → 저장본 재열기를
+  검증했다. 구조 보존·overflow 0과 원본 hash 불변을 유지했다.
 
 2026-07-30 표 cell text slice 구현 결과:
 
@@ -491,16 +492,26 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 - 공개 baseline의 표 셀 범위 편집 → undo/redo → Save As → 3쪽·이미지 4개 재열기를
   production `.app`에서 검증했다. 같은 matrix의 continuation 2쪽, 병합/rowSpan 이미지
   12개, 9,767쪽 progressive 문서도 overflow 0을 유지했다.
-다음 편집 모델 관문은 여러 run 문단의 연속 text 입력 surface다. 행·열 추가, 병합·분할,
-표 cell style 편집은 계속 별도 범위로 둔다.
+행·열 추가, 병합·분할, 표 cell style 편집은 계속 별도 범위로 둔다.
 
-### V3-6 저장 복구와 실사용 관문
+2026-07-30 V3 코드 완료 slice 구현 결과:
 
-- in-place save, backup, crash/fault injection
-- stale preview·metadata 갱신 정책 확정
-- 개인정보 없는 compatibility corpus
-- 저장 결과를 Windows 한/글에서 다시 열어 검증
-- V4 서명·공증 전 개인용 장기 사용
+- `ApplyCharacterStyleCommand`는 기존 굵기와 같은 definition clone·reuse 경계에서
+  `height` 500–7200 HWP 단위(5–72pt)와 `textColor` `#RRGGBB`를 함께 다룬다.
+- renderer는 크기 증감과 native 색상 선택기를 제공하고 현재 source run의 값을 표시한다.
+- 부분 style 뒤 생긴 여러 run을 각각 편집할 수 있으며 좌우 경계에서 selection을 인접
+  source anchor로 옮긴다.
+- 부분 글자 style과 문단 정렬을 함께 적용한 package를 Save As한 뒤 재개봉해 새 definition,
+  section reference와 본문 fragment를 확인한다.
+- 글꼴 family는 font-face ID·설치 font·라이선스 mapping을 함께 풀어야 하므로 V3에서
+  제외한다. V3 저장 계약은 원본과 기존 목적지를 덮어쓰지 않는 검증형 Save As다.
+
+### V3 외부 승인과 V4 이관
+
+- 실제 macOS 두벌식 입력 matrix
+- 개인정보 없는 원본·편집 저장본을 Windows 한/글에서 다시 열어 검증
+- stale Preview 안내와 원본 보호 Save As 정책 유지
+- 통과 결과를 검증 이력에 기록한 뒤 V4 서명·공증으로 이관
 
 ## 7. 자동 검증 설계
 

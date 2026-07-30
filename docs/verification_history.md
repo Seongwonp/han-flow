@@ -8,6 +8,31 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-30 — V3 코드 완료 후보: 여러 run 입력과 글자 크기·색상
+
+부분 글자 style로 한 문단이 여러 run으로 나뉜 뒤에도 source anchor별 입력 surface를
+유지하도록 연결했다. 좌우 화살표는 run 경계에서 인접 anchor의 처음·끝으로 selection을
+옮긴다. React projection이 run 수를 바꿀 때 기존 DOM의 오래된 selection offset을
+재사용하지 않도록 입력 surface key와 offset 범위를 방어했다.
+
+글자 style command에는 기존 굵기와 같은 원본 definition clone·reuse 경계로 5–72pt 크기와
+`#RRGGBB` 색상을 추가했다. 글꼴 family는 font-face ID와 설치·라이선스 mapping을 함께
+확정해야 하므로 V3 완료 조건에서 제외했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 112 passed, 1 suite skipped |
+| production build/package | `npm run build`, `npm run package:mac` | main·preload·renderer, arm64 unsigned `.app` 성공 |
+| packaged text | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=일반검증 npm run verify:app -- <private.hwpx>` | projection·undo/redo selection 통과 |
+| packaged style | `HAN_FLOW_VERIFY_STYLE=1 ... npm run verify:app -- <private.hwpx>` | 부분 run split·굵게·정렬·undo/redo·여러 run surface 통과 |
+| packaged Save As | `HAN_FLOW_VERIFY_EDIT_SAVE=1 ... npm run verify:app -- <private.hwpx>` | 원본 불변·저장본 재열기 통과 |
+| 공개 HWPX matrix | `npm run verify:matrix` | 5종 통과, 최대 9,767쪽·DOM 12개·overflow 0 |
+
+style과 Save As를 한 프로세스에서 연속 실행하는 합성 probe는 간헐적으로 시작 또는 종료
+대기 시간이 초과돼, 기능 판정은 각각의 packaged gate와 style→정렬→Save As→재개봉 main
+통합 테스트로 교차 확인했다. 이 자동화 불안정은 실제 기능 통과와 구분해 기록한다. V3의
+남은 승인 관문은 실제 macOS 두벌식과 Windows 한/글 재열기다.
+
 ## 2026-07-30 — V3-5B 표 body cell text 편집
 
 기존 text source anchor와 transaction을 일반 표 body cell의 단일 문단·단일 run까지
@@ -193,7 +218,7 @@ delta history, undo/redo와 savepoint를 검증하는 V3-3이다.
 
 공개 round-trip fixture에는 unknown namespace·attribute·XML node, PNG, stored binary,
 directory entry, Preview와 META-INF를 넣었다. 재패킹 전후 entry metadata와 각 파일 SHA-256이
-일치하고 기존 HWPX reader가 결과를 다시 여는지 확인했다. 저장소 밖 AIDA HWPX도 파일명·본문을
+일치하고 기존 HWPX reader가 결과를 다시 여는지 확인했다. 저장소 밖 실사용 HWPX도 파일명·본문을
 assertion이나 결과에 출력하지 않는 선택 테스트로 같은 identity 관문을 통과했다.
 
 | 관문 | 명령 | 결과 |
@@ -295,17 +320,17 @@ HWP의 main preflight와 HWPX의 package/점진 decoder를 format-neutral `Docum
 | production 앱 | 2쪽, 반복 머리말 2회, overflow 0 |
 | production PDF | 2쪽 A4, 텍스트 보존율 98.6% |
 
-private AIDA HWP 재검증에서 화면은 7쪽이지만 첫 PDF의 마지막 쪽 텍스트가 0자로 출력돼 전체
-보존율이 92.1%까지 내려가는 race를 발견했다. 인쇄 준비를 렌더 요청 완료가 아니라 모든
+저장소 밖 실사용 HWP 재검증에서 첫 PDF의 마지막 쪽 텍스트가 비어 전체 보존율이 낮아지는
+race를 발견했다. 인쇄 준비를 렌더 요청 완료가 아니라 모든
 fixed-page SVG의 실제 decode 완료(`naturalWidth > 0`)까지 기다리도록 변경했다. 수정 후
-마지막 쪽은 424자, 전체는 99.08%로 회복했다.
+마지막 쪽과 문서 전체 텍스트가 다시 보존됐다.
 
 ## 2026-07-23 — V1 HWPX Release Candidate
 
 상세 근거는 [V1 기준선](v1_baseline.md)과 [Release Candidate 체크리스트](release_checklist.md)에
 있다.
 
-- private AIDA HWPX: 8쪽, 이미지 4개, overflow 0
+- 저장소 밖 실사용 HWPX: 페이지·이미지 보존, overflow 0
 - 화면과 PDF 페이지별 비공백 문자 수 일치
 - 15문단 표 cell continuation: 반복 header, 8+7 문단 분배
 - 80-section synthetic: 9,767쪽 중 DOM 12개 mount

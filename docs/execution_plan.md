@@ -20,7 +20,7 @@
 - [x] CSS named page 기반 세로·가로 혼합 HWP PDF 출력
 - [x] HWP PDF 7페이지·용지 크기·텍스트 99.08%와 대표 PNG 검증
 - [x] HWPX PDF 8페이지·페이지별 글자 수 회귀 검증
-- [x] AIDA HWP/HWPX cold 5회 aggregate working set peak 기준선
+- [x] 저장소 밖 HWP/HWPX aggregate working set peak 기준선
 - [x] V1 RC 재패키징과 현재 `.app`·`app.asar` 논리 크기 증가량 측정
 - [x] 중복 rhwp WASM 제거와 production MIT license 포함
 - [x] rhwp 전용 Web Worker 격리와 강제 종료형 timeout·load cancellation
@@ -32,7 +32,7 @@
 - [x] HWP fixture의 표 1개·셀 9개·이미지 1개를 두 parser로 교차 검증
 - [x] `verify:hwp-matrix`에 생성 결정성·앱·반복 머리말·PDF 관문 통합
 - [x] PDF 인쇄 전 모든 SVG image decode를 기다려 마지막 페이지 누락 race 제거
-- [x] private AIDA HWP 7쪽 PDF 텍스트 99.08% 재검증
+- [x] 저장소 밖 실사용 HWP PDF 텍스트 보존 재검증
 - [x] CFB 무결성·FileHeader signature·5.x version preflight
 - [x] 암호·배포용·DRM·비지원 version·손상 HWP 구조화 오류 UX
 - [x] 공개 HWP를 변형한 5종 오류 production E2E matrix
@@ -55,13 +55,13 @@
 ### 2. `@rhwp/core` probe
 
 - [x] WASM을 hidden Electron renderer에서 초기화하는 독립 실험
-- [x] AIDA page count와 전체 page SVG 생성
+- [x] 저장소 밖 기준 HWP page count와 전체 page SVG 생성
 - [x] SVG의 script, event handler, 외부 URL 검사
 - [x] 기준 PDF와 privacy-safe 페이지 그룹·문자 보존율 자동 비교
 - [x] PDF 3·4페이지가 합쳐진 SVG를 PNG로 재렌더링해 겹침·잘림 없음 확인
 - [x] peak memory와 production package 증가량 측정
 - [x] fixed-page variant로 기존 zoom·page virtualization shell 연결
-- [x] 실제 AIDA HWP의 7페이지·3구역·세로/가로 용지·overflow 0 확인
+- [x] 저장소 밖 실사용 HWP의 구역·세로/가로 용지·overflow 0 확인
 - [x] 패키지 HWP cold/warm 20회 측정과 첫 화면 1초 관문 통과
 - [x] 좌표형 text layer의 검색·선택·접근성 및 blob image 경계 유지 확인
 - [x] mixed-orientation PDF 출력과 대표 세로·가로 PNG 검증
@@ -71,9 +71,9 @@
 
 - [x] HWP `ParseResult.blocks`, images, metadata와 warnings 수집
 - [x] 첫 paragraph/table/image gap 표 작성
-- [x] AIDA의 HWPX decoder와 문서 전체 구조 count 자동 비교
+- [x] 저장소 밖 HWPX의 decoder와 문서 전체 구조 count 자동 비교
 - [x] `pageNumber` tag로 section 경계를 복원하고 병합 cell 중복을 제거하는 최소 adapter
-- [x] AIDA adapter의 section·semantic text·image/resource 보존 가능성 판정
+- [x] 저장소 밖 HWPX adapter의 section·semantic text·image/resource 보존 가능성 판정
 - [x] kordoc production 미채택으로 parser code bundle 분리 실험 종료
 
 ### 4. 결정
@@ -117,7 +117,7 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 6. [x] Han-Flow 재열기와 기존 production matrix 회귀를 확인한다.
 7. [ ] Windows 한/글 재열기 결과를 기록한다.
 
-코드 관문과 실사용 AIDA HWPX의 privacy-safe identity 검증은 통과했다. Windows 한/글
+코드 관문과 저장소 밖 실사용 HWPX의 privacy-safe identity 검증은 통과했다. Windows 한/글
 재열기는 V3 전체의 외부 호환성 관문으로 계속 추적한다.
 
 ## 완료한 코드 관문: V3-2 text patch와 Save As
@@ -131,7 +131,7 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 7. [x] 원본 불변, 기존 목적지 비덮어쓰기와 검증 실패 cleanup을 fault test로 확인한다.
 8. [x] 사용자 저장 확인 UI와 제한된 IPC를 main 편집 session에 연결한다.
 
-공개 fixture와 저장소 밖 AIDA HWPX 모두 한 text patch·Save As·재개봉을 통과했다. 현재
+공개 fixture와 저장소 밖 실사용 HWPX 모두 한 text patch·Save As·재개봉을 통과했다. 현재
 코어는 사용자 UI에 노출하지 않는다.
 
 ## 완료한 코드 관문: V3-3 transaction과 history
@@ -146,10 +146,10 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 8. [x] undo/redo selection, branch, savepoint·dirty와 undo/redo 후 Save As를 검증한다.
 9. [x] 실제 DOM selection과 IME event는 V3-4 input surface에서 연결한다.
 
-공개 fixture와 AIDA 실문서에서 transaction → undo → redo → Save As와 원본 hash 불변을
+공개 fixture와 저장소 밖 실사용 문서에서 transaction → undo → redo → Save As와 원본 hash 불변을
 통과했다.
 
-## 현재 milestone: V3-4 한국어 IME와 selection
+## 완료한 자동 코드 관문: V3-4 한국어 IME와 selection
 
 1. [x] ordered XML `hp:t` ordinal을 `ViewerText.sourceAnchor`로 projection한다.
 2. [x] source scanner anchor와 decoder anchor가 빈 text를 포함해 일치하는지 검증한다.
@@ -158,19 +158,19 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 5. [x] sender/session binding과 직렬 commit·undo·redo IPC를 검증한다.
 6. [x] 최상위 단일 text 문단만 `plaintext-only` surface로 연결한다.
 7. [x] `⌘Z`·`⇧⌘Z`, dirty 상태와 projection selection 복원을 연결한다.
-8. [x] 패키지 AIDA에서 composition → undo → redo, 8쪽·이미지 4개·overflow 0을 검증한다.
+8. [x] 저장소 밖 HWPX에서 composition → undo → redo와 overflow 0을 검증한다.
 9. [ ] 실제 macOS 두벌식 키보드로 삽입·삭제·범위 교체·조합 취소 matrix를 수동 확인한다.
 10. [x] 실제 page text 분배가 바뀌는 re-pagination 뒤 caret·undo/redo selection을 검증한다.
 11. [x] 검증형 Save As를 사용자 확인 UI와 제한된 IPC로 연결한다.
 
 자동 packaged probe는 composition caret과 뒤→앞 범위 selection을 각각 projection,
-undo, redo 뒤 비교한다. AIDA에서 1글자 삽입 후 2·3페이지 text 분배가 바뀌었지만
-8페이지·이미지 4개·overflow 0과 source anchor focus가 유지됐다. 물리 키보드 항목은
+undo, redo 뒤 비교한다. 실사용 문서에서 입력 후 페이지 text 분배가 바뀌어도
+페이지·이미지 보존, overflow 0과 source anchor focus가 유지됐다. 물리 키보드 항목은
 [macOS 한국어 IME 수동 matrix](v3_ime_manual_matrix.md)에 분리했다.
 
 Save As는 Preview stale 경고 → 목적지 선택 → 같은 디렉터리 임시 파일·`fsync` → package
 identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 뒤에만 savepoint를 옮기며
-패키지 AIDA에서 원본 hash 불변, 저장본 8쪽·이미지 4개·overflow 0 재열기를 통과했다.
+저장소 밖 HWPX에서 원본 hash 불변, 저장본 구조 보존과 overflow 0 재열기를 통과했다.
 
 ### 완료한 후속 관문: dirty 문서 교체·종료 보호
 
@@ -181,7 +181,7 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 5. [x] 중복 close를 막되 승인된 두 번째 close는 통과시키는 lifecycle 순서를 검증한다.
 6. [x] 패키지에서 discard 종료와 close-save 원본 불변·저장본 재열기를 검증한다.
 
-## 현재 milestone: V3-5B 문단·글자 style과 표 cell text
+## 완료한 코드 관문: V3-5 문단·글자 style과 표 cell text
 
 1. [x] source anchor에서 최상위 단일 run과 일반 문단을 결정적으로 찾는다.
 2. [x] 원본 `charPr`·`paraPr`를 기준으로 굵게와 정렬만 제한적으로 변경한다.
@@ -191,10 +191,25 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 6. [x] sender-bound style IPC와 활성 surface에만 열리는 toolbar를 연결한다.
 7. [x] caret 이동 뒤 다음 transaction selection을 main history와 동기화한다.
 8. [x] 공개 fixture에서 style reuse, no-op, 표 cell 차단과 undo/redo를 검증한다.
-9. [x] 패키지 AIDA에서 굵게·정렬·undo/redo·Save As와 8쪽 재열기를 검증한다.
+9. [x] 저장소 밖 HWPX에서 굵게·정렬·undo/redo·Save As 재열기를 검증한다.
 10. [x] 단일 `hp:t` 내부 부분 selection을 좌·선택·우 run으로 분할한다.
 11. [x] 표 cell text source anchor와 transaction을 별도 관문으로 구현한다.
-12. [ ] 여러 run 문단의 연속 text 입력 surface를 별도 관문으로 구현한다.
+12. [x] 여러 run 문단을 run별 입력 surface로 연결하고 좌우 경계 caret 이동을 지원한다.
+13. [x] 글자 크기와 `#RRGGBB` 색상을 원본 `charPr` clone·reuse 경계에 추가한다.
+14. [x] 부분 style·정렬을 함께 적용한 package의 Save As와 재개봉을 통합 검증한다.
+
+글꼴 family 편집은 HWPX font-face ID, 시스템 설치 font mapping과 재배포 라이선스 정책을
+함께 확정해야 하므로 V3 완료 조건에서 제외한다. 원본 덮어쓰기도 backup·crash recovery
+계약 없이 노출하지 않고 검증형 Save As를 V3의 저장 제품 계약으로 확정한다.
+
+## 현재 milestone: V3 외부 승인
+
+1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.
+2. [ ] [Windows 한/글 재열기 matrix](v3_windows_round_trip_matrix.md)를 통과한다.
+3. [x] 자동 test, production build, unsigned macOS package와 공개 HWPX matrix를 통과한다.
+4. [x] 실패 결과를 숨기지 않고 자동화와 외부 수동 결과를 검증 이력에 분리한다.
+
+두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 
 ## 매 milestone 공통 완료 규칙
 

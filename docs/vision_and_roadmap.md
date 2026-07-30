@@ -49,7 +49,7 @@ fallback이다. V2가 이를 무관하게 깨뜨리면 안 된다.
 완성하는 대신 `@rhwp/core`를 production visual engine으로 사용하고 `kordoc`은
 development-only semantic oracle로 유지한다. 자동 fallback은 두지 않는다.
 
-- V2-0: AIDA `.hwp/.hwpx/.pdf`로 후보 정확도·성능·bundle 비교
+- V2-0: 저장소 밖 `.hwp/.hwpx/.pdf` 기준 문서로 후보 정확도·성능·bundle 비교
 - V2-1: format detector, `DocumentImporter`, worker 격리, 오류 taxonomy
 - V2-2: 문단·style·section·header/footer/page number
 - V2-3: 표, 병합 cell, border/fill, BinData 이미지
@@ -57,7 +57,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 조사 근거와 완료 조건은 [HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)을 따른다.
 
-현재 AIDA HWP의 화면·검색·PDF, Worker timeout·취소, package·성능·메모리 관문을 통과했다.
+저장소 밖 실사용 HWP의 화면·검색·PDF, Worker timeout·취소, package·성능·메모리 관문을 통과했다.
 개인정보 없는 2쪽 HWP 고정 fixture와 `verify:hwp-matrix`도 생성 결정성·두 parser 교차
 검사·production 앱·PDF release gate에 연결했다. 암호·DRM·배포용·비지원 version·손상
 입력도 main preflight와 production 오류 matrix로 분류한다. HWP/HWPX는 format-neutral
@@ -67,7 +67,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **V3-5B 표 cell text 완료 — 일반 body cell 편집과 안전한 반복·병합 차단**
+상태: **자동 코드 관문 완료 — 실제 macOS IME·Windows 한/글 외부 승인 대기**
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -102,9 +102,12 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 1. 실제 macOS 두벌식 삽입·삭제·범위 교체·조합 취소 수동 matrix
 2. 공개 identity·편집 결과를 Windows 한/글에서 재열기
-3. 여러 run 문단의 연속 text 입력 surface
-4. 추가 글자 모양
-5. 저장 중 crash/fault injection과 복구 정책
+3. 두 외부 matrix 결과를 검증 이력에 기록하고 V3 완료 판정
+4. V4 Developer ID 서명·notarization·설치 관문 착수
+
+여러 run 문단 입력과 굵게·크기·색상은 V3 코드 관문에서 완료했다. 글꼴 family 편집,
+원본 in-place 덮어쓰기와 범용 crash recovery는 현재 안전한 Save As 계약을 약화시키지
+않도록 후속 범위로 둔다.
 
 ## 진행률 스냅샷
 
@@ -115,9 +118,9 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | --- | ---: | ---: | ---: |
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
-| V3 편집 | 40% | 72% | 28.8% |
+| V3 편집 | 40% | 95% | 38.0% |
 | V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 75%** |
+| **최종 배포 전체** | **100%** | | **약 84%** |
 
 V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
 서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질
