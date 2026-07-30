@@ -121,6 +121,44 @@ describe('HWPX 문단·글자 style patch', () => {
     ).toContain('<hp:run charPrIDRef="1"><hp:t></hp:t></hp:run>')
   })
 
+  test('원본 charPr의 글자 크기와 색상만 바꾸고 범위·형식을 검증한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const styled = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      height: 1200,
+      color: '#aabbcc'
+    })
+    const projected = await decodeViewerDocument(styled.package)
+    expect(projected.charStyles['1']).toMatchObject({
+      height: 1200,
+      color: '#AABBCC',
+      bold: true
+    })
+    expect(styled.package.readEntry('Contents/header.xml').toString('utf8')).toContain(
+      'height="1200" textColor="#AABBCC"'
+    )
+    if (styled.inverse?.type !== 'restore-style') throw new Error('style inverse가 없습니다.')
+    expect(applyRestoreStyleCommand(styled.package, styled.inverse).package.readEntry('Contents/header.xml'))
+      .toEqual(originalHeader)
+
+    expect(() => applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      height: 499
+    })).toThrow('5pt')
+    expect(() => applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      color: 'red'
+    })).toThrow('#RRGGBB')
+  })
+
   test('hp:t 일부 선택을 세 run으로 나누고 entity 의미와 원본 bytes를 undo·redo한다', async () => {
     const source = await sourceWithEditableText()
     const anchor = listHwpxTextAnchors(source, sectionPath).find(

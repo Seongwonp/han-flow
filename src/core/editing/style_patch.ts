@@ -12,7 +12,9 @@ export interface ApplyCharacterStyleCommand {
   type: 'apply-character-style'
   sectionPath: string
   textNodeId: string
-  bold: boolean
+  bold?: boolean
+  height?: number
+  color?: string
   from?: number
   to?: number
 }
@@ -344,6 +346,17 @@ function setBold(xml: string, bold: boolean): string {
   return withoutBold.replace(/<\/hh:charPr>\s*$/, '<hh:bold/></hh:charPr>')
 }
 
+function setCharacterStyleAttributes(
+  xml: string,
+  options: Pick<ApplyCharacterStyleCommand, 'height' | 'color'>
+): string {
+  const openEnd = findTagEnd(xml, 0)
+  let openTag = xml.slice(0, openEnd)
+  if (options.height !== undefined) openTag = setAttribute(openTag, 'height', String(options.height))
+  if (options.color !== undefined) openTag = setAttribute(openTag, 'textColor', options.color.toUpperCase())
+  return openTag + xml.slice(openEnd)
+}
+
 function setAlignment(xml: string, align: ParagraphAlignment): string {
   const alignPattern = /<hh:align(?:\s[^>]*)?\s*\/>/
   const existing = xml.match(alignPattern)?.[0]
@@ -482,7 +495,21 @@ export function applyCharacterStyleCommand(
   command: ApplyCharacterStyleCommand
 ): StylePatchResult {
   if (command.type !== 'apply-character-style') throw new Error('지원하지 않는 글자 style command입니다.')
-  if (typeof command.bold !== 'boolean') throw new Error('굵게 style 값이 올바르지 않습니다.')
+  if (command.bold === undefined && command.height === undefined && command.color === undefined) {
+    throw new Error('적용할 글자 style 값이 없습니다.')
+  }
+  if (command.bold !== undefined && typeof command.bold !== 'boolean') {
+    throw new Error('굵게 style 값이 올바르지 않습니다.')
+  }
+  if (
+    command.height !== undefined &&
+    (!Number.isInteger(command.height) || command.height < 500 || command.height > 7200)
+  ) {
+    throw new Error('글자 크기는 5pt에서 72pt 사이여야 합니다.')
+  }
+  if (command.color !== undefined && !/^#[\da-f]{6}$/i.test(command.color)) {
+    throw new Error('글자 색상은 #RRGGBB 형식이어야 합니다.')
+  }
   const anchor = listHwpxTextAnchors(sourcePackage, command.sectionPath).find(
     (candidate) => candidate.textNodeId === command.textNodeId
   )
@@ -510,7 +537,10 @@ export function applyCharacterStyleCommand(
     collectionName: 'hh:charProperties',
     definitionName: 'hh:charPr',
     referenceAttribute: 'charPrIDRef',
-    mutate: (definition) => setBold(definition, command.bold)
+    mutate: (definition) => {
+      const withBold = command.bold === undefined ? definition : setBold(definition, command.bold)
+      return setCharacterStyleAttributes(withBold, command)
+    }
   })
   if (!styled.changed || from === to || (from === 0 && to === anchor.text.length)) return styled
 

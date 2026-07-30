@@ -185,6 +185,75 @@ describe('main process HWPX editing session', () => {
     expect(redone.selection).toEqual(styled.selection)
   })
 
+  test('부분 글자 style과 문단 정렬을 함께 적용한 package를 안전하게 저장하고 재개봉한다', async () => {
+    const manager = new EditingSessionManager(() => 'styled-save-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === ''
+    )!
+    const started = await manager.start(25, fixture)
+    const emptyCaret = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusOffset: 0
+    }
+    await manager.commit(25, {
+      sessionId: started.sessionId,
+      transactionId: 'styled-save-text',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: 0,
+      to: 0,
+      insert: '부분스타일저장',
+      selectionBefore: emptyCaret,
+      selectionAfter: { ...emptyCaret, anchorOffset: 7, focusOffset: 7 },
+      inputType: 'insertText',
+      timestamp: 1
+    })
+    const selection = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 4,
+      focusOffset: 2
+    }
+    const styled = await manager.applyCharacterStyle(25, {
+      sessionId: started.sessionId,
+      transactionId: 'styled-save-character',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection,
+      height: 1200,
+      color: '#336699',
+      timestamp: 2
+    })
+    await manager.applyParagraphStyle(25, {
+      sessionId: started.sessionId,
+      transactionId: 'styled-save-paragraph',
+      sectionPath: anchor.sectionPath,
+      textNodeId: styled.selection!.textNodeId,
+      selection: styled.selection!,
+      align: 'CENTER',
+      timestamp: 3
+    })
+
+    const destination = join(directory, 'styled-save-session.hwpx')
+    const saved = await manager.saveAs(25, started.sessionId, destination)
+    expect(saved).toMatchObject({ isDirty: false, revision: 6 })
+    const reopened = await HwpxSourcePackage.open(destination)
+    const reopenedAnchors = listHwpxTextAnchors(reopened, anchor.sectionPath)
+    expect(reopenedAnchors.filter((candidate) => candidate.textNodeId.startsWith(`${anchor.sectionPath}#hp:t:`)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ text: '부분' }),
+        expect.objectContaining({ text: '스타' }),
+        expect.objectContaining({ text: '일저장' })
+      ]))
+    const headerXml = reopened.readEntry('Contents/header.xml').toString('utf8')
+    expect(headerXml).toContain('height="1200"')
+    expect(headerXml).toContain('textColor="#336699"')
+    expect(headerXml).toContain('horizontal="CENTER"')
+  })
+
   test('일반 표 body cell의 단일 hp:t를 기존 transaction으로 편집하고 undo·redo한다', async () => {
     const manager = new EditingSessionManager(() => 'table-cell-session')
     const source = await HwpxSourcePackage.open(fixture)

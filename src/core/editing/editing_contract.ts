@@ -43,7 +43,9 @@ interface EditingStyleRequestBase {
 }
 
 export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
-  bold: boolean
+  bold?: boolean
+  height?: number
+  color?: string
 }
 
 export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {

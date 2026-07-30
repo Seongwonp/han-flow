@@ -126,13 +126,20 @@ export class EditingSessionManager {
             sectionPath: request.sectionPath,
             textNodeId: request.textNodeId,
             bold: request.bold,
+            height: request.height,
+            color: request.color,
             from,
             to
           }
         ],
         selectionBefore: { ...request.selection },
         selectionAfter: splitSelection,
-        inputType: 'formatBold',
+        inputType:
+          request.bold !== undefined
+            ? 'formatBold'
+            : request.height !== undefined
+              ? 'formatFontSize'
+              : 'formatFontColor',
         timestamp: request.timestamp
       }
       session.history.setSelection(transaction.selectionBefore)
