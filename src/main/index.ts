@@ -158,6 +158,7 @@ function captureVisualState(window: BrowserWindow): void {
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
+  const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
   const editSavePath = testValue('HAN_FLOW_EDIT_SAVE_PATH')
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
@@ -234,7 +235,8 @@ function captureVisualState(window: BrowserWindow): void {
         )
         editButton.click()
         phase = 'editable-surface'
-        const target = await waitFor(() => document.querySelector('[aria-label="HWPX 문단 편집"]'))
+        const surfaceLabel = ${JSON.stringify(editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')}
+        const target = await waitFor(() => document.querySelector('[aria-label="' + surfaceLabel + '"]'))
         target.focus()
         const original = target.textContent ?? ''
         const textNode = (element) => {
@@ -260,7 +262,7 @@ function captureVisualState(window: BrowserWindow): void {
           }
         }
         const anchorId = target.dataset.sourceTextNodeId
-        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
           .find((element) => element.dataset.sourceTextNodeId === anchorId)
         const mode = ${JSON.stringify(editMode)}
         let expected
@@ -391,11 +393,14 @@ function captureVisualState(window: BrowserWindow): void {
           saveButton.click()
           phase = 'save-complete'
           await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 완료'))
-          saveStatusMatches = document.querySelector('.viewer-status')?.textContent?.includes('Preview 갱신 안 됨')
+          saveStatusMatches = /Preview (?:갱신 안 됨|없음)/.test(
+            document.querySelector('.viewer-status')?.textContent ?? ''
+          )
           dirtyCleared = !document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨') && saveButton.disabled
         }
         return {
           mode,
+          surface: ${JSON.stringify(editCellEnabled ? 'table-cell' : 'paragraph')},
           originalLength: original.length,
           editedMatches: edited === expected,
           undoneMatches,
@@ -406,7 +411,7 @@ function captureVisualState(window: BrowserWindow): void {
           styleProbe,
           saveStatusMatches,
           dirtyCleared,
-          editableCount: document.querySelectorAll('[aria-label="HWPX 문단 편집"]').length
+          editableCount: document.querySelectorAll('[aria-label="' + surfaceLabel + '"]').length
         }
       })()`)
       setTimeout(() => void captureWhenReady(), 250)

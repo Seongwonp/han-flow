@@ -24,14 +24,14 @@ function loadGenerator() {
   return loaded.exports
 }
 
-async function verify(fixture, delayMs, expectedError = false) {
+async function verify(fixture, delayMs, expectedError = false, environment = {}) {
   let standardOutput = ''
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
     const arguments_ = [resolve('scripts/verify_app.mjs'), fixture, appBinary]
     if (expectedError) arguments_.push('--expect-error')
     const child = spawn(process.execPath, arguments_, {
-      env: { ...process.env, HAN_FLOW_VERIFY_DELAY_MS: String(delayMs) },
+      env: { ...process.env, HAN_FLOW_VERIFY_DELAY_MS: String(delayMs), ...environment },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     child.stdout.on('data', (chunk) => { standardOutput += chunk.toString() })
@@ -54,7 +54,13 @@ try {
     {
       name: 'baseline',
       path: createSyntheticHwpx(directory, { fileName: 'baseline.hwpx' }),
-      delayMs: 500
+      delayMs: 500,
+      environment: {
+        HAN_FLOW_VERIFY_EDIT_TEXT: '셀검증',
+        HAN_FLOW_VERIFY_EDIT_MODE: 'range',
+        HAN_FLOW_VERIFY_EDIT_CELL: '1',
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+      }
     },
     {
       name: 'cell-continuation',
@@ -85,7 +91,10 @@ try {
   ]
   const results = []
   for (const fixture of fixtures) {
-    results.push({ name: fixture.name, ...await verify(fixture.path, fixture.delayMs, fixture.expectedError) })
+    results.push({
+      name: fixture.name,
+      ...await verify(fixture.path, fixture.delayMs, fixture.expectedError, fixture.environment)
+    })
   }
 
   const continuation = results.find(({ name }) => name === 'cell-continuation')

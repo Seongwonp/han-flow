@@ -10,6 +10,7 @@ const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
+const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
@@ -44,6 +45,7 @@ async function launch(output, userData, options = {}) {
         ...(interactive && searchQuery ? { HAN_FLOW_VISUAL_SEARCH_QUERY: searchQuery } : {}),
         ...(interactive && editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
         ...(interactive && editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {}),
+        ...(interactive && editCell ? { HAN_FLOW_VISUAL_EDIT_CELL: '1' } : {}),
         ...(interactive && styleProbe ? { HAN_FLOW_VISUAL_STYLE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
         ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {})
@@ -141,6 +143,7 @@ try {
     editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
+    editCell && state.editingProbe?.surface !== 'table-cell' ? '표 셀 편집 surface 검증 불일치' : undefined,
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,
     styleProbe && !state.editingProbe?.styleProbe ? 'style 편집 probe 결과가 없음' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.boldApplied ? '굵게 style 적용 불일치' : undefined,
