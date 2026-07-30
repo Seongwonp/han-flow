@@ -353,8 +353,7 @@ function captureVisualState(window: BrowserWindow): void {
           const boldApplied = button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           const partialRunSplit = await waitFor(() => Array.from(document.querySelectorAll('.viewer-paragraph'))
             .some((paragraph) => paragraph.textContent === expected &&
-              !paragraph.querySelector('.viewer-editable-text') &&
-              paragraph.querySelectorAll(':scope > span').length >= 2))
+              paragraph.querySelectorAll(':scope > .viewer-editable-text').length >= 2))
           button(desiredAlign)?.click()
           phase = 'style-align'
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
@@ -378,6 +377,7 @@ function captureVisualState(window: BrowserWindow): void {
             partialRunSplit,
             alignApplied,
             undoRestored,
+            multiRunEditable: partialRunSplit,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
               button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           }
@@ -413,7 +413,9 @@ function captureVisualState(window: BrowserWindow): void {
           dirtyCleared,
           editableCount: document.querySelectorAll('[aria-label="' + surfaceLabel + '"]').length
         }
-      })()`)
+      })()`).catch((reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason)
+      }))
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
@@ -788,7 +790,17 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {
-    if (!isStyleRequestBase(request) || typeof request['bold'] !== 'boolean') {
+    const style = request as Record<string, unknown>
+    const hasBold = typeof style?.['bold'] === 'boolean'
+    const hasHeight = Number.isFinite(style?.['height'])
+    const hasColor = typeof style?.['color'] === 'string'
+    if (
+      !isStyleRequestBase(request) ||
+      (!hasBold && !hasHeight && !hasColor) ||
+      ('bold' in style && !hasBold) ||
+      ('height' in style && !hasHeight) ||
+      ('color' in style && !hasColor)
+    ) {
       throw new Error('HWPX 글자 style 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.applyCharacterStyle(

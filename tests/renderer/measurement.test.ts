@@ -1,7 +1,14 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerParagraph } from '../../src/core/document/viewer_document'
-import { cellFragmentKey, fixedPagePrintCss, FixedPageTextLayer, isEditableTableCell, ParagraphView } from '../../src/renderer/src/App'
+import {
+  cellFragmentKey,
+  fixedPagePrintCss,
+  FixedPageTextLayer,
+  isEditableTableCell,
+  isEditableTextParagraph,
+  ParagraphView
+} from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
@@ -53,6 +60,27 @@ describe('DOM 측정 마커', () => {
     ]) {
       expect(isEditableTableCell({ ...cell, ...blocked })).toBe(false)
     }
+  })
+
+  test('source anchor가 있는 여러 text run은 일반 문단에서만 다시 편집할 수 있다', () => {
+    const multiRun: ViewerParagraph = {
+      ...nestedParagraph,
+      content: ['0', '1', '2'].map((ordinal) => ({
+        type: 'text' as const,
+        text: ordinal,
+        charStyleId: ordinal,
+        sourceAnchor: {
+          sectionPath: 'Contents/section0.xml',
+          textNodeId: `Contents/section0.xml#hp:t:${ordinal}`
+        }
+      }))
+    }
+    expect(isEditableTextParagraph(multiRun)).toBe(false)
+    expect(isEditableTextParagraph(multiRun, true)).toBe(true)
+    expect(isEditableTextParagraph({
+      ...multiRun,
+      content: [{ ...multiRun.content[0], sourceAnchor: undefined }]
+    }, true)).toBe(false)
   })
 
   test('이어지는 셀 조각은 잘린 경계와 padding, 최소 높이를 제거한다', () => {

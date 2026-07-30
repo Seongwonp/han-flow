@@ -16,6 +16,7 @@ interface ParagraphInputSurfaceProps {
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
   onSelectionChange: (anchor: ViewerSourceAnchor, selection: TextSelection) => void
+  onBoundaryNavigate?: (direction: 'previous' | 'next') => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -28,7 +29,11 @@ function textSelection(element: HTMLElement): TextSelection {
     if (!element.contains(node) && node !== element) return element.textContent?.length ?? 0
     const range = globalThis.document.createRange()
     range.selectNodeContents(element)
-    range.setEnd(node, nodeOffset)
+    const boundary =
+      node.nodeType === Node.TEXT_NODE
+        ? node.textContent?.length ?? 0
+        : node.childNodes.length
+    range.setEnd(node, Math.max(0, Math.min(nodeOffset, boundary)))
     return range.toString().length
   }
   return {
@@ -70,7 +75,8 @@ export function ParagraphInputSurface({
   desiredSelection,
   onCommit,
   onComposingChange,
-  onSelectionChange
+  onSelectionChange,
+  onBoundaryNavigate
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -144,6 +150,27 @@ export function ParagraphInputSurface({
       controller.updateSelection(selection)
       onSelectionChange(sourceAnchor, selection)
     }
+    const keyDown = (event: KeyboardEvent) => {
+      if (
+        controller.isComposing ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+      const selection = textSelection(element)
+      if (selection.anchorOffset !== selection.focusOffset) return
+      const textLength = element.textContent?.length ?? 0
+      if (event.key === 'ArrowLeft' && selection.anchorOffset === 0) {
+        event.preventDefault()
+        onBoundaryNavigate?.('previous')
+      } else if (event.key === 'ArrowRight' && selection.anchorOffset === textLength) {
+        event.preventDefault()
+        onBoundaryNavigate?.('next')
+      }
+    }
     element.addEventListener('beforeinput', beforeInput)
     element.addEventListener('compositionstart', compositionStart)
     element.addEventListener('input', input)
@@ -151,6 +178,7 @@ export function ParagraphInputSurface({
     element.addEventListener('focus', selectionChanged)
     element.addEventListener('keyup', selectionChanged)
     element.addEventListener('mouseup', selectionChanged)
+    element.addEventListener('keydown', keyDown)
     return () => {
       element.removeEventListener('beforeinput', beforeInput)
       element.removeEventListener('compositionstart', compositionStart)
@@ -159,6 +187,7 @@ export function ParagraphInputSurface({
       element.removeEventListener('focus', selectionChanged)
       element.removeEventListener('keyup', selectionChanged)
       element.removeEventListener('mouseup', selectionChanged)
+      element.removeEventListener('keydown', keyDown)
       onComposingChange(false)
     }
   }, [
@@ -166,7 +195,8 @@ export function ParagraphInputSurface({
     sourceAnchor.textNodeId,
     onCommit,
     onComposingChange,
-    onSelectionChange
+    onSelectionChange,
+    onBoundaryNavigate
   ])
 
   return (

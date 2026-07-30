@@ -98,6 +98,7 @@ function Content({
 interface ParagraphEditingProps {
   pending: boolean
   surfaceLabel?: string
+  allowMultipleRuns?: boolean
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
@@ -105,6 +106,17 @@ interface ParagraphEditingProps {
     anchor: ViewerSourceAnchor,
     selection: { anchorOffset: number; focusOffset: number }
   ) => void
+}
+
+export function isEditableTextParagraph(
+  paragraph: ViewerParagraph,
+  allowMultipleRuns = false
+): boolean {
+  return (
+    paragraph.content.length > 0 &&
+    (allowMultipleRuns || paragraph.content.length === 1) &&
+    paragraph.content.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))
+  )
 }
 
 export function ParagraphView({
@@ -127,30 +139,36 @@ export function ParagraphView({
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  const editableText =
-    !measurable &&
-    editing &&
-    paragraph.content.length === 1 &&
-    paragraph.content[0].type === 'text' &&
-    paragraph.content[0].sourceAnchor
-      ? paragraph.content[0]
+  const editableTexts =
+    !measurable && editing && isEditableTextParagraph(paragraph, editing.allowMultipleRuns)
+      ? paragraph.content.filter((item) => item.type === 'text' && item.sourceAnchor)
       : undefined
-  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableText
-    ? <ParagraphInputSurface
-        text={editableText.text}
-        sourceAnchor={editableText.sourceAnchor!}
-        style={textCss(editableText, document)}
-        pending={editing.pending}
-        ariaLabel={editing.surfaceLabel}
-        desiredSelection={
-          editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
-            ? editing.desiredSelection
-            : undefined
-        }
-        onCommit={editing.onCommit}
-        onComposingChange={editing.onComposingChange}
-        onSelectionChange={editing.onSelectionChange}
-      />
+  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts
+    ? editableTexts.map((editableText, index) => <ParagraphInputSurface
+      key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
+      text={editableText.text}
+      sourceAnchor={editableText.sourceAnchor!}
+      style={textCss(editableText, document)}
+      pending={editing.pending}
+      ariaLabel={editing.surfaceLabel}
+      desiredSelection={
+        editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
+          ? editing.desiredSelection
+          : undefined
+      }
+      onCommit={editing.onCommit}
+      onComposingChange={editing.onComposingChange}
+      onSelectionChange={editing.onSelectionChange}
+      onBoundaryNavigate={(direction) => {
+        const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
+        if (!neighbor?.sourceAnchor) return
+        const offset = direction === 'previous' ? neighbor.text.length : 0
+        editing.onSelectionChange(neighbor.sourceAnchor, {
+          anchorOffset: offset,
+          focusOffset: offset
+        })
+      }}
+    />)
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
 }
 
@@ -204,7 +222,7 @@ function TableView({
       measurable={measurable}
       editing={
         isEditableTableCell(cell, measurable) && editing
-          ? { ...editing, surfaceLabel: 'HWPX 표 셀 편집' }
+          ? { ...editing, surfaceLabel: 'HWPX 표 셀 편집', allowMultipleRuns: false }
           : undefined
       }
     />)}</td>
@@ -767,13 +785,17 @@ export default function App() {
         if (!text || text.type !== 'text') continue
         return {
           bold: document.charStyles[text.charStyleId]?.bold ?? false,
+          height: document.charStyles[text.charStyleId]?.height ?? 1000,
+          color: document.charStyles[text.charStyleId]?.color ?? '#000000',
           align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment
         }
       }
     }
     return undefined
   }, [document, editingSelection?.sectionPath, editingSelection?.textNodeId])
-  const applyCharacterStyle = useCallback(async (bold: boolean) => {
+  const applyCharacterStyle = useCallback(async (
+    style: { bold?: boolean; height?: number; color?: string }
+  ) => {
     if (!editing || !editingSelection || editingPending || editingComposing.current) return
     setEditingPending((current) => current + 1)
     setEditingStatus('글자 모양 반영 중…')
@@ -784,10 +806,16 @@ export default function App() {
         sectionPath: editingSelection.sectionPath,
         textNodeId: editingSelection.textNodeId,
         selection: editingSelection,
-        bold,
+        ...style,
         timestamp: performance.now()
       }) as EditingActionResult)
-      setEditingStatus(bold ? '굵게 적용' : '굵게 해제')
+      setEditingStatus(
+        style.bold !== undefined
+          ? style.bold ? '굵게 적용' : '굵게 해제'
+          : style.height !== undefined
+            ? `글자 크기 ${style.height / 100}pt`
+            : '글자 색상 적용'
+      )
     } catch (reason) {
       setEditingStatus(`글자 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
     } finally {
@@ -888,7 +916,7 @@ export default function App() {
       if (!event.metaKey) return
       if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle) {
         event.preventDefault()
-        void applyCharacterStyle(!activeStyle.bold)
+        void applyCharacterStyle({ bold: !activeStyle.bold })
         return
       }
       if (event.key.toLocaleLowerCase() === 's' && editing) {
@@ -1027,9 +1055,40 @@ export default function App() {
           aria-pressed={activeStyle?.bold ?? false}
           className="viewer-style-bold"
           onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void applyCharacterStyle(!(activeStyle?.bold ?? false))}
+          onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
           disabled={!activeStyle || Boolean(editingPending)}
         >B</button>
+        <button
+          aria-label="글자 크기 줄이기"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => activeStyle && void applyCharacterStyle({
+            height: Math.max(500, activeStyle.height - 100)
+          })}
+          disabled={!activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
+        >A−</button>
+        <span className="viewer-style-size" aria-label="현재 글자 크기">
+          {activeStyle ? `${activeStyle.height / 100}pt` : '—'}
+        </span>
+        <button
+          aria-label="글자 크기 늘리기"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => activeStyle && void applyCharacterStyle({
+            height: Math.min(7200, activeStyle.height + 100)
+          })}
+          disabled={!activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
+        >A+</button>
+        <input
+          className="viewer-style-color"
+          type="color"
+          aria-label="글자 색상"
+          value={
+            activeStyle && /^#[0-9a-f]{6}$/i.test(activeStyle.color)
+              ? activeStyle.color
+              : '#000000'
+          }
+          onChange={(event) => void applyCharacterStyle({ color: event.target.value })}
+          disabled={!activeStyle || Boolean(editingPending)}
+        />
         {([
           ['LEFT', '왼쪽 정렬', '⇤'],
           ['CENTER', '가운데 정렬', '↔'],
@@ -1059,7 +1118,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
