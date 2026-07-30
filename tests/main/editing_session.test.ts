@@ -185,6 +185,47 @@ describe('main process HWPX editing session', () => {
     expect(redone.selection).toEqual(styled.selection)
   })
 
+  test('일반 표 body cell의 단일 hp:t를 기존 transaction으로 편집하고 undo·redo한다', async () => {
+    const manager = new EditingSessionManager(() => 'table-cell-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === '긴 설명'
+    )!
+    const started = await manager.start(24, fixture)
+    const before = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: anchor.text.length,
+      focusOffset: anchor.text.length
+    }
+    const after = {
+      ...before,
+      anchorOffset: anchor.text.length + 4,
+      focusOffset: anchor.text.length + 4
+    }
+    const committed = await manager.commit(24, {
+      sessionId: started.sessionId,
+      transactionId: 'table-cell-text',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: anchor.text.length,
+      to: anchor.text.length,
+      insert: ' 셀검증',
+      selectionBefore: before,
+      selectionAfter: after,
+      inputType: 'insertText',
+      timestamp: 1
+    })
+    expect(JSON.stringify(committed.document)).toContain('긴 설명 셀검증')
+    expect(committed).toMatchObject({ canUndo: true, isDirty: true, selection: after })
+
+    const undone = await manager.undo(24, started.sessionId)
+    expect(JSON.stringify(undone.document)).toContain('"text":"긴 설명"')
+    expect(JSON.stringify(undone.document)).not.toContain('셀검증')
+    const redone = await manager.redo(24, started.sessionId)
+    expect(JSON.stringify(redone.document)).toContain('긴 설명 셀검증')
+  })
+
   test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {
     const manager = new EditingSessionManager(() => 'caret-session')
     const source = await HwpxSourcePackage.open(fixture)

@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerParagraph } from '../../src/core/document/viewer_document'
-import { cellFragmentKey, fixedPagePrintCss, FixedPageTextLayer, ParagraphView } from '../../src/renderer/src/App'
+import { cellFragmentKey, fixedPagePrintCss, FixedPageTextLayer, isEditableTableCell, ParagraphView } from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
@@ -36,6 +36,23 @@ describe('DOM 측정 마커', () => {
     const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: topParagraph, document }))
     expect(markup).not.toContain('data-measure-block-id')
     expect(markup).not.toContain('data-measure-row-id')
+  })
+
+  test('일반 body cell만 편집 대상으로 허용하고 반복·병합·fragment cell은 차단한다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const cell = table.rows[0].cells[0]
+    expect(isEditableTableCell(cell)).toBe(true)
+    expect(isEditableTableCell(cell, true)).toBe(false)
+    for (const blocked of [
+      { header: true },
+      { rowSpan: 2 },
+      { columnSpan: 2 },
+      { splitTop: true },
+      { splitBottom: true }
+    ]) {
+      expect(isEditableTableCell({ ...cell, ...blocked })).toBe(false)
+    }
   })
 
   test('이어지는 셀 조각은 잘린 경계와 padding, 최소 높이를 제거한다', () => {

@@ -61,7 +61,29 @@ export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string 
   return `${tableId}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${fragment}`
 }
 
-function Content({ item, document, measurable = false }: { item: ViewerContent; document: ViewerDocument; measurable?: boolean }) {
+export function isEditableTableCell(cell: ViewerTableCell, measurable = false): boolean {
+  return (
+    !measurable &&
+    !cell.splitTop &&
+    !cell.splitBottom &&
+    !cell.header &&
+    cell.rowSpan === 1 &&
+    cell.columnSpan === 1 &&
+    cell.paragraphs.length === 1
+  )
+}
+
+function Content({
+  item,
+  document,
+  measurable = false,
+  editing
+}: {
+  item: ViewerContent
+  document: ViewerDocument
+  measurable?: boolean
+  editing?: ParagraphEditingProps
+}) {
   if (item.type === 'text') {
     return <span style={textCss(item, document)}>{item.text}</span>
   }
@@ -70,11 +92,12 @@ function Content({ item, document, measurable = false }: { item: ViewerContent; 
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
     return <img className="viewer-image" src={`data:${resource.mime};base64,${resource.data}`} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
-  return <TableView table={item} document={document} measurable={measurable} />
+  return <TableView table={item} document={document} measurable={measurable} editing={editing} />
 }
 
 interface ParagraphEditingProps {
   pending: boolean
+  surfaceLabel?: string
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
@@ -118,6 +141,7 @@ export function ParagraphView({
         sourceAnchor={editableText.sourceAnchor!}
         style={textCss(editableText, document)}
         pending={editing.pending}
+        ariaLabel={editing.surfaceLabel}
         desiredSelection={
           editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
             ? editing.desiredSelection
@@ -127,7 +151,7 @@ export function ParagraphView({
         onComposingChange={editing.onComposingChange}
         onSelectionChange={editing.onSelectionChange}
       />
-    : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} />)}</div>
+    : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
 }
 
 function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
@@ -137,7 +161,17 @@ function HeaderFooterView({ control, kind, document, offset }: { control?: Viewe
   </div>
 }
 
-function TableView({ table, document, measurable = false }: { table: ViewerTable; document: ViewerDocument; measurable?: boolean }) {
+function TableView({
+  table,
+  document,
+  measurable = false,
+  editing
+}: {
+  table: ViewerTable
+  document: ViewerDocument
+  measurable?: boolean
+  editing?: ParagraphEditingProps
+}) {
   const columnWidths = Array.from({ length: table.columnCount }, () => 0)
   const candidates = table.rows.flatMap((row) => row.cells).sort((a, b) => a.columnSpan - b.columnSpan)
   candidates.forEach((cell) => {
@@ -163,7 +197,17 @@ function TableView({ table, document, measurable = false }: { table: ViewerTable
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
       borderTop: cell.splitTop ? 'none' : style ? borderCss(style.top) : undefined,
       borderBottom: cell.splitBottom ? 'none' : style ? borderCss(style.bottom) : undefined
-    }}>{cell.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} measurable={measurable} />)}</td>
+    }}>{cell.paragraphs.map((paragraph) => <ParagraphView
+      key={paragraph.id}
+      paragraph={paragraph}
+      document={document}
+      measurable={measurable}
+      editing={
+        isEditableTableCell(cell, measurable) && editing
+          ? { ...editing, surfaceLabel: 'HWPX 표 셀 편집' }
+          : undefined
+      }
+    />)}</td>
   })}</tr>)}</tbody></table>
 }
 
@@ -784,7 +828,7 @@ export default function App() {
         canRedo: result.canRedo,
         isDirty: result.isDirty
       })
-      setEditingStatus('편집 중 · 단일 텍스트 문단')
+      setEditingStatus('편집 중 · 일반 문단·표 셀')
     } catch (reason) {
       setEditingStatus(`편집 시작 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
     }

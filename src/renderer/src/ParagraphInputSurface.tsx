@@ -11,6 +11,7 @@ interface ParagraphInputSurfaceProps {
   sourceAnchor: ViewerSourceAnchor
   style?: CSSProperties
   pending: boolean
+  ariaLabel?: string
   desiredSelection?: TextSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
@@ -65,6 +66,7 @@ export function ParagraphInputSurface({
   sourceAnchor,
   style,
   pending,
+  ariaLabel = 'HWPX 문단 편집',
   desiredSelection,
   onCommit,
   onComposingChange,
@@ -172,7 +174,7 @@ export function ParagraphInputSurface({
       ref={elementRef}
       className="viewer-editable-text"
       role="textbox"
-      aria-label="HWPX 문단 편집"
+      aria-label={ariaLabel}
       data-source-text-node-id={sourceAnchor.textNodeId}
       aria-multiline="false"
       spellCheck={false}
