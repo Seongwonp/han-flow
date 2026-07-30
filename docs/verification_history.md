@@ -8,6 +8,27 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-07-30 — V3-5B 표 body cell text 편집
+
+기존 text source anchor와 transaction을 일반 표 body cell의 단일 문단·단일 run까지
+연결했다. pagination 과정에서 동일 source anchor가 복제될 수 있는 반복 머리글과
+continuation fragment, 구조 변경 위험이 큰 병합·`rowSpan`·여러 문단 cell은 입력 surface를
+열지 않는다. 표 셀은 text 입력만 지원하며 style toolbar 범위에는 포함하지 않는다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 109 passed, 1 suite skipped |
+| main session | `tests/main/editing_session.test.ts` | body cell commit·selection·undo/redo 통과 |
+| renderer eligibility | `tests/renderer/measurement.test.ts` | 일반 cell 허용, 반복·병합·fragment 차단 통과 |
+| production build/package | `npm run package:mac` | main·preload·renderer, arm64 unsigned `.app` 성공 |
+| 공개 baseline cell | `npm run verify:matrix` | 범위 편집·undo/redo·Save As, 저장본 3쪽·이미지 4개 |
+| 공개 구조 회귀 | 같은 matrix | continuation 2쪽, 병합/rowSpan 이미지 12개, overflow 0 |
+| 공개 대형 회귀 | 같은 matrix | 9,767쪽·DOM 12개·overflow 0 |
+
+공개 packaged probe는 원본 SHA-256 불변, projection 뒤 selection, undo/redo selection과
+dirty 해제를 확인했다. fixture에는 Preview entry가 없어 저장 상태가 `Preview 없음`으로
+표시되는 경로도 검증했다. 본문·캡처·저장본은 커밋하지 않았다.
+
 ## 2026-07-29 — V3-5 부분 selection 문단·글자 style
 
 최상위 일반 문단의 단일 `hp:t` source anchor에서 실제 run과 paragraph를 찾고, 원본
@@ -35,10 +56,10 @@ packaged probe는 원문이나 캡처를 남기지 않고 부분 run 생성, sty
 간헐적으로 늦어질 수 있어 이 관문은 결정적인 범위 교체를 사용했고, composition-only
 패키지 probe는 별도로 통과했다.
 
-현재 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 selection의 굵게, 문단 모양은 최상위
-일반 문단 정렬만 지원한다. 분할 뒤 여러 run의 style 재적용과 undo는 가능하지만 하나의
-연속 text 입력 surface는 아직 제공하지 않는다. 표 cell, 머리말·꼬리말, 원래부터 복합인
-run과 다른 style 속성은 계속 차단한다.
+이 시점의 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 selection의 굵게, 문단 모양은 최상위
+일반 문단 정렬만 지원했다. 분할 뒤 여러 run의 style 재적용과 undo는 가능하지만 하나의
+연속 text 입력 surface는 아직 제공하지 않는다. 표 cell text는 다음 날 제한적으로
+연결했으며 머리말·꼬리말, 원래부터 복합인 run과 다른 style 속성은 계속 차단한다.
 
 ## 2026-07-29 — V3 dirty 문서 교체·종료 보호
 

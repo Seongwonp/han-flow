@@ -1,6 +1,6 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: V3-5 부분 selection style 완료 — run split·굵게·문단 정렬과 packaged round-trip 연결
+상태: V3-5B 표 cell text 완료 — 안전한 body cell 편집과 packaged round-trip 연결
 
 기준일: 2026-07-29
 
@@ -432,8 +432,9 @@ source anchor focus와 caret, 8페이지·이미지 4개·overflow 0이 유지�
 - [x] 단일 run 굵게와 최상위 일반 문단 정렬 command
 - [x] 새 style ID allocation과 header reference 무결성
 - [x] 단일 `hp:t` 내부 부분 selection의 run split
+- [x] 일반 표 body cell의 단일 문단·단일 run text 편집
 - [ ] 글꼴·크기·색상과 추가 글자 모양
-- 표 cell text부터 시작해 행·열·병합을 별도 관문으로 확장
+- 행·열·병합과 여러 run 입력 surface를 별도 관문으로 확장
 - 각 기능의 package/visual/PDF round-trip
 
 2026-07-29 공개 구현 비교 결과는
@@ -476,8 +477,22 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 - packaged AIDA의 범위 교체 → 부분 굵게 → 정렬 → undo/redo → Save As → 저장본 재열기를
   검증했다. 8쪽·이미지 4개·overflow 0과 원본 hash 불변을 유지했다.
 
-다음 관문은 표 cell text의 source anchor와 transaction이다. 여러 run 문단의 연속 text
-입력 surface는 표 cell 이후 별도 편집 모델 관문으로 다룬다.
+2026-07-30 표 cell text slice 구현 결과:
+
+- decoder가 이미 모든 표 cell `hp:t`에 section ordinal source anchor를 부여하고
+  `ReplaceTextCommand`가 위치와 무관하게 같은 inverse를 만들기 때문에 새 XML command를
+  추가하지 않고 기존 transaction·IME·history를 재사용했다.
+- renderer는 body cell 중 단일 문단·단일 `ViewerText`, `rowSpan=1`, `columnSpan=1`인
+  경우에만 `HWPX 표 셀 편집` surface를 연다.
+- 반복 머리글은 pagination에서 같은 source anchor가 여러 페이지에 나타날 수 있고,
+  continuation fragment도 head·tail DOM이 원본 anchor를 공유한다. 이들과 병합 cell,
+  여러 문단 cell은 중복 commit을 피하기 위해 명시적으로 읽기 전용 처리했다.
+- 표 셀은 text 입력만 허용하며 굵게·문단 정렬 toolbar 대상에는 포함하지 않는다.
+- 공개 baseline의 표 셀 범위 편집 → undo/redo → Save As → 3쪽·이미지 4개 재열기를
+  production `.app`에서 검증했다. 같은 matrix의 continuation 2쪽, 병합/rowSpan 이미지
+  12개, 9,767쪽 progressive 문서도 overflow 0을 유지했다.
+다음 편집 모델 관문은 여러 run 문단의 연속 text 입력 surface다. 행·열 추가, 병합·분할,
+표 cell style 편집은 계속 별도 범위로 둔다.
 
 ### V3-6 저장 복구와 실사용 관문
 

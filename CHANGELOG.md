@@ -33,6 +33,10 @@
 - XML entity 의미와 선택 방향을 보존하는 새 source anchor 이동
 - 분할 fragment와 추가 style definition을 byte 단위로 복원하는 undo/redo
 - 패키지 AIDA의 부분 선택·저장·재열기 E2E 관문
+- 일반 표 body cell의 단일 문단·단일 run 텍스트 입력 surface
+- 반복 머리글·병합·rowSpan·continuation cell의 중복 source anchor 편집 차단
+- 공개 baseline 표 셀 undo/redo·Save As·재열기 검증
+- 공개 HWPX matrix baseline에 표 셀 편집 release gate 추가
 
 ### V2 HWP fixed-page
 

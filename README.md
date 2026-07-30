@@ -27,7 +27,7 @@ plain-text 문단 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 �
 - 실제 DOM 높이를 사용하는 2-pass pagination
 - 긴 표 셀의 continuation 행과 반복 머리글
 - Worker 기반 점진 decode와 페이지 가상화
-- 원본 `hp:t` source anchor 기반의 제한된 단일 텍스트 문단 편집
+- 원본 `hp:t` source anchor 기반의 제한된 일반 문단·표 body cell 텍스트 편집
 - 조합 종료 단위 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
@@ -84,7 +84,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 107 passed, 1 suite skipped |
+| Jest | 22 suites, 109 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -126,7 +126,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | fixture | 결과 |
 | --- | --- |
-| baseline | 3쪽, overflow 0 |
+| baseline | 3쪽, body cell 편집·저장·재열기, overflow 0 |
 | 15문단 표 cell | 2쪽, 8+7 문단 분할, 반복 머리글 |
 | 이미지·`rowSpan` | 이미지 12개, 1쪽, overflow 0 |
 | large progressive | 9,767쪽 중 DOM 12개 mount |
@@ -141,8 +141,8 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | V3 — 편집 | 진행 중 | package 보존, HWPX editable model, IME, undo/redo, 안전 저장 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 67%, V4 5%이며
-최종 배포 전체로는 약 73%입니다. V3 편집의 가중치가 가장 큽니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 72%, V4 5%이며
+최종 배포 전체로는 약 75%입니다. V3 편집의 가중치가 가장 큽니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -151,18 +151,19 @@ V3의 기본 약속이 아닙니다. 현재는 모든 HWPX ZIP entry와 unknown 
 round-trip하고 source anchor로 단일 `hp:t`를 수정한 뒤 검증된 새 파일로 저장하는 코어까지
 구현됐습니다. 여러 command의 원자적 transaction, selection 복원, bounded undo/redo와
 savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 session과 제한된 IPC를 통해
-최상위 단일 `ViewerText` 문단만 편집 UI에 연결했고, 패키지 앱에서 composition
-commit·undo·redo를 검증했습니다. 변경본은 Preview가 갱신되지 않을 수 있다는 확인 뒤
+최상위 단일 `ViewerText` 문단과 안전한 일반 표 body cell을 편집 UI에 연결했고, 패키지
+앱에서 composition commit·undo·redo를 검증했습니다. 변경본은 Preview가 갱신되지 않을 수 있다는 확인 뒤
 새 HWPX 이름으로만 저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다.
 저장하지 않은 상태에서 다른 문서를 열거나 창·앱을 닫으면 저장, 버리기, 취소 중 하나를
 명시적으로 선택해야 합니다.
 
 ## 알려진 제한
 
-- HWPX 편집은 최상위 단일 텍스트 문단만 지원하며 표·머리말·꼬리말·복합 run은 읽기 전용입니다.
+- HWPX 편집은 최상위 단일 텍스트 문단과 일반 표 body cell의 단일 문단·단일 run만 지원합니다.
+- 반복 머리글, 병합·`rowSpan`, continuation fragment, 여러 문단 cell과 머리말·꼬리말은 읽기 전용입니다.
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게만 지원하며 글꼴·크기·색상은 아직 지원하지 않습니다.
 - 부분 스타일 적용으로 여러 run이 된 문단은 읽기와 style 재적용·undo는 가능하지만 직접 text 입력 surface는 아직 다시 열리지 않습니다.
-- 문단 모양은 최상위 일반 문단의 정렬 4종만 지원하며 표 cell과 목록 모양은 아직 편집하지 않습니다.
+- 문단 모양은 최상위 일반 문단의 정렬 4종만 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
