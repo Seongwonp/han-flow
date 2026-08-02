@@ -35,6 +35,7 @@ Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
 - 단일 `hp:t` 전체 또는 부분 선택의 굵게·글자 크기·글자색
 - 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬과 style 분할 뒤 여러 run 연속 입력
+- 40px 편집 control과 파일·기록·글자 모양·문단 정렬 그룹을 가진 `홈` 리본
 
 ### HWP 5.0
 
@@ -87,7 +88,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 113 passed, 1 suite skipped |
+| Jest | 22 suites, 114 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -135,6 +136,10 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | 이미지·`rowSpan` | 이미지 12개, 1쪽, overflow 0 |
 | large progressive | 9,767쪽 중 DOM 12개 mount |
 | invalid package | crash 없는 사용자 오류 |
+
+자동 pagination 회귀에는 의도적으로 작은 용지 fixture를 유지한다. 편집 사용성 검증은 별도의
+A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며, 패키지 앱에서 리본
+표시·범위 치환·undo/redo와 overflow 0을 확인한다.
 
 ## 로드맵
 

@@ -69,6 +69,14 @@ const originalPath = loadGenerator().createSyntheticHwpx(outputDirectory, {
   firstSectionExtraParagraphs: 1,
   firstSectionPageHeight: 14000
 })
+const a4EditingPath = loadGenerator().createSyntheticHwpx(outputDirectory, {
+  fileName: 'han-flow-v3-a4-editing.hwpx',
+  firstSectionExtraParagraphs: 8,
+  firstSectionPageWidth: 59528,
+  firstSectionPageHeight: 84189,
+  firstSectionMargin: 5669,
+  firstSectionTableWidth: 48190
+})
 const editedPath = join(outputDirectory, 'han-flow-v3-edited.hwpx')
 const verification = await createEditedFixture(originalPath, editedPath)
 const manifest = {
@@ -82,6 +90,13 @@ const manifest = {
     edited: {
       name: 'han-flow-v3-edited.hwpx',
       sha256: await sha256(editedPath)
+    },
+    a4Editing: {
+      name: 'han-flow-v3-a4-editing.hwpx',
+      sha256: await sha256(a4EditingPath),
+      pageSize: 'A4 portrait',
+      dimensionsHwpUnit: { width: 59528, height: 84189 },
+      marginHwpUnit: 5669
     }
   },
   verification: {
@@ -102,8 +117,9 @@ await writeFile(
     '',
     '1. han-flow-v3-original.hwpx를 열어 복구 경고 없이 본문·표·이미지가 보이는지 확인합니다.',
     '2. han-flow-v3-edited.hwpx를 열어 공개편집검증 문자열과 부분 굵게·크기·색상·가운데 정렬을 확인합니다.',
-    '3. 표 구조, 이미지와 나머지 본문이 유지되는지 확인합니다.',
-    '4. 결과를 docs/v3_windows_round_trip_matrix.md의 WIN-01~WIN-06에 기록합니다.',
+    '3. han-flow-v3-a4-editing.hwpx를 열어 A4 세로 용지와 20mm 여백, 본문 폭을 확인합니다.',
+    '4. 표 구조, 이미지와 나머지 본문이 유지되는지 확인합니다.',
+    '5. 결과를 docs/v3_windows_round_trip_matrix.md의 WIN-01~WIN-06에 기록합니다.',
     ''
   ].join('\n')
 )

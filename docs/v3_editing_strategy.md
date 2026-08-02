@@ -519,6 +519,18 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 - 글꼴 family는 font-face ID·설치 font·라이선스 mapping을 함께 풀어야 하므로 V3에서
   제외한다. V3 저장 계약은 원본과 기존 목적지를 덮어쓰지 않는 검증형 Save As다.
 
+### V3-6A 현실적인 편집 UX 기반
+
+좁은 공개 fixture는 작은 byte 수로 pagination·표 continuation과 머리말·꼬리말을 빠르게
+실행하기 위한 회귀 입력이며 실제 편집 화면의 대표가 아니다. 별도 A4 세로 fixture를
+`59528 × 84189 HWPUNIT`, 사방 약 20mm 여백으로 생성해 편집 사용성 관문으로 사용한다.
+
+편집 chrome은 52px 한 줄 toolbar 안의 25px style control에서 문서 제어와 `홈` 리본을 분리한
+2단 구조로 바꾼다. 리본은 파일, 기록, 글자 모양, 문단 정렬 그룹과 최소 40px action을 사용한다.
+현재 command·inverse·Save As가 검증된 기능만 노출하며, 글꼴 family·밑줄·기울임·줄 간격·목록·
+표 구조 편집은 UI placeholder부터 만들지 않는다. packaged E2E는 활성 홈 탭, toolbar와 버튼
+실측 크기, A4 범위 치환·selection·undo/redo와 overflow 0을 함께 판정한다.
+
 ### V3 외부 승인과 V4 이관
 
 - macOS 실제 두벌식 OS-level key smoke 통과 유지

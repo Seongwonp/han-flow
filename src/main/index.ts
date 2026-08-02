@@ -525,6 +525,18 @@ function captureVisualState(window: BrowserWindow): void {
         hiddenImages: document.querySelectorAll('.viewer-fixed-page-image[aria-hidden="true"]').length,
         labeledTextLayers: document.querySelectorAll('.viewer-fixed-page-text-layer[aria-label]').length
       },
+      editingUi: (() => {
+        const ribbon = document.querySelector('.viewer-edit-ribbon')
+        const toolbar = document.querySelector('.viewer-toolbar')
+        const buttons = Array.from(document.querySelectorAll('.viewer-ribbon-controls button'))
+        return {
+          ribbonVisible: Boolean(ribbon),
+          activeTab: document.querySelector('.viewer-ribbon-tabs [aria-selected="true"]')?.textContent?.trim(),
+          groupLabels: Array.from(document.querySelectorAll('.viewer-ribbon-group-label')).map((element) => element.textContent?.trim()),
+          toolbarHeight: toolbar ? Math.round(toolbar.getBoundingClientRect().height) : 0,
+          minimumButtonHeight: buttons.length ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height))) : 0
+        }
+      })(),
       status: document.querySelector('.viewer-status')?.textContent,
       timing: document.querySelector('.viewer-status')?.getAttribute('title')
     })`)

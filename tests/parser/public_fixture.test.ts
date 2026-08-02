@@ -13,6 +13,14 @@ import { createCellFragmentHwpx, createCompatibilityHwpx, createSyntheticHwpx } 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
   const fixture = createSyntheticHwpx(directory)
+  const a4EditingFixture = createSyntheticHwpx(directory, {
+    fileName: 'han-flow-v3-a4-editing.hwpx',
+    firstSectionExtraParagraphs: 8,
+    firstSectionPageWidth: 59528,
+    firstSectionPageHeight: 84189,
+    firstSectionMargin: 5669,
+    firstSectionTableWidth: 48190
+  })
   const cellFragmentFixture = createCellFragmentHwpx(directory)
   const compatibilityFixture = createCompatibilityHwpx(directory)
 
@@ -31,6 +39,21 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     const section = walkOrderedXml(await reader.readOrderedXml('Contents/section1.xml'))
     const run = section.find((node) => node.name === 'hp:run')
     expect(run?.children.map((node) => node.name)).toEqual(['hp:secPr', 'hp:header', 'hp:pic', 'hp:t'])
+  })
+
+  test('편집 승인 fixture는 실제 A4 용지와 본문 폭을 사용한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(a4EditingFixture))
+    expect(document.page).toEqual({
+      width: 59528,
+      height: 84189,
+      margin: { left: 5669, right: 5669, top: 5669, bottom: 5669 },
+      headerOffset: 300,
+      footerOffset: 300
+    })
+    const table = document.sections[0].blocks[0].content.find((content) => content.type === 'table')
+    expect(table).toMatchObject({ type: 'table', width: 48190 })
+    expect(table?.type === 'table' ? table.rows.every((row) => row.cells[0].width === 48190) : false).toBe(true)
+    expect(document.sections[0].blocks).toHaveLength(9)
   })
 
   test('스타일·표·이미지를 해석하고 표를 반복 헤더와 함께 나눈다', async () => {

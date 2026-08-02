@@ -97,6 +97,7 @@ function Content({
 
 interface ParagraphEditingProps {
   pending: boolean
+  restoreToken?: unknown
   surfaceLabel?: string
   allowMultipleRuns?: boolean
   desiredSelection?: EditorSelection
@@ -150,6 +151,7 @@ export function ParagraphView({
       sourceAnchor={editableText.sourceAnchor!}
       style={textCss(editableText, document)}
       pending={editing.pending}
+      restoreToken={editing.restoreToken}
       ariaLabel={editing.surfaceLabel}
       desiredSelection={
         editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
@@ -1022,92 +1024,131 @@ export default function App() {
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {printing && fixedDocument && <style>{fixedPagePrintCss(fixedDocument.pages)}</style>}
     {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
-    <header className="viewer-toolbar"><div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div><div className="viewer-actions">
-      {searchOpen && <div className="viewer-search" role="search">
-        <input
-          ref={searchInputRef}
-          aria-label="HWP 문서 검색"
-          value={searchQuery}
-          onChange={(event) => setSearchQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              stepSearchResult(event.shiftKey ? -1 : 1)
-            }
-          }}
-          placeholder="문서 검색"
-        />
-        <span
-          aria-live="polite"
-          data-searching={searching}
-          data-search-pages={searchResults.length}
-          data-search-occurrences={totalSearchOccurrences}
-        >{searching ? '검색 중…' : searchQuery.trim() ? `${searchResults.length}쪽 · ${totalSearchOccurrences}건` : ''}</span>
-        <button aria-label="이전 검색 결과" onClick={() => stepSearchResult(-1)} disabled={!searchResults.length}>↑</button>
-        <button aria-label="다음 검색 결과" onClick={() => stepSearchResult(1)} disabled={!searchResults.length}>↓</button>
-        <button aria-label="검색 닫기" onClick={closeSearch}>×</button>
+    <header className={`viewer-toolbar${editing ? ' viewer-toolbar-editing' : ''}`}>
+      <div className="viewer-toolbar-main">
+        <div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div>
+        <div className="viewer-actions">
+          {searchOpen && <div className="viewer-search" role="search">
+            <input
+              ref={searchInputRef}
+              aria-label="HWP 문서 검색"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  stepSearchResult(event.shiftKey ? -1 : 1)
+                }
+              }}
+              placeholder="문서 검색"
+            />
+            <span
+              aria-live="polite"
+              data-searching={searching}
+              data-search-pages={searchResults.length}
+              data-search-occurrences={totalSearchOccurrences}
+            >{searching ? '검색 중…' : searchQuery.trim() ? `${searchResults.length}쪽 · ${totalSearchOccurrences}건` : ''}</span>
+            <button aria-label="이전 검색 결과" onClick={() => stepSearchResult(-1)} disabled={!searchResults.length}>↑</button>
+            <button aria-label="다음 검색 결과" onClick={() => stepSearchResult(1)} disabled={!searchResults.length}>↓</button>
+            <button aria-label="검색 닫기" onClick={closeSearch}>×</button>
+          </div>}
+          {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
+          {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
+          {editing && <span className="viewer-editing-badge">HWPX 편집</span>}
+          <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button>
+          <button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button>
+          <button className="viewer-open" onClick={chooseFile}>문서 열기</button>
+        </div>
+      </div>
+      {editing && <div className="viewer-edit-ribbon" aria-label="HWPX 편집 리본">
+        <div className="viewer-ribbon-tabs" role="tablist" aria-label="편집 메뉴">
+          <button role="tab" aria-selected="true">홈</button>
+        </div>
+        <div className="viewer-ribbon-groups" role="toolbar" aria-label="홈 편집 도구">
+          <div className="viewer-ribbon-group viewer-ribbon-file-group">
+            <div className="viewer-ribbon-controls">
+              <button
+                aria-label="HWPX 변경본 저장"
+                className="viewer-ribbon-save"
+                onClick={() => void saveEditingAs()}
+                disabled={!editing.isDirty || Boolean(editingPending)}
+              ><span className="viewer-ribbon-icon">⇩</span><span>다른 이름으로 저장</span></button>
+            </div>
+            <span className="viewer-ribbon-group-label">파일</span>
+          </div>
+          <div className="viewer-ribbon-group">
+            <div className="viewer-ribbon-controls">
+              <button aria-label="실행 취소" title="실행 취소 (⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>
+              <button aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>
+            </div>
+            <span className="viewer-ribbon-group-label">기록</span>
+          </div>
+          <div className="viewer-ribbon-group viewer-ribbon-font-group">
+            <div className="viewer-ribbon-controls">
+              <button
+                aria-label="현재 텍스트 블록 굵게"
+                title="굵게"
+                aria-pressed={activeStyle?.bold ?? false}
+                className="viewer-style-bold"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
+                disabled={!activeStyle || Boolean(editingPending)}
+              >B</button>
+              <div className="viewer-style-size-control">
+                <button
+                  aria-label="글자 크기 줄이기"
+                  title="글자 크기 줄이기"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => activeStyle && void applyCharacterStyle({ height: Math.max(500, activeStyle.height - 100) })}
+                  disabled={!activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
+                >A−</button>
+                <span className="viewer-style-size" aria-label="현재 글자 크기">{activeStyle ? `${activeStyle.height / 100}pt` : '—'}</span>
+                <button
+                  aria-label="글자 크기 늘리기"
+                  title="글자 크기 늘리기"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => activeStyle && void applyCharacterStyle({ height: Math.min(7200, activeStyle.height + 100) })}
+                  disabled={!activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
+                >A+</button>
+              </div>
+              <label className="viewer-style-color-label" title="글자 색상">
+                <input
+                  className="viewer-style-color"
+                  type="color"
+                  aria-label="글자 색상"
+                  value={activeStyle && /^#[0-9a-f]{6}$/i.test(activeStyle.color) ? activeStyle.color : '#000000'}
+                  onChange={(event) => void applyCharacterStyle({ color: event.target.value })}
+                  disabled={!activeStyle || Boolean(editingPending)}
+                />
+                <span>글자색</span>
+              </label>
+            </div>
+            <span className="viewer-ribbon-group-label">글자 모양</span>
+          </div>
+          <div className="viewer-ribbon-group">
+            <div className="viewer-ribbon-controls">
+              {([
+                ['LEFT', '왼쪽 정렬', '⇤'],
+                ['CENTER', '가운데 정렬', '↔'],
+                ['RIGHT', '오른쪽 정렬', '⇥'],
+                ['JUSTIFY', '양쪽 정렬', '☰']
+              ] as const).map(([align, label, icon]) => <button
+                key={align}
+                aria-label={label}
+                title={label}
+                aria-pressed={activeStyle?.align === align}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void applyParagraphStyle(align)}
+                disabled={!activeStyle || Boolean(editingPending)}
+              >{icon}</button>)}
+            </div>
+            <span className="viewer-ribbon-group-label">문단 정렬</span>
+          </div>
+        </div>
       </div>}
-      {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
-      {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
-      {editing && <div className="viewer-style-actions" role="toolbar" aria-label="제한된 문단과 글자 모양">
-        <button
-          aria-label="현재 텍스트 블록 굵게"
-          aria-pressed={activeStyle?.bold ?? false}
-          className="viewer-style-bold"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
-          disabled={!activeStyle || Boolean(editingPending)}
-        >B</button>
-        <button
-          aria-label="글자 크기 줄이기"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => activeStyle && void applyCharacterStyle({
-            height: Math.max(500, activeStyle.height - 100)
-          })}
-          disabled={!activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
-        >A−</button>
-        <span className="viewer-style-size" aria-label="현재 글자 크기">
-          {activeStyle ? `${activeStyle.height / 100}pt` : '—'}
-        </span>
-        <button
-          aria-label="글자 크기 늘리기"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => activeStyle && void applyCharacterStyle({
-            height: Math.min(7200, activeStyle.height + 100)
-          })}
-          disabled={!activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
-        >A+</button>
-        <input
-          className="viewer-style-color"
-          type="color"
-          aria-label="글자 색상"
-          value={
-            activeStyle && /^#[0-9a-f]{6}$/i.test(activeStyle.color)
-              ? activeStyle.color
-              : '#000000'
-          }
-          onChange={(event) => void applyCharacterStyle({ color: event.target.value })}
-          disabled={!activeStyle || Boolean(editingPending)}
-        />
-        {([
-          ['LEFT', '왼쪽 정렬', '⇤'],
-          ['CENTER', '가운데 정렬', '↔'],
-          ['RIGHT', '오른쪽 정렬', '⇥'],
-          ['JUSTIFY', '양쪽 정렬', '☰']
-        ] as const).map(([align, label, icon]) => <button
-          key={align}
-          aria-label={label}
-          aria-pressed={activeStyle?.align === align}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => void applyParagraphStyle(align)}
-          disabled={!activeStyle || Boolean(editingPending)}
-        >{icon}</button>)}
-      </div>}
-      {editing && <button aria-label="HWPX 변경본 저장" className="viewer-save-as" onClick={() => void saveEditingAs()} disabled={!editing.isDirty || Boolean(editingPending)}>다른 이름으로 저장</button>}
-      {editing && <button aria-label="실행 취소" onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>}
-      {editing && <button aria-label="다시 실행" onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>}
-      <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button><button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button><button className="viewer-open" onClick={chooseFile}>문서 열기</button>
-    </div></header>
+    </header>
     <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error" data-error-code={errorCode ?? undefined}>{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
@@ -1118,7 +1159,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}

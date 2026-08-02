@@ -209,6 +209,20 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 함께 확정해야 하므로 V3 완료 조건에서 제외한다. 원본 덮어쓰기도 backup·crash recovery
 계약 없이 노출하지 않고 검증형 Save As를 V3의 저장 제품 계약으로 확정한다.
 
+## 완료한 코드 관문: V3-6A 현실적인 편집 UX 기반
+
+1. [x] 좁은 pagination 스트레스 fixture와 별도로 실제 A4 세로 편집 fixture를 만든다.
+2. [x] A4 `59528 × 84189 HWPUNIT`, 사방 약 20mm 여백과 넓은 본문 표를 자동 검증한다.
+3. [x] 25px 도구 모음을 상단 문서 제어와 `홈` 리본의 2단 구조로 바꾼다.
+4. [x] 현재 안전한 Save As, undo/redo, 굵게·크기·색상과 정렬만 그룹별로 노출한다.
+5. [x] 편집 버튼 높이 40px, toolbar 높이 150px 이상과 활성 `홈` 탭을 packaged E2E로 측정한다.
+6. [x] 다크 모드와 좁은 창의 가로 overflow를 유지하고 인쇄에서는 리본을 숨긴다.
+7. [x] A4 fixture에서 범위 치환·undo/redo·selection과 overflow 0을 검증한다.
+
+리본에 기능이 있는 것처럼 보이게 하는 비활성 placeholder는 추가하지 않는다. 밑줄·기울임,
+줄 간격, 목록과 표 도구는 각 source command·inverse·Save As·Windows 재열기 관문을 만든 뒤
+활성화한다.
+
 ## 현재 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

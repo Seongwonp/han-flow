@@ -8,6 +8,35 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — V3-6A A4 편집 fixture와 홈 리본
+
+기존 `10000 × 10000 HWPUNIT` fixture는 pagination과 표 continuation을 작은 입력으로 빠르게
+검증하려고 의도적으로 만든 약 35mm 정사각형 스트레스 문서였다. 이를 실제 사용 화면으로
+오해하지 않도록 `59528 × 84189 HWPUNIT` A4 세로, 사방 `5669 HWPUNIT`(약 20mm) 여백과
+`48190 HWPUNIT` 본문 표를 가진 별도 공개 편집 fixture를 acceptance bundle에 추가했다.
+
+편집 UI는 52px toolbar 한 줄 안의 25px control에서 상단 문서 제어와 `홈` 리본의 2단 구조로
+바꿨다. 파일, 기록, 글자 모양, 문단 정렬 그룹에 현재 안전하게 저장되는 Save As, undo/redo,
+굵게·크기·색상과 정렬만 배치했다. packaged E2E가 DOM 실측으로 toolbar 168px, 최소 action
+button 40px, 활성 `홈` 탭과 네 group label을 확인한다.
+
+A4 첫 synthetic composition에서는 본문 patch는 성공했지만 짧은 입력의 projection 뒤 selection
+복원이 간헐적으로 시간 초과됐다. 긴 입력은 뒤따른 재조판이 우연히 selection 복원을 다시
+일으켜 통과하고 있었다. layout measurement identity를 input surface의 restore token으로 전달하고,
+composition/buffer가 끝난 경우에만 120ms·350ms 제한 지연 복원을 수행해 늦은 A4 재조판과의
+경쟁을 제거했다. 수정 뒤 짧은 `리본검증`도 projection·undo·redo text와 selection을 통과했다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 114 passed, 1 suite skipped |
+| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
+| A4 구조 | `tests/parser/public_fixture.test.ts` | A4 크기·20mm 여백·본문 표 폭·본문 8개 통과 |
+| A4 packaged edit | `HAN_FLOW_VERIFY_EDIT_TEXT=리본검증 npm run verify:app -- artifacts/v3-acceptance/han-flow-v3-a4-editing.hwpx` | 2쪽·overflow 0, projection·undo/redo selection, 홈 리본 실측 통과 |
+| acceptance bundle | `npm run fixture:v3-acceptance` | 원본 불변, style·Save As·3쪽·이미지 4개 재열기 통과, A4 fixture 생성 |
+
+리본 화면 캡처와 생성 HWPX는 `artifacts/` 또는 임시 경로에만 두며 공개 저장소에는 결과물을
+커밋하지 않는다. 재현 가능한 생성 코드와 privacy-safe 수치만 기록한다.
+
 ## 2026-08-02 — 실제 macOS 두벌식 확장 입력 matrix
 
 공개 acceptance fixture와 패키지 앱에서 `System Events` 실제 key code 검증을 조합 중

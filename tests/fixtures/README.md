@@ -50,6 +50,12 @@ Git에 커밋하지 않는다.
 나뉘는지, 문단 ID가 빠지거나 중복되지 않는지, 뒤쪽 표가 추가 페이지로 밀리지 않는지를
 개인정보 없는 입력으로 검증한다.
 
+`npm run fixture:v3-acceptance`는 좁은 pagination 스트레스 fixture와 함께
+`han-flow-v3-a4-editing.hwpx`를 생성한다. A4 fixture는 세로 `59528 × 84189 HWPUNIT`, 사방
+`5669 HWPUNIT`(약 20mm) 여백과 본문 폭 `48190 HWPUNIT` 표를 사용한다. 작은 fixture를 실제
+사용 화면의 대표로 확대 해석하지 않고, A4 문서에서 편집 리본·입력·selection과 저장 UX를
+별도로 검증한다. 생성 결과는 개인정보 없는 임시 acceptance artifact이며 Git에는 넣지 않는다.
+
 `createRoundTripHwpx`는 표준 package entry와 함께 알 수 없는 namespace·attribute·XML node,
 미지 binary와 명시적 directory entry를 넣는다. `HwpxSourcePackage` identity round-trip 뒤
 entry 순서·compression·CRC·uncompressed SHA-256과 sentinel이 모두 같은지 검증한다.

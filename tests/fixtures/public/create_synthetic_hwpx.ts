@@ -61,7 +61,10 @@ export interface SyntheticHwpxOptions {
   paragraphsPerExtraSection?: number
   imageBytes?: number
   firstSectionExtraParagraphs?: number
+  firstSectionPageWidth?: number
   firstSectionPageHeight?: number
+  firstSectionMargin?: number
+  firstSectionTableWidth?: number
   fileName?: string
 }
 
@@ -83,11 +86,21 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section1.xml', Buffer.from(section1))
+  const firstSectionPageWidth = options.firstSectionPageWidth ?? 10000
+  const firstSectionPageHeight = options.firstSectionPageHeight ?? 10000
+  const firstSectionMargin = options.firstSectionMargin ?? 1000
+  const firstSectionTableWidth = options.firstSectionTableWidth ?? 6000
   const firstSection = section0
     .replace(
       '<hp:pagePr width="10000" height="10000">',
-      `<hp:pagePr width="10000" height="${options.firstSectionPageHeight ?? 10000}">`
+      `<hp:pagePr width="${firstSectionPageWidth}" height="${firstSectionPageHeight}">`
     )
+    .replace(
+      '<hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/>',
+      `<hp:margin left="${firstSectionMargin}" right="${firstSectionMargin}" top="${firstSectionMargin}" bottom="${firstSectionMargin}" header="300" footer="300"/>`
+    )
+    .replace('<hp:sz width="6000" height="8500"/>', `<hp:sz width="${firstSectionTableWidth}" height="8500"/>`)
+    .replaceAll('<hp:cellSz width="6000"', `<hp:cellSz width="${firstSectionTableWidth}"`)
     .replace('</hs:sec>', `${paragraphs(0, options.firstSectionExtraParagraphs ?? 0)}</hs:sec>`)
   zip.addFile('Contents/section0.xml', Buffer.from(firstSection))
   for (let sectionIndex = 2; sectionIndex < sectionCount; sectionIndex += 1) {

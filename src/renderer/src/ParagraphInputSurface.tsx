@@ -12,6 +12,7 @@ interface ParagraphInputSurfaceProps {
   sourceAnchor: ViewerSourceAnchor
   style?: CSSProperties
   pending: boolean
+  restoreToken?: unknown
   ariaLabel?: string
   desiredSelection?: TextSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
@@ -82,6 +83,7 @@ export function ParagraphInputSurface({
   sourceAnchor,
   style,
   pending,
+  restoreToken,
   ariaLabel = 'HWPX 문단 편집',
   desiredSelection,
   onCommit,
@@ -147,24 +149,34 @@ export function ParagraphInputSurface({
       }
     }
     if (!desiredSelection) return
+    const settleSelection = () => {
+      if (
+        !element.isConnected ||
+        pending ||
+        controller.isComposing ||
+        compositionBufferRef.current.pending
+      ) return
+      restoringSelectionRef.current = true
+      try {
+        if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
+        restoreSelection(element, desiredSelection)
+      } finally {
+        restoringSelectionRef.current = false
+      }
+    }
     let restoreFrame: number | undefined
     const settleFrame = globalThis.requestAnimationFrame(() => {
-      restoreFrame = globalThis.requestAnimationFrame(() => {
-        if (!element.isConnected || pending) return
-        restoringSelectionRef.current = true
-        try {
-          if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
-          restoreSelection(element, desiredSelection)
-        } finally {
-          restoringSelectionRef.current = false
-        }
-      })
+      restoreFrame = globalThis.requestAnimationFrame(settleSelection)
     })
+    const settleTimeout = globalThis.setTimeout(settleSelection, 120)
+    const lateSettleTimeout = globalThis.setTimeout(settleSelection, 350)
     return () => {
       globalThis.cancelAnimationFrame(settleFrame)
       if (restoreFrame !== undefined) globalThis.cancelAnimationFrame(restoreFrame)
+      globalThis.clearTimeout(settleTimeout)
+      globalThis.clearTimeout(lateSettleTimeout)
     }
-  }, [text, pending, desiredSelection?.anchorOffset, desiredSelection?.focusOffset])
+  }, [text, pending, restoreToken, desiredSelection?.anchorOffset, desiredSelection?.focusOffset])
 
   useEffect(() => {
     const element = elementRef.current

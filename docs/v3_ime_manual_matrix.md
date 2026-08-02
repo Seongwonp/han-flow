@@ -16,7 +16,8 @@ smoke는 핵심 회귀를 재현하지만 사용자 손 입력 전체를 대체�
 2. `npm run package:mac`
 3. `npm run verify:ime:mac:matrix`
 
-기본 입력은 `한글입력검증 ` → 2초 대기 → 재클릭 없이 `추가 `다. 마지막 공백은 macOS
+기본 입력 fixture는 `han-flow-v3-a4-editing.hwpx`다. 입력은 `한글입력검증 ` → 2초 대기 →
+재클릭 없이 `추가 `다. 마지막 공백은 macOS
 composition을 확정하며, 두 단계 모두 같은 source anchor가 활성 상태여야 한다. 이 검사는
 macOS 자동화·손쉬운 사용 권한과 Node.js 22 이상을 요구하고 별도 임시 user data에서 실행한 뒤
 기존 전면 앱을 복원한다.

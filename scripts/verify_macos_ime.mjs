@@ -17,7 +17,7 @@ const surfaceLabels = {
 }
 const surfaceLabel = surfaceLabels[surface]
 const scenarios = new Set(['basic', 'backspace', 'escape', 'range-forward', 'range-backward', 'history'])
-const fixture = resolve(positional ?? 'artifacts/v3-acceptance/han-flow-v3-original.hwpx')
+const fixture = resolve(positional ?? 'artifacts/v3-acceptance/han-flow-v3-a4-editing.hwpx')
 const appBinary = resolve(option('--app') ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
 
 if (process.platform !== 'darwin') {
