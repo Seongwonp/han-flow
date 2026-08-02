@@ -28,6 +28,7 @@ export interface ApplyParagraphStyleCommand {
   textNodeId: string
   align?: ParagraphAlignment
   lineSpacing?: number
+  indent?: number
   marginBefore?: number
   marginAfter?: number
 }
@@ -426,7 +427,7 @@ function insertParagraphChild(xml: string, name: string, fragment: string): stri
   return xml.replace(/<\/hh:paraPr>\s*$/, `${fragment}</hh:paraPr>`)
 }
 
-function setHwpValueElement(xml: string, name: 'prev' | 'next', value: number): string {
+function setHwpValueElement(xml: string, name: 'intent' | 'prev' | 'next', value: number): string {
   const pattern = new RegExp(`<hc:${name}(?:\\s[^>]*)?\\s*\\/>`)
   const existing = xml.match(pattern)?.[0]
   if (existing) {
@@ -437,13 +438,14 @@ function setHwpValueElement(xml: string, name: 'prev' | 'next', value: number): 
 
 function setParagraphMetrics(
   xml: string,
-  options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'marginBefore' | 'marginAfter'>
+  options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'indent' | 'marginBefore' | 'marginAfter'>
 ): string {
   let mutated = xml
-  if (options.marginBefore !== undefined || options.marginAfter !== undefined) {
+  if (options.indent !== undefined || options.marginBefore !== undefined || options.marginAfter !== undefined) {
     const pattern = paragraphChildPattern('margin')
     const existing = mutated.match(pattern)?.[0]
     let margin = existing ?? '<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>'
+    if (options.indent !== undefined) margin = setHwpValueElement(margin, 'intent', options.indent)
     if (options.marginBefore !== undefined) margin = setHwpValueElement(margin, 'prev', options.marginBefore)
     if (options.marginAfter !== undefined) margin = setHwpValueElement(margin, 'next', options.marginAfter)
     mutated = existing ? mutated.replace(existing, margin) : insertParagraphChild(mutated, 'margin', margin)
@@ -713,7 +715,7 @@ export function applyParagraphStyleCommand(
 ): StylePatchResult {
   if (command.type !== 'apply-paragraph-style') throw new Error('지원하지 않는 문단 style command입니다.')
   if (
-    command.align === undefined && command.lineSpacing === undefined &&
+    command.align === undefined && command.lineSpacing === undefined && command.indent === undefined &&
     command.marginBefore === undefined && command.marginAfter === undefined
   ) {
     throw new Error('적용할 문단 style 값이 없습니다.')
@@ -734,6 +736,12 @@ export function applyParagraphStyleCommand(
     if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 7200)) {
       throw new Error(`${label}은 0pt에서 72pt 사이여야 합니다.`)
     }
+  }
+  if (
+    command.indent !== undefined &&
+    (!Number.isInteger(command.indent) || command.indent < -7200 || command.indent > 7200)
+  ) {
+    throw new Error('첫 줄 들여쓰기는 -72pt에서 72pt 사이여야 합니다.')
   }
   return applyStyleDefinition(sourcePackage, {
     ...command,

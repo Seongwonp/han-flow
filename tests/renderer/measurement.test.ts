@@ -45,6 +45,15 @@ describe('DOM 측정 마커', () => {
     expect(markup).not.toContain('data-measure-row-id')
   })
 
+  test('문단 첫 줄 들여쓰기 HWPUNIT를 CSS px로 투영한다', () => {
+    const indented = {
+      ...document,
+      paraStyles: { '0': { ...document.paraStyles['0'], indent: 100 } }
+    }
+    const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: nestedParagraph, document: indented }))
+    expect(markup).toContain('text-indent:1.3333333333333333px')
+  })
+
   test('일반 body cell만 편집 대상으로 허용하고 반복·병합·fragment cell은 차단한다', () => {
     const table = topParagraph.content[0]
     if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')

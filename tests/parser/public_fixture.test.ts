@@ -67,6 +67,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     expect(document.charStyles['0']).toMatchObject({ fontFamily: 'HanFlow Test Sans', bold: true, color: '#123456' })
     expect(document.paraStyles['3']).toMatchObject({
       lineSpacing: 130,
+      indent: 0,
       margin: { left: 120, right: 240, top: 360, bottom: 480 }
     })
     expect(document.resources.image1).toMatchObject({ path: 'BinData/image1.png', mime: 'image/png' })

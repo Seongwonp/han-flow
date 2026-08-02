@@ -459,6 +459,18 @@ function captureVisualState(window: BrowserWindow): void {
           button('문단 뒤 간격 늘리기')?.click()
           await waitFor(() => metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt')
           const marginAfterApplied = metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt'
+          const originalIndent = Number.parseFloat(metricValue('현재 첫 줄 들여쓰기') ?? '')
+          setPhase('style-outdent')
+          button('첫 줄 내어쓰기')?.click()
+          await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === Math.max(-72, originalIndent - 1) + 'pt')
+          const outdentApplied = metricValue('현재 첫 줄 들여쓰기') === Math.max(-72, originalIndent - 1) + 'pt'
+          setPhase('style-indent-reset')
+          button('첫 줄 들여쓰기')?.click()
+          await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === originalIndent + 'pt')
+          setPhase('style-indent')
+          button('첫 줄 들여쓰기')?.click()
+          await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === Math.min(72, originalIndent + 1) + 'pt')
+          const indentApplied = metricValue('현재 첫 줄 들여쓰기') === Math.min(72, originalIndent + 1) + 'pt'
           styleProbe = {
             boldApplied,
             partialRunSplit,
@@ -473,6 +485,8 @@ function captureVisualState(window: BrowserWindow): void {
             lineSpacingApplied,
             marginBeforeApplied,
             marginAfterApplied,
+            outdentApplied,
+            indentApplied,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
               button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           }
@@ -941,13 +955,15 @@ app.whenReady().then(() => {
     const style = request as Record<string, unknown>
     const hasAlign = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(style?.['align']))
     const hasLineSpacing = Number.isFinite(style?.['lineSpacing'])
+    const hasIndent = Number.isFinite(style?.['indent'])
     const hasMarginBefore = Number.isFinite(style?.['marginBefore'])
     const hasMarginAfter = Number.isFinite(style?.['marginAfter'])
     if (
       !isStyleRequestBase(request) ||
-      (!hasAlign && !hasLineSpacing && !hasMarginBefore && !hasMarginAfter) ||
+      (!hasAlign && !hasLineSpacing && !hasIndent && !hasMarginBefore && !hasMarginAfter) ||
       ('align' in style && !hasAlign) ||
       ('lineSpacing' in style && !hasLineSpacing) ||
+      ('indent' in style && !hasIndent) ||
       ('marginBefore' in style && !hasMarginBefore) ||
       ('marginAfter' in style && !hasMarginAfter)
     ) {

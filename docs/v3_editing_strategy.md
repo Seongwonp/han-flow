@@ -556,6 +556,16 @@ renderer는 기존 `ViewerParaStyle.lineSpacing`과 `margin.top/bottom` projecti
 fixture에서 170%, 앞 1pt, 뒤 1pt를 차례로 적용한 뒤 Save As했고 원본 불변, 2쪽·이미지 3개,
 overflow 0 재열기를 확인했다.
 
+### V3-6D 첫 줄 들여쓰기·내어쓰기
+
+한컴 공개 모델의 `CMargin`은 XML 이름 `hc:intent`를 내부 `Margin_Indent`에 연결한다. 이를
+`ViewerParaStyle.indent`로 projection하고 CSS `text-indent`에 HWPUNIT 단위로 반영한다.
+command 범위는 −7200–7200 HWPUNIT이며 음수는 첫 줄 내어쓰기, 양수는 첫 줄 들여쓰기다.
+
+홈 리본은 1pt 단위 양방향 버튼과 현재 값을 표시한다. 기존 `hh:margin`의 left, right, prev,
+next와 unknown XML은 그대로 보존한다. packaged A4 probe에서 −1pt 적용, 0pt 복귀, +1pt 적용을
+차례로 수행했고 Save As 저장본에서 각 definition과 최종 +100 HWPUNIT를 확인했다.
+
 ### V3 외부 승인과 V4 이관
 
 - macOS 실제 두벌식 OS-level key smoke 통과 유지

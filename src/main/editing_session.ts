@@ -179,6 +179,7 @@ export class EditingSessionManager {
             textNodeId: request.textNodeId,
             align: request.align,
             lineSpacing: request.lineSpacing,
+            indent: request.indent,
             marginBefore: request.marginBefore,
             marginAfter: request.marginAfter
           }
@@ -189,9 +190,11 @@ export class EditingSessionManager {
           ? `formatAlign${request.align}`
           : request.lineSpacing !== undefined
             ? 'formatLineSpacing'
-            : request.marginBefore !== undefined
-              ? 'formatParagraphBefore'
-              : 'formatParagraphAfter',
+            : request.indent !== undefined
+              ? 'formatIndent'
+              : request.marginBefore !== undefined
+                ? 'formatParagraphBefore'
+                : 'formatParagraphAfter',
         timestamp: request.timestamp
       }
       session.history.setSelection(transaction.selectionBefore)

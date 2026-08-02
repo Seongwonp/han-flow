@@ -8,6 +8,22 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — V3-6D 첫 줄 들여쓰기·내어쓰기
+
+공식 OWPML `CMargin`의 `hc:intent`를 첫 줄 indent로 projection하고 source command에 연결했다.
+−72pt부터 72pt까지 허용하며 음수는 내어쓰기, 양수는 들여쓰기다. `hh:margin`의 다른 네 값과
+unknown XML은 보존하고 inverse는 원본 header·section bytes를 복원한다.
+
+| 관문 | 결과 |
+| --- | --- |
+| production build/package | main·preload·renderer 및 unsigned arm64 `.app` 성공 |
+| Jest | 22 suites, 119 passed, 1 suite skipped |
+| packaged 양방향 probe | −1pt 내어쓰기 → 0pt → +1pt 들여쓰기 통과 |
+| 저장본 XML | `hc:intent` −100·0·100 HWPUNIT definition 확인 |
+| Save As·재열기 | 원본 불변, 2쪽, 이미지 3개, overflow 0 |
+
+검증은 공개 A4 synthetic fixture만 사용했고 저장본은 임시 경로에만 두었다.
+
 ## 2026-08-02 — V3-6C 줄 간격·문단 앞뒤 간격
 
 `ApplyParagraphStyleCommand`를 정렬 전용에서 줄 간격과 문단 앞·뒤 간격까지 확장했다. 줄

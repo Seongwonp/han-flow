@@ -243,6 +243,7 @@ describe('main process HWPX editing session', () => {
       textNodeId: anchor.textNodeId,
       selection: caret,
       lineSpacing: 180,
+      indent: -200,
       marginBefore: 200,
       marginAfter: 300,
       timestamp: 1
@@ -250,18 +251,21 @@ describe('main process HWPX editing session', () => {
     const paragraph = styled.document.sections[0].blocks.at(-1)!
     expect(styled.document.paraStyles[paragraph.paraStyleId]).toMatchObject({
       lineSpacing: 180,
+      indent: -200,
       margin: { top: 200, bottom: 300 }
     })
     const undone = await manager.undo(27, started.sessionId)
     const restored = undone.document.sections[0].blocks.at(-1)!
     expect(undone.document.paraStyles[restored.paraStyleId]).toMatchObject({
       lineSpacing: 160,
+      indent: 0,
       margin: { top: 0, bottom: 0 }
     })
     const redone = await manager.redo(27, started.sessionId)
     const redoneParagraph = redone.document.sections[0].blocks.at(-1)!
     expect(redone.document.paraStyles[redoneParagraph.paraStyleId]).toMatchObject({
       lineSpacing: 180,
+      indent: -200,
       margin: { top: 200, bottom: 300 }
     })
   })

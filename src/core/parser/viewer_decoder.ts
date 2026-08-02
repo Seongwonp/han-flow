@@ -167,6 +167,7 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
       id: style.attributes.id,
       align: child(style, 'hh:align')?.attributes.horizontal,
       lineSpacing: num(styleChild(style, 'hh:lineSpacing')?.attributes.value),
+      indent: getValue('hc:intent'),
       margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') },
       heading: heading ? { type: heading.attributes.type ?? 'NONE', idRef, level, bullet: bullets[idRef], numberPattern: numbering?.pattern, numberFormat: numbering?.format } : undefined
     }

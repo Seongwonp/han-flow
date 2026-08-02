@@ -244,8 +244,18 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 5. [x] 홈 리본에 40px 조절기와 현재 값을 표시하고 IPC 숫자 검증을 추가한다.
 6. [x] 22 suites·118 tests와 packaged A4 적용·Save As·재열기를 통과한다.
 
-다음 기능 후보는 `hc:intent` 기반 들여쓰기·내어쓰기다. 목록·표 구조 편집과 글꼴 family는
-현재 V3의 제한된 편집 경계보다 영향 범위가 크므로 별도 설계 관문 뒤에 진행한다.
+## 완료한 코드 관문: V3-6D 첫 줄 들여쓰기·내어쓰기
+
+1. [x] 공식 `CMargin` 모델에서 `hc:intent`가 `Margin_Indent`에 대응함을 확인한다.
+2. [x] −7200–7200 HWPUNIT 범위의 첫 줄 indent command와 inverse를 추가한다.
+3. [x] `ViewerParaStyle.indent`와 CSS `text-indent` projection을 연결한다.
+4. [x] 홈 리본에서 1pt 단위 내어쓰기·들여쓰기와 현재 음수·양수 값을 표시한다.
+5. [x] 좌우 여백과 문단 앞·뒤 간격을 바꾸지 않는 clone·reuse 경계를 검증한다.
+6. [x] 22 suites·119 tests와 packaged 양방향 조절·Save As·재열기를 통과한다.
+
+목록·표 구조 편집과 글꼴 family는 현재 V3의 제한된 편집 경계보다 영향 범위가 크므로 별도
+설계 관문 뒤에 진행한다. 자동 코드 범위에서 다음 우선순위는 Windows 한/글 재열기용 공개
+호환성 package와 수동 판정표를 준비하는 것이다.
 
 ## 현재 milestone: V3 외부 승인
 

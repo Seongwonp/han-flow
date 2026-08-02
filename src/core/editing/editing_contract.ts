@@ -54,6 +54,7 @@ export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
 export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {
   align?: ParagraphAlignment
   lineSpacing?: number
+  indent?: number
   marginBefore?: number
   marginAfter?: number
 }

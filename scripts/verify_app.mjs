@@ -170,6 +170,8 @@ try {
     styleProbe && !state.editingProbe?.styleProbe?.lineSpacingApplied ? '줄 간격 style 적용 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.marginBeforeApplied ? '문단 앞 간격 style 적용 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.marginAfterApplied ? '문단 뒤 간격 style 적용 불일치' : undefined,
+    styleProbe && !state.editingProbe?.styleProbe?.outdentApplied ? '첫 줄 내어쓰기 style 적용 불일치' : undefined,
+    styleProbe && !state.editingProbe?.styleProbe?.indentApplied ? '첫 줄 들여쓰기 style 적용 불일치' : undefined,
     editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
     editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,

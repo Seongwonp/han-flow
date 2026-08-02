@@ -308,7 +308,11 @@ describe('HWPX 문단·글자 style patch', () => {
   })
 
   test('줄 간격과 문단 앞뒤 간격을 복제된 paraPr에 기록하고 inverse로 원복한다', async () => {
-    const source = await sourceWithCounts()
+    const counted = await sourceWithCounts()
+    const preservedMargins = counted.readEntry('Contents/header.xml').toString('utf8')
+      .replace('<hc:left value="0"/>', '<hc:left value="500"/>')
+      .replace('<hc:right value="0"/>', '<hc:right value="600"/>')
+    const source = counted.withEntry('Contents/header.xml', Buffer.from(preservedMargins))
     const anchor = editableAnchor(source)
     const originalHeader = source.readEntry('Contents/header.xml')
     const originalSection = source.readEntry(sectionPath)
@@ -317,6 +321,7 @@ describe('HWPX 문단·글자 style patch', () => {
       sectionPath,
       textNodeId: anchor.textNodeId,
       lineSpacing: 180,
+      indent: -200,
       marginBefore: 200,
       marginAfter: 300
     })
@@ -325,12 +330,14 @@ describe('HWPX 문단·글자 style patch', () => {
     const header = result.package.readEntry('Contents/header.xml').toString('utf8')
     const definition = header.match(/<hh:paraPr id="4"[\s\S]*?<\/hh:paraPr>/)?.[0]
     expect(definition).toContain('<hh:lineSpacing value="180" type="PERCENT" unit="HWPUNIT"/>')
+    expect(definition).toContain('<hc:intent value="-200" unit="HWPUNIT"/>')
     expect(definition).toContain('<hc:prev value="200" unit="HWPUNIT"/>')
     expect(definition).toContain('<hc:next value="300" unit="HWPUNIT"/>')
     const projected = await decodeViewerDocument(result.package)
     expect(projected.paraStyles['4']).toMatchObject({
       lineSpacing: 180,
-      margin: { left: 0, right: 0, top: 200, bottom: 300 }
+      indent: -200,
+      margin: { left: 500, right: 600, top: 200, bottom: 300 }
     })
     if (result.inverse?.type !== 'restore-style') throw new Error('문단 style inverse가 없습니다.')
     const restored = applyRestoreStyleCommand(result.package, result.inverse)
@@ -343,6 +350,9 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(() => applyParagraphStyleCommand(source, {
       type: 'apply-paragraph-style', sectionPath, textNodeId: anchor.textNodeId, marginBefore: 7300
     })).toThrow('72pt')
+    expect(() => applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style', sectionPath, textNodeId: anchor.textNodeId, indent: -7300
+    })).toThrow('-72pt')
   })
 
   test('이미 같은 문단 정렬은 no-op이고 표 셀처럼 제한 밖 anchor는 거부한다', async () => {

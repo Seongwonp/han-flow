@@ -140,6 +140,7 @@ export function ParagraphView({
     marginRight: hwpUnitToCssPx(style?.margin.right ?? 0),
     marginTop: hwpUnitToCssPx(style?.margin.top ?? 0),
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
+    textIndent: hwpUnitToCssPx(style?.indent ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
   const editableTexts =
@@ -796,6 +797,7 @@ export default function App() {
           color: document.charStyles[text.charStyleId]?.color ?? '#000000',
           align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment,
           lineSpacing: document.paraStyles[paragraph.paraStyleId]?.lineSpacing || 160,
+          indent: document.paraStyles[paragraph.paraStyleId]?.indent ?? 0,
           marginBefore: document.paraStyles[paragraph.paraStyleId]?.margin.top ?? 0,
           marginAfter: document.paraStyles[paragraph.paraStyleId]?.margin.bottom ?? 0
         }
@@ -841,6 +843,7 @@ export default function App() {
   const applyParagraphStyle = useCallback(async (style: {
     align?: ParagraphAlignment
     lineSpacing?: number
+    indent?: number
     marginBefore?: number
     marginAfter?: number
   }) => {
@@ -862,9 +865,11 @@ export default function App() {
           ? '문단 정렬 적용'
           : style.lineSpacing !== undefined
             ? `줄 간격 ${style.lineSpacing}%`
-            : style.marginBefore !== undefined
-              ? `문단 앞 간격 ${style.marginBefore / 100}pt`
-              : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
+            : style.indent !== undefined
+              ? style.indent >= 0 ? `첫 줄 들여쓰기 ${style.indent / 100}pt` : `첫 줄 내어쓰기 ${Math.abs(style.indent) / 100}pt`
+              : style.marginBefore !== undefined
+                ? `문단 앞 간격 ${style.marginBefore / 100}pt`
+                : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
       )
     } catch (reason) {
       setEditingStatus(`문단 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
@@ -1217,6 +1222,12 @@ export default function App() {
                 <button aria-label="줄 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.max(100, activeStyle.lineSpacing - 10) })} disabled={!activeStyle || activeStyle.lineSpacing <= 100 || Boolean(editingPending)}>−</button>
                 <output aria-label="현재 줄 간격">{activeStyle ? `${activeStyle.lineSpacing}%` : '—'}</output>
                 <button aria-label="줄 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.min(300, activeStyle.lineSpacing + 10) })} disabled={!activeStyle || activeStyle.lineSpacing >= 300 || Boolean(editingPending)}>＋</button>
+              </div>
+              <div className="viewer-paragraph-metric">
+                <span>첫 줄</span>
+                <button aria-label="첫 줄 내어쓰기" title="첫 줄 내어쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.max(-7200, activeStyle.indent - 100) })} disabled={!activeStyle || activeStyle.indent <= -7200 || Boolean(editingPending)}>⇤</button>
+                <output aria-label="현재 첫 줄 들여쓰기">{activeStyle ? `${activeStyle.indent / 100}pt` : '—'}</output>
+                <button aria-label="첫 줄 들여쓰기" title="첫 줄 들여쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.min(7200, activeStyle.indent + 100) })} disabled={!activeStyle || activeStyle.indent >= 7200 || Boolean(editingPending)}>⇥</button>
               </div>
               <div className="viewer-paragraph-metric">
                 <span>문단 앞</span>
