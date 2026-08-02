@@ -24,6 +24,13 @@ export interface TextCommitIntent {
   timestamp: number
 }
 
+interface CompositionBurst {
+  baselineText: string
+  baselineSelection: TextSelection
+  latest: TextInputSnapshot
+  compositionId: string
+}
+
 function cloneSelection(selection: TextSelection): TextSelection {
   return { ...selection }
 }
@@ -175,6 +182,63 @@ export class CompositionInputController {
     this.baselineSelection = cloneSelection(snapshot.selection)
     this.composition = undefined
     return intent
+  }
+}
+
+export class CompositionCommitBuffer {
+  private burst: CompositionBurst | undefined
+
+  get pending(): boolean {
+    return this.burst !== undefined
+  }
+
+  begin(
+    text: string,
+    selection: TextSelection,
+    compositionId: string,
+    timestamp: number
+  ): void {
+    if (this.burst) return
+    this.burst = {
+      baselineText: text,
+      baselineSelection: cloneSelection(selection),
+      latest: {
+        text,
+        selection: cloneSelection(selection),
+        inputType: 'insertCompositionText',
+        timestamp
+      },
+      compositionId
+    }
+  }
+
+  update(snapshot: TextInputSnapshot): void {
+    if (!this.burst) return
+    this.burst.latest = {
+      ...snapshot,
+      selection: cloneSelection(snapshot.selection)
+    }
+  }
+
+  flush(): TextCommitIntent | undefined {
+    const burst = this.burst
+    this.burst = undefined
+    if (!burst) return undefined
+    return diffTextInput(
+      burst.baselineText,
+      burst.latest.text,
+      burst.baselineSelection,
+      burst.latest.selection,
+      {
+        inputType: burst.latest.inputType ?? 'insertCompositionText',
+        compositionId: burst.compositionId,
+        timestamp: burst.latest.timestamp
+      }
+    )
+  }
+
+  clear(): void {
+    this.burst = undefined
   }
 }
 

@@ -160,6 +160,7 @@ node_modules/
 # Project specific
 /han-flow/dist
 /han-flow/node_modules
+/artifacts/
 tests/fixtures/private/
 !tests/fixtures/public/
 !tests/fixtures/public/**

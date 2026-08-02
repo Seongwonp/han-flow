@@ -221,6 +221,11 @@ function captureVisualState(window: BrowserWindow): void {
       previousSignature = ''
       editProbe = await window.webContents.executeJavaScript(`(async () => {
         let phase = 'edit-button'
+        const setPhase = (value) => {
+          phase = value
+          console.error('HAN_FLOW_E2E_PHASE ' + value)
+        }
+        setPhase(phase)
         const waitFor = async (predicate, timeout = 30000) => {
           const started = performance.now()
           while (performance.now() - started < timeout) {
@@ -230,14 +235,30 @@ function captureVisualState(window: BrowserWindow): void {
           }
           throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
         }
-        const editButton = await waitFor(() =>
-          Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
-        )
-        editButton.click()
-        phase = 'editable-surface'
         const surfaceLabel = ${JSON.stringify(editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')}
-        const target = await waitFor(() => document.querySelector('[aria-label="' + surfaceLabel + '"]'))
+        const readySurface = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
+          .find((element) => element.dataset.inputReady === 'true')
+        let target = readySurface()
+        if (!target) {
+          const existingSurface = document.querySelector('[aria-label="' + surfaceLabel + '"]')
+          if (!existingSurface) {
+            const editButton = await waitFor(() =>
+              Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
+            )
+            editButton.click()
+            setPhase('editable-surface')
+          }
+          target = await waitFor(readySurface)
+        }
+        const anchorId = target.dataset.sourceTextNodeId
+        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
+          .find((element) => element.dataset.sourceTextNodeId === anchorId)
         target.focus()
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        target = await waitFor(() => {
+          const candidate = currentTarget()
+          return candidate?.dataset.inputReady === 'true' ? candidate : undefined
+        })
         const original = target.textContent ?? ''
         const textNode = (element) => {
           if (!element.firstChild) element.append(document.createTextNode(''))
@@ -261,9 +282,6 @@ function captureVisualState(window: BrowserWindow): void {
             focusOffset: offset(selection.focusNode, selection.focusOffset)
           }
         }
-        const anchorId = target.dataset.sourceTextNodeId
-        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
-          .find((element) => element.dataset.sourceTextNodeId === anchorId)
         const mode = ${JSON.stringify(editMode)}
         let expected
         let selectionBefore
@@ -284,33 +302,46 @@ function captureVisualState(window: BrowserWindow): void {
           expected = original + ${JSON.stringify(editText)}
           selectionAfter = { anchorOffset: expected.length, focusOffset: expected.length }
           setSelection(target, selectionBefore.anchorOffset, selectionBefore.focusOffset)
-          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
-          target.textContent = original + 'ㅎ'
-          setSelection(target, original.length + 1, original.length + 1)
-          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
-          target.textContent = expected
-          setSelection(target, selectionAfter.anchorOffset, selectionAfter.focusOffset)
-          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: ${JSON.stringify(editText)}, isComposing: true }))
-          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: ${JSON.stringify(editText)} }))
+          const compositionCharacters = Array.from(${JSON.stringify(editText)})
+          let composed = original
+          for (const character of compositionCharacters) {
+            target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+            target.textContent = composed + 'ㅎ'
+            setSelection(target, composed.length + 1, composed.length + 1)
+            target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
+            composed += character
+            target.textContent = composed
+            setSelection(target, composed.length, composed.length)
+            target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
+            target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
+          }
         }
-        phase = 'commit'
+        setPhase('commit')
         await waitFor(() => {
           const undoButton = document.querySelector('[aria-label="실행 취소"]')
           return undoButton && !undoButton.disabled &&
             document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨')
         })
-        phase = 'projection'
-        const editedTarget = await waitFor(currentTarget)
+        setPhase('projection')
+        const editedTarget = await waitFor(() => {
+          const candidate = currentTarget()
+          return candidate?.textContent === expected ? candidate : undefined
+        })
+        await waitFor(() => {
+          const value = getSelection(editedTarget)
+          return value.anchorOffset === selectionAfter.anchorOffset &&
+            value.focusOffset === selectionAfter.focusOffset
+        })
         const edited = editedTarget.textContent
         const selectionAfterProjection = getSelection(editedTarget)
         const undo = document.querySelector('[aria-label="실행 취소"]')
         undo?.click()
-        phase = 'undo-text'
+        setPhase('undo-text')
         const undoneTarget = await waitFor(() => {
           const candidate = currentTarget()
           return candidate?.textContent === original ? candidate : undefined
         })
-        phase = 'undo-selection'
+        setPhase('undo-selection')
         await waitFor(() => {
           const value = getSelection(undoneTarget)
           return value.anchorOffset === selectionBefore.anchorOffset && value.focusOffset === selectionBefore.focusOffset
@@ -319,12 +350,12 @@ function captureVisualState(window: BrowserWindow): void {
         const undoneMatches = undoneTarget.textContent === original
         const redo = document.querySelector('[aria-label="다시 실행"]')
         redo?.click()
-        phase = 'redo-text'
+        setPhase('redo-text')
         const redoneTarget = await waitFor(() => {
           const candidate = currentTarget()
           return candidate?.textContent === expected ? candidate : undefined
         })
-        phase = 'redo-selection'
+        setPhase('redo-selection')
         await waitFor(() => {
           const value = getSelection(redoneTarget)
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
@@ -332,7 +363,7 @@ function captureVisualState(window: BrowserWindow): void {
         const redoSelection = getSelection(redoneTarget)
         let styleProbe
         if (${styleProbeEnabled}) {
-          phase = 'style-buttons'
+          setPhase('style-buttons')
           const button = (label) => document.querySelector('[aria-label="' + label + '"]')
           const boldButton = await waitFor(() => {
             const candidate = button('현재 텍스트 블록 굵게')
@@ -348,36 +379,62 @@ function captureVisualState(window: BrowserWindow): void {
           redoneTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
           button('현재 텍스트 블록 굵게')?.click()
-          phase = 'style-bold'
+          setPhase('style-bold')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
           const boldApplied = button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           const partialRunSplit = await waitFor(() => Array.from(document.querySelectorAll('.viewer-paragraph'))
             .some((paragraph) => paragraph.textContent === expected &&
               paragraph.querySelectorAll(':scope > .viewer-editable-text').length >= 2))
           button(desiredAlign)?.click()
-          phase = 'style-align'
+          setPhase('style-align')
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
           const alignApplied = button(desiredAlign)?.getAttribute('aria-pressed') === 'true'
           document.querySelector('[aria-label="실행 취소"]')?.click()
-          phase = 'style-align-undo'
+          setPhase('style-align-undo')
           await waitFor(() => button(originalAlign)?.getAttribute('aria-pressed') === 'true')
           document.querySelector('[aria-label="실행 취소"]')?.click()
-          phase = 'style-bold-undo'
+          setPhase('style-bold-undo')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold))
           const undoRestored = button(originalAlign)?.getAttribute('aria-pressed') === 'true' &&
             button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold)
           document.querySelector('[aria-label="다시 실행"]')?.click()
-          phase = 'style-bold-redo'
+          setPhase('style-bold-redo')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
           document.querySelector('[aria-label="다시 실행"]')?.click()
-          phase = 'style-align-redo'
+          setPhase('style-align-redo')
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
+          const sizeLabel = () => document.querySelector('[aria-label="현재 글자 크기"]')?.textContent?.trim()
+          const originalSize = Number.parseFloat(sizeLabel() ?? '')
+          const expectedSize = Math.min(72, originalSize + 1)
+          setPhase('style-size')
+          const increaseSize = await waitFor(() => {
+            const candidate = button('글자 크기 늘리기')
+            return candidate && !candidate.disabled ? candidate : undefined
+          })
+          increaseSize.click()
+          await waitFor(() => sizeLabel() === expectedSize + 'pt')
+          const sizeApplied = sizeLabel() === expectedSize + 'pt'
+          setPhase('style-color')
+          const colorInput = await waitFor(() => {
+            const candidate = document.querySelector('[aria-label="글자 색상"]')
+            return candidate && !candidate.disabled ? candidate : undefined
+          })
+          const originalColor = colorInput.value.toLowerCase()
+          const desiredColor = originalColor === '#336699' ? '#663399' : '#336699'
+          const colorSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+          colorSetter?.call(colorInput, desiredColor)
+          colorInput.dispatchEvent(new Event('input', { bubbles: true }))
+          colorInput.dispatchEvent(new Event('change', { bubbles: true }))
+          await waitFor(() => document.querySelector('[aria-label="글자 색상"]')?.value.toLowerCase() === desiredColor)
+          const colorApplied = document.querySelector('[aria-label="글자 색상"]')?.value.toLowerCase() === desiredColor
           styleProbe = {
             boldApplied,
             partialRunSplit,
             alignApplied,
             undoRestored,
             multiRunEditable: partialRunSplit,
+            sizeApplied,
+            colorApplied,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
               button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           }
@@ -385,13 +442,13 @@ function captureVisualState(window: BrowserWindow): void {
         let saveStatusMatches
         let dirtyCleared
         if (${autoSaveEdit}) {
-          phase = 'save-button'
+          setPhase('save-button')
           const saveButton = await waitFor(() => {
             const button = document.querySelector('[aria-label="HWPX 변경본 저장"]')
             return button && !button.disabled ? button : undefined
           })
           saveButton.click()
-          phase = 'save-complete'
+          setPhase('save-complete')
           await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 완료'))
           saveStatusMatches = /Preview (?:갱신 안 됨|없음)/.test(
             document.querySelector('.viewer-status')?.textContent ?? ''
@@ -413,8 +470,17 @@ function captureVisualState(window: BrowserWindow): void {
           dirtyCleared,
           editableCount: document.querySelectorAll('[aria-label="' + surfaceLabel + '"]').length
         }
-      })()`).catch((reason) => ({
-        probeError: reason instanceof Error ? reason.message : String(reason)
+      })()`).catch(async (reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason),
+        diagnostics: await window.webContents.executeJavaScript(`({
+          status: document.querySelector('.viewer-status')?.textContent,
+          editableTexts: Array.from(document.querySelectorAll('.viewer-editable-text')).map((element) => ({
+            sourceTextNodeId: element.dataset.sourceTextNodeId,
+            text: element.textContent
+          })),
+          undoDisabled: document.querySelector('[aria-label="실행 취소"]')?.disabled,
+          redoDisabled: document.querySelector('[aria-label="다시 실행"]')?.disabled
+        })`)
       }))
       setTimeout(() => void captureWhenReady(), 250)
       return
@@ -505,9 +571,15 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     trafficLightPosition: { x: 15, y: 15 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: !visualStateOutput
     }
   })
+  if (visualStateOutput) {
+    mainWindow.webContents.on('console-message', (_event, _level, message) => {
+      if (message.startsWith('HAN_FLOW_E2E_PHASE ')) console.error(message)
+    })
+  }
 
   const senderId = mainWindow.webContents.id
   let closeApproved = false

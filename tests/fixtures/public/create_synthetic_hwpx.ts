@@ -61,6 +61,7 @@ export interface SyntheticHwpxOptions {
   paragraphsPerExtraSection?: number
   imageBytes?: number
   firstSectionExtraParagraphs?: number
+  firstSectionPageHeight?: number
   fileName?: string
 }
 
@@ -82,7 +83,12 @@ export function createSyntheticHwpx(directory: string, options: SyntheticHwpxOpt
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section1.xml', Buffer.from(section1))
-  const firstSection = section0.replace('</hs:sec>', `${paragraphs(0, options.firstSectionExtraParagraphs ?? 0)}</hs:sec>`)
+  const firstSection = section0
+    .replace(
+      '<hp:pagePr width="10000" height="10000">',
+      `<hp:pagePr width="10000" height="${options.firstSectionPageHeight ?? 10000}">`
+    )
+    .replace('</hs:sec>', `${paragraphs(0, options.firstSectionExtraParagraphs ?? 0)}</hs:sec>`)
   zip.addFile('Contents/section0.xml', Buffer.from(firstSection))
   for (let sectionIndex = 2; sectionIndex < sectionCount; sectionIndex += 1) {
     zip.addFile(`Contents/section${sectionIndex}.xml`, Buffer.from(extraSection(sectionIndex, paragraphsPerExtraSection)))

@@ -13,6 +13,7 @@ const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
+const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
@@ -86,7 +87,11 @@ try {
   const resolvedFixture = resolve(fixture)
   const verifiesSavedFile = editSave || closeDirtyAction === 'save'
   const sourceHashBefore = verifiesSavedFile ? hash(await readFile(resolvedFixture)) : undefined
-  const saveDestination = verifiesSavedFile ? join(directory, 'han-flow-edited.hwpx') : undefined
+  const saveDestination = verifiesSavedFile
+    ? configuredSaveDestination
+      ? resolve(configuredSaveDestination)
+      : join(directory, 'han-flow-edited.hwpx')
+    : undefined
   const state = await launch(
     join(directory, 'visual-state.json'),
     join(directory, 'user-data'),
@@ -153,6 +158,8 @@ try {
     styleProbe && !state.editingProbe?.styleProbe?.undoRestored ? 'style undo 원복 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.redoRestored ? 'style redo 복원 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.multiRunEditable ? '여러 run 문단 입력 surface 불일치' : undefined,
+    styleProbe && !state.editingProbe?.styleProbe?.sizeApplied ? '글자 크기 style 적용 불일치' : undefined,
+    styleProbe && !state.editingProbe?.styleProbe?.colorApplied ? '글자 색상 style 적용 불일치' : undefined,
     editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
     editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,

@@ -1,5 +1,6 @@
 import { CSSProperties, useEffect, useLayoutEffect, useRef } from 'react'
 import {
+  CompositionCommitBuffer,
   CompositionInputController,
   TextCommitIntent,
   TextSelection
@@ -42,6 +43,16 @@ function textSelection(element: HTMLElement): TextSelection {
   }
 }
 
+function selectionIsInside(element: HTMLElement): boolean {
+  const selection = globalThis.getSelection()
+  return Boolean(
+    selection?.anchorNode &&
+    selection.focusNode &&
+    (selection.anchorNode === element || element.contains(selection.anchorNode)) &&
+    (selection.focusNode === element || element.contains(selection.focusNode))
+  )
+}
+
 function textPosition(element: HTMLElement, requestedOffset: number): [Node, number] {
   const offset = Math.max(0, Math.min(requestedOffset, element.textContent?.length ?? 0))
   const walker = globalThis.document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
@@ -80,18 +91,78 @@ export function ParagraphInputSurface({
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
+  const compositionBufferRef = useRef(new CompositionCommitBuffer())
+  const compositionTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const boundaryNavigateRef = useRef(onBoundaryNavigate)
+  const sourceAnchorRef = useRef(sourceAnchor)
+  const onCommitRef = useRef(onCommit)
+  const onComposingChangeRef = useRef(onComposingChange)
+  const onSelectionChangeRef = useRef(onSelectionChange)
+  const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
+  boundaryNavigateRef.current = onBoundaryNavigate
+  sourceAnchorRef.current = sourceAnchor
+  onCommitRef.current = onCommit
+  onComposingChangeRef.current = onComposingChange
+  onSelectionChangeRef.current = onSelectionChange
 
   useLayoutEffect(() => {
     const element = elementRef.current
     const controller = controllerRef.current
-    if (!element || pending || controller.isComposing) return
-    if (element.textContent !== text) element.textContent = text
-    const selection = desiredSelection ?? textSelection(element)
+    if (!element) return
+    if (
+      pending ||
+      controller.isComposing ||
+      compositionBufferRef.current.pending
+    ) {
+      return
+    }
+    const textChanged = element.textContent !== text
+    if (textChanged) element.textContent = text
+    const currentSelection = textSelection(element)
+    const selectionInside = selectionIsInside(element)
+    const selection = desiredSelection ?? currentSelection
     controller.reset(text, selection)
-    if (desiredSelection) {
-      if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
-      restoreSelection(element, desiredSelection)
+    const selectionChanged =
+      desiredSelection &&
+      (
+        currentSelection.anchorOffset !== desiredSelection.anchorOffset ||
+        currentSelection.focusOffset !== desiredSelection.focusOffset
+      )
+    if (
+      desiredSelection &&
+      (
+        textChanged ||
+        selectionChanged ||
+        !selectionInside ||
+        globalThis.document.activeElement !== element
+      )
+    ) {
+      restoringSelectionRef.current = true
+      try {
+        if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
+        restoreSelection(element, desiredSelection)
+      } finally {
+        restoringSelectionRef.current = false
+      }
+    }
+    if (!desiredSelection) return
+    let restoreFrame: number | undefined
+    const settleFrame = globalThis.requestAnimationFrame(() => {
+      restoreFrame = globalThis.requestAnimationFrame(() => {
+        if (!element.isConnected || pending) return
+        restoringSelectionRef.current = true
+        try {
+          if (globalThis.document.activeElement !== element) element.focus({ preventScroll: true })
+          restoreSelection(element, desiredSelection)
+        } finally {
+          restoringSelectionRef.current = false
+        }
+      })
+    })
+    return () => {
+      globalThis.cancelAnimationFrame(settleFrame)
+      if (restoreFrame !== undefined) globalThis.cancelAnimationFrame(restoreFrame)
     }
   }, [text, pending, desiredSelection?.anchorOffset, desiredSelection?.focusOffset])
 
@@ -101,10 +172,32 @@ export function ParagraphInputSurface({
     element.textContent = text
     element.contentEditable = 'plaintext-only'
     const controller = controllerRef.current
+    const compositionBuffer = compositionBufferRef.current
     const read = () => ({
       text: element.textContent ?? '',
       selection: textSelection(element)
     })
+    const clearCompositionTimer = () => {
+      if (compositionTimerRef.current) clearTimeout(compositionTimerRef.current)
+      compositionTimerRef.current = undefined
+    }
+    const flushCompositionBuffer = () => {
+      clearCompositionTimer()
+      const snapshot = {
+        ...read(),
+        inputType: inputTypeRef.current ?? 'insertCompositionText',
+        timestamp: performance.now()
+      }
+      compositionBuffer.update(snapshot)
+      const intent = compositionBuffer.flush()
+      controller.reset(snapshot.text, snapshot.selection)
+      onComposingChangeRef.current(false)
+      if (intent) onCommitRef.current(sourceAnchorRef.current, intent)
+    }
+    const scheduleCompositionFlush = () => {
+      clearCompositionTimer()
+      compositionTimerRef.current = setTimeout(flushCompositionBuffer, 450)
+    }
     const beforeInput = (event: InputEvent) => {
       if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
         event.preventDefault()
@@ -114,15 +207,21 @@ export function ParagraphInputSurface({
       if (!controller.isComposing) {
         const selection = textSelection(element)
         controller.updateSelection(selection)
-        onSelectionChange(sourceAnchor, selection)
+        onSelectionChangeRef.current(sourceAnchorRef.current, selection)
       }
     }
     const compositionStart = () => {
+      clearCompositionTimer()
       const snapshot = read()
-      onSelectionChange(sourceAnchor, snapshot.selection)
       controller.reset(snapshot.text, snapshot.selection)
-      controller.compositionStart(snapshot.text, snapshot.selection)
-      onComposingChange(true)
+      const compositionId = controller.compositionStart(snapshot.text, snapshot.selection)
+      compositionBuffer.begin(
+        snapshot.text,
+        snapshot.selection,
+        compositionId,
+        performance.now()
+      )
+      onComposingChangeRef.current(true)
     }
     const input = (event: InputEvent) => {
       const snapshot = read()
@@ -132,7 +231,17 @@ export function ParagraphInputSurface({
         isComposing: event.isComposing,
         timestamp: performance.now()
       })
-      if (intent) onCommit(sourceAnchor, intent)
+      if (compositionBuffer.pending) {
+        compositionBuffer.update({
+          ...snapshot,
+          inputType: inputTypeRef.current ?? event.inputType,
+          isComposing: event.isComposing,
+          timestamp: performance.now()
+        })
+        if (!controller.isComposing && !event.isComposing) scheduleCompositionFlush()
+      } else if (intent) {
+        onCommitRef.current(sourceAnchorRef.current, intent)
+      }
     }
     const compositionEnd = () => {
       const snapshot = read()
@@ -141,14 +250,27 @@ export function ParagraphInputSurface({
         inputType: inputTypeRef.current ?? 'insertCompositionText',
         timestamp: performance.now()
       })
-      onComposingChange(false)
-      if (intent) onCommit(sourceAnchor, intent)
+      if (compositionBuffer.pending) {
+        compositionBuffer.update({
+          ...snapshot,
+          inputType: inputTypeRef.current ?? 'insertCompositionText',
+          timestamp: performance.now()
+        })
+        scheduleCompositionFlush()
+      } else {
+        onComposingChangeRef.current(false)
+        if (intent) onCommitRef.current(sourceAnchorRef.current, intent)
+      }
     }
     const selectionChanged = () => {
-      if (globalThis.document.activeElement !== element || controller.isComposing) return
+      if (
+        restoringSelectionRef.current ||
+        globalThis.document.activeElement !== element ||
+        controller.isComposing
+      ) return
       const selection = textSelection(element)
       controller.updateSelection(selection)
-      onSelectionChange(sourceAnchor, selection)
+      onSelectionChangeRef.current(sourceAnchorRef.current, selection)
     }
     const keyDown = (event: KeyboardEvent) => {
       if (
@@ -165,11 +287,14 @@ export function ParagraphInputSurface({
       const textLength = element.textContent?.length ?? 0
       if (event.key === 'ArrowLeft' && selection.anchorOffset === 0) {
         event.preventDefault()
-        onBoundaryNavigate?.('previous')
+        boundaryNavigateRef.current?.('previous')
       } else if (event.key === 'ArrowRight' && selection.anchorOffset === textLength) {
         event.preventDefault()
-        onBoundaryNavigate?.('next')
+        boundaryNavigateRef.current?.('next')
       }
+    }
+    const blur = () => {
+      if (compositionBuffer.pending && !controller.isComposing) flushCompositionBuffer()
     }
     element.addEventListener('beforeinput', beforeInput)
     element.addEventListener('compositionstart', compositionStart)
@@ -179,7 +304,10 @@ export function ParagraphInputSurface({
     element.addEventListener('keyup', selectionChanged)
     element.addEventListener('mouseup', selectionChanged)
     element.addEventListener('keydown', keyDown)
+    element.addEventListener('blur', blur)
+    element.dataset.inputReady = 'true'
     return () => {
+      clearCompositionTimer()
       element.removeEventListener('beforeinput', beforeInput)
       element.removeEventListener('compositionstart', compositionStart)
       element.removeEventListener('input', input)
@@ -188,16 +316,12 @@ export function ParagraphInputSurface({
       element.removeEventListener('keyup', selectionChanged)
       element.removeEventListener('mouseup', selectionChanged)
       element.removeEventListener('keydown', keyDown)
-      onComposingChange(false)
+      element.removeEventListener('blur', blur)
+      delete element.dataset.inputReady
+      compositionBuffer.clear()
+      onComposingChangeRef.current(false)
     }
-  }, [
-    sourceAnchor.sectionPath,
-    sourceAnchor.textNodeId,
-    onCommit,
-    onComposingChange,
-    onSelectionChange,
-    onBoundaryNavigate
-  ])
+  }, [sourceAnchor.sectionPath, sourceAnchor.textNodeId])
 
   return (
     <span

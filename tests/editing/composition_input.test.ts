@@ -1,4 +1,5 @@
 import {
+  CompositionCommitBuffer,
   CompositionInputController,
   diffTextInput
 } from '../../src/core/editing/composition_input'
@@ -94,6 +95,43 @@ describe('HWPX composition input controller', () => {
         timestamp: 2
       })
     ).toBeUndefined()
+  })
+
+  test('연속된 macOS 한글 음절 조합을 한 burst transaction으로 합친다', () => {
+    const buffer = new CompositionCommitBuffer()
+    buffer.begin('제목: ', caret(4), 'composition-1', 1)
+    buffer.update({
+      text: '제목: 한',
+      selection: caret(5),
+      inputType: 'insertCompositionText',
+      timestamp: 2
+    })
+    buffer.begin('제목: 한', caret(5), 'composition-2', 3)
+    buffer.update({
+      text: '제목: 한글',
+      selection: caret(6),
+      inputType: 'insertCompositionText',
+      timestamp: 4
+    })
+    buffer.update({
+      text: '제목: 한글 ',
+      selection: caret(7),
+      inputType: 'insertText',
+      timestamp: 5
+    })
+
+    expect(buffer.flush()).toEqual({
+      from: 4,
+      to: 4,
+      insert: '한글 ',
+      selectionBefore: caret(4),
+      selectionAfter: caret(7),
+      inputType: 'insertText',
+      compositionId: 'composition-1',
+      timestamp: 5
+    })
+    expect(buffer.pending).toBe(false)
+    expect(buffer.flush()).toBeUndefined()
   })
 
   test('surrogate pair 내부를 자르지 않고 emoji 전체를 교체한다', () => {
