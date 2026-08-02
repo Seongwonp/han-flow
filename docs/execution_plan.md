@@ -168,6 +168,12 @@ undo, redo 뒤 비교한다. 실사용 문서에서 입력 후 페이지 text �
 페이지·이미지 보존, overflow 0과 source anchor focus가 유지됐다. 물리 키보드 항목은
 [macOS 한국어 IME 수동 matrix](v3_ime_manual_matrix.md)에 분리했다.
 
+2026-08-02에는 실제 macOS 두벌식 입력기에 key code를 전달하는 공개 fixture 전용 smoke를
+추가했다. 일반 문단과 표 셀에서 `한글입력검증 `을 입력해 스페이스바로 조합을 종료하고,
+2초 뒤 같은 source anchor가 focus를 유지한 상태에서 클릭 없이 `추가 `를 입력했다. 이 검사는
+커밋 뒤 focus 소실 회귀를 자동으로 막지만 Backspace·Escape·범위 선택을 포함한 물리 키보드
+수동 matrix를 대체하지 않는다.
+
 Save As는 Preview stale 경고 → 목적지 선택 → 같은 디렉터리 임시 파일·`fsync` → package
 identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 뒤에만 savepoint를 옮기며
 저장소 밖 HWPX에서 원본 hash 불변, 저장본 구조 보존과 overflow 0 재열기를 통과했다.
@@ -208,6 +214,8 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 2. [ ] [Windows 한/글 재열기 matrix](v3_windows_round_trip_matrix.md)를 통과한다.
 3. [x] 자동 test, production build, unsigned macOS package와 공개 HWPX matrix를 통과한다.
 4. [x] 실패 결과를 숨기지 않고 자동화와 외부 수동 결과를 검증 이력에 분리한다.
+5. [x] 실제 macOS 두벌식 OS-level key smoke로 일반 문단·표 셀의 스페이스바 commit과
+   commit 뒤 focus·연속 입력을 검증한다.
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 

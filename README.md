@@ -14,8 +14,8 @@ Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공�
 V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package
 보존, text patch·검증형 Save As와 transaction 기반 undo/redo 코어를 구현했고 제한된
 문단·글자 모양·표 셀 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 연결했습니다. 자동화된
-코드 관문은 완료했으며 실제 macOS 두벌식 입력과 Windows 한/글 재열기를 최종 승인 관문으로
-남겨 두었습니다.
+코드 관문과 macOS 두벌식 OS-level key smoke를 완료했으며 전체 물리 키보드 matrix와
+Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
 `1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
 
@@ -30,7 +30,7 @@ V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V
 - 긴 표 셀의 continuation 행과 반복 머리글
 - Worker 기반 점진 decode와 페이지 가상화
 - 원본 `hp:t` source anchor 기반의 제한된 일반 문단·표 body cell 텍스트 편집
-- 조합 종료 단위 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
+- 연속 음절 burst·스페이스바 조합 종료를 보존하는 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
 - 단일 `hp:t` 전체 또는 부분 선택의 굵게·글자 크기·글자색
@@ -87,10 +87,11 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 112 passed, 1 suite skipped |
+| Jest | 22 suites, 113 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
+| macOS 실제 두벌식 smoke | 일반 문단·표 셀 모두 스페이스바 commit 뒤 focus 유지·추가 입력 성공 |
 | 배포 고지 | Apache-2.0, rhwp MIT, Third-Party Notices 일치 |
 
 ### 성능과 대형 문서
@@ -141,11 +142,12 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | --- | --- | --- |
 | V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
-| V3 — 편집 | 승인 대기 | 코드 관문 완료, 실제 macOS IME·Windows 한/글 재열기 대기 |
+| V3 — 편집 | 승인 대기 | 코드·macOS native smoke 완료, 물리 IME matrix·Windows 한/글 재열기 대기 |
 | V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 95%, V4 5%이며
-최종 배포 전체로는 약 84%입니다. V3의 남은 5%는 실제 입력기와 외부 한/글 호환성 승인입니다.
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 96%, V4 5%이며
+최종 배포 전체로는 약 84%입니다. V3의 남은 범위는 전체 물리 입력 matrix와 외부 한/글
+호환성 승인입니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,

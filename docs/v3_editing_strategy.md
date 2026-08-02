@@ -1,8 +1,8 @@
 # V3 HWPX 편집 조사와 구현 전략
 
-상태: 자동 코드 관문 완료 — 실제 macOS IME와 Windows 한/글 외부 승인 대기
+상태: 자동 코드·macOS native IME smoke 완료 — 물리 입력 matrix와 Windows 한/글 외부 승인 대기
 
-기준일: 2026-07-29
+기준일: 2026-08-02
 
 ## 1. 목표와 범위
 
@@ -403,7 +403,16 @@ packaged probe에서 composition caret과 뒤→앞 범위 selection을 projecti
 단계마다 비교했다. 실사용 문서에서 입력 후 페이지 text 분배가 달라져도
 source anchor focus와 caret, 페이지·이미지 보존과 overflow 0이 유지됐다.
 
-남은 V3-4 관문은 [실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다.
+2026-08-02에는 macOS `System Events`가 실제 두벌식 입력기에 key code를 전달하는 packaged
+smoke를 추가했다. 공개 fixture의 일반 문단과 표 셀에서 스페이스바로 조합을 종료한 뒤
+2초 동안 source transaction과 재투영을 기다리고, 재클릭 없이 두 번째 한글을 입력한다.
+첫 실행은 본문·selection은 보존하지만 `activeElement`가 surface에서 빠지는 결함을 실제로
+재현했다. 재투영이 안정된 다음 두 frame에 source anchor focus를 복원하고, 프로그램 복원 중
+발생한 focus event가 과거 selection을 덮어쓰지 않도록 가드한 뒤 두 surface 모두 통과했다.
+
+남은 V3-4 관문은 Backspace·Escape·범위 선택 등을 포함한
+[실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다. OS-level 자동 key smoke를
+물리 키보드 전체 승인으로 확대 해석하지 않는다.
 
 2026-07-29 Save As UI 연결 결과:
 
@@ -434,7 +443,8 @@ source anchor focus와 caret, 페이지·이미지 보존과 overflow 0이 유�
 - [x] 단일 `hp:t` 내부 부분 selection의 run split
 - [x] 일반 표 body cell의 단일 문단·단일 run text 편집
 - [x] 글자 크기·색상과 여러 run 문단의 run별 입력 surface
-- [ ] 실제 macOS 두벌식과 Windows 한/글 재열기 외부 승인
+- [x] macOS 실제 두벌식 OS-level key smoke
+- [ ] 전체 물리 키보드 matrix와 Windows 한/글 재열기 외부 승인
 - 글꼴 family와 행·열·병합은 후속 범위
 - 각 기능의 package/visual/PDF round-trip
 
@@ -508,7 +518,8 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 
 ### V3 외부 승인과 V4 이관
 
-- 실제 macOS 두벌식 입력 matrix
+- macOS 실제 두벌식 OS-level key smoke 통과 유지
+- Backspace·Escape·범위 선택을 포함한 물리 키보드 입력 matrix
 - 개인정보 없는 원본·편집 저장본을 Windows 한/글에서 다시 열어 검증
 - stale Preview 안내와 원본 보호 Save As 정책 유지
 - 통과 결과를 검증 이력에 기록한 뒤 V4 서명·공증으로 이관

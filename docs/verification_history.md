@@ -8,6 +8,38 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — 실제 macOS 두벌식 commit 뒤 focus 복원
+
+synthetic `CompositionEvent` E2E가 통과한 뒤에도 사람이 입력하면 첫 commit 다음 글자가 같은
+surface에 들어가지 않는 결함을 화면 녹화로 확인했다. macOS `System Events`가 현재 두벌식
+입력기에 key code를 보내고 CDP가 native composition/input event, `activeElement`, source
+anchor, dirty와 undo 상태를 읽는 공개 fixture 전용 probe를 추가했다.
+
+첫 실제 key probe는 `한글입력검증 `의 본문과 selection offset을 보존하고 undo도 활성화했지만,
+2초 뒤 편집 surface의 focus가 빠져 재클릭 없는 `추가 ` 입력 event가 0개였다. 원인은 source
+transaction 결과가 새 document로 projection된 뒤 동기 selection 복원보다 늦게 focus가
+유실되는 순서였다. 같은 source anchor의 DOM이 안정된 다음 두 animation frame에 focus와
+selection을 다시 복원하고, 프로그램 복원 중 발생한 focus event가 과거 selection을 부모
+상태에 쓰지 못하도록 막았다.
+
+IME adapter는 연속된 macOS 음절별 composition cycle을 450ms burst 하나로 모아 source
+transaction 한 건을 만들며, 입력 listener는 React callback identity 변경에 따라 재설치되지
+않는다. packaged E2E도 listener의 `data-input-ready`를 기다리고 실제 focus render 뒤 현재
+surface를 다시 찾는다.
+
+| 관문 | 명령 | 결과 |
+| --- | --- | --- |
+| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 113 passed, 1 suite skipped |
+| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
+| synthetic IME/history | `HAN_FLOW_VERIFY_EDIT_TEXT=한글입력검증 npm run verify:app -- artifacts/v3-acceptance/han-flow-v3-original.hwpx` | projection·undo·redo text와 selection 일치, overflow 0 |
+| 실제 두벌식 일반 문단 | `npm run verify:ime:mac -- --surface paragraph` | Space commit 뒤 focus·dirty·undo 유지, 재클릭 없는 추가 입력 통과 |
+| 실제 두벌식 표 셀 | `npm run verify:ime:mac -- --surface cell` | Space commit 뒤 focus·dirty·undo 유지, 재클릭 없는 추가 입력 통과 |
+
+두 native smoke는 각각 첫 단계 84개, 두 번째 단계 누적 106개 event를 관찰했고
+`compositionend`는 6회에서 8회로 증가했다. 공개 fixture 외 본문·캡처는 기록하지 않았다.
+Backspace·Escape·방향 selection을 포함한 물리 키보드 전체 matrix와 Windows 한/글 재열기는
+여전히 V3 외부 승인 관문이다.
+
 ## 2026-07-30 — V3 코드 완료 후보: 여러 run 입력과 글자 크기·색상
 
 부분 글자 style로 한 문단이 여러 run으로 나뉜 뒤에도 source anchor별 입력 surface를
