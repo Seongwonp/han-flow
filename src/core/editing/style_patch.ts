@@ -26,7 +26,10 @@ export interface ApplyParagraphStyleCommand {
   type: 'apply-paragraph-style'
   sectionPath: string
   textNodeId: string
-  align: ParagraphAlignment
+  align?: ParagraphAlignment
+  lineSpacing?: number
+  marginBefore?: number
+  marginAfter?: number
 }
 
 interface HeaderStyleMutation {
@@ -408,6 +411,60 @@ function setAlignment(xml: string, align: ParagraphAlignment): string {
   return xml.replace(/<\/hh:paraPr>\s*$/, `<hh:align horizontal="${align}"/></hh:paraPr>`)
 }
 
+const paragraphChildOrder = ['align', 'heading', 'breakSetting', 'margin', 'lineSpacing', 'border', 'autoSpacing']
+
+function paragraphChildPattern(name: string): RegExp {
+  return new RegExp(`<hh:${name}(?:\\s[^>]*)?\\s*\\/>|<hh:${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/hh:${name}>`)
+}
+
+function insertParagraphChild(xml: string, name: string, fragment: string): string {
+  const index = paragraphChildOrder.indexOf(name)
+  for (const later of paragraphChildOrder.slice(index + 1)) {
+    const match = paragraphChildPattern(later).exec(xml)
+    if (match) return replaceRange(xml, match.index, match.index, fragment)
+  }
+  return xml.replace(/<\/hh:paraPr>\s*$/, `${fragment}</hh:paraPr>`)
+}
+
+function setHwpValueElement(xml: string, name: 'prev' | 'next', value: number): string {
+  const pattern = new RegExp(`<hc:${name}(?:\\s[^>]*)?\\s*\\/>`)
+  const existing = xml.match(pattern)?.[0]
+  if (existing) {
+    return xml.replace(existing, setAttribute(setAttribute(existing, 'value', String(value)), 'unit', 'HWPUNIT'))
+  }
+  return xml.replace(/<\/hh:margin>\s*$/, `<hc:${name} value="${value}" unit="HWPUNIT"/></hh:margin>`)
+}
+
+function setParagraphMetrics(
+  xml: string,
+  options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'marginBefore' | 'marginAfter'>
+): string {
+  let mutated = xml
+  if (options.marginBefore !== undefined || options.marginAfter !== undefined) {
+    const pattern = paragraphChildPattern('margin')
+    const existing = mutated.match(pattern)?.[0]
+    let margin = existing ?? '<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>'
+    if (options.marginBefore !== undefined) margin = setHwpValueElement(margin, 'prev', options.marginBefore)
+    if (options.marginAfter !== undefined) margin = setHwpValueElement(margin, 'next', options.marginAfter)
+    mutated = existing ? mutated.replace(existing, margin) : insertParagraphChild(mutated, 'margin', margin)
+  }
+  if (options.lineSpacing !== undefined) {
+    const pattern = paragraphChildPattern('lineSpacing')
+    const existing = mutated.match(pattern)?.[0]
+    const lineSpacing = existing
+      ? setAttribute(
+          setAttribute(setAttribute(existing, 'type', 'PERCENT'), 'value', String(options.lineSpacing)),
+          'unit',
+          'HWPUNIT'
+        )
+      : `<hh:lineSpacing type="PERCENT" value="${options.lineSpacing}" unit="HWPUNIT"/>`
+    mutated = existing
+      ? mutated.replace(existing, lineSpacing)
+      : insertParagraphChild(mutated, 'lineSpacing', lineSpacing)
+  }
+  return mutated
+}
+
 function insertionGap(headerXml: string, collection: StyleCollection): string {
   const last = collection.definitions[collection.definitions.length - 1]
   const gap = headerXml.slice(last.span.end, collection.span.closeStart)
@@ -655,8 +712,28 @@ export function applyParagraphStyleCommand(
   command: ApplyParagraphStyleCommand
 ): StylePatchResult {
   if (command.type !== 'apply-paragraph-style') throw new Error('지원하지 않는 문단 style command입니다.')
-  if (!(['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'] as const).includes(command.align)) {
+  if (
+    command.align === undefined && command.lineSpacing === undefined &&
+    command.marginBefore === undefined && command.marginAfter === undefined
+  ) {
+    throw new Error('적용할 문단 style 값이 없습니다.')
+  }
+  if (command.align !== undefined && !(['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'] as const).includes(command.align)) {
     throw new Error('문단 정렬 style 값이 올바르지 않습니다.')
+  }
+  if (
+    command.lineSpacing !== undefined &&
+    (!Number.isInteger(command.lineSpacing) || command.lineSpacing < 100 || command.lineSpacing > 300)
+  ) {
+    throw new Error('줄 간격은 100%에서 300% 사이여야 합니다.')
+  }
+  for (const [label, value] of [
+    ['문단 앞 간격', command.marginBefore],
+    ['문단 뒤 간격', command.marginAfter]
+  ] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 7200)) {
+      throw new Error(`${label}은 0pt에서 72pt 사이여야 합니다.`)
+    }
   }
   return applyStyleDefinition(sourcePackage, {
     ...command,
@@ -664,7 +741,10 @@ export function applyParagraphStyleCommand(
     collectionName: 'hh:paraProperties',
     definitionName: 'hh:paraPr',
     referenceAttribute: 'paraPrIDRef',
-    mutate: (definition) => setAlignment(definition, command.align)
+    mutate: (definition) => {
+      const aligned = command.align === undefined ? definition : setAlignment(definition, command.align)
+      return setParagraphMetrics(aligned, command)
+    }
   })
 }
 

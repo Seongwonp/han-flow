@@ -223,6 +223,49 @@ describe('main process HWPX editing session', () => {
       .toMatchObject({ italic: true, underline: true, strikeout: true })
   })
 
+  test('줄 간격과 문단 앞뒤 간격 요청을 projection과 history에 반영한다', async () => {
+    const manager = new EditingSessionManager(() => 'paragraph-spacing-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === ''
+    )!
+    const started = await manager.start(27, fixture)
+    const caret = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusOffset: 0
+    }
+    const styled = await manager.applyParagraphStyle(27, {
+      sessionId: started.sessionId,
+      transactionId: 'paragraph-spacing',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: caret,
+      lineSpacing: 180,
+      marginBefore: 200,
+      marginAfter: 300,
+      timestamp: 1
+    })
+    const paragraph = styled.document.sections[0].blocks.at(-1)!
+    expect(styled.document.paraStyles[paragraph.paraStyleId]).toMatchObject({
+      lineSpacing: 180,
+      margin: { top: 200, bottom: 300 }
+    })
+    const undone = await manager.undo(27, started.sessionId)
+    const restored = undone.document.sections[0].blocks.at(-1)!
+    expect(undone.document.paraStyles[restored.paraStyleId]).toMatchObject({
+      lineSpacing: 160,
+      margin: { top: 0, bottom: 0 }
+    })
+    const redone = await manager.redo(27, started.sessionId)
+    const redoneParagraph = redone.document.sections[0].blocks.at(-1)!
+    expect(redone.document.paraStyles[redoneParagraph.paraStyleId]).toMatchObject({
+      lineSpacing: 180,
+      margin: { top: 200, bottom: 300 }
+    })
+  })
+
   test('부분 글자 style과 문단 정렬을 함께 적용한 package를 안전하게 저장하고 재개봉한다', async () => {
     const manager = new EditingSessionManager(() => 'styled-save-session')
     const source = await HwpxSourcePackage.open(fixture)

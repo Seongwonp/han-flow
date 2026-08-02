@@ -46,6 +46,10 @@ button { font: inherit; }
 .viewer-style-color { width: 34px; height: 29px; padding: 2px; border: 0; border-radius: 5px; background: transparent; }
 .viewer-style-color::-webkit-color-swatch-wrapper { padding: 1px; }
 .viewer-style-color::-webkit-color-swatch { border: 1px solid #9aa1aa; border-radius: 4px; }
+.viewer-ribbon-spacing-controls { gap: 9px; }
+.viewer-paragraph-metric { display: grid; grid-template-columns: 42px 40px 48px 40px; align-items: center; gap: 2px; color: #4c535d; font-size: 10px; }
+.viewer-paragraph-metric button { min-width: 40px; width: 40px; height: 40px; padding: 0; }
+.viewer-paragraph-metric output { font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; color: #343a43; }
 .viewer-stage { flex: 1; overflow: auto; padding: 32px; }
 .viewer-pages { display: flex; flex-direction: column; align-items: center; gap: 24px; transition: transform .12s ease; }
 .viewer-pages-virtualized { gap: 24px; }
@@ -80,7 +84,7 @@ button { font: inherit; }
 .viewer-status { flex: 0 0 28px; height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: rgba(248,248,248,.94); border-top: 1px solid rgba(0,0,0,.14); color: #58606b; font-size: 11px; }
 .viewer-status-warn { color: #8a5a00; }
 .viewer-status-error { color: #b42318; font-weight: 600; }
-@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.94); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } .viewer-edit-ribbon { background: rgba(48,49,54,.96); border-color: #202126; } .viewer-ribbon-tabs { border-color: #202126; } .viewer-ribbon-group { border-color: rgba(255,255,255,.12); } .viewer-ribbon-controls button { color: #eceef2; } .viewer-ribbon-controls button:hover:not(:disabled), .viewer-style-size-control { background: #3b3d43; border-color: #626772; } .viewer-ribbon-controls button[aria-pressed="true"] { color: #dce5ff; background: #344573; } .viewer-ribbon-controls .viewer-ribbon-save { color: #e2e9ff; background: #304478; border-color: #526cae; } .viewer-ribbon-group-label, .viewer-style-color-label, .viewer-style-size { color: #c6cad2; } .viewer-editing-badge { color: #dce5ff; background: #344573; border-color: #526cae; } }
+@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.94); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } .viewer-edit-ribbon { background: rgba(48,49,54,.96); border-color: #202126; } .viewer-ribbon-tabs { border-color: #202126; } .viewer-ribbon-group { border-color: rgba(255,255,255,.12); } .viewer-ribbon-controls button { color: #eceef2; } .viewer-ribbon-controls button:hover:not(:disabled), .viewer-style-size-control { background: #3b3d43; border-color: #626772; } .viewer-ribbon-controls button[aria-pressed="true"] { color: #dce5ff; background: #344573; } .viewer-ribbon-controls .viewer-ribbon-save { color: #e2e9ff; background: #304478; border-color: #526cae; } .viewer-ribbon-group-label, .viewer-style-color-label, .viewer-style-size, .viewer-paragraph-metric, .viewer-paragraph-metric output { color: #c6cad2; } .viewer-editing-badge { color: #dce5ff; background: #344573; border-color: #526cae; } }
 @media print {
   @page { margin: 0; }
   html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }

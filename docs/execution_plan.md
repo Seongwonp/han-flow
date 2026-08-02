@@ -235,6 +235,18 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 다음 내부 slice는 문단 줄 간격·문단 앞뒤 간격 command다. 목록·표 구조·글꼴 family 편집은
 각각 별도 source 모델과 외부 한/글 호환성 근거가 생기기 전까지 노출하지 않는다.
 
+## 완료한 코드 관문: V3-6C 문단 간격 편집
+
+1. [x] 공식 `ParaShapeType`의 `margin → lineSpacing` 순서와 각 속성 계약을 확인한다.
+2. [x] 줄 간격을 `PERCENT` 100–300% 범위의 source command와 inverse에 연결한다.
+3. [x] 문단 앞·뒤 간격을 `hc:prev`·`hc:next` HWPUNIT 0–72pt 범위로 연결한다.
+4. [x] 기존 좌우 여백·들여쓰기와 알 수 없는 `paraPr` 속성을 보존한다.
+5. [x] 홈 리본에 40px 조절기와 현재 값을 표시하고 IPC 숫자 검증을 추가한다.
+6. [x] 22 suites·118 tests와 packaged A4 적용·Save As·재열기를 통과한다.
+
+다음 기능 후보는 `hc:intent` 기반 들여쓰기·내어쓰기다. 목록·표 구조 편집과 글꼴 family는
+현재 V3의 제한된 편집 경계보다 영향 범위가 크므로 별도 설계 관문 뒤에 진행한다.
+
 ## 현재 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

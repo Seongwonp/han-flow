@@ -544,6 +544,18 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 line-through를 동시에 합성한다. 홈 리본과 `⌘I`·`⌘U`를 연결했으며 packaged A4 fixture에서
 세 버튼 적용, Save As와 저장본 재열기를 통과했다.
 
+### V3-6C 문단 간격 command
+
+공식 `ParaShapeType` 순서에서 `margin`은 `lineSpacing`보다 앞에 위치한다. 줄 간격은
+`type="PERCENT"`, 100–300의 정수 값과 `unit="HWPUNIT"`으로 제한했고, 문단 앞·뒤 간격은
+`hh:margin` 안의 `hc:prev`·`hc:next`를 0–7200 HWPUNIT, 즉 UI 기준 0–72pt로 제한했다.
+좌우 여백과 `hc:intent`, unknown attribute는 변경하지 않는다.
+
+renderer는 기존 `ViewerParaStyle.lineSpacing`과 `margin.top/bottom` projection을 그대로 사용한다.
+홈 리본에 줄 간격 10% 단위, 문단 앞·뒤 간격 1pt 단위 조절기를 추가했다. packaged A4
+fixture에서 170%, 앞 1pt, 뒤 1pt를 차례로 적용한 뒤 Save As했고 원본 불변, 2쪽·이미지 3개,
+overflow 0 재열기를 확인했다.
+
 ### V3 외부 승인과 V4 이관
 
 - macOS 실제 두벌식 OS-level key smoke 통과 유지

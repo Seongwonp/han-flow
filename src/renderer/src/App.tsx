@@ -794,7 +794,10 @@ export default function App() {
           strikeout: document.charStyles[text.charStyleId]?.strikeout ?? false,
           height: document.charStyles[text.charStyleId]?.height ?? 1000,
           color: document.charStyles[text.charStyleId]?.color ?? '#000000',
-          align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment
+          align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment,
+          lineSpacing: document.paraStyles[paragraph.paraStyleId]?.lineSpacing || 160,
+          marginBefore: document.paraStyles[paragraph.paraStyleId]?.margin.top ?? 0,
+          marginAfter: document.paraStyles[paragraph.paraStyleId]?.margin.bottom ?? 0
         }
       }
     }
@@ -835,7 +838,12 @@ export default function App() {
       setEditingPending((current) => Math.max(0, current - 1))
     }
   }, [editing?.sessionId, editingSelection, editingPending, applyEditingResult])
-  const applyParagraphStyle = useCallback(async (align: ParagraphAlignment) => {
+  const applyParagraphStyle = useCallback(async (style: {
+    align?: ParagraphAlignment
+    lineSpacing?: number
+    marginBefore?: number
+    marginAfter?: number
+  }) => {
     if (!editing || !editingSelection || editingPending || editingComposing.current) return
     setEditingPending((current) => current + 1)
     setEditingStatus('문단 모양 반영 중…')
@@ -846,10 +854,18 @@ export default function App() {
         sectionPath: editingSelection.sectionPath,
         textNodeId: editingSelection.textNodeId,
         selection: editingSelection,
-        align,
+        ...style,
         timestamp: performance.now()
       }) as EditingActionResult)
-      setEditingStatus('문단 정렬 적용')
+      setEditingStatus(
+        style.align !== undefined
+          ? '문단 정렬 적용'
+          : style.lineSpacing !== undefined
+            ? `줄 간격 ${style.lineSpacing}%`
+            : style.marginBefore !== undefined
+              ? `문단 앞 간격 ${style.marginBefore / 100}pt`
+              : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
+      )
     } catch (reason) {
       setEditingStatus(`문단 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
     } finally {
@@ -1188,11 +1204,34 @@ export default function App() {
                 title={label}
                 aria-pressed={activeStyle?.align === align}
                 onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyParagraphStyle(align)}
+                onClick={() => void applyParagraphStyle({ align })}
                 disabled={!activeStyle || Boolean(editingPending)}
               >{icon}</button>)}
             </div>
             <span className="viewer-ribbon-group-label">문단 정렬</span>
+          </div>
+          <div className="viewer-ribbon-group viewer-ribbon-spacing-group">
+            <div className="viewer-ribbon-controls viewer-ribbon-spacing-controls">
+              <div className="viewer-paragraph-metric">
+                <span>줄 간격</span>
+                <button aria-label="줄 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.max(100, activeStyle.lineSpacing - 10) })} disabled={!activeStyle || activeStyle.lineSpacing <= 100 || Boolean(editingPending)}>−</button>
+                <output aria-label="현재 줄 간격">{activeStyle ? `${activeStyle.lineSpacing}%` : '—'}</output>
+                <button aria-label="줄 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.min(300, activeStyle.lineSpacing + 10) })} disabled={!activeStyle || activeStyle.lineSpacing >= 300 || Boolean(editingPending)}>＋</button>
+              </div>
+              <div className="viewer-paragraph-metric">
+                <span>문단 앞</span>
+                <button aria-label="문단 앞 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.max(0, activeStyle.marginBefore - 100) })} disabled={!activeStyle || activeStyle.marginBefore <= 0 || Boolean(editingPending)}>−</button>
+                <output aria-label="현재 문단 앞 간격">{activeStyle ? `${activeStyle.marginBefore / 100}pt` : '—'}</output>
+                <button aria-label="문단 앞 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.min(7200, activeStyle.marginBefore + 100) })} disabled={!activeStyle || activeStyle.marginBefore >= 7200 || Boolean(editingPending)}>＋</button>
+              </div>
+              <div className="viewer-paragraph-metric">
+                <span>문단 뒤</span>
+                <button aria-label="문단 뒤 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.max(0, activeStyle.marginAfter - 100) })} disabled={!activeStyle || activeStyle.marginAfter <= 0 || Boolean(editingPending)}>−</button>
+                <output aria-label="현재 문단 뒤 간격">{activeStyle ? `${activeStyle.marginAfter / 100}pt` : '—'}</output>
+                <button aria-label="문단 뒤 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.min(7200, activeStyle.marginAfter + 100) })} disabled={!activeStyle || activeStyle.marginAfter >= 7200 || Boolean(editingPending)}>＋</button>
+              </div>
+            </div>
+            <span className="viewer-ribbon-group-label">문단 간격</span>
           </div>
         </div>
       </div>}

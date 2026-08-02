@@ -443,6 +443,22 @@ function captureVisualState(window: BrowserWindow): void {
           const italicApplied = await toggleDecoration('현재 텍스트 블록 기울임', originalItalic, 'style-italic')
           const underlineApplied = await toggleDecoration('현재 텍스트 블록 밑줄', originalUnderline, 'style-underline')
           const strikeoutApplied = await toggleDecoration('현재 텍스트 블록 취소선', originalStrikeout, 'style-strikeout')
+          const metricValue = (label) => document.querySelector('[aria-label="' + label + '"]')?.textContent?.trim()
+          const originalLineSpacing = Number.parseFloat(metricValue('현재 줄 간격') ?? '')
+          setPhase('style-line-spacing')
+          button('줄 간격 늘리기')?.click()
+          await waitFor(() => metricValue('현재 줄 간격') === Math.min(300, originalLineSpacing + 10) + '%')
+          const lineSpacingApplied = metricValue('현재 줄 간격') === Math.min(300, originalLineSpacing + 10) + '%'
+          const originalMarginBefore = Number.parseFloat(metricValue('현재 문단 앞 간격') ?? '')
+          setPhase('style-margin-before')
+          button('문단 앞 간격 늘리기')?.click()
+          await waitFor(() => metricValue('현재 문단 앞 간격') === Math.min(72, originalMarginBefore + 1) + 'pt')
+          const marginBeforeApplied = metricValue('현재 문단 앞 간격') === Math.min(72, originalMarginBefore + 1) + 'pt'
+          const originalMarginAfter = Number.parseFloat(metricValue('현재 문단 뒤 간격') ?? '')
+          setPhase('style-margin-after')
+          button('문단 뒤 간격 늘리기')?.click()
+          await waitFor(() => metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt')
+          const marginAfterApplied = metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt'
           styleProbe = {
             boldApplied,
             partialRunSplit,
@@ -454,6 +470,9 @@ function captureVisualState(window: BrowserWindow): void {
             italicApplied,
             underlineApplied,
             strikeoutApplied,
+            lineSpacingApplied,
+            marginBeforeApplied,
+            marginAfterApplied,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
               button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           }
@@ -919,9 +938,18 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('editing:applyParagraphStyle', async (event, request: unknown) => {
+    const style = request as Record<string, unknown>
+    const hasAlign = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(style?.['align']))
+    const hasLineSpacing = Number.isFinite(style?.['lineSpacing'])
+    const hasMarginBefore = Number.isFinite(style?.['marginBefore'])
+    const hasMarginAfter = Number.isFinite(style?.['marginAfter'])
     if (
       !isStyleRequestBase(request) ||
-      !['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(request['align']))
+      (!hasAlign && !hasLineSpacing && !hasMarginBefore && !hasMarginAfter) ||
+      ('align' in style && !hasAlign) ||
+      ('lineSpacing' in style && !hasLineSpacing) ||
+      ('marginBefore' in style && !hasMarginBefore) ||
+      ('marginAfter' in style && !hasMarginAfter)
     ) {
       throw new Error('HWPX 문단 style 요청 형식이 올바르지 않습니다.')
     }

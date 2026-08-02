@@ -52,7 +52,10 @@ export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
 }
 
 export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {
-  align: ParagraphAlignment
+  align?: ParagraphAlignment
+  lineSpacing?: number
+  marginBefore?: number
+  marginAfter?: number
 }
 
 export interface EditingActionResult extends EditingHistoryStatus {

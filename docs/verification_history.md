@@ -8,6 +8,25 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — V3-6C 줄 간격·문단 앞뒤 간격
+
+`ApplyParagraphStyleCommand`를 정렬 전용에서 줄 간격과 문단 앞·뒤 간격까지 확장했다. 줄
+간격은 100–300% `PERCENT`, 앞·뒤 간격은 0–72pt의 HWPUNIT만 허용한다. 기존 `paraPr`를
+복제하므로 좌우 여백·들여쓰기·unknown XML은 그대로 남고 inverse는 header와 section bytes를
+원래 상태로 복원한다.
+
+| 관문 | 결과 |
+| --- | --- |
+| production build/package | main·preload·renderer 및 unsigned arm64 `.app` 성공 |
+| Jest | 22 suites, 118 passed, 1 suite skipped |
+| packaged style probe | 줄 간격·문단 앞·뒤 간격 조절기 모두 적용 |
+| A4 Save As | 원본 불변, 저장본 존재, ZIP 무결성 통과 |
+| 저장본 재열기 | 2쪽, 이미지 3개, overflow 0 |
+| 저장 XML | 170%, 앞 100 HWPUNIT, 뒤 100 HWPUNIT 확인 |
+
+검증은 공개 A4 synthetic fixture만 사용했다. 저장본은 임시 경로에 두고 공개 저장소에
+포함하지 않는다.
+
 ## 2026-08-02 — V3-6B 기울임·밑줄·취소선
 
 한컴 공개 `hwpx-owpml-model`의 `CharShapeType`, `italic`, `underline`, `strikeout` 구현을

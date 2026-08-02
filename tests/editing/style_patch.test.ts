@@ -307,6 +307,44 @@ describe('HWPX 문단·글자 style patch', () => {
     )
   })
 
+  test('줄 간격과 문단 앞뒤 간격을 복제된 paraPr에 기록하고 inverse로 원복한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const originalSection = source.readEntry(sectionPath)
+    const result = applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      lineSpacing: 180,
+      marginBefore: 200,
+      marginAfter: 300
+    })
+
+    expect(result.changed).toBe(true)
+    const header = result.package.readEntry('Contents/header.xml').toString('utf8')
+    const definition = header.match(/<hh:paraPr id="4"[\s\S]*?<\/hh:paraPr>/)?.[0]
+    expect(definition).toContain('<hh:lineSpacing value="180" type="PERCENT" unit="HWPUNIT"/>')
+    expect(definition).toContain('<hc:prev value="200" unit="HWPUNIT"/>')
+    expect(definition).toContain('<hc:next value="300" unit="HWPUNIT"/>')
+    const projected = await decodeViewerDocument(result.package)
+    expect(projected.paraStyles['4']).toMatchObject({
+      lineSpacing: 180,
+      margin: { left: 0, right: 0, top: 200, bottom: 300 }
+    })
+    if (result.inverse?.type !== 'restore-style') throw new Error('문단 style inverse가 없습니다.')
+    const restored = applyRestoreStyleCommand(result.package, result.inverse)
+    expect(restored.package.readEntry('Contents/header.xml')).toEqual(originalHeader)
+    expect(restored.package.readEntry(sectionPath)).toEqual(originalSection)
+
+    expect(() => applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style', sectionPath, textNodeId: anchor.textNodeId, lineSpacing: 90
+    })).toThrow('100%')
+    expect(() => applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style', sectionPath, textNodeId: anchor.textNodeId, marginBefore: 7300
+    })).toThrow('72pt')
+  })
+
   test('이미 같은 문단 정렬은 no-op이고 표 셀처럼 제한 밖 anchor는 거부한다', async () => {
     const source = await sourceWithCounts()
     const anchor = editableAnchor(source)

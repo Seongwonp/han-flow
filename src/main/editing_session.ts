@@ -177,12 +177,21 @@ export class EditingSessionManager {
             type: 'apply-paragraph-style',
             sectionPath: request.sectionPath,
             textNodeId: request.textNodeId,
-            align: request.align
+            align: request.align,
+            lineSpacing: request.lineSpacing,
+            marginBefore: request.marginBefore,
+            marginAfter: request.marginAfter
           }
         ],
         selectionBefore: { ...request.selection },
         selectionAfter: { ...request.selection },
-        inputType: `formatAlign${request.align}`,
+        inputType: request.align !== undefined
+          ? `formatAlign${request.align}`
+          : request.lineSpacing !== undefined
+            ? 'formatLineSpacing'
+            : request.marginBefore !== undefined
+              ? 'formatParagraphBefore'
+              : 'formatParagraphAfter',
         timestamp: request.timestamp
       }
       session.history.setSelection(transaction.selectionBefore)

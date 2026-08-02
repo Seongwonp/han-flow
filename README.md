@@ -35,7 +35,8 @@ Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
 - 단일 `hp:t` 전체 또는 부분 선택의 굵게·기울임·밑줄·취소선·글자 크기·글자색
 - 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬과 style 분할 뒤 여러 run 연속 입력
-- 40px 편집 control과 파일·기록·글자 모양·문단 정렬 그룹을 가진 `홈` 리본
+- 최상위 일반 문단의 100–300% 줄 간격과 0–72pt 문단 앞·뒤 간격
+- 40px 편집 control과 파일·기록·글자 모양·문단 정렬·문단 간격 그룹을 가진 `홈` 리본
 
 ### HWP 5.0
 
@@ -88,7 +89,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 116 passed, 1 suite skipped |
+| Jest | 22 suites, 118 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -174,7 +175,7 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다. 글꼴 family
   편집은 HWPX font-face ID와 설치·라이선스 mapping 정책이 필요해 후속 범위로 둡니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
-- 문단 모양은 최상위 일반 문단의 정렬 4종만 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.
+- 문단 모양은 최상위 일반 문단의 정렬 4종, 줄 간격과 문단 앞·뒤 간격을 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
