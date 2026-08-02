@@ -159,6 +159,61 @@ describe('HWPX 문단·글자 style patch', () => {
     })).toThrow('#RRGGBB')
   })
 
+  test('기울임·밑줄·취소선을 OWPML 순서로 추가하고 해제와 inverse를 보존한다', async () => {
+    const source = await sourceWithCounts()
+    const anchor = editableAnchor(source)
+    const originalHeader = source.readEntry('Contents/header.xml')
+    const styled = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      italic: true,
+      underline: true,
+      strikeout: true
+    })
+    const header = styled.package.readEntry('Contents/header.xml').toString('utf8')
+    const definition = header.match(/<hh:charPr id="1"[\s\S]*?<\/hh:charPr>/)?.[0]
+    expect(definition).toBeDefined()
+    expect(definition).toContain('<hh:italic/>')
+    expect(definition).toContain('<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/>')
+    expect(definition).toContain('<hh:strikeout shape="SOLID" color="#000000"/>')
+    expect(definition!.indexOf('<hh:italic/>')).toBeLessThan(definition!.indexOf('<hh:bold/>'))
+    expect(definition!.indexOf('<hh:bold/>')).toBeLessThan(definition!.indexOf('<hh:underline'))
+    expect(definition!.indexOf('<hh:underline')).toBeLessThan(definition!.indexOf('<hh:strikeout'))
+
+    const projected = await decodeViewerDocument(styled.package)
+    expect(projected.charStyles['1']).toMatchObject({
+      bold: true,
+      italic: true,
+      underline: true,
+      strikeout: true
+    })
+    if (styled.inverse?.type !== 'restore-style') throw new Error('style inverse가 없습니다.')
+    expect(applyRestoreStyleCommand(styled.package, styled.inverse).package.readEntry('Contents/header.xml'))
+      .toEqual(originalHeader)
+
+    const disabled = applyCharacterStyleCommand(styled.package, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      italic: false,
+      underline: false,
+      strikeout: false
+    })
+    const disabledProjected = await decodeViewerDocument(disabled.package)
+    expect(disabledProjected.charStyles['2']).toMatchObject({
+      italic: false,
+      underline: false,
+      strikeout: false
+    })
+    expect(disabled.package.readEntry('Contents/header.xml').toString('utf8')).toContain(
+      '<hh:underline type="NONE" shape="SOLID" color="#000000"/>'
+    )
+    expect(disabled.package.readEntry('Contents/header.xml').toString('utf8')).toContain(
+      '<hh:strikeout shape="NONE" color="#000000"/>'
+    )
+  })
+
   test('hp:t 일부 선택을 세 run으로 나누고 entity 의미와 원본 bytes를 undo·redo한다', async () => {
     const source = await sourceWithEditableText()
     const anchor = listHwpxTextAnchors(source, sectionPath).find(

@@ -126,6 +126,9 @@ export class EditingSessionManager {
             sectionPath: request.sectionPath,
             textNodeId: request.textNodeId,
             bold: request.bold,
+            italic: request.italic,
+            underline: request.underline,
+            strikeout: request.strikeout,
             height: request.height,
             color: request.color,
             from,
@@ -137,6 +140,12 @@ export class EditingSessionManager {
         inputType:
           request.bold !== undefined
             ? 'formatBold'
+            : request.italic !== undefined
+              ? 'formatItalic'
+              : request.underline !== undefined
+                ? 'formatUnderline'
+                : request.strikeout !== undefined
+                  ? 'formatStrikeThrough'
             : request.height !== undefined
               ? 'formatFontSize'
               : 'formatFontColor',

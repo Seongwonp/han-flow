@@ -8,6 +8,24 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — V3-6B 기울임·밑줄·취소선
+
+한컴 공개 `hwpx-owpml-model`의 `CharShapeType`, `italic`, `underline`, `strikeout` 구현을
+기준으로 글자 장식 command를 확장했다. 새 definition은 공식 자식 순서를 유지하고, 해제는
+기존 장식의 나머지 속성을 보존한 채 활성 판정 속성을 `NONE`으로 바꾼다. 부분 selection의
+run 분할, definition 재사용과 inverse는 기존 source 기반 history 경계를 그대로 사용한다.
+
+| 관문 | 결과 |
+| --- | --- |
+| production build | main/preload/renderer 성공 |
+| Jest | 22 suites, 116 passed, 1 suite skipped |
+| style source test | 요소 순서·projection·해제·header/section inverse 통과 |
+| packaged A4 style | 기울임·밑줄·취소선 적용, Save As와 저장본 재열기 통과 |
+| 저장본 XML | `italic`, `underline type="BOTTOM"`, `strikeout shape="SOLID"` 확인 |
+
+검증 입력과 저장본은 공개 A4 synthetic fixture 및 임시 경로만 사용했다. 다음 code slice는
+문단 줄 간격과 문단 앞뒤 간격이며, Windows 한/글 재열기는 계속 외부 승인 관문으로 남긴다.
+
 ## 2026-08-02 — V3-6A A4 편집 fixture와 홈 리본
 
 기존 `10000 × 10000 HWPUNIT` fixture는 pagination과 표 continuation을 작은 입력으로 빠르게

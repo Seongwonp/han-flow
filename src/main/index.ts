@@ -370,6 +370,9 @@ function captureVisualState(window: BrowserWindow): void {
             return candidate && !candidate.disabled ? candidate : undefined
           })
           const originalBold = boldButton.getAttribute('aria-pressed') === 'true'
+          const originalItalic = button('현재 텍스트 블록 기울임')?.getAttribute('aria-pressed') === 'true'
+          const originalUnderline = button('현재 텍스트 블록 밑줄')?.getAttribute('aria-pressed') === 'true'
+          const originalStrikeout = button('현재 텍스트 블록 취소선')?.getAttribute('aria-pressed') === 'true'
           const alignLabels = ['왼쪽 정렬', '가운데 정렬', '오른쪽 정렬', '양쪽 정렬']
           const originalAlign = alignLabels.find((label) => button(label)?.getAttribute('aria-pressed') === 'true') ?? '왼쪽 정렬'
           const desiredAlign = originalAlign === '가운데 정렬' ? '오른쪽 정렬' : '가운데 정렬'
@@ -427,6 +430,19 @@ function captureVisualState(window: BrowserWindow): void {
           colorInput.dispatchEvent(new Event('change', { bubbles: true }))
           await waitFor(() => document.querySelector('[aria-label="글자 색상"]')?.value.toLowerCase() === desiredColor)
           const colorApplied = document.querySelector('[aria-label="글자 색상"]')?.value.toLowerCase() === desiredColor
+          const toggleDecoration = async (label, original, phase) => {
+            setPhase(phase)
+            const target = await waitFor(() => {
+              const candidate = button(label)
+              return candidate && !candidate.disabled ? candidate : undefined
+            })
+            target.click()
+            await waitFor(() => button(label)?.getAttribute('aria-pressed') === String(!original))
+            return button(label)?.getAttribute('aria-pressed') === String(!original)
+          }
+          const italicApplied = await toggleDecoration('현재 텍스트 블록 기울임', originalItalic, 'style-italic')
+          const underlineApplied = await toggleDecoration('현재 텍스트 블록 밑줄', originalUnderline, 'style-underline')
+          const strikeoutApplied = await toggleDecoration('현재 텍스트 블록 취소선', originalStrikeout, 'style-strikeout')
           styleProbe = {
             boldApplied,
             partialRunSplit,
@@ -435,6 +451,9 @@ function captureVisualState(window: BrowserWindow): void {
             multiRunEditable: partialRunSplit,
             sizeApplied,
             colorApplied,
+            italicApplied,
+            underlineApplied,
+            strikeoutApplied,
             redoRestored: button(desiredAlign)?.getAttribute('aria-pressed') === 'true' &&
               button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           }
@@ -876,12 +895,18 @@ app.whenReady().then(() => {
   ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasBold = typeof style?.['bold'] === 'boolean'
+    const hasItalic = typeof style?.['italic'] === 'boolean'
+    const hasUnderline = typeof style?.['underline'] === 'boolean'
+    const hasStrikeout = typeof style?.['strikeout'] === 'boolean'
     const hasHeight = Number.isFinite(style?.['height'])
     const hasColor = typeof style?.['color'] === 'string'
     if (
       !isStyleRequestBase(request) ||
-      (!hasBold && !hasHeight && !hasColor) ||
+      (!hasBold && !hasItalic && !hasUnderline && !hasStrikeout && !hasHeight && !hasColor) ||
       ('bold' in style && !hasBold) ||
+      ('italic' in style && !hasItalic) ||
+      ('underline' in style && !hasUnderline) ||
+      ('strikeout' in style && !hasStrikeout) ||
       ('height' in style && !hasHeight) ||
       ('color' in style && !hasColor)
     ) {

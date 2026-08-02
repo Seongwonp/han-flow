@@ -36,6 +36,9 @@ button { font: inherit; }
 .viewer-ribbon-icon { font-size: 19px; line-height: 1; }
 .viewer-ribbon-group-label { color: #69717d; font-size: 10px; line-height: 1; text-align: center; white-space: nowrap; }
 .viewer-style-bold { font-weight: 800; }
+.viewer-style-italic { font-family: Georgia, serif; font-style: italic; font-weight: 700; }
+.viewer-style-underline { text-decoration: underline; text-underline-offset: 3px; }
+.viewer-style-strikeout { text-decoration: line-through; }
 .viewer-style-size-control { display: flex; align-items: center; height: 40px; border: 1px solid #c3cad4; border-radius: 7px; overflow: hidden; background: #fff; }
 .viewer-style-size-control button { min-width: 40px; height: 40px; padding: 0 6px; border: 0; border-radius: 0; font-size: 12px; }
 .viewer-style-size { min-width: 54px; font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; color: #343a43; }

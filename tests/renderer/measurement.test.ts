@@ -25,7 +25,7 @@ const topParagraph: ViewerParagraph = {
 
 const document: ViewerDocument = {
   page: { width: 10000, height: 10000, margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 }, headerOffset: 0, footerOffset: 0 },
-  fonts: {}, charStyles: { '0': { id: '0', height: 1000, color: '#000000', bold: false } },
+  fonts: {}, charStyles: { '0': { id: '0', height: 1000, color: '#000000', bold: false, italic: false, underline: false, strikeout: false } },
   paraStyles: { '0': { id: '0', margin: { top: 0, right: 0, bottom: 0, left: 0 } } },
   cellStyles: {}, resources: {}, diagnostics: [], sections: []
 }

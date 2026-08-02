@@ -13,6 +13,9 @@ export interface ApplyCharacterStyleCommand {
   sectionPath: string
   textNodeId: string
   bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strikeout?: boolean
   height?: number
   color?: string
   from?: number
@@ -339,11 +342,52 @@ function setDefinitionId(xml: string, id: string): string {
   return setAttribute(xml.slice(0, openEnd), 'id', id) + xml.slice(openEnd)
 }
 
-function setBold(xml: string, bold: boolean): string {
-  const boldPattern = /<hh:bold(?:\s[^>]*)?\s*\/>|<hh:bold(?:\s[^>]*)?>\s*<\/hh:bold>/g
-  const withoutBold = xml.replace(boldPattern, '')
-  if (!bold) return withoutBold
-  return withoutBold.replace(/<\/hh:charPr>\s*$/, '<hh:bold/></hh:charPr>')
+const characterChildOrder = [
+  'fontRef', 'ratio', 'spacing', 'relSz', 'offset', 'italic', 'bold', 'underline',
+  'strikeout', 'outline', 'shadow', 'emboss', 'engrave', 'supscript', 'subscript'
+]
+
+function characterChildPattern(name: string): RegExp {
+  return new RegExp(`<hh:${name}(?:\\s[^>]*)?\\s*\\/>|<hh:${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/hh:${name}>`, 'g')
+}
+
+function insertCharacterChild(xml: string, name: string, fragment: string): string {
+  const index = characterChildOrder.indexOf(name)
+  for (const later of characterChildOrder.slice(index + 1)) {
+    const match = characterChildPattern(later).exec(xml)
+    if (match) return replaceRange(xml, match.index, match.index, fragment)
+  }
+  return xml.replace(/<\/hh:charPr>\s*$/, `${fragment}</hh:charPr>`)
+}
+
+function setEmptyCharacterChild(xml: string, name: 'italic' | 'bold', enabled: boolean): string {
+  const withoutElement = xml.replace(characterChildPattern(name), '')
+  return enabled ? insertCharacterChild(withoutElement, name, `<hh:${name}/>`): withoutElement
+}
+
+function setLineDecoration(
+  xml: string,
+  name: 'underline' | 'strikeout',
+  enabled: boolean
+): string {
+  const pattern = characterChildPattern(name)
+  const existing = xml.match(pattern)?.[0]
+  if (existing) {
+    const openEnd = findTagEnd(existing, 0)
+    let openTag = existing.slice(0, openEnd)
+    if (name === 'underline') {
+      openTag = setAttribute(openTag, 'type', enabled ? 'BOTTOM' : 'NONE')
+      if (enabled) openTag = setAttribute(openTag, 'shape', 'SOLID')
+    } else {
+      openTag = setAttribute(openTag, 'shape', enabled ? 'SOLID' : 'NONE')
+    }
+    return xml.replace(existing, openTag + existing.slice(openEnd))
+  }
+  if (!enabled) return xml
+  const fragment = name === 'underline'
+    ? '<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/>'
+    : '<hh:strikeout shape="SOLID" color="#000000"/>'
+  return insertCharacterChild(xml, name, fragment)
 }
 
 function setCharacterStyleAttributes(
@@ -495,11 +539,21 @@ export function applyCharacterStyleCommand(
   command: ApplyCharacterStyleCommand
 ): StylePatchResult {
   if (command.type !== 'apply-character-style') throw new Error('지원하지 않는 글자 style command입니다.')
-  if (command.bold === undefined && command.height === undefined && command.color === undefined) {
+  if (
+    command.bold === undefined && command.italic === undefined && command.underline === undefined &&
+    command.strikeout === undefined && command.height === undefined && command.color === undefined
+  ) {
     throw new Error('적용할 글자 style 값이 없습니다.')
   }
   if (command.bold !== undefined && typeof command.bold !== 'boolean') {
     throw new Error('굵게 style 값이 올바르지 않습니다.')
+  }
+  for (const [label, value] of [
+    ['기울임', command.italic],
+    ['밑줄', command.underline],
+    ['취소선', command.strikeout]
+  ] as const) {
+    if (value !== undefined && typeof value !== 'boolean') throw new Error(`${label} style 값이 올바르지 않습니다.`)
   }
   if (
     command.height !== undefined &&
@@ -538,8 +592,17 @@ export function applyCharacterStyleCommand(
     definitionName: 'hh:charPr',
     referenceAttribute: 'charPrIDRef',
     mutate: (definition) => {
-      const withBold = command.bold === undefined ? definition : setBold(definition, command.bold)
-      return setCharacterStyleAttributes(withBold, command)
+      let mutated = command.italic === undefined
+        ? definition
+        : setEmptyCharacterChild(definition, 'italic', command.italic)
+      mutated = command.bold === undefined ? mutated : setEmptyCharacterChild(mutated, 'bold', command.bold)
+      mutated = command.underline === undefined
+        ? mutated
+        : setLineDecoration(mutated, 'underline', command.underline)
+      mutated = command.strikeout === undefined
+        ? mutated
+        : setLineDecoration(mutated, 'strikeout', command.strikeout)
+      return setCharacterStyleAttributes(mutated, command)
     }
   })
   if (!styled.changed || from === to || (from === 0 && to === anchor.text.length)) return styled

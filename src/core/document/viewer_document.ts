@@ -34,7 +34,7 @@ export interface ViewerParseTimings {
 
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string }
-export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; fontId?: string; fontFamily?: string }
+export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; italic: boolean; underline: boolean; strikeout: boolean; fontId?: string; fontFamily?: string }
 export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; margin: BoxSpacing; heading?: ViewerHeadingStyle }
 export interface ViewerHeadingStyle { type: string; idRef: string; level: number; bullet?: string; numberPattern?: string; numberFormat?: string }
 export interface ViewerBorder { type: string; widthMm: number; color: string }

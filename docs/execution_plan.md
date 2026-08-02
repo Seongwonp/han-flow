@@ -219,9 +219,21 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 6. [x] 다크 모드와 좁은 창의 가로 overflow를 유지하고 인쇄에서는 리본을 숨긴다.
 7. [x] A4 fixture에서 범위 치환·undo/redo·selection과 overflow 0을 검증한다.
 
-리본에 기능이 있는 것처럼 보이게 하는 비활성 placeholder는 추가하지 않는다. 밑줄·기울임,
-줄 간격, 목록과 표 도구는 각 source command·inverse·Save As·Windows 재열기 관문을 만든 뒤
+리본에 기능이 있는 것처럼 보이게 하는 비활성 placeholder는 추가하지 않는다. 줄 간격,
+문단 앞뒤 간격, 목록과 표 도구는 각 source command·inverse·Save As·Windows 재열기 관문을 만든 뒤
 활성화한다.
+
+## 완료한 코드 관문: V3-6B 글자 장식 확장
+
+1. [x] 한컴 공개 OWPML 모델에서 `italic`, `bold`, `underline`, `strikeout` 요소 순서를 확인한다.
+2. [x] 기울임·밑줄·취소선을 기존 `charPr` clone·reuse command와 inverse에 연결한다.
+3. [x] 밑줄의 `type/shape/color`, 취소선의 `shape/color`을 보존하며 해제 시 `NONE`을 기록한다.
+4. [x] `ViewerCharStyle` projection과 CSS 조합 렌더링을 연결한다.
+5. [x] 홈 리본과 `⌘I`·`⌘U` 단축키를 활성화하고 IPC boolean 검증을 추가한다.
+6. [x] 전체 테스트, production build와 packaged A4 범위 편집·Save As·재열기를 통과한다.
+
+다음 내부 slice는 문단 줄 간격·문단 앞뒤 간격 command다. 목록·표 구조·글꼴 family 편집은
+각각 별도 source 모델과 외부 한/글 호환성 근거가 생기기 전까지 노출하지 않는다.
 
 ## 현재 milestone: V3 외부 승인
 

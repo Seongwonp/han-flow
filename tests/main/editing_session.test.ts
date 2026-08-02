@@ -185,6 +185,44 @@ describe('main process HWPX editing session', () => {
     expect(redone.selection).toEqual(styled.selection)
   })
 
+  test('기울임·밑줄·취소선 요청을 projection과 history에 반영한다', async () => {
+    const manager = new EditingSessionManager(() => 'decoration-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === ''
+    )!
+    const started = await manager.start(26, fixture)
+    const caret = {
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusOffset: 0
+    }
+    const styled = await manager.applyCharacterStyle(26, {
+      sessionId: started.sessionId,
+      transactionId: 'style-decorations',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: caret,
+      italic: true,
+      underline: true,
+      strikeout: true,
+      timestamp: 1
+    })
+    const item = styled.document.sections[0].blocks.at(-1)?.content[0]
+    expect(item?.type).toBe('text')
+    expect(item?.type === 'text' ? styled.document.charStyles[item.charStyleId] : undefined)
+      .toMatchObject({ italic: true, underline: true, strikeout: true })
+    const undone = await manager.undo(26, started.sessionId)
+    const restoredItem = undone.document.sections[0].blocks.at(-1)?.content[0]
+    expect(restoredItem?.type === 'text' ? undone.document.charStyles[restoredItem.charStyleId] : undefined)
+      .toMatchObject({ italic: false, underline: false, strikeout: false })
+    const redone = await manager.redo(26, started.sessionId)
+    const redoneItem = redone.document.sections[0].blocks.at(-1)?.content[0]
+    expect(redoneItem?.type === 'text' ? redone.document.charStyles[redoneItem.charStyleId] : undefined)
+      .toMatchObject({ italic: true, underline: true, strikeout: true })
+  })
+
   test('부분 글자 style과 문단 정렬을 함께 적용한 package를 안전하게 저장하고 재개봉한다', async () => {
     const manager = new EditingSessionManager(() => 'styled-save-session')
     const source = await HwpxSourcePackage.open(fixture)

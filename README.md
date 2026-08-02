@@ -33,7 +33,7 @@ Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
 - 연속 음절 burst·스페이스바 조합 종료를 보존하는 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
-- 단일 `hp:t` 전체 또는 부분 선택의 굵게·글자 크기·글자색
+- 단일 `hp:t` 전체 또는 부분 선택의 굵게·기울임·밑줄·취소선·글자 크기·글자색
 - 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬과 style 분할 뒤 여러 run 연속 입력
 - 40px 편집 control과 파일·기록·글자 모양·문단 정렬 그룹을 가진 `홈` 리본
 
@@ -88,7 +88,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 114 passed, 1 suite skipped |
+| Jest | 22 suites, 116 passed, 1 suite skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -171,7 +171,7 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 
 - HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 문단·단일 run만 지원합니다.
 - 반복 머리글, 병합·`rowSpan`, continuation fragment, 여러 문단 cell과 머리말·꼬리말은 읽기 전용입니다.
-- 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·크기·색상을 지원합니다. 글꼴 family
+- 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다. 글꼴 family
   편집은 HWPX font-face ID와 설치·라이선스 mapping 정책이 필요해 후속 범위로 둡니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
 - 문단 모양은 최상위 일반 문단의 정렬 4종만 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.

@@ -44,6 +44,9 @@ interface EditingStyleRequestBase {
 
 export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
   bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strikeout?: boolean
   height?: number
   color?: string
 }

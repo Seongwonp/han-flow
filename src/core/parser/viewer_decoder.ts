@@ -139,7 +139,19 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   const charStyles: Record<string, ViewerCharStyle> = {}
   all.filter((node) => node.name === 'hh:charPr').forEach((style) => {
     const ref = child(style, 'hh:fontRef')?.attributes.hangul
-    charStyles[style.attributes.id] = { id: style.attributes.id, height: num(style.attributes.height), color: style.attributes.textColor ?? '#000000', bold: Boolean(child(style, 'hh:bold')), fontId: ref, fontFamily: ref ? fonts[ref] : undefined }
+    const underline = child(style, 'hh:underline')
+    const strikeout = child(style, 'hh:strikeout')
+    charStyles[style.attributes.id] = {
+      id: style.attributes.id,
+      height: num(style.attributes.height),
+      color: style.attributes.textColor ?? '#000000',
+      bold: Boolean(child(style, 'hh:bold')),
+      italic: Boolean(child(style, 'hh:italic')),
+      underline: Boolean(underline && underline.attributes.type !== 'NONE'),
+      strikeout: Boolean(strikeout && strikeout.attributes.shape !== 'NONE'),
+      fontId: ref,
+      fontFamily: ref ? fonts[ref] : undefined
+    }
   })
   const paraStyles: Record<string, ViewerParaStyle> = {}
   const bullets = Object.fromEntries(all.filter((node) => node.name === 'hh:bullet').map((node) => [node.attributes.id, node.attributes.char ?? '•']))

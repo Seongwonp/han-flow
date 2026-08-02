@@ -527,9 +527,22 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 
 편집 chrome은 52px 한 줄 toolbar 안의 25px style control에서 문서 제어와 `홈` 리본을 분리한
 2단 구조로 바꾼다. 리본은 파일, 기록, 글자 모양, 문단 정렬 그룹과 최소 40px action을 사용한다.
-현재 command·inverse·Save As가 검증된 기능만 노출하며, 글꼴 family·밑줄·기울임·줄 간격·목록·
-표 구조 편집은 UI placeholder부터 만들지 않는다. packaged E2E는 활성 홈 탭, toolbar와 버튼
+현재 command·inverse·Save As가 검증된 기능만 노출하며, 글꼴 family·줄 간격·목록·표 구조
+편집은 UI placeholder부터 만들지 않는다. packaged E2E는 활성 홈 탭, toolbar와 버튼
 실측 크기, A4 범위 치환·selection·undo/redo와 overflow 0을 함께 판정한다.
+
+### V3-6B 글자 장식 command
+
+2026-08-02에는 기존 글자 style clone·reuse 경계에 기울임, 밑줄과 취소선을 추가했다.
+한컴 공개 OWPML 모델의 `CharShapeType` 자식 순서인 `italic → bold → underline → strikeout`을
+따라 새 요소를 삽입한다. 기울임은 빈 요소, 밑줄은 `type/shape/color`, 취소선은
+`shape/color` 속성을 사용한다. 기존 장식 요소를 해제할 때는 알 수 없는 속성을 제거하지 않고
+각 활성 판정 속성만 `NONE`으로 바꾼다.
+
+동일 definition 재사용, 부분 selection run 분할과 byte 단위 inverse는 기존 command 계약을
+그대로 사용한다. projection은 세 장식을 독립 boolean으로 내보내고 renderer는 underline과
+line-through를 동시에 합성한다. 홈 리본과 `⌘I`·`⌘U`를 연결했으며 packaged A4 fixture에서
+세 버튼 적용, Save As와 저장본 재열기를 통과했다.
 
 ### V3 외부 승인과 V4 이관
 
@@ -611,8 +624,10 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
   ZIP package, mimetype, version, content.hpf, header/section, BinData, META-INF, Scripts와 Preview 역할
 - [한글과컴퓨터, HWPX 사용 권장 안내](https://www.hancom.com/news/notice/detail/10924):
   XML 기반 개방형 형식과 재가공·재수정 목적
+- [한컴 개발자센터, 오픈소스](https://developer.hancom.com/opensources):
+  한컴이 공개한 OWPML 모델과 검증 도구의 공식 배포 경로
 - [hancom-io, hwpx-owpml-model](https://github.com/hancom-io/hwpx-owpml-model):
-  OWPML element 추출·저장 모델과 Apache-2.0 공개 구현
+  OWPML element 추출·저장 모델, `CharShapeType` 자식 순서와 글자 장식 속성의 Apache-2.0 공개 구현
 - [hancom-io, HWPX Document Validation Checker](https://github.com/hancom-io/dvc):
   글자·문단 모양, 표, 특수문자, border, 목록, style와 hyperlink 검증 사례
 

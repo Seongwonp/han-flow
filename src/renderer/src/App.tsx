@@ -52,6 +52,8 @@ function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: Viewe
     fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined,
     fontSize: style ? `${style.height / 100}pt` : undefined,
     fontWeight: style?.bold ? 700 : 400,
+    fontStyle: style?.italic ? 'italic' : 'normal',
+    textDecorationLine: [style?.underline && 'underline', style?.strikeout && 'line-through'].filter(Boolean).join(' ') || 'none',
     color: style?.color
   }
 }
@@ -787,6 +789,9 @@ export default function App() {
         if (!text || text.type !== 'text') continue
         return {
           bold: document.charStyles[text.charStyleId]?.bold ?? false,
+          italic: document.charStyles[text.charStyleId]?.italic ?? false,
+          underline: document.charStyles[text.charStyleId]?.underline ?? false,
+          strikeout: document.charStyles[text.charStyleId]?.strikeout ?? false,
           height: document.charStyles[text.charStyleId]?.height ?? 1000,
           color: document.charStyles[text.charStyleId]?.color ?? '#000000',
           align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment
@@ -796,7 +801,7 @@ export default function App() {
     return undefined
   }, [document, editingSelection?.sectionPath, editingSelection?.textNodeId])
   const applyCharacterStyle = useCallback(async (
-    style: { bold?: boolean; height?: number; color?: string }
+    style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string }
   ) => {
     if (!editing || !editingSelection || editingPending || editingComposing.current) return
     setEditingPending((current) => current + 1)
@@ -814,6 +819,12 @@ export default function App() {
       setEditingStatus(
         style.bold !== undefined
           ? style.bold ? '굵게 적용' : '굵게 해제'
+          : style.italic !== undefined
+            ? style.italic ? '기울임 적용' : '기울임 해제'
+            : style.underline !== undefined
+              ? style.underline ? '밑줄 적용' : '밑줄 해제'
+              : style.strikeout !== undefined
+                ? style.strikeout ? '취소선 적용' : '취소선 해제'
           : style.height !== undefined
             ? `글자 크기 ${style.height / 100}pt`
             : '글자 색상 적용'
@@ -919,6 +930,16 @@ export default function App() {
       if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle) {
         event.preventDefault()
         void applyCharacterStyle({ bold: !activeStyle.bold })
+        return
+      }
+      if (event.key.toLocaleLowerCase() === 'i' && editing && activeStyle) {
+        event.preventDefault()
+        void applyCharacterStyle({ italic: !activeStyle.italic })
+        return
+      }
+      if (event.key.toLocaleLowerCase() === 'u' && editing && activeStyle) {
+        event.preventDefault()
+        void applyCharacterStyle({ underline: !activeStyle.underline })
         return
       }
       if (event.key.toLocaleLowerCase() === 's' && editing) {
@@ -1096,6 +1117,33 @@ export default function App() {
                 onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
                 disabled={!activeStyle || Boolean(editingPending)}
               >B</button>
+              <button
+                aria-label="현재 텍스트 블록 기울임"
+                title="기울임 (⌘I)"
+                aria-pressed={activeStyle?.italic ?? false}
+                className="viewer-style-italic"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void applyCharacterStyle({ italic: !(activeStyle?.italic ?? false) })}
+                disabled={!activeStyle || Boolean(editingPending)}
+              >I</button>
+              <button
+                aria-label="현재 텍스트 블록 밑줄"
+                title="밑줄 (⌘U)"
+                aria-pressed={activeStyle?.underline ?? false}
+                className="viewer-style-underline"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void applyCharacterStyle({ underline: !(activeStyle?.underline ?? false) })}
+                disabled={!activeStyle || Boolean(editingPending)}
+              >U</button>
+              <button
+                aria-label="현재 텍스트 블록 취소선"
+                title="취소선"
+                aria-pressed={activeStyle?.strikeout ?? false}
+                className="viewer-style-strikeout"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void applyCharacterStyle({ strikeout: !(activeStyle?.strikeout ?? false) })}
+                disabled={!activeStyle || Boolean(editingPending)}
+              >S</button>
               <div className="viewer-style-size-control">
                 <button
                   aria-label="글자 크기 줄이기"
