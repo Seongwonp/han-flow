@@ -14,7 +14,7 @@ Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공�
 V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package
 보존, text patch·검증형 Save As와 transaction 기반 undo/redo 코어를 구현했고 제한된
 문단·글자 모양·표 셀 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 연결했습니다. 자동화된
-코드 관문과 macOS 두벌식 OS-level key smoke를 완료했으며 전체 물리 키보드 matrix와
+코드 관문과 macOS 두벌식 OS-level key matrix를 완료했으며 사용자 손 입력 matrix와
 Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
 서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
 `1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
@@ -91,7 +91,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
-| macOS 실제 두벌식 smoke | 일반 문단·표 셀 모두 스페이스바 commit 뒤 focus 유지·추가 입력 성공 |
+| macOS 실제 두벌식 matrix | 문단·표 셀 연속 입력, Backspace·Escape·양방향 치환·undo/redo 통과 |
 | 배포 고지 | Apache-2.0, rhwp MIT, Third-Party Notices 일치 |
 
 ### 성능과 대형 문서

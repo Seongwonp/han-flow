@@ -410,7 +410,10 @@ smoke를 추가했다. 공개 fixture의 일반 문단과 표 셀에서 스페�
 재현했다. 재투영이 안정된 다음 두 frame에 source anchor focus를 복원하고, 프로그램 복원 중
 발생한 focus event가 과거 selection을 덮어쓰지 않도록 가드한 뒤 두 surface 모두 통과했다.
 
-남은 V3-4 관문은 Backspace·Escape·범위 선택 등을 포함한
+2026-08-02 확장 smoke에서는 조합 중 Backspace·Escape, 앞→뒤·뒤→앞 범위 치환과 실제
+`⌘Z`·`⇧⌘Z`까지 연속 matrix로 통과했다. 실행마다 새 앱을 띄울 때 생긴 전면 창 경쟁은 OS로
+앱을 활성화한 다음 CDP에서 source surface focus와 selection을 다시 확정하도록 probe를
+보강했다. 남은 V3-4 관문은 문단 간 클릭과 연속 손 입력을 포함한
 [실제 macOS 두벌식 키보드 수동 matrix](v3_ime_manual_matrix.md)다. OS-level 자동 key smoke를
 물리 키보드 전체 승인으로 확대 해석하지 않는다.
 

@@ -8,6 +8,32 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-02 — 실제 macOS 두벌식 확장 입력 matrix
+
+공개 acceptance fixture와 패키지 앱에서 `System Events` 실제 key code 검증을 조합 중
+Backspace·Escape, 앞→뒤·뒤→앞 범위 치환과 실제 `⌘Z`·`⇧⌘Z`까지 확장했다. 각 결과는
+native composition/input event, source anchor focus, 본문, selection 방향, dirty와 undo/redo
+상태로 판정한다.
+
+| 시나리오 | 결과 |
+| --- | --- |
+| 일반 문단·표 셀 기본 입력 | Space commit → 2초 대기 → 재클릭 없는 후속 입력 통과 |
+| 조합 중 Backspace | `한` 조합 수정 뒤 `한글 ` 확정, 후속 `추가 ` 입력 통과 |
+| 조합 중 Escape | macOS 기본 동작대로 `하` 확정, 후속 `검증 ` 입력과 focus 유지 |
+| 정방향 범위 치환 | 마지막 2글자 교체, undo 원문·정방향 selection, redo 수정문 복원 |
+| 역방향 범위 치환 | 마지막 2글자 교체, undo 역방향 anchor/focus, redo caret 복원 |
+| history 단축키 | 실제 `⌘Z`·`⇧⌘Z`로 원문·수정문·caret·dirty 상태 복원 |
+
+전체 명령 `npm run verify:ime:mac:matrix`의 7개 시나리오가 연속 통과했다. 최초 연속 실행은
+첫 앱 종료 직후 새 표 셀 인스턴스에 OS key event가 0개 전달되는 자동화 실패를 발견했다.
+표 셀 단독 실행은 통과했고, 전면 앱 활성화와 renderer surface focus 사이의 경쟁으로 확인했다.
+각 인스턴스에서 OS로 Han-Flow를 전면화한 뒤 CDP가 같은 source anchor와 selection을 다시
+확정하도록 probe를 보강하고 전체 matrix를 재실행해 통과했다.
+
+이 결과는 실제 macOS 입력기를 거치지만 물리 키보드를 이용한 사용자 손 입력, 다른 문단 클릭,
+페이지 재분할 장시간 입력을 대신하지 않는다. 해당 항목과 Windows 한/글 재열기는 V3 외부 승인
+관문으로 남긴다.
+
 ## 2026-08-02 — 실제 macOS 두벌식 commit 뒤 focus 복원
 
 synthetic `CompositionEvent` E2E가 통과한 뒤에도 사람이 입력하면 첫 commit 다음 글자가 같은

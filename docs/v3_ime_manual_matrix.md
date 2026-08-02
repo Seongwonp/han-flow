@@ -6,15 +6,15 @@
 
 `npm run verify:ime:mac`은 synthetic `CompositionEvent`를 만들지 않는다. macOS
 `System Events`가 현재 두벌식 입력기에 실제 key code를 전달하고, 스페이스바 commit 전후의
-native event count·focus·dirty·undo 상태를 CDP로 관찰한다. 이 OS-level smoke는 핵심 회귀를
-재현하지만 물리 키보드의 Backspace·Escape·선택 방향과 사용자 손 입력 전체를 대체하지 않는다.
+native event count·focus·dirty·undo 상태를 CDP로 관찰한다. 기본 입력뿐 아니라 조합 중
+Backspace·Escape, 정방향·역방향 범위 치환과 실제 `⌘Z`·`⇧⌘Z`도 자동화한다. 이 OS-level
+smoke는 핵심 회귀를 재현하지만 사용자 손 입력 전체를 대체하지 않는다.
 
 ## 자동 native smoke
 
 1. `npm run fixture:v3-acceptance`
 2. `npm run package:mac`
-3. `npm run verify:ime:mac -- --surface paragraph`
-4. `npm run verify:ime:mac -- --surface cell`
+3. `npm run verify:ime:mac:matrix`
 
 기본 입력은 `한글입력검증 ` → 2초 대기 → 재클릭 없이 `추가 `다. 마지막 공백은 macOS
 composition을 확정하며, 두 단계 모두 같은 source anchor가 활성 상태여야 한다. 이 검사는
@@ -27,6 +27,11 @@ macOS 자동화·손쉬운 사용 권한과 Node.js 22 이상을 요구하고 �
 | --- | --- | --- | --- | --- |
 | 일반 문단 | native event 84개, `compositionend` 6회 | focus 유지, dirty·undo 활성 | 누적 event 106개 | 통과 |
 | 일반 표 body cell | native event 84개, `compositionend` 6회 | focus 유지, dirty·undo 활성 | 누적 event 106개 | 통과 |
+
+확장 matrix도 같은 공개 fixture에서 통과했다. 조합 중 Backspace 뒤 `한글 `과 후속 `추가 `가
+정확히 반영됐고, Escape는 macOS 기본 동작대로 조합 중이던 `하`를 확정한 뒤 후속 입력을
+이어갔다. 앞→뒤와 뒤→앞 2글자 선택은 각각 `한글 `로 교체됐으며, undo에서 원문과 selection
+방향을 복원하고 redo에서 수정문과 caret을 복원했다.
 
 초기 실행에서는 첫 commit 뒤 본문과 selection offset은 남았지만 편집 surface가
 `activeElement`가 아니어서 두 번째 입력 event가 0개였다. 안정화된 재투영 다음 frame에 같은
@@ -49,11 +54,11 @@ stale 경고를 확인한다. 저장하지 않고 앱을 닫은 변경은 사라
 | --- | --- | --- | --- |
 | IME-01 | 빈 caret에서 두벌식으로 2~3음절 입력 | 조합 글자가 중복·분리되지 않고 완성 문자열 한 번만 반영 | 자동 smoke 통과·물리 확인 대기 |
 | IME-02 | 받침이 있는 음절과 다음 음절을 연속 입력 | 받침 이동 과정의 중간값이 undo history에 남지 않음 | 자동 smoke 통과·물리 확인 대기 |
-| IME-03 | 조합 중 Backspace 후 다른 글자 입력 | 화면과 최종 source projection이 같은 문자열 | 미실행 |
-| IME-04 | 조합 중 Escape 또는 다른 문단 클릭 | 취소·확정 결과가 macOS 기본 동작과 일치하고 crash 없음 | 미실행 |
-| SEL-01 | 앞→뒤로 2글자를 선택해 한글로 교체 | 선택 범위만 교체되고 caret이 삽입 문자열 뒤에 위치 | 미실행 |
-| SEL-02 | 뒤→앞으로 2글자를 선택해 한글로 교체 | 방향을 포함한 selection이 undo에서 복원 | 미실행 |
-| HIST-01 | `⌘Z`, `⇧⌘Z` 실행 | 원문·수정문과 selection이 각각 정확히 복원 | 미실행 |
+| IME-03 | 조합 중 Backspace 후 다른 글자 입력 | 화면과 최종 source projection이 같은 문자열 | 자동 smoke 통과·물리 확인 대기 |
+| IME-04 | 조합 중 Escape 또는 다른 문단 클릭 | 취소·확정 결과가 macOS 기본 동작과 일치하고 crash 없음 | Escape 자동 smoke 통과·문단 클릭 물리 확인 대기 |
+| SEL-01 | 앞→뒤로 2글자를 선택해 한글로 교체 | 선택 범위만 교체되고 caret이 삽입 문자열 뒤에 위치 | 자동 smoke 통과·물리 확인 대기 |
+| SEL-02 | 뒤→앞으로 2글자를 선택해 한글로 교체 | 방향을 포함한 selection이 undo에서 복원 | 자동 smoke 통과·물리 확인 대기 |
+| HIST-01 | `⌘Z`, `⇧⌘Z` 실행 | 원문·수정문과 selection이 각각 정확히 복원 | 자동 smoke 통과·물리 확인 대기 |
 | PAGE-01 | 줄바꿈이 달라질 만큼 연속 입력 | 페이지가 다시 나뉘어도 focus와 caret이 같은 source 문단에 유지 | 미실행 |
 | FOCUS-01 | 한글 뒤 Space 입력, 2초 대기 후 재클릭 없이 추가 입력 | commit·재투영 뒤 같은 source anchor에서 입력 지속 | 자동 smoke 통과·물리 확인 대기 |
 | RUN-01 | 부분 굵게 뒤 좌우 화살표로 run 경계 이동·입력 | 스타일은 유지되고 인접 run의 정확한 경계에서 입력 | 미실행 |

@@ -78,6 +78,7 @@
     "verify:notices": "node scripts/verify_package_notices.mjs",
     "verify:app": "node scripts/verify_app.mjs",
     "verify:ime:mac": "node scripts/verify_macos_ime.mjs",
+    "verify:ime:mac:matrix": "npm run verify:ime:mac -- --scenario basic --surface paragraph && npm run verify:ime:mac -- --scenario basic --surface cell && npm run verify:ime:mac -- --scenario backspace --surface paragraph && npm run verify:ime:mac -- --scenario escape --surface paragraph && npm run verify:ime:mac -- --scenario range-forward --surface paragraph && npm run verify:ime:mac -- --scenario range-backward --surface paragraph && npm run verify:ime:mac -- --scenario history --surface paragraph",
     "verify:matrix": "node scripts/verify_public_matrix.mjs",
     "verify:hwp-matrix": "node scripts/verify_hwp_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
