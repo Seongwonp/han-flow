@@ -56,6 +56,11 @@ Git에 커밋하지 않는다.
 사용 화면의 대표로 확대 해석하지 않고, A4 문서에서 편집 리본·입력·selection과 저장 UX를
 별도로 검증한다. 생성 결과는 개인정보 없는 임시 acceptance artifact이며 Git에는 넣지 않는다.
 
+`npm run fixture:v3-windows`는 같은 공개 generator와 production Save As 경계를 사용해
+Windows 한/글 재열기용 original·identity·일반 문단 편집본·표 셀 편집본·A4 fixture를 만든다.
+manifest, PowerShell SHA-256 검사, 결과 양식과 단일 전송 ZIP도 함께 생성하며 `artifacts/`는
+검증 산출물이므로 commit하지 않는다.
+
 `createRoundTripHwpx`는 표준 package entry와 함께 알 수 없는 namespace·attribute·XML node,
 미지 binary와 명시적 directory entry를 넣는다. `HwpxSourcePackage` identity round-trip 뒤
 entry 순서·compression·CRC·uncompressed SHA-256과 sentinel이 모두 같은지 검증한다.

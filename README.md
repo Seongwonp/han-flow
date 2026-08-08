@@ -220,7 +220,11 @@ npm run verify:app -- /path/to/document.hwpx
 npm run verify:app -- /path/to/document.hwp
 npm run verify:pdf -- /path/to/document.hwpx
 npm run verify:pdf -- /path/to/document.hwp
+npm run fixture:v3-windows
 ```
+
+`fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
+편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.
 
 전체 RC 관문은 private reference HWPX 경로를 받아 test, package, HWPX/HWP 공개 matrix,
 실사용 문서 smoke test와 PDF 검증을 순서대로 실행합니다.

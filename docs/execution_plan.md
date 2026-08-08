@@ -266,6 +266,8 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 5. [x] 실제 macOS 두벌식 OS-level key smoke로 일반 문단·표 셀의 스페이스바 commit과
    commit 뒤 focus·연속 입력을 검증한다.
 6. [x] 실제 key code로 Backspace·Escape·양방향 범위 치환과 `⌘Z`·`⇧⌘Z`를 자동 검증한다.
+7. [x] production identity·일반 문단 style·표 cell·A4를 묶은 Windows 전송 bundle을 생성한다.
+8. [x] manifest SHA-256, PowerShell 검사와 WIN-01~08 결과 양식을 제공한다.
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 

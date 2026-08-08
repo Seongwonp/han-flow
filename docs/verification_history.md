@@ -8,6 +8,24 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-09 — V3 Windows 한/글 공개 호환성 bundle
+
+Windows PC에서 코드나 개인정보 없이 즉시 외부 승인을 실행할 수 있도록
+`npm run fixture:v3-windows` 관문을 추가했다. production `HwpxSourcePackage → saveHwpxAs`로
+identity 파일을 만들고, 패키지 앱 UI로 일반 문단 전체 style 편집본과 표 cell 편집본을 각각
+저장·재열기한다.
+
+| macOS 사전 관문 | 결과 |
+| --- | --- |
+| identity | original과 SHA-256 동일, 5 entries의 metadata·content identity 통과 |
+| 일반 문단 편집본 | 원본 불변, 전체 style probe 통과, 3쪽·이미지 4개·overflow 0 |
+| 표 cell 편집본 | `table-cell` surface, 원본 불변, 3쪽·이미지 4개·overflow 0 |
+| 전송 파일 | 다섯 HWPX SHA-256 manifest 교차 검증 통과 |
+| 실행 자료 | Windows PowerShell 검사·WIN-01~08 체크리스트·결과 양식 생성 |
+
+이 결과는 Windows 한/글 호환성 통과가 아니라 **실기 입력 준비 완료**다. 최종 통과 여부는
+Windows·한/글 버전을 기록하고 실제 한/글에서 다섯 파일을 열어 판정한 뒤 별도로 남긴다.
+
 ## 2026-08-02 — V3-6D 첫 줄 들여쓰기·내어쓰기
 
 공식 OWPML `CMargin`의 `hc:intent`를 첫 줄 indent로 projection하고 source command에 연결했다.

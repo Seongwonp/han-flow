@@ -83,6 +83,7 @@
     "verify:hwp-matrix": "node scripts/verify_hwp_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
     "fixture:v3-acceptance": "node scripts/create_v3_acceptance_bundle.mjs",
+    "fixture:v3-windows": "node scripts/create_v3_acceptance_bundle.mjs artifacts/v3-windows",
     "fixture:hwp": "electron scripts/fixtures/generate_public_hwp_main.cjs tests/fixtures/public/synthetic-layout.hwp",
     "probe:hwp": "node scripts/probes/compare_hwp_probes.mjs",
     "test:probe": "node --test scripts/probes/*.test.mjs",

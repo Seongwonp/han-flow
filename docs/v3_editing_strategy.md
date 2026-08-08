@@ -568,6 +568,12 @@ next와 unknown XML은 그대로 보존한다. packaged A4 probe에서 −1pt �
 
 ### V3 외부 승인과 V4 이관
 
+`npm run fixture:v3-windows`는 외부 승인 입력을 한 디렉터리와 단일 ZIP으로 만든다. 원본과
+production identity Save As, 일반 문단의 모든 현재 style을 적용한 편집본, 표 body cell
+편집본과 A4 기준 문서를 포함한다. manifest는 생성 commit과 각 HWPX SHA-256, macOS 사전
+검증 결과를 기록하고 Windows PowerShell에서 전송 hash를 다시 검사한다. 이 자동화는 한/글
+실기 판정을 대신하지 않으며 WIN-01~08이 모두 기록되기 전에는 V3 완료로 바꾸지 않는다.
+
 - macOS 실제 두벌식 OS-level key smoke 통과 유지
 - Backspace·Escape·범위 선택을 포함한 물리 키보드 입력 matrix
 - 개인정보 없는 원본·편집 저장본을 Windows 한/글에서 다시 열어 검증
