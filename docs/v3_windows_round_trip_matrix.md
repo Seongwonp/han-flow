@@ -33,6 +33,9 @@ npm run fixture:v3-windows
 identity 생성은 `HwpxSourcePackage.open → saveHwpxAs` production 경로를 사용한다. entry 순서,
 압축 방식, CRC, 크기와 content bytes가 모두 일치한 뒤에만 파일이 만들어진다. edited와
 cell-edited는 패키지 앱 UI에서 실제 command를 수행하고 Save As한 뒤 Han-Flow로 다시 연다.
+ZIP container timestamp 때문에 original과 identity의 파일 전체 SHA-256은 달라질 수 있다.
+`containerSha256Equal`은 이를 숨기지 않고 기록하며 identity 판정은 entry metadata와 content
+bytes 비교를 기준으로 한다.
 
 ## 2. Windows 전송 무결성
 

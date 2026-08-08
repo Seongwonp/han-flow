@@ -119,6 +119,8 @@ const cellVerification = await createEditedFixture(originalPath, cellEditedPath,
   editCell: true,
   styleProbe: false
 })
+const originalSha256 = await sha256(originalPath)
+const identitySha256 = await sha256(identityPath)
 const manifest = {
   generatedAt: new Date().toISOString(),
   commit,
@@ -126,12 +128,13 @@ const manifest = {
   files: {
     original: {
       name: 'han-flow-v3-original.hwpx',
-      sha256: await sha256(originalPath)
+      sha256: originalSha256
     },
     identity: {
       name: 'han-flow-v3-identity.hwpx',
-      sha256: await sha256(identityPath),
-      sourceSha256: await sha256(originalPath),
+      sha256: identitySha256,
+      sourceSha256: originalSha256,
+      containerSha256Equal: identitySha256 === originalSha256,
       ...identity
     },
     edited: {

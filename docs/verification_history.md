@@ -17,7 +17,7 @@ identity 파일을 만들고, 패키지 앱 UI로 일반 문단 전체 style 편
 
 | macOS 사전 관문 | 결과 |
 | --- | --- |
-| identity | original과 SHA-256 동일, 5 entries의 metadata·content identity 통과 |
+| identity | 5 entries의 metadata·content identity 통과, container SHA 차이 여부 별도 기록 |
 | 일반 문단 편집본 | 원본 불변, 전체 style probe 통과, 3쪽·이미지 4개·overflow 0 |
 | 표 cell 편집본 | `table-cell` surface, 원본 불변, 3쪽·이미지 4개·overflow 0 |
 | 전송 파일 | 다섯 HWPX SHA-256 manifest 교차 검증 통과 |
