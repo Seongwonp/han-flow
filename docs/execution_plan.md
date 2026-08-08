@@ -1,6 +1,6 @@
 # Han-Flow 실행 계획
 
-기준일: 2026-08-02
+기준일: 2026-08-09
 
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
@@ -270,6 +270,22 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 8. [x] manifest SHA-256, PowerShell 검사와 WIN-01~08 결과 양식을 제공한다.
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
+
+## 진행 중인 병행 milestone: V4-0 배포 준비 감사
+
+Windows 환경 없이 가능한 V4 조사만 먼저 진행한다. 이 작업은 V3의 두 외부 승인 항목을
+완료로 바꾸지 않는다.
+
+1. [x] 공식 Apple·Electron·electron-builder 자료에서 직접 배포 요구사항을 확인한다.
+2. [x] 현재 app이 arm64 `dir`, ad-hoc 서명, Team ID 없음임을 측정한다.
+3. [x] updater는 dependency만 있고 runtime 연결이 없음을 확인한다.
+4. [x] 인증서 이름·credential을 저장하지 않는 `npm run release:audit`를 추가한다.
+5. [x] DMG+ZIP, 서명·공증·stapling, architecture와 updater의 단계 순서를 문서화한다.
+6. [ ] Apple Developer Program과 Developer ID Application 인증서를 준비한다.
+7. [ ] Universal 또는 architecture별 artifact 전략을 실제 x64/arm64 build로 결정한다.
+8. [ ] release 전용 설정과 최소 entitlement를 signed build로 검증한다.
+
+상세 근거와 공개 배포 승인표는 [V4 macOS 배포 전략](v4_release_strategy.md)을 따른다.
 
 ## 매 milestone 공통 완료 규칙
 

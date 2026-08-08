@@ -16,8 +16,9 @@ V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V
 문단·글자 모양·표 셀 편집 UI와 한국어 IME 입력 경계를 패키지 앱에 연결했습니다. 자동화된
 코드 관문과 macOS 두벌식 OS-level key matrix를 완료했으며 사용자 손 입력 matrix와
 Windows 한/글 재열기를 최종 승인 관문으로 남겨 두었습니다.
-서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. 현재 패키지 버전은
-`1.0.0-rc.1`이고 V4 전까지는 서명되지 않은 개인용 macOS 빌드로 검증합니다.
+서명·공증을 포함한 사용자 배포는 V4에서 진행합니다. V4-0에서 공식 요구사항과 현재 앱의
+배포 기준선을 조사했지만, 현재 패키지 버전 `1.0.0-rc.1`은 여전히 개인 검증용 arm64
+비서명 빌드입니다.
 
 ## 현재 지원 범위
 
@@ -150,10 +151,10 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며,
 | V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
 | V3 — 편집 | 승인 대기 | 코드·macOS native smoke 완료, 물리 IME matrix·Windows 한/글 재열기 대기 |
-| V4 — 사용자 배포 | 예정 | 서명·공증, 업데이트, 호환성 corpus, 릴리스 |
+| V4 — 사용자 배포 | 조사 중 | 기준선 감사 완료, 서명·공증·설치·업데이트 대기 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 96%, V4 5%이며
-최종 배포 전체로는 약 84%입니다. V3의 남은 범위는 전체 물리 입력 matrix와 외부 한/글
+남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 95%, V4 12%이며
+최종 배포 전체로는 약 85%입니다. V3의 남은 범위는 전체 물리 입력 matrix와 외부 한/글
 호환성 승인입니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
@@ -221,10 +222,14 @@ npm run verify:app -- /path/to/document.hwp
 npm run verify:pdf -- /path/to/document.hwpx
 npm run verify:pdf -- /path/to/document.hwp
 npm run fixture:v3-windows
+npm run release:audit
 ```
 
 `fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
 편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.
+`release:audit`는 현재 macOS app의 target·Developer ID 준비 여부·도구·서명·architecture를
+읽기 전용으로 진단한다. 기본 실행은 blocker를 보고만 하며 `-- --strict`를 붙이면 blocker가
+있을 때 실패한다.
 
 전체 RC 관문은 private reference HWPX 경로를 받아 test, package, HWPX/HWP 공개 matrix,
 실사용 문서 smoke test와 PDF 검증을 순서대로 실행합니다.
@@ -274,6 +279,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [HWP/HWPX 오픈소스 참고 프로젝트 검토](docs/open_source_reference_review.md)
 - [V3 macOS 한국어 IME 수동 검증 matrix](docs/v3_ime_manual_matrix.md)
 - [V3 Windows 한/글 재열기 matrix](docs/v3_windows_round_trip_matrix.md)
+- [V4 macOS 배포 조사와 구현 전략](docs/v4_release_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
 - [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)

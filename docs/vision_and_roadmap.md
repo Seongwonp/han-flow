@@ -1,6 +1,6 @@
 # Han-Flow 제품 비전과 로드맵
 
-기준일: 2026-07-29
+기준일: 2026-08-09
 
 ## 비전
 
@@ -85,7 +85,7 @@ V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기
 
 ## V4 — 사용자 배포
 
-상태: **V1–V3 품질 관문 이후**
+상태: **V4-0 조사·배포 기준선 완료 — 인증서와 V3 외부 승인 대기**
 
 - Developer ID 서명, notarization, stapling
 - Universal 또는 architecture별 macOS package 결정
@@ -95,6 +95,11 @@ V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기
 - 라이선스·third-party notice·HWP 공개 규격 고지
 - versioning, changelog, GitHub Release와 사용자 문서
 
+직접 배포는 `Developer ID Application → hardened runtime 서명 → dmg/zip → notarization →
+stapling → Gatekeeper·깨끗한 계정 검증` 순서로 진행한다. 현재 앱은 arm64 `dir`과 ad-hoc
+서명뿐이며 updater는 dependency만 있고 runtime에는 연결하지 않았다. 인증서 없이 수행 가능한
+현재 상태 감사와 공식 자료 조사는 [V4 macOS 배포 전략](v4_release_strategy.md)에 기록했다.
+
 Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 주간 사용에서 반복되는
 문제가 확인될 때 별도 milestone으로 제안한다.
 
@@ -103,7 +108,8 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 1. 실제 macOS 두벌식 삽입·삭제·범위 교체·조합 취소 수동 matrix
 2. 공개 identity·편집 결과를 Windows 한/글에서 재열기
 3. 두 외부 matrix 결과를 검증 이력에 기록하고 V3 완료 판정
-4. V4 Developer ID 서명·notarization·설치 관문 착수
+4. Apple Developer Program·Developer ID 인증서 준비와 지원 architecture 결정
+5. V4-1 release 전용 서명·공증 설정과 수동 DMG 설치 관문 착수
 
 여러 run 문단 입력과 굵게·크기·색상은 V3 코드 관문에서 완료했다. 글꼴 family 편집,
 원본 in-place 덮어쓰기와 범용 crash recovery는 현재 안전한 Save As 계약을 약화시키지
@@ -119,9 +125,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 | V1 HWPX viewer | 20% | 100% | 20.0% |
 | V2 HWP 읽기 | 25% | 100% | 25.0% |
 | V3 편집 | 40% | 95% | 38.0% |
-| V4 사용자 배포 | 15% | 5% | 0.8% |
-| **최종 배포 전체** | **100%** | | **약 84%** |
+| V4 사용자 배포 | 15% | 12% | 1.8% |
+| **최종 배포 전체** | **100%** | | **약 85%** |
 
-V4의 5%는 공개 저장소, Apache-2.0, 아이콘과 초기 third-party notice 준비분이다. Developer ID
-서명·공증, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 시작하지 않았다. 범위나 품질
-관문이 바뀌면 이 추정치도 함께 갱신한다.
+V4의 12%는 공개 저장소, Apache-2.0, 아이콘·third-party notice, 공식 배포 요구사항 조사와
+재현 가능한 로컬 기준선 감사까지의 진행분이다. Developer ID 서명·공증, 지원 architecture
+확정, 업데이트, 깨끗한 Mac 설치와 release corpus는 아직 통과하지 않았다. 범위나 품질 관문이
+바뀌면 이 추정치도 함께 갱신한다.

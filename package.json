@@ -87,6 +87,7 @@
     "fixture:hwp": "electron scripts/fixtures/generate_public_hwp_main.cjs tests/fixtures/public/synthetic-layout.hwp",
     "probe:hwp": "node scripts/probes/compare_hwp_probes.mjs",
     "test:probe": "node --test scripts/probes/*.test.mjs",
+    "release:audit": "node scripts/audit_macos_release.mjs",
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {

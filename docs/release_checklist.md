@@ -1,6 +1,11 @@
-# Han-Flow v1 Release Candidate 체크리스트
+# Han-Flow 릴리스 체크리스트
 
-기준일: 2026-07-27
+기준일: 2026-08-09
+
+이 문서의 앞부분은 완료한 V1 RC 기준선을 보존한다. 실제 공개 배포 판단은 아래 V4 관문과
+[V4 macOS 배포 전략](v4_release_strategy.md)을 함께 따른다.
+
+## V1 Release Candidate 기준선
 
 v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도구다. 편집, `.hwp` 5.0
 바이너리 직접 파싱, 한컴오피스와 픽셀 단위 동일 렌더링은 이번 릴리스 범위가 아니다.
@@ -55,9 +60,16 @@ Han-Flow는 V4가 완성될 때까지 개인용으로 사용한다. 아래 항�
 - [x] 이미지 중심·세로 병합 중심 synthetic production 검증
 - [ ] 이미지 중심·세로 병합 중심 실제 문서를 각각 `verify:app`으로 통과
 - [ ] PDF 저장 대화상자를 실제 사용자 흐름에서 최종 수동 확인
+- [x] 현재 `dir`·arm64·ad-hoc 서명 기준선을 `npm run release:audit`로 측정
+- [x] 직접 배포용 `dmg`·`zip`, 서명·공증·stapling 순서와 공식 출처 문서화
+- [ ] V3 macOS 물리 입력과 Windows 한/글 재열기 외부 승인
+- [ ] 지원 아키텍처를 Universal 또는 arm64/x64 개별 artifact로 확정
 - [ ] Developer ID 서명
-- [ ] Apple notarization과 stapling
+- [ ] hardened runtime, 최소 entitlement와 secure timestamp 검증
+- [ ] Apple notarization, stapling과 Gatekeeper 평가
 - [ ] 깨끗한 Mac 계정에서 첫 실행과 Finder 기본 앱 선택 확인
+- [ ] `dmg`·`zip` SHA-256과 배포 manifest 기록
+- [ ] 수동 설치 릴리스 안정화 뒤 updater 활성화 여부 판정
 - [ ] 버전·변경 사항·known limitation을 포함한 GitHub Release 작성
 
 ## 추가 문서 검증 절차

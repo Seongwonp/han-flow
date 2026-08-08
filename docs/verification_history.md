@@ -8,6 +8,25 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-09 — V4-0 macOS 배포 기준선 감사
+
+Apple·Electron·electron-builder의 공식 배포 문서를 기준으로 Developer ID 직접 배포 순서를
+정리하고, credential 없이 반복 가능한 `npm run release:audit`를 추가했다.
+
+| 감사 항목 | 결과 |
+| --- | --- |
+| package 설정 | arm64 로컬 `dir`, `identity: null` |
+| 현재 app 서명 | ad-hoc, TeamIdentifier 없음, Developer ID 아님 |
+| strict 서명 검증 | 배포용 sealed resource 조건 불충족 |
+| architecture | Electron app/framework arm64, `font-list` helper universal |
+| updater | `electron-updater` dependency만 존재, runtime 연결 없음 |
+| 공개 배포 판단 | 차단 유지 — 인증서·공증·stapling·clean account 검증 필요 |
+
+이 결과는 배포 실패가 아니라 의도적인 개인용 빌드의 기준선이다. 실제 release 설정에는
+`forceCodeSigning`을 사용하고, DMG+ZIP·공증·stapling·Gatekeeper 검증을 통과하기 전에는 공개
+artifact를 만들지 않는다. 상세 출처와 후속 관문은 [V4 macOS 배포 전략](v4_release_strategy.md)에
+기록했다.
+
 ## 2026-08-09 — V3 Windows 한/글 공개 호환성 bundle
 
 Windows PC에서 코드나 개인정보 없이 즉시 외부 승인을 실행할 수 있도록
