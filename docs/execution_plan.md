@@ -282,7 +282,7 @@ Windows 환경 없이 가능한 V4 조사만 먼저 진행한다. 이 작업은 
 4. [x] 인증서 이름·credential을 저장하지 않는 `npm run release:audit`를 추가한다.
 5. [x] DMG+ZIP, 서명·공증·stapling, architecture와 updater의 단계 순서를 문서화한다.
 6. [ ] Apple Developer Program과 Developer ID Application 인증서를 준비한다.
-7. [ ] Universal 또는 architecture별 artifact 전략을 실제 x64/arm64 build로 결정한다.
+7. [x] arm64/x64/Universal build와 공식 Rosetta 종료 일정을 근거로 arm64-only를 결정한다.
 8. [ ] release 전용 설정과 최소 entitlement를 signed build로 검증한다.
 
 상세 근거와 공개 배포 승인표는 [V4 macOS 배포 전략](v4_release_strategy.md)을 따른다.

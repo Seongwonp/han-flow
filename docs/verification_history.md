@@ -27,6 +27,26 @@ Apple·Electron·electron-builder의 공식 배포 문서를 기준으로 Develo
 artifact를 만들지 않는다. 상세 출처와 후속 관문은 [V4 macOS 배포 전략](v4_release_strategy.md)에
 기록했다.
 
+### x64·Universal 무인증서 package 실험
+
+공식 Electron 28.3.3 x64 ZIP은 GitHub release의 `SHASUMS256.txt`와 SHA-256
+`6bc63916b7fe52de7559e7631fef5c93315a18ee90a0d3d08168c91414b09ecf`가 일치하고 ZIP test를
+통과한 뒤 사용했다. arm64/x64 app을 `@electron/universal`로 병합했고 모든 Mach-O를 검사했다.
+
+| artifact | architecture 관문 | 논리 크기 | production smoke |
+| --- | --- | ---: | --- |
+| arm64 | 16개 중 arm64 15 + universal 1 | 339,563,671 byte | 3쪽·이미지 4·overflow 0 |
+| x64 | 16개 중 x64 15 + universal 1 | 345,097,640 byte | Rosetta 지원 종료 알림 확인 |
+| Universal | 16개 모두 arm64+x86_64 | 525,279,804 byte | native arm64 3쪽·이미지 4·overflow 0 |
+
+세 app이 같은 bundle ID로 동시에 존재한 상태에서는 LaunchServices 경로 충돌로 native arm64도
+`HIServices._RegisterApplication`에서 `SIGABRT`했다. crash report의 `Code Type: ARM-64
+(Native)`로 Rosetta 문제가 아님을 확인했고, 대상 app을 다시 등록한 뒤 같은 E2E가 통과했다.
+
+Apple은 일반 Intel Mac app용 Rosetta를 macOS 27까지만 제공하고 macOS 28부터 일부 오래된
+게임만 예외로 둔다. macOS 26.4부터 실제 지원 종료 알림도 표시되므로 V4 공개 artifact는
+arm64-only로 확정했다. x64/Universal 명령과 전수 검사기는 `experiment:*`로만 유지한다.
+
 ## 2026-08-09 — V3 Windows 한/글 공개 호환성 bundle
 
 Windows PC에서 코드나 개인정보 없이 즉시 외부 승인을 실행할 수 있도록

@@ -63,7 +63,7 @@ Han-Flow는 V4가 완성될 때까지 개인용으로 사용한다. 아래 항�
 - [x] 현재 `dir`·arm64·ad-hoc 서명 기준선을 `npm run release:audit`로 측정
 - [x] 직접 배포용 `dmg`·`zip`, 서명·공증·stapling 순서와 공식 출처 문서화
 - [ ] V3 macOS 물리 입력과 Windows 한/글 재열기 외부 승인
-- [ ] 지원 아키텍처를 Universal 또는 arm64/x64 개별 artifact로 확정
+- [x] Rosetta 종료 일정과 실험 결과를 근거로 arm64-only 공개 artifact 확정
 - [ ] Developer ID 서명
 - [ ] hardened runtime, 최소 entitlement와 secure timestamp 검증
 - [ ] Apple notarization, stapling과 Gatekeeper 평가

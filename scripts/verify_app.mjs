@@ -15,8 +15,14 @@ const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
+const forcedArchitecture = process.env.HAN_FLOW_VERIFY_ARCH
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+
+if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
+  console.error('HAN_FLOW_VERIFY_ARCH는 arm64 또는 x86_64여야 합니다.')
+  process.exit(1)
+}
 
 if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
   console.error('사용법: npm run verify:app -- <fixture.hwp|fixture.hwpx> [Han-Flow 실행 파일]')
@@ -33,7 +39,9 @@ async function launch(output, userData, options = {}) {
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
     let settled = false
-    const child = spawn(appBinary, [], {
+    const child = spawn(forcedArchitecture ? 'arch' : appBinary, forcedArchitecture
+      ? [`-${forcedArchitecture}`, appBinary]
+      : [], {
       env: {
         ...process.env,
         HAN_FLOW_E2E: '1',
@@ -74,9 +82,11 @@ async function launch(output, userData, options = {}) {
       finish(new Error(`패키지 앱 검증 시간이 초과되었습니다. ${standardError.trim()}`))
     }, 120_000)
     child.once('error', (error) => finish(error))
-    child.once('exit', (code) => {
+    child.once('exit', (code, signal) => {
       if (code === 0) finish()
-      else finish(new Error(`Han-Flow가 종료 코드 ${code}로 끝났습니다. ${standardError.trim()}`))
+      else finish(new Error(
+        `Han-Flow가 ${signal ? `signal ${signal}` : `종료 코드 ${code}`}로 끝났습니다. ${standardError.trim()}`
+      ))
     })
   })
   return JSON.parse(await readFile(output, 'utf8'))

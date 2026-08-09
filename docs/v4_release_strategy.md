@@ -5,8 +5,13 @@
 ## 결정 요약
 
 Han-Flow V4의 첫 공개 배포는 Mac App Store가 아닌 **Developer ID로 서명·공증한 직접 배포**로
-진행한다. 첫 배포 단위는 사용자가 설치하는 `dmg`와 향후 업데이트 metadata를 만들 수 있는
-`zip`이다. 현재 `dir` target은 로컬 검증 전용으로 유지한다.
+진행한다. 첫 배포 단위는 Apple Silicon arm64용 `dmg`와 향후 업데이트 metadata를 만들 수 있는
+arm64 `zip`이다. 현재 `dir` target은 로컬 검증 전용으로 유지한다.
+
+Intel x64와 Universal은 2026-08-09 실험에서 모두 package 구조 생성에 성공했지만 공개 target으로
+채택하지 않는다. Apple은 일반 Intel 앱을 위한 Rosetta를 macOS 27까지만 제공하고 macOS 28부터
+일부 오래된 게임만 예외로 둔다. macOS 26.4부터 Intel 앱 실행 시 지원 종료 알림도 표시한다.
+Han-Flow의 실제 사용 환경과 미래 호환성을 고려해 **V4는 arm64-only**로 확정한다.
 
 V3의 Windows 한/글 재열기 승인은 아직 대기 중이다. V4 조사는 병행하되 그 결과를 V3 완료로
 간주하지 않으며, 인증서나 Apple 계정 secret 없이 수행할 수 있는 감사·문서화부터 진행한다.
@@ -21,7 +26,7 @@ V3의 Windows 한/글 재열기 승인은 아직 대기 중이다. V4 조사는 
 | 서명 | Electron 실행 파일의 ad-hoc 서명, Team ID 없음 | Developer ID Application 서명 |
 | 공증 | 미실행 | Apple notarization 성공 |
 | stapling | 미실행 | 배포 artifact에 ticket 부착·검증 |
-| architecture | 앱 framework는 arm64, `font-list` helper는 universal | Universal 빌드 또는 아키텍처별 artifact 결정 |
+| architecture | 앱 framework는 arm64, `font-list` helper는 universal | V4 공개 artifact는 arm64-only |
 | updater | dependency만 존재, runtime 연결 없음 | 서명된 수동 릴리스 안정화 후 별도 활성화 |
 
 현재 `mac.identity: null`은 개인용 로컬 빌드에서 의도적으로 서명을 생략한다. 이를 공개 release
@@ -48,7 +53,7 @@ Apple의 외부 배포 경로는 Developer ID certificate로 앱을 식별하고
 - [x] `dir`, `dmg`, `zip`의 역할과 updater 연결 상태를 기록한다.
 - [x] 인증서 이름을 기록하지 않고 준비 여부만 판정하는 `release:audit`를 추가한다.
 - [ ] Apple Developer Program 가입과 Developer ID Application 인증서를 준비한다.
-- [ ] Apple Silicon/Intel 지원 범위를 결정한다.
+- [x] Apple Silicon arm64-only 공개 지원 범위를 결정한다.
 
 ### V4-1 — 서명된 수동 배포
 
@@ -62,15 +67,29 @@ Apple의 외부 배포 경로는 Developer ID certificate로 앱을 식별하고
 entitlement는 Electron 실행에 실제 필요한 항목만 추가한다. 특히 library validation 해제 같은
 광범위한 권한은 서명 실패가 재현되고 더 좁은 해결책이 없을 때만 검토한다.
 
-### V4-2 — 아키텍처 확정
+### V4-2 — 아키텍처 실험과 결정
 
-1. x64와 arm64를 각각 build·launch·문서 열기·PDF로 검증한다.
-2. Universal merge에서 `app.asar.unpacked`, native helper와 architecture별 resource 충돌을 검사한다.
-3. `font-list` helper, Electron framework와 모든 Mach-O의 architecture inventory를 기록한다.
-4. Universal이 안정적이면 단일 artifact를, 아니면 `mac-arm64`/`mac-x64` 두 artifact와 명확한
-   다운로드 안내를 사용한다.
+1. [x] arm64와 x64 `dir` package를 각각 생성한다.
+2. [x] Universal merge에서 `app.asar`, native helper와 architecture별 resource를 검사한다.
+3. [x] `font-list` helper, Electron framework와 모든 Mach-O의 architecture inventory를 기록한다.
+4. [x] Apple의 Rosetta 종료 일정과 실제 지원 종료 알림을 근거로 arm64-only를 선택한다.
 
-현재 arm64 앱만 실제 검증됐으므로 “Universal 지원”이라고 표시하지 않는다.
+실험 결과는 다음과 같다.
+
+| artifact | 논리 크기 | Mach-O | 실행 결과 |
+| --- | ---: | --- | --- |
+| arm64 | 339,563,671 byte | arm64 15, universal helper 1 | 3쪽·이미지 4개·overflow 0 |
+| x64 | 345,097,640 byte | x64 15, universal helper 1 | package 구조 통과, Rosetta 종료 알림 확인 |
+| Universal | 525,279,804 byte | 16개 모두 arm64+x86_64 | 강제 native arm64로 3쪽·이미지 4개·overflow 0 |
+
+같은 `com.hanflow.viewer` bundle ID를 가진 세 app을 같은 폴더에서 연속 실행할 때 macOS 26.5.2의
+LaunchServices 등록이 충돌해 `HIServices._RegisterApplication`에서 `SIGABRT`했다. 해당 app을
+`lsregister -f`로 다시 등록하자 arm64와 Universal native smoke가 통과했다. 이는 renderer 진입
+전 실험 환경 문제이며, 기본 등록은 마지막에 arm64 app으로 복원했다. E2E runner에는 이후
+signal 이름과 선택적 architecture 강제 실행 진단을 추가했다.
+
+`experiment:package:mac:x64`, `experiment:package:mac:universal`,
+`experiment:verify:mac-arch`는 재현용이며 지원 artifact를 만드는 release 명령이 아니다.
 
 ### V4-3 — 업데이트와 공개 릴리스
 
@@ -89,7 +108,7 @@ entitlement는 Electron 실행에 실제 필요한 항목만 추가한다. 특�
 - [ ] 개인정보 없는 실제 HWPX/HWP compatibility corpus 통과
 - [ ] Developer ID 서명과 strict verification 통과
 - [ ] notarization, stapling, Gatekeeper 평가 통과
-- [ ] 지원 architecture별 열기·편집 Save As·PDF 통과
+- [ ] arm64 release artifact의 열기·편집 Save As·PDF 통과
 - [ ] 깨끗한 계정에서 DMG 설치, Finder 연결, 첫 실행 통과
 - [ ] Apache-2.0, third-party notices, known limitations 포함
 - [ ] artifact SHA-256과 release manifest 기록
@@ -104,6 +123,8 @@ entitlement는 Electron 실행에 실제 필요한 항목만 추가한다. 특�
 - Apple, [Developer ID](https://developer.apple.com/developer-id/)
 - Apple, [Notarizing macOS software before distribution](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
 - Apple, [Resolving common notarization issues](https://developer.apple.com/documentation/security/resolving-common-notarization-issues)
+- Apple 지원, [Apple Silicon이 탑재된 Mac에서 Intel 기반 앱 사용하기](https://support.apple.com/ko-kr/102527)
+- Apple, [macOS Tahoe 26.4 Release Notes](https://developer.apple.com/documentation/macos-release-notes/macos-26_4-release-notes)
 - Electron, [Code Signing](https://www.electronjs.org/docs/latest/tutorial/code-signing)
 - Electron, [Updating Applications](https://www.electronjs.org/docs/latest/tutorial/updates)
 - Electron, [Publishing and Updating](https://www.electronjs.org/docs/latest/tutorial/tutorial-publishing-updating)

@@ -69,6 +69,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "package:mac": "npm run build && electron-builder --mac dir",
+    "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64",
+    "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal",
     "preview": "electron-vite preview",
     "test": "jest",
     "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts",
@@ -88,6 +90,7 @@
     "probe:hwp": "node scripts/probes/compare_hwp_probes.mjs",
     "test:probe": "node --test scripts/probes/*.test.mjs",
     "release:audit": "node scripts/audit_macos_release.mjs",
+    "experiment:verify:mac-arch": "node scripts/verify_macos_architectures.mjs",
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
