@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
 import { EditingSessionManager } from './editing_session'
+import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
 import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
@@ -635,7 +636,9 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     trafficLightPosition: { x: 15, y: 15 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
       backgroundThrottling: !visualStateOutput
     }
   })
@@ -693,8 +696,14 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   }
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (isAllowedExternalUrl(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = mainWindow?.webContents.getURL() ?? ''
+    if (isSameTrustedDocument(url, currentUrl)) return
+    event.preventDefault()
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url)
   })
 
   // HMR for renderer base on electron-vite cli.

@@ -5,11 +5,12 @@
 </p>
 
 <p align="center">
-  macOS에서 HWPX와 HWP 5.0 문서를 빠르게 열어 읽고 PDF로 내보내는 데스크톱 도구
+  Windows와 macOS에서 HWPX와 HWP 5.0 문서를 안전하게 읽고 제한적으로 편집하는 데스크톱 도구
 </p>
 
 Han-Flow는 상용 오피스를 복제하는 프로젝트가 아닙니다. 공공기관과 학교에서 받은 한글
-문서를 Mac에서 매주 실제로 열어볼 수 있는 작고 안정적인 도구를 목표로 합니다.
+문서를 Windows와 Mac에서 실제로 열고, HWPX의 지원 범위만 원본 package를 보존하며 수정하는
+작고 안정적인 도구를 목표로 합니다. HWP는 읽기 전용이고 HWPX 편집도 아직 제한적입니다.
 
 V1의 HWPX 뷰어와 V2의 HWP 5.0 읽기 품질 관문을 완료했습니다. V3에서는 HWPX 원본 package
 보존, text patch·검증형 Save As와 transaction 기반 undo/redo 코어를 구현했고 제한된
@@ -92,7 +93,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 22 suites, 119 passed, 1 suite skipped |
+| Jest | 22 suites, 122 passed, 2 suites skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -152,11 +153,12 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며,
 | V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
 | V3 — 편집 | 승인 대기 | 코드·macOS native smoke 완료, 물리 IME matrix·Windows 한/글 재열기 대기 |
-| V4 — 사용자 배포 | 준비 중 | arm64-only 결정, 서명·공증·설치·업데이트 대기 |
+| Sprint 0 — 기반 정비 | 진행 중 | Windows CI, 공통 package preflight, Electron 보안 경계 |
+| V4 — 사용자 배포 | 준비 중 | Windows 후보와 macOS arm64 서명·공증·설치 대기 |
 
-남은 위험과 예상 작업량을 반영한 계획용 추정치는 V1 100%, V2 100%, V3 95%, V4 18%이며
-최종 배포 전체로는 약 86%입니다. V3의 남은 범위는 전체 물리 입력 matrix와 외부 한/글
-호환성 승인입니다.
+단일 완료율은 범위와 검증 수준을 숨길 수 있어 더 이상 공개 완료 판정으로 사용하지 않습니다.
+기능은 코드, 공개 fixture, 실제 문서, 한/글 왕복과 OS별 검증을 순서대로 통과해야 완료입니다.
+세부 장기 순서와 품질 관문은 [장기 완성도 로드맵](docs/long_term_roadmap.md)에 기록합니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
@@ -194,10 +196,11 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 
 ## 개발
 
-Node.js와 npm이 필요합니다.
+Node.js 22와 npm 10이 필요합니다. `.nvmrc`와 `package.json#engines`가 개발 기준선이며,
+깨끗한 clone에서는 lockfile을 보존하는 `npm ci`를 사용합니다.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
@@ -273,6 +276,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 ## 문서
 
 - [제품 비전과 V1–V4 로드맵](docs/vision_and_roadmap.md)
+- [장기 완성도 로드맵과 품질 관문](docs/long_term_roadmap.md)
 - [실행 계획](docs/execution_plan.md)
 - [기술 아키텍처](docs/architecture.md)
 - [파싱 전략](docs/parsing_strategy.md)

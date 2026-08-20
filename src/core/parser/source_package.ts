@@ -3,22 +3,27 @@ import * as unzipper from 'unzipper'
 import { parseOrderedXml } from './ordered_xml'
 import type { OrderedXmlNode } from './ordered_xml'
 import type { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
+import {
+  validateHwpxSourceEntryMetadata,
+  type HwpxCompressionMethod,
+  type HwpxSourceEntryMetadata,
+  type HwpxSourceEntryType
+} from './package_preflight'
+
+export {
+  MAX_HWPX_ENTRY_BYTES,
+  MAX_HWPX_ENTRY_COUNT,
+  MAX_HWPX_TOTAL_BYTES,
+  validateHwpxEntryPath,
+  validateHwpxSourceEntryMetadata
+} from './package_preflight'
+export type {
+  HwpxCompressionMethod,
+  HwpxSourceEntryMetadata,
+  HwpxSourceEntryType
+} from './package_preflight'
 
 export const HWPX_MIMETYPE = 'application/hwp+zip'
-export const MAX_HWPX_ENTRY_COUNT = 10_000
-export const MAX_HWPX_ENTRY_BYTES = 128 * 1024 * 1024
-export const MAX_HWPX_TOTAL_BYTES = 512 * 1024 * 1024
-
-export type HwpxCompressionMethod = 0 | 8
-export type HwpxSourceEntryType = 'file' | 'directory'
-
-export interface HwpxSourceEntryMetadata {
-  path: string
-  type: HwpxSourceEntryType
-  compressionMethod: HwpxCompressionMethod
-  crc32: number
-  uncompressedSize: number
-}
 
 interface HwpxSourceEntry extends HwpxSourceEntryMetadata {
   bytes: Buffer
@@ -38,57 +43,6 @@ function crc32(bytes: Buffer): number {
     crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)
   }
   return (crc ^ 0xffffffff) >>> 0
-}
-
-function invalidEntry(message: string): never {
-  throw new Error(`안전하지 않은 HWPX package입니다: ${message}`)
-}
-
-export function validateHwpxEntryPath(path: string, type: HwpxSourceEntryType): void {
-  if (!path || path.includes('\0')) invalidEntry('빈 경로나 NUL 문자가 포함된 entry가 있습니다.')
-  if (path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
-    invalidEntry(`절대 경로 entry를 허용하지 않습니다: ${path}`)
-  }
-  if (path.includes('\\')) invalidEntry(`역슬래시 경로 entry를 허용하지 않습니다: ${path}`)
-
-  const isDirectoryPath = path.endsWith('/')
-  if ((type === 'directory') !== isDirectoryPath) {
-    invalidEntry(`entry 종류와 경로가 일치하지 않습니다: ${path}`)
-  }
-
-  const segments = path.split('/')
-  if (isDirectoryPath) segments.pop()
-  if (segments.some((segment) => !segment || segment === '.' || segment === '..')) {
-    invalidEntry(`경로 탈출 또는 비정규 entry를 허용하지 않습니다: ${path}`)
-  }
-}
-
-export function validateHwpxSourceEntryMetadata(entries: readonly HwpxSourceEntryMetadata[]): void {
-  if (entries.length > MAX_HWPX_ENTRY_COUNT) {
-    invalidEntry(`entry 개수가 제한(${MAX_HWPX_ENTRY_COUNT})을 초과합니다.`)
-  }
-
-  const paths = new Set<string>()
-  let totalBytes = 0
-  for (const entry of entries) {
-    validateHwpxEntryPath(entry.path, entry.type)
-    if (paths.has(entry.path)) invalidEntry(`중복 entry가 있습니다: ${entry.path}`)
-    paths.add(entry.path)
-
-    if (entry.compressionMethod !== 0 && entry.compressionMethod !== 8) {
-      invalidEntry(`지원하지 않는 압축 방식(${entry.compressionMethod})입니다: ${entry.path}`)
-    }
-    if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0) {
-      invalidEntry(`entry 크기가 올바르지 않습니다: ${entry.path}`)
-    }
-    if (entry.uncompressedSize > MAX_HWPX_ENTRY_BYTES) {
-      invalidEntry(`entry 크기가 제한(${MAX_HWPX_ENTRY_BYTES} bytes)을 초과합니다: ${entry.path}`)
-    }
-    totalBytes += entry.uncompressedSize
-    if (!Number.isSafeInteger(totalBytes) || totalBytes > MAX_HWPX_TOTAL_BYTES) {
-      invalidEntry(`압축 해제 전체 크기가 제한(${MAX_HWPX_TOTAL_BYTES} bytes)을 초과합니다.`)
-    }
-  }
 }
 
 function validateRequiredEntries(entries: readonly HwpxSourceEntry[]): void {
@@ -122,13 +76,13 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
     const directory = await unzipper.Open.file(filePath)
     const metadata = directory.files.map((entry) => {
       const type: HwpxSourceEntryType = entry.type === 'Directory' ? 'directory' : 'file'
-      if ((entry.flags & 0x1) !== 0) invalidEntry(`암호화된 entry를 지원하지 않습니다: ${entry.path}`)
       return {
         path: entry.path,
         type,
         compressionMethod: entry.compressionMethod as HwpxCompressionMethod,
         crc32: entry.crc32,
-        uncompressedSize: entry.uncompressedSize
+        uncompressedSize: entry.uncompressedSize,
+        encrypted: (entry.flags & 0x1) !== 0
       }
     })
     validateHwpxSourceEntryMetadata(metadata)
@@ -139,7 +93,9 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
       const entryMetadata = metadata[index]
       const bytes = entryMetadata.type === 'directory' ? Buffer.alloc(0) : await entry.buffer()
       if (bytes.byteLength !== entryMetadata.uncompressedSize) {
-        invalidEntry(`압축 해제 크기가 directory metadata와 다릅니다: ${entryMetadata.path}`)
+        throw new Error(
+          `안전하지 않은 HWPX package입니다: 압축 해제 크기가 directory metadata와 다릅니다: ${entryMetadata.path}`
+        )
       }
       entries.push({ ...entryMetadata, bytes })
     }

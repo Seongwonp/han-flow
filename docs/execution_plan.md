@@ -257,7 +257,21 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 설계 관문 뒤에 진행한다. 자동 코드 범위에서 다음 우선순위는 Windows 한/글 재열기용 공개
 호환성 package와 수동 판정표를 준비하는 것이다.
 
-## 현재 milestone: V3 외부 승인
+## 현재 milestone: Sprint 0 재현성과 P0 방어
+
+1. [x] Node.js 22와 npm 10 version contract를 저장소에 기록한다.
+2. [x] Windows clean install·test·probe·build CI 초안을 추가한다. package가 필요한 notice
+   검증은 macOS release 관문에 유지한다.
+3. [x] HWPX read-only와 editing 경로가 같은 ZIP metadata preflight를 사용한다.
+4. [x] renderer sandbox와 context isolation을 명시하고 외부 navigation을 HTTPS로 제한한다.
+5. [ ] clean Windows npm 환경에서 전체 CI 명령을 통과한다.
+6. [ ] 기존 project-reference 오류와 남은 TypeScript 오류를 정리해 독립 `typecheck` 관문을 추가한다.
+7. [ ] XML·이미지 resource budget과 adversarial fixture를 추가한다.
+8. [ ] legacy production 비사용 코드를 제거하거나 experimental로 격리한다.
+
+상세 장기 순서와 완료 규칙은 [장기 완성도 로드맵](long_term_roadmap.md)을 따른다.
+
+## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.
 2. [ ] [Windows 한/글 재열기 matrix](v3_windows_round_trip_matrix.md)를 통과한다.
@@ -278,7 +292,7 @@ Windows 환경 없이 가능한 V4 조사만 먼저 진행한다. 이 작업은 
 
 1. [x] 공식 Apple·Electron·electron-builder 자료에서 직접 배포 요구사항을 확인한다.
 2. [x] 현재 app이 arm64 `dir`, ad-hoc 서명, Team ID 없음임을 측정한다.
-3. [x] updater는 dependency만 있고 runtime 연결이 없음을 확인한다.
+3. [x] updater는 runtime 연결이 없음을 확인했고 2026-08-20 미사용 dependency를 제거했다.
 4. [x] 인증서 이름·credential을 저장하지 않는 `npm run release:audit`를 추가한다.
 5. [x] DMG+ZIP, 서명·공증·stapling, architecture와 updater의 단계 순서를 문서화한다.
 6. [ ] Apple Developer Program과 Developer ID Application 인증서를 준비한다.

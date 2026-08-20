@@ -8,6 +8,31 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-20 — Sprint 0 Windows 기준선과 P0 방어 착수
+
+Windows 주 개발 환경을 공식화하고 Node.js 22·npm 10 계약과 Windows CI를 추가했다. HWPX
+read-only reader가 editing source package와 동일한 ZIP metadata preflight를 사용하도록
+통합했으며 Electron renderer sandbox와 HTTPS-only 외부 navigation 정책을 적용했다.
+
+현재 작업 폴더의 OneDrive dependency 권한과 시스템 npm 부재를 제품 실패와 분리하기 위해
+현재 변경을 로컬 임시 clone에 복제하고 npm 10.9.3으로 `npm ci`를 실행했다. 검증 host의
+Node.js는 24.19.0이라 저장소 기준 Node 22와 다른 engine warning이 있었고, CI는 Node 22로
+고정했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| Jest | 22 suites passed, 2 skipped; 122 passed, 11 skipped |
+| parser probe | 8 passed |
+| production build | main·preload·renderer 성공 |
+| production dependency audit | 0 vulnerabilities |
+| package notice | macOS `.app` 미생성 Windows 환경이므로 실행 대상 아님 |
+
+초기 audit에서는 미사용 `electron-updater`와 오래된 ZIP/XML 계층을 포함해 production
+취약점 4건(High 3, Moderate 1)이 보고됐다. runtime import가 없는 updater를 제거하고
+`adm-zip` 0.6.0, `fast-xml-parser` 5.11.0, `unzipper` 0.12.5로 갱신한 뒤 같은 Jest, probe와
+production build를 다시 통과했으며 production audit은 0건이 됐다. 전체 dev dependency
+audit은 development-only semantic oracle인 `kordoc` 계층을 포함해 별도 정리 대상이다.
+
 ## 2026-08-09 — V4-0 macOS 배포 기준선 감사
 
 Apple·Electron·electron-builder의 공식 배포 문서를 기준으로 Developer ID 직접 배포 순서를
@@ -19,7 +44,7 @@ Apple·Electron·electron-builder의 공식 배포 문서를 기준으로 Develo
 | 현재 app 서명 | ad-hoc, TeamIdentifier 없음, Developer ID 아님 |
 | strict 서명 검증 | 배포용 sealed resource 조건 불충족 |
 | architecture | Electron app/framework arm64, `font-list` helper universal |
-| updater | `electron-updater` dependency만 존재, runtime 연결 없음 |
+| updater | 당시 dependency만 존재, runtime 연결 없음; 2026-08-20 미사용 dependency 제거 |
 | 공개 배포 판단 | 차단 유지 — 인증서·공증·stapling·clean account 검증 필요 |
 
 이 결과는 배포 실패가 아니라 의도적인 개인용 빌드의 기준선이다. 실제 release 설정에는

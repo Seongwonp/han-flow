@@ -1,5 +1,10 @@
 import * as unzipper from 'unzipper'
 import { OrderedXmlNode, parseOrderedXml } from './ordered_xml'
+import {
+  validateHwpxSourceEntryMetadata,
+  type HwpxCompressionMethod,
+  type HwpxSourceEntryType
+} from './package_preflight'
 
 export interface HwpxPackageIndex {
   mimetype: string
@@ -19,7 +24,16 @@ export class HwpxPackageReader implements HwpxReadablePackage {
   private constructor(private readonly directory: unzipper.CentralDirectory) {}
 
   static async open(filePath: string): Promise<HwpxPackageReader> {
-    return new HwpxPackageReader(await unzipper.Open.file(filePath))
+    const directory = await unzipper.Open.file(filePath)
+    validateHwpxSourceEntryMetadata(directory.files.map((entry) => ({
+      path: entry.path,
+      type: (entry.type === 'Directory' ? 'directory' : 'file') as HwpxSourceEntryType,
+      compressionMethod: entry.compressionMethod as HwpxCompressionMethod,
+      crc32: entry.crc32,
+      uncompressedSize: entry.uncompressedSize,
+      encrypted: (entry.flags & 0x1) !== 0
+    })))
+    return new HwpxPackageReader(directory)
   }
 
   private entry(path: string): unzipper.File {

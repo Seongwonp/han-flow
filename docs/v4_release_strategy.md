@@ -27,7 +27,7 @@ V3의 Windows 한/글 재열기 승인은 아직 대기 중이다. V4 조사는 
 | 공증 | 미실행 | Apple notarization 성공 |
 | stapling | 미실행 | 배포 artifact에 ticket 부착·검증 |
 | architecture | 앱 framework는 arm64, `font-list` helper는 universal | V4 공개 artifact는 arm64-only |
-| updater | dependency만 존재, runtime 연결 없음 | 서명된 수동 릴리스 안정화 후 별도 활성화 |
+| updater | runtime 연결 없음; 2026-08-20 미사용 dependency 제거 | 서명된 수동 릴리스 안정화 후 별도 도입 |
 
 현재 `mac.identity: null`은 개인용 로컬 빌드에서 의도적으로 서명을 생략한다. 이를 공개 release
 설정에 재사용하면 안 된다. release 전용 설정에는 `forceCodeSigning: true`를 두어 인증서가

@@ -127,6 +127,12 @@ describe('HwpxSourcePackage', () => {
         { ...metadata('Contents/header.xml'), compressionMethod: 99 as 8 }
       ])
     ).toThrow('지원하지 않는 압축 방식')
+
+    expect(() =>
+      validateHwpxSourceEntryMetadata([
+        { ...metadata('Contents/header.xml'), encrypted: true }
+      ])
+    ).toThrow('암호화된 entry')
   })
 
   test('entry 개수·개별 크기·전체 압축 해제 크기 제한을 선할당 없이 검증한다', () => {

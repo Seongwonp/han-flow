@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Sprint 0 재현성과 P0 방어
+
+- Node.js 22·npm 10 개발 계약과 Windows install/test/probe/build CI 추가
+- 단일 완료율을 폐기하고 capability별 외부 승인까지 추적하는 장기 로드맵 추가
+- HWPX read-only와 editing 경로의 entry·경로·암호화·압축 해제 제한 통합
+- Electron renderer sandbox와 명시적 context isolation 활성화
+- 새 창과 navigation의 외부 protocol을 HTTPS로 제한하고 정책 단위 테스트 추가
+- 미사용 `electron-updater` 제거와 ZIP/XML production dependency 안전 버전 갱신
+- production dependency audit 0 vulnerabilities 검증
+
 ### V3 HWPX 편집 기반
 
 - 과거 editor store·normalized model·serializer와 저장 IPC 감사
