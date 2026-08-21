@@ -265,7 +265,9 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 3. [x] HWPX read-only와 editing 경로가 같은 ZIP metadata preflight를 사용한다.
 4. [x] renderer sandbox와 context isolation을 명시하고 외부 navigation을 HTTPS로 제한한다.
 5. [ ] clean Windows npm 환경에서 전체 CI 명령을 통과한다.
-6. [ ] 기존 project-reference 오류와 남은 TypeScript 오류를 정리해 독립 `typecheck` 관문을 추가한다.
+6. [x] main·core·renderer의 project 범위를 바로잡고 독립 `typecheck` 관문을 추가한다.
+   production에서 import되지 않는 초기 parser·normalization·renderer-engine과 과거 store는
+   명시적으로 제외했으며 후속 legacy 제거 대상으로 유지한다.
 7. [ ] XML·이미지 resource budget과 adversarial fixture를 추가한다.
 8. [ ] legacy production 비사용 코드를 제거하거나 experimental로 격리한다.
 

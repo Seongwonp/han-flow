@@ -64,16 +64,17 @@ export function validateHwpContainer(
       'HWP FileHeader가 없거나 손상된 문서입니다.'
     )
   }
-  const signature = fileHeader.content.subarray(0, 32).toString('ascii').replace(/\0+$/u, '')
+  const headerBytes = Buffer.from(fileHeader.content)
+  const signature = headerBytes.subarray(0, 32).toString('ascii').replace(/\0+$/u, '')
   if (signature !== HWP_SIGNATURE) {
     throw new HwpFileError('HWP_NOT_HWP5', 'HWP 5.x 문서 형식이 아닙니다.')
   }
 
   const versionParts = [
-    fileHeader.content[35],
-    fileHeader.content[34],
-    fileHeader.content[33],
-    fileHeader.content[32]
+    headerBytes[35],
+    headerBytes[34],
+    headerBytes[33],
+    headerBytes[32]
   ]
   const version = versionParts.join('.')
   if (versionParts[0] !== 5) {
@@ -83,7 +84,7 @@ export function validateHwpContainer(
     )
   }
 
-  const flagBits = fileHeader.content.readUInt32LE(36)
+  const flagBits = headerBytes.readUInt32LE(36)
   const flags = {
     compressed: Boolean(flagBits & (1 << 0)),
     encrypted: Boolean(flagBits & (1 << 1)),

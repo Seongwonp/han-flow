@@ -68,7 +68,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [x] 외부 navigation을 HTTPS로 제한
 - [x] 미사용 updater 제거와 ZIP/XML production dependency audit 0건
 - [ ] clean Windows에서 `npm ci`, test, probe와 build 통과
-- [ ] main·preload·renderer를 모두 포함하는 독립 typecheck 설정과 CI 관문 추가
+- [x] main·preload·renderer를 모두 포함하는 독립 typecheck 설정과 CI 관문 추가
 - [ ] XML depth·node·text 상한 감사 및 adversarial fixture 추가
 - [ ] 이미지 decoded dimension·resource budget 추가
 - [ ] production/legacy 코드 inventory와 제거 결정

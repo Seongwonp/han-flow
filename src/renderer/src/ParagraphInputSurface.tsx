@@ -235,7 +235,8 @@ export function ParagraphInputSurface({
       )
       onComposingChangeRef.current(true)
     }
-    const input = (event: InputEvent) => {
+    const input = (event: Event) => {
+      if (!(event instanceof InputEvent)) return
       const snapshot = read()
       const intent = controller.input({
         ...snapshot,

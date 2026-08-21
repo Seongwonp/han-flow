@@ -11,6 +11,8 @@
 - 새 창과 navigation의 외부 protocol을 HTTPS로 제한하고 정책 단위 테스트 추가
 - 미사용 `electron-updater` 제거와 ZIP/XML production dependency 안전 버전 갱신
 - production dependency audit 0 vulnerabilities 검증
+- main·core·renderer 독립 TypeScript typecheck와 Windows CI 관문 추가
+- CFB FileHeader·nullable window·PDF dialog·editable union·InputEvent 타입 오류 정리
 
 ### V3 HWPX 편집 기반
 

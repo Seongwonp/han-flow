@@ -161,7 +161,6 @@ function captureVisualState(window: BrowserWindow): void {
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
-  const editSavePath = testValue('HAN_FLOW_EDIT_SAVE_PATH')
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
@@ -686,7 +685,7 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   mainWindow.on('closed', () => { mainWindow = null })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
   })
 
   if (visualCapturePath || visualStateOutput) {
@@ -761,7 +760,7 @@ app.whenReady().then(() => {
       throw new Error('PDF 용지 크기가 올바르지 않습니다.')
     }
     const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
-    const targetPath = testPath ?? (await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender) ?? undefined, {
+    const targetPath = testPath ?? (await showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
       title: 'PDF로 내보내기',
       defaultPath: '문서.pdf',
       filters: [{ name: 'PDF 문서', extensions: ['pdf'] }]

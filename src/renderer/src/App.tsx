@@ -143,32 +143,38 @@ export function ParagraphView({
     textIndent: hwpUnitToCssPx(style?.indent ?? 0),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
-  const editableTexts =
+  const activeEditing =
     !measurable && editing && isEditableTextParagraph(paragraph, editing.allowMultipleRuns)
-      ? paragraph.content.filter((item) => item.type === 'text' && item.sourceAnchor)
+      ? editing
       : undefined
-  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts
+  const editableTexts = activeEditing
+    ? paragraph.content.filter(
+        (item): item is Extract<ViewerContent, { type: 'text' }> =>
+          item.type === 'text' && Boolean(item.sourceAnchor)
+      )
+    : undefined
+  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
     ? editableTexts.map((editableText, index) => <ParagraphInputSurface
       key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
       text={editableText.text}
       sourceAnchor={editableText.sourceAnchor!}
       style={textCss(editableText, document)}
-      pending={editing.pending}
-      restoreToken={editing.restoreToken}
-      ariaLabel={editing.surfaceLabel}
+      pending={activeEditing.pending}
+      restoreToken={activeEditing.restoreToken}
+      ariaLabel={activeEditing.surfaceLabel}
       desiredSelection={
-        editing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
-          ? editing.desiredSelection
+        activeEditing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
+          ? activeEditing.desiredSelection
           : undefined
       }
-      onCommit={editing.onCommit}
-      onComposingChange={editing.onComposingChange}
-      onSelectionChange={editing.onSelectionChange}
+      onCommit={activeEditing.onCommit}
+      onComposingChange={activeEditing.onComposingChange}
+      onSelectionChange={activeEditing.onSelectionChange}
       onBoundaryNavigate={(direction) => {
         const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
         if (!neighbor?.sourceAnchor) return
         const offset = direction === 'previous' ? neighbor.text.length : 0
-        editing.onSelectionChange(neighbor.sourceAnchor, {
+        activeEditing.onSelectionChange(neighbor.sourceAnchor, {
           anchorOffset: offset,
           focusOffset: offset
         })

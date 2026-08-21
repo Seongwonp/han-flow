@@ -23,6 +23,7 @@ Node.js는 24.19.0이라 저장소 기준 Node 22와 다른 engine warning이 �
 | --- | --- |
 | Jest | 22 suites passed, 2 skipped; 122 passed, 11 skipped |
 | parser probe | 8 passed |
+| TypeScript | main·core·renderer 독립 typecheck 통과 |
 | production build | main·preload·renderer 성공 |
 | production dependency audit | 0 vulnerabilities |
 | package notice | macOS `.app` 미생성 Windows 환경이므로 실행 대상 아님 |
@@ -32,6 +33,12 @@ Node.js는 24.19.0이라 저장소 기준 Node 22와 다른 engine warning이 �
 `adm-zip` 0.6.0, `fast-xml-parser` 5.11.0, `unzipper` 0.12.5로 갱신한 뒤 같은 Jest, probe와
 production build를 다시 통과했으며 production audit은 0건이 됐다. 전체 dev dependency
 audit은 development-only semantic oracle인 `kordoc` 계층을 포함해 별도 정리 대상이다.
+
+후속 typecheck 감사에서는 기존 tsconfig의 core 누락과 renderer 상대경로 오류를 수정했다.
+production에서 import되지 않는 초기 parser·normalization·renderer-engine과 과거 store는
+명시적인 legacy 제거 대상으로 격리했다. 살아 있는 코드에서 발견된 CFB blob, nullable window,
+PDF dialog overload, editable content union과 native InputEvent listener 타입 오류를 수정한 뒤
+`npm run typecheck`를 통과했다.
 
 ## 2026-08-09 — V4-0 macOS 배포 기준선 감사
 
