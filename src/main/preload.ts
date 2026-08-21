@@ -3,6 +3,7 @@ import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
   EditingParagraphStyleRequest,
+  EditingRangeCommitRequest,
   EditingStartRequest
 } from '../core/editing/editing_contract'
 
@@ -44,6 +45,8 @@ const api = {
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
   startEditing: (request: EditingStartRequest) => ipcRenderer.invoke('editing:start', request),
   commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
+  commitRangeEditing: (request: EditingRangeCommitRequest) =>
+    ipcRenderer.invoke('editing:commitRange', request),
   applyCharacterStyle: (request: EditingCharacterStyleRequest) =>
     ipcRenderer.invoke('editing:applyCharacterStyle', request),
   applyParagraphStyle: (request: EditingParagraphStyleRequest) =>

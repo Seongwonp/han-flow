@@ -8,7 +8,8 @@ import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigati
 import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
-  EditingParagraphStyleRequest
+  EditingParagraphStyleRequest,
+  EditingRangeCommitRequest
 } from '../core/editing/editing_contract'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -931,6 +932,21 @@ app.whenReady().then(() => {
       throw new Error('HWPX 편집 commit 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.commit(event.sender.id, request as EditingCommitRequest)
+  })
+
+  ipcMain.handle('editing:commitRange', async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId', 'insert'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new Error('HWPX multi-run 편집 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.commitRange(event.sender.id, request as EditingRangeCommitRequest)
   })
 
   ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {

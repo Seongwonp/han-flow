@@ -138,6 +138,12 @@ anchor와 focus 방향은 사용자의 드래그 방향 복원을 위해 유지�
 `hp:t` 순서의 start/end로 정규화한다. 서로 다른 section을 가로지르는 선택은 이 단계의 범위가
 아니다.
 
+같은 문단에서 여러 run을 선택해 치환할 때는 첫 run의 선택 시작부터 끝까지 새 text로 바꾸고,
+중간 run 전체와 마지막 run의 처음부터 선택 끝까지를 빈 text로 바꾼다. 이 command 배열은 한
+transaction으로 적용하며 빈 `hp:t`와 각 run의 style 구조는 보존한다. 따라서 undo는 원래 text와
+순방향·역방향 selection을 함께 복원하고, 저장은 선택되지 않은 XML 구조를 재작성하지 않는다.
+cross-run IME composition은 OS별 실제 입력 검증 전까지 차단한다.
+
 첫 command는 source text 범위를 바꾸는 형태다.
 
 ```ts

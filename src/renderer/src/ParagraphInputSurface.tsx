@@ -6,6 +6,7 @@ import {
   TextSelection
 } from '../../core/editing/composition_input'
 import { ViewerSourceAnchor } from '../../core/document/viewer_document'
+import { EditorSelection } from '../../core/editing/selection'
 
 interface ParagraphInputSurfaceProps {
   text: string
@@ -19,6 +20,14 @@ interface ParagraphInputSurfaceProps {
   onComposingChange: (composing: boolean) => void
   onSelectionChange: (anchor: ViewerSourceAnchor, selection: TextSelection) => void
   onBoundaryNavigate?: (direction: 'previous' | 'next') => void
+  onBoundaryExtend?: (direction: 'previous' | 'next', selection: TextSelection) => void
+  getRangeSelection?: () => EditorSelection | undefined
+  onRangeCommit?: (
+    selection: EditorSelection,
+    insert: string,
+    inputType: string,
+    timestamp: number
+  ) => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -89,24 +98,33 @@ export function ParagraphInputSurface({
   onCommit,
   onComposingChange,
   onSelectionChange,
-  onBoundaryNavigate
+  onBoundaryNavigate,
+  onBoundaryExtend,
+  getRangeSelection,
+  onRangeCommit
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
   const compositionBufferRef = useRef(new CompositionCommitBuffer())
   const compositionTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const boundaryNavigateRef = useRef(onBoundaryNavigate)
+  const boundaryExtendRef = useRef(onBoundaryExtend)
   const sourceAnchorRef = useRef(sourceAnchor)
   const onCommitRef = useRef(onCommit)
   const onComposingChangeRef = useRef(onComposingChange)
   const onSelectionChangeRef = useRef(onSelectionChange)
+  const getRangeSelectionRef = useRef(getRangeSelection)
+  const onRangeCommitRef = useRef(onRangeCommit)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
+  boundaryExtendRef.current = onBoundaryExtend
   sourceAnchorRef.current = sourceAnchor
   onCommitRef.current = onCommit
   onComposingChangeRef.current = onComposingChange
   onSelectionChangeRef.current = onSelectionChange
+  getRangeSelectionRef.current = getRangeSelection
+  onRangeCommitRef.current = onRangeCommit
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -215,6 +233,22 @@ export function ParagraphInputSurface({
         event.preventDefault()
         return
       }
+      const rangeSelection = getRangeSelectionRef.current?.()
+      if (
+        rangeSelection &&
+        rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId
+      ) {
+        event.preventDefault()
+        if (event.isComposing || event.inputType === 'insertCompositionText') return
+        const insert = event.inputType.startsWith('delete') ? '' : event.data ?? ''
+        onRangeCommitRef.current?.(
+          rangeSelection,
+          insert,
+          event.inputType || 'insertText',
+          performance.now()
+        )
+        return
+      }
       inputTypeRef.current = event.inputType
       if (!controller.isComposing) {
         const selection = textSelection(element)
@@ -290,14 +324,23 @@ export function ParagraphInputSurface({
         controller.isComposing ||
         event.metaKey ||
         event.ctrlKey ||
-        event.altKey ||
-        event.shiftKey
+        event.altKey
       ) {
         return
       }
       const selection = textSelection(element)
-      if (selection.anchorOffset !== selection.focusOffset) return
       const textLength = element.textContent?.length ?? 0
+      if (event.shiftKey) {
+        if (event.key === 'ArrowLeft' && selection.focusOffset === 0) {
+          event.preventDefault()
+          boundaryExtendRef.current?.('previous', selection)
+        } else if (event.key === 'ArrowRight' && selection.focusOffset === textLength) {
+          event.preventDefault()
+          boundaryExtendRef.current?.('next', selection)
+        }
+        return
+      }
+      if (selection.anchorOffset !== selection.focusOffset) return
       if (event.key === 'ArrowLeft' && selection.anchorOffset === 0) {
         event.preventDefault()
         boundaryNavigateRef.current?.('previous')
@@ -309,6 +352,17 @@ export function ParagraphInputSurface({
     const blur = () => {
       if (compositionBuffer.pending && !controller.isComposing) flushCompositionBuffer()
     }
+    const paste = (event: ClipboardEvent) => {
+      const rangeSelection = getRangeSelectionRef.current?.()
+      if (!rangeSelection || rangeSelection.anchorTextNodeId === rangeSelection.focusTextNodeId) return
+      event.preventDefault()
+      onRangeCommitRef.current?.(
+        rangeSelection,
+        event.clipboardData?.getData('text/plain') ?? '',
+        'insertFromPaste',
+        performance.now()
+      )
+    }
     element.addEventListener('beforeinput', beforeInput)
     element.addEventListener('compositionstart', compositionStart)
     element.addEventListener('input', input)
@@ -318,6 +372,7 @@ export function ParagraphInputSurface({
     element.addEventListener('mouseup', selectionChanged)
     element.addEventListener('keydown', keyDown)
     element.addEventListener('blur', blur)
+    element.addEventListener('paste', paste)
     element.dataset.inputReady = 'true'
     return () => {
       clearCompositionTimer()
@@ -330,6 +385,7 @@ export function ParagraphInputSurface({
       element.removeEventListener('mouseup', selectionChanged)
       element.removeEventListener('keydown', keyDown)
       element.removeEventListener('blur', blur)
+      element.removeEventListener('paste', paste)
       delete element.dataset.inputReady
       compositionBuffer.clear()
       onComposingChangeRef.current(false)

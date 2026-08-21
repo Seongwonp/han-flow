@@ -65,6 +65,49 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('공개 헤더 수정')
   })
 
+  test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
+    const manager = new EditingSessionManager(() => 'range-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchors = listHwpxTextAnchors(source, 'Contents/section0.xml').filter(
+      (candidate) => candidate.text.length >= 2
+    )
+    const first = anchors[0]
+    const last = anchors[1]
+    const started = await manager.start(28, fixture)
+    const backward = {
+      sectionPath: first.sectionPath,
+      anchorTextNodeId: last.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: first.textNodeId,
+      focusOffset: 1
+    }
+    const committed = await manager.commitRange(28, {
+      sessionId: started.sessionId,
+      transactionId: 'range-replace',
+      selectionBefore: backward,
+      insert: '다중범위',
+      inputType: 'insertText',
+      timestamp: 1
+    })
+
+    expect(committed).toMatchObject({ canUndo: true, isDirty: true })
+    expect(committed.selection).toMatchObject({
+      anchorTextNodeId: first.textNodeId,
+      anchorOffset: 5,
+      focusTextNodeId: first.textNodeId,
+      focusOffset: 5
+    })
+    expect((await manager.undo(28, started.sessionId)).selection).toEqual(backward)
+    expect((await manager.redo(28, started.sessionId)).selection).toEqual(committed.selection)
+    const destination = join(directory, 'multi-run-range-save.hwpx')
+    await manager.saveAs(28, started.sessionId, destination)
+    const reopened = await HwpxSourcePackage.open(destination)
+    const reopenedFirst = listHwpxTextAnchors(reopened, first.sectionPath).find(
+      (candidate) => candidate.textNodeId === first.textNodeId
+    )
+    expect(reopenedFirst?.text).toBe(`${first.text.slice(0, 1)}다중범위`)
+  })
+
   test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'style-session')
     const source = await HwpxSourcePackage.open(fixture)

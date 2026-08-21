@@ -15,6 +15,7 @@ import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
 import { ParagraphInputSurface } from './ParagraphInputSurface'
+import { readParagraphEditorSelection, restoreParagraphEditorSelection } from './paragraph_selection'
 
 const api = () => (window as any).api
 
@@ -109,6 +110,13 @@ interface ParagraphEditingProps {
     anchor: ViewerSourceAnchor,
     selection: { anchorOffset: number; focusOffset: number }
   ) => void
+  onEditorSelectionChange: (selection: EditorSelection) => void
+  onRangeCommit: (
+    selection: EditorSelection,
+    insert: string,
+    inputType: string,
+    timestamp: number
+  ) => void
 }
 
 export function isEditableTextParagraph(
@@ -153,7 +161,41 @@ export function ParagraphView({
           item.type === 'text' && Boolean(item.sourceAnchor)
       )
     : undefined
-  return <div className="viewer-paragraph" data-measure-block-id={measurable ? paragraph.id : undefined} style={css}>{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
+  const paragraphRef = useRef<HTMLDivElement>(null)
+  const sectionPath = editableTexts?.[0]?.sourceAnchor?.sectionPath
+  const syncEditorSelection = (preserveModeledRange = false) => {
+    if (!activeEditing || !sectionPath || !paragraphRef.current) return
+    const selection = readParagraphEditorSelection(paragraphRef.current, sectionPath)
+    if (
+      preserveModeledRange &&
+      activeEditing.desiredSelection?.anchorTextNodeId !==
+        activeEditing.desiredSelection?.focusTextNodeId &&
+      selection?.anchorTextNodeId === selection?.focusTextNodeId
+    ) return
+    if (selection) activeEditing.onEditorSelectionChange(selection)
+  }
+  useEffect(() => {
+    if (
+      !activeEditing?.desiredSelection ||
+      activeEditing.desiredSelection.anchorTextNodeId === activeEditing.desiredSelection.focusTextNodeId ||
+      !paragraphRef.current
+    ) return
+    restoreParagraphEditorSelection(paragraphRef.current, activeEditing.desiredSelection)
+  }, [
+    activeEditing?.restoreToken,
+    activeEditing?.desiredSelection?.anchorTextNodeId,
+    activeEditing?.desiredSelection?.anchorOffset,
+    activeEditing?.desiredSelection?.focusTextNodeId,
+    activeEditing?.desiredSelection?.focusOffset
+  ])
+  return <div
+    ref={paragraphRef}
+    onMouseUp={() => syncEditorSelection()}
+    onKeyUp={() => syncEditorSelection(true)}
+    className="viewer-paragraph"
+    data-measure-block-id={measurable ? paragraph.id : undefined}
+    style={css}
+  >{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
     ? editableTexts.map((editableText, index) => <ParagraphInputSurface
       key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
       text={editableText.text}
@@ -163,6 +205,7 @@ export function ParagraphView({
       restoreToken={activeEditing.restoreToken}
       ariaLabel={activeEditing.surfaceLabel}
       desiredSelection={
+        activeEditing.desiredSelection?.anchorTextNodeId === activeEditing.desiredSelection?.focusTextNodeId &&
         activeEditing.desiredSelection?.focusTextNodeId === editableText.sourceAnchor!.textNodeId
           ? activeEditing.desiredSelection
           : undefined
@@ -170,6 +213,23 @@ export function ParagraphView({
       onCommit={activeEditing.onCommit}
       onComposingChange={activeEditing.onComposingChange}
       onSelectionChange={activeEditing.onSelectionChange}
+      getRangeSelection={() => {
+        const nativeSelection = sectionPath && paragraphRef.current
+          ? readParagraphEditorSelection(paragraphRef.current, sectionPath)
+          : undefined
+        if (nativeSelection?.anchorTextNodeId !== nativeSelection?.focusTextNodeId) {
+          return nativeSelection
+        }
+        const desired = activeEditing.desiredSelection
+        const textNodeIds = new Set(editableTexts.map((text) => text.sourceAnchor!.textNodeId))
+        return desired &&
+          desired.anchorTextNodeId !== desired.focusTextNodeId &&
+          textNodeIds.has(desired.anchorTextNodeId) &&
+          textNodeIds.has(desired.focusTextNodeId)
+          ? desired
+          : nativeSelection
+      }}
+      onRangeCommit={activeEditing.onRangeCommit}
       onBoundaryNavigate={(direction) => {
         const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
         if (!neighbor?.sourceAnchor) return
@@ -177,6 +237,18 @@ export function ParagraphView({
         activeEditing.onSelectionChange(neighbor.sourceAnchor, {
           anchorOffset: offset,
           focusOffset: offset
+        })
+      }}
+      onBoundaryExtend={(direction, selection) => {
+        const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
+        const currentAnchor = editableText.sourceAnchor
+        if (!neighbor?.sourceAnchor || !currentAnchor) return
+        activeEditing.onEditorSelectionChange({
+          sectionPath: currentAnchor.sectionPath,
+          anchorTextNodeId: currentAnchor.textNodeId,
+          anchorOffset: selection.anchorOffset,
+          focusTextNodeId: neighbor.sourceAnchor.textNodeId,
+          focusOffset: direction === 'previous' ? neighbor.text.length : 0
         })
       }}
     />)
@@ -745,6 +817,9 @@ export default function App() {
       ...selection
     })
   }, [])
+  const updateEditorSelection = useCallback((selection: EditorSelection) => {
+    setEditingSelection(selection)
+  }, [])
   const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
     if (!editing) return
     const sessionId = editing.sessionId
@@ -779,6 +854,31 @@ export default function App() {
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
       setEditingStatus(`편집 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }).finally(() => {
+      setEditingPending((current) => Math.max(0, current - 1))
+    })
+  }, [editing?.sessionId, applyEditingResult])
+  const commitRangeParagraph = useCallback((
+    selection: EditorSelection,
+    insert: string,
+    inputType: string,
+    timestamp: number
+  ) => {
+    if (!editing || editingComposing.current) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('여러 글자 범위 반영 중…')
+    void api().commitRangeEditing({
+      sessionId: editing.sessionId,
+      transactionId: `ui-range-${++editSequence.current}`,
+      selectionBefore: selection,
+      insert,
+      inputType,
+      timestamp
+    }).then((result: EditingActionResult) => {
+      applyEditingResult(result)
+      setEditingStatus('편집 중')
+    }).catch((reason: unknown) => {
+      setEditingStatus(`범위 편집 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
@@ -1266,7 +1366,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}

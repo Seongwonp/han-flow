@@ -33,6 +33,15 @@ export interface EditingCommitRequest {
   timestamp: number
 }
 
+export interface EditingRangeCommitRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  insert: string
+  inputType?: string
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

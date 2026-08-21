@@ -5,11 +5,13 @@ import {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
   EditingParagraphStyleRequest,
+  EditingRangeCommitRequest,
   EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
 import { HwpxEditHistory } from '../core/editing/history'
 import { saveHwpxAs } from '../core/editing/save_as'
+import { planReplaceSelection } from '../core/editing/range_edit'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
 import { listHwpxTextAnchors } from '../core/editing/text_patch'
 import { HwpxSourcePackage } from '../core/parser/source_package'
@@ -78,6 +80,35 @@ export class EditingSessionManager {
         selectionAfter: { ...request.selectionAfter },
         inputType: request.inputType,
         compositionId: request.compositionId,
+        timestamp: request.timestamp
+      }
+      session.history.setSelection(transaction.selectionBefore)
+      const result = session.history.commit(transaction)
+      return {
+        document: result.changed
+          ? await projectEditTransaction(result)
+          : await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async commitRange(senderId: number, request: EditingRangeCommitRequest): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const plan = planReplaceSelection(
+        session.history.package,
+        request.selectionBefore,
+        request.insert
+      )
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: plan.commands,
+        selectionBefore: { ...request.selectionBefore },
+        selectionAfter: plan.selectionAfter,
+        inputType: request.inputType,
         timestamp: request.timestamp
       }
       session.history.setSelection(transaction.selectionBefore)

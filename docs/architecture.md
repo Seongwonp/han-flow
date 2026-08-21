@@ -84,9 +84,13 @@ revision이 아니라 logical state ID와 savepoint ID를 비교한다.
 
 Sprint 2부터 `EditorSelection`은 section 하나와 독립적인 anchor/focus text node ID·UTF-16
 offset을 가진다. 코어는 ordered `hp:t` 순서로 여러 run 범위를 정규화하고 역방향 여부를
-보존하며, 없는 anchor와 surrogate pair 중간 offset을 거부한다. 현재 renderer 입력 surface와
-글자 style command는 한 run 범위만 만들고 적용한다. 실제 DOM multi-run 선택과 여러 command
-치환은 다음 관문에서 이 모델 위에 연결한다.
+보존하며, 없는 anchor와 surrogate pair 중간 offset을 거부한다. 같은 문단의 renderer surface는
+run 경계의 Shift+방향키 selection을 이 모델로 확장한다. cross-run 입력은
+첫 run의 선택 꼬리에 새 text를 넣고 중간 run 전체와 마지막 run의 선택 머리를 비우는 command
+배열로 main에 보내며, 한 transaction으로 undo/redo한다. 빈 `hp:t`와 run style 구조는 손실 방지를
+위해 유지한다. 독립 `contentEditable` host 사이의 native pointer selection은 Chromium이 한 host로
+접으므로 공통 paragraph editing host 설계 전까지 지원하지 않는다. 글자 style command는 아직 한
+run 범위만 적용한다.
 
 V3-4에서 source package와 history의 실제 소유자를 Electron main으로 확정했다. 각
 `webContents.id`에는 하나의 무작위 session ID만 연결되고 commit은 sender별 queue에서

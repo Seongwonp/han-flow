@@ -95,7 +95,8 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 예상: 6–10주
 
 - [x] anchor/focus가 독립 text run을 가리키는 selection domain model과 정규화·검증
-- [ ] 실제 DOM multi-run range와 여러 run 치환·undo/redo 복원
+- [x] 모델 기반 multi-run range와 여러 run 치환·undo/redo 복원
+- [ ] 공통 paragraph editing host 기반 native pointer selection
 - 문단 split/merge, line break와 plain-text paste command
 - capability·loss policy와 stale anchor UX
 - transaction atomic rollback과 저장 revision 추적
