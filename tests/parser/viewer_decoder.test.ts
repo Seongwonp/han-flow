@@ -104,4 +104,36 @@ describe('ViewerDocument source anchor', () => {
       anchors.find((anchor) => anchor.text === '')?.textNodeId
     )
   })
+
+  test('hp:t 내부 lineBreak와 tab을 편집 가능한 논리 텍스트로 투영한다', async () => {
+    const source = await HwpxSourcePackage.open(publicFixture)
+    const sectionPath = 'Contents/section0.xml'
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '공개 헤더',
+      '공개<hp:lineBreak/>헤더<hp:tab/>탭'
+    )
+    const mixed = source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
+    const anchor = listHwpxTextAnchors(mixed, sectionPath).find(
+      (candidate) => candidate.text === '공개\n헤더\t탭'
+    )
+    const document = await decodeViewerDocument(mixed)
+    const viewerTexts: ViewerText[] = []
+    const collect = (paragraphs: typeof document.sections[0]['blocks']): void => {
+      for (const paragraph of paragraphs) {
+        for (const item of paragraph.content) {
+          if (item.type === 'text') viewerTexts.push(item)
+          if (item.type === 'table') {
+            item.rows.forEach((row) => row.cells.forEach((cell) => collect(cell.paragraphs)))
+          }
+        }
+      }
+    }
+    document.sections.forEach((section) => collect(section.blocks))
+    const viewerText = viewerTexts.find(
+      (item) => item.sourceAnchor?.textNodeId === anchor?.textNodeId
+    )
+
+    expect(anchor).toBeDefined()
+    expect(viewerText).toMatchObject({ type: 'text', text: '공개\n헤더\t탭' })
+  })
 })

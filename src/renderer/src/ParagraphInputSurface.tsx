@@ -229,11 +229,37 @@ export function ParagraphInputSurface({
       compositionTimerRef.current = setTimeout(flushCompositionBuffer, 450)
     }
     const beforeInput = (event: InputEvent) => {
-      if (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak') {
+      if (event.inputType === 'insertParagraph') {
         event.preventDefault()
         return
       }
       const rangeSelection = getRangeSelectionRef.current?.()
+      if (event.inputType === 'insertLineBreak') {
+        event.preventDefault()
+        if (event.isComposing || controller.isComposing) return
+        if (rangeSelection && rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId) {
+          onRangeCommitRef.current?.(
+            rangeSelection,
+            '\n',
+            event.inputType,
+            performance.now()
+          )
+          return
+        }
+        const selection = textSelection(element)
+        const from = Math.min(selection.anchorOffset, selection.focusOffset)
+        const to = Math.max(selection.anchorOffset, selection.focusOffset)
+        onCommitRef.current(sourceAnchorRef.current, {
+          from,
+          to,
+          insert: '\n',
+          selectionBefore: selection,
+          selectionAfter: { anchorOffset: from + 1, focusOffset: from + 1 },
+          inputType: event.inputType,
+          timestamp: performance.now()
+        })
+        return
+      }
       if (
         rangeSelection &&
         rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId
@@ -353,15 +379,34 @@ export function ParagraphInputSurface({
       if (compositionBuffer.pending && !controller.isComposing) flushCompositionBuffer()
     }
     const paste = (event: ClipboardEvent) => {
+      if (controller.isComposing) return
+      const insert = (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n')
       const rangeSelection = getRangeSelectionRef.current?.()
-      if (!rangeSelection || rangeSelection.anchorTextNodeId === rangeSelection.focusTextNodeId) return
       event.preventDefault()
-      onRangeCommitRef.current?.(
-        rangeSelection,
-        event.clipboardData?.getData('text/plain') ?? '',
-        'insertFromPaste',
-        performance.now()
-      )
+      if (rangeSelection && rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId) {
+        onRangeCommitRef.current?.(
+          rangeSelection,
+          insert,
+          'insertFromPaste',
+          performance.now()
+        )
+        return
+      }
+      const selection = textSelection(element)
+      const from = Math.min(selection.anchorOffset, selection.focusOffset)
+      const to = Math.max(selection.anchorOffset, selection.focusOffset)
+      onCommitRef.current(sourceAnchorRef.current, {
+        from,
+        to,
+        insert,
+        selectionBefore: selection,
+        selectionAfter: {
+          anchorOffset: from + insert.length,
+          focusOffset: from + insert.length
+        },
+        inputType: 'insertFromPaste',
+        timestamp: performance.now()
+      })
     }
     element.addEventListener('beforeinput', beforeInput)
     element.addEventListener('compositionstart', compositionStart)
@@ -399,7 +444,7 @@ export function ParagraphInputSurface({
       role="textbox"
       aria-label={ariaLabel}
       data-source-text-node-id={sourceAnchor.textNodeId}
-      aria-multiline="false"
+      aria-multiline="true"
       spellCheck={false}
       suppressContentEditableWarning
       style={style}

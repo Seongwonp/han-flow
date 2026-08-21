@@ -8,6 +8,17 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-21 — Sprint 2 HWPX inline 줄 나눔
+
+`hp:t` 혼합 콘텐츠에서 `hp:lineBreak`와 `hp:tab`을 각각 논리 `\n`·`\t`로 읽고, 편집된 줄바꿈을
+`<hp:lineBreak/>`로 다시 저장하도록 source anchor와 viewer projection을 일치시켰다. 알 수 없는
+inline element는 양쪽 모두 편집 불가로 유지한다. renderer의 Shift+Enter는 native DOM 변형을
+막고 `insertLineBreak` transaction을 직접 commit한다.
+
+타입 검사와 text patch, decoder, range edit, transaction/history 핵심 테스트를 통과했다. 일반
+Enter 문단 split, 경계 Backspace/Delete merge, stale `hp:linesegarray`의 구조적 무효화는 다음
+paragraph fragment command 관문으로 남긴다.
+
 ## 2026-08-21 — Windows production package와 V3 자동 승인 bundle
 
 acceptance bundle 생성기의 macOS 실행 파일 하드코딩을 제거하고 Windows에서는

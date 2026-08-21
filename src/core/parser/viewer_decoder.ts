@@ -16,6 +16,15 @@ function styleChild(node: OrderedXmlNode, name: string): OrderedXmlNode | undefi
   return branch ? descendants(branch, name)[0] : undefined
 }
 const textOf = (node: OrderedXmlNode): string => walkOrderedXml(node.children).filter((item) => item.name === '#text').map((item) => item.text ?? '').join('')
+const inlineTextOf = (node: OrderedXmlNode): string => node.children.map((item) => {
+  if (item.name === '#text') return item.text ?? ''
+  if (item.name === 'hp:lineBreak') return '\n'
+  if (item.name === 'hp:tab') return '\t'
+  return textOf(item)
+}).join('')
+const isEditableInlineText = (node: OrderedXmlNode): boolean => node.children.every(
+  (item) => item.name === '#text' || item.name === 'hp:lineBreak' || item.name === 'hp:tab'
+)
 const box = (node?: OrderedXmlNode) => ({ top: num(node?.attributes.top), right: num(node?.attributes.right), bottom: num(node?.attributes.bottom), left: num(node?.attributes.left) })
 
 export interface ViewerDecodeOptions {
@@ -31,10 +40,12 @@ function decodeParagraph(node: OrderedXmlNode, id: string, sectionPath?: string)
       if (item.name === 'hp:t') {
         content.push({
           type: 'text',
-          text: textOf(item),
+          text: inlineTextOf(item),
           charStyleId,
           sourceAnchor:
-            sectionPath !== undefined && item.sourceOrdinal !== undefined
+            sectionPath !== undefined &&
+            item.sourceOrdinal !== undefined &&
+            isEditableInlineText(item)
               ? {
                   sectionPath,
                   textNodeId: `${sectionPath}#hp:t:${item.sourceOrdinal}`

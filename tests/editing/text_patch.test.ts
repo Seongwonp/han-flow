@@ -61,7 +61,7 @@ describe('HWPX text patch와 Save As', () => {
     expect(result.package.readEntry('Unknown/custom.bin')).toEqual(roundTripSentinels.binary)
 
     const patchedXml = result.package.readEntry('Contents/section0.xml').toString('utf8')
-    expect(patchedXml).toContain('수정 &amp; &lt;검증&gt; "인용"&#9;줄1&#10;줄2 😀')
+    expect(patchedXml).toContain('수정 &amp; &lt;검증&gt; "인용"&#9;줄1<hp:lineBreak/>줄2 😀')
     expect(listHwpxTextAnchors(result.package, command.sectionPath)).toContainEqual({ ...result.anchor })
 
     const restored = applyReplaceTextCommand(result.package, result.inverse)
@@ -116,16 +116,35 @@ describe('HWPX text patch와 Save As', () => {
     expect(() => escapeXmlText('\ud800')).toThrow('XML 1.0')
   })
 
-  test('self-closing·복합 자식·해석 불가 entity text node는 편집 anchor에서 제외한다', async () => {
+  test('lineBreak·tab 혼합 콘텐츠를 논리 텍스트로 편집하고 알 수 없는 자식은 제외한다', async () => {
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const original = source.readEntry(sectionPath).toString('utf8')
-    const unsupported = original.replace('</hs:sec>', '<hp:t/><hp:t><hfx:inline/></hp:t><hp:t>&custom;</hp:t></hs:sec>')
+    const unsupported = original.replace(
+      '</hs:sec>',
+      '<hp:t/><hp:t>첫 줄<hp:lineBreak/>둘째 줄<hp:tab/>탭</hp:t><hp:t><hfx:inline/></hp:t><hp:t>&custom;</hp:t></hs:sec>'
+    )
     const guarded = source.withEntry(sectionPath, Buffer.from(unsupported))
     const anchors = listHwpxTextAnchors(guarded, sectionPath)
 
     expect(anchors.filter((anchor) => anchor.text === '')).toHaveLength(1)
+    expect(anchors.some((anchor) => anchor.text === '첫 줄\n둘째 줄\t탭')).toBe(true)
     expect(anchors.some((anchor) => anchor.text.includes('custom'))).toBe(false)
+
+    const mixed = anchors.find((anchor) => anchor.text === '첫 줄\n둘째 줄\t탭')!
+    const edited = applyReplaceTextCommand(guarded, {
+      type: 'replace-text',
+      revision: guarded.revision,
+      sectionPath,
+      textNodeId: mixed.textNodeId,
+      from: 3,
+      to: 4,
+      insert: '\n새 줄\n'
+    })
+    expect(edited.anchor.text).toBe('첫 줄\n새 줄\n둘째 줄\t탭')
+    expect(edited.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '첫 줄<hp:lineBreak/>새 줄<hp:lineBreak/>둘째 줄&#9;탭'
+    )
   })
 
   test('검증된 package만 새 목적지에 연결하고 원본과 미수정 entry를 보존한다', async () => {

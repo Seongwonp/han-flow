@@ -59,7 +59,7 @@ describe('multi-run range replacement', () => {
     })
   })
 
-  test('역방향 여러 run 치환을 한 history 단위로 적용하고 undo 선택을 복원한다', async () => {
+  test('역방향 여러 run에 여러 줄 plain text를 붙이고 undo 선택을 복원한다', async () => {
     const source = await HwpxSourcePackage.open(fixture)
     const anchors = listHwpxTextAnchors(source, sectionPath).filter((anchor) => anchor.text.length >= 2)
     const first = anchors[0]
@@ -71,7 +71,7 @@ describe('multi-run range replacement', () => {
       focusTextNodeId: first.textNodeId,
       focusOffset: 1
     }
-    const plan = planReplaceSelection(source, backward, '범위')
+    const plan = planReplaceSelection(source, backward, '범위\n붙여넣기')
     const transaction: EditTransaction = {
       id: 'replace-range',
       baseRevision: source.revision,
@@ -86,6 +86,9 @@ describe('multi-run range replacement', () => {
 
     expect(history.stats().undoEntries).toBe(1)
     expect(history.selection).toEqual(plan.selectionAfter)
+    expect(history.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '범위<hp:lineBreak/>붙여넣기'
+    )
     expect(history.undo()?.selection).toEqual(backward)
     expect(history.redo()?.selection).toEqual(plan.selectionAfter)
   })

@@ -529,6 +529,21 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
   12개, 9,767쪽 progressive 문서도 overflow 0을 유지했다.
 행·열 추가, 병합·분할, 표 cell style 편집은 계속 별도 범위로 둔다.
 
+### Sprint 2 inline 줄 나눔과 문단 구조 입력
+
+OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는
+plain XML text, `hp:lineBreak`, `hp:tab`을 각각 논리 텍스트, `\n`, `\t`로 읽고 UTF-16 offset을
+유지한다. 편집 직렬화는 논리 `\n`을 `<hp:lineBreak/>`로 되돌린다. 알 수 없는 inline element나
+entity가 있으면 기존 fail-closed 정책대로 source anchor를 노출하지 않는다.
+
+Shift+Enter는 Chromium이 contentEditable 내부에 만드는 DOM 모양에 맡기지 않고
+`insertLineBreak` transaction을 직접 생성한다. 여러 줄 plain-text paste도 같은 직렬화 경로를
+사용한다. 일반 Enter는 서로 다른 `hp:p` 두 개를 만들어야 하고 stale `hp:linesegarray` 처리와
+exact inverse가 필요하므로 별도 paragraph fragment command에서 구현한다.
+
+구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
+[한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.
+
 2026-07-30 V3 코드 완료 slice 구현 결과:
 
 - `ApplyCharacterStyleCommand`는 기존 굵기와 같은 definition clone·reuse 경계에서

@@ -46,6 +46,11 @@ interface SourceTextNode extends HwpxTextAnchor {
   contentEnd: number
 }
 
+const INLINE_TEXT_CONTROLS: Readonly<Record<string, string>> = {
+  'hp:lineBreak': '\n',
+  'hp:tab': '\t'
+}
+
 interface XmlToken {
   start: number
   end: number
@@ -142,6 +147,21 @@ function decodeXmlText(source: string): string {
   return decoded + tail
 }
 
+function decodeHwpxTextContent(source: string): string {
+  let decoded = ''
+  let cursor = 0
+  for (const token of tokenizeXml(source)) {
+    decoded += decodeXmlText(source.slice(cursor, token.start))
+    const control = token.name ? INLINE_TEXT_CONTROLS[token.name] : undefined
+    if (token.kind !== 'self-close' || control === undefined) {
+      throw new Error('지원하지 않는 hp:t 혼합 콘텐츠가 있습니다.')
+    }
+    decoded += control
+    cursor = token.end
+  }
+  return decoded + decodeXmlText(source.slice(cursor))
+}
+
 function isValidXmlCharacter(codePoint: number): boolean {
   return (
     codePoint === 0x9 ||
@@ -168,6 +188,11 @@ export function escapeXmlText(text: string): string {
     .replace(/\r/g, '&#13;')
 }
 
+/** HWPX hp:t의 논리 텍스트를 OWPML 혼합 콘텐츠로 직렬화한다. */
+export function encodeHwpxTextContent(text: string): string {
+  return escapeXmlText(text).replace(/&#10;/g, '<hp:lineBreak/>')
+}
+
 function decodeUtf8(bytes: Buffer): string {
   const xml = bytes.toString('utf8')
   if (!Buffer.from(xml, 'utf8').equals(bytes)) {
@@ -179,7 +204,7 @@ function decodeUtf8(bytes: Buffer): string {
 function sourceTextNodes(sectionPath: string, xml: string): SourceTextNode[] {
   const result: SourceTextNode[] = []
   let ordinal = 0
-  let active: { ordinal: number; contentStart: number; complex: boolean } | undefined
+  let active: { ordinal: number; contentStart: number } | undefined
 
   for (const token of tokenizeXml(xml)) {
     if (!active) {
@@ -189,33 +214,29 @@ function sourceTextNodes(sectionPath: string, xml: string): SourceTextNode[] {
       if (token.kind === 'open') {
         active = {
           ordinal: currentOrdinal,
-          contentStart: token.end,
-          complex: false
+          contentStart: token.end
         }
       }
       continue
     }
 
     if (token.kind === 'close' && token.name === 'hp:t') {
-      if (!active.complex) {
-        try {
-          const text = decodeXmlText(xml.slice(active.contentStart, token.start))
-          result.push({
-            sectionPath,
-            textNodeId: `${sectionPath}#hp:t:${active.ordinal}`,
-            ordinal: active.ordinal,
-            text,
-            contentStart: active.contentStart,
-            contentEnd: token.start
-          })
-        } catch {
-          // 사용자 정의 entity 등 의미를 안전하게 복원할 수 없는 node는 anchor로 노출하지 않는다.
-        }
+      try {
+        const text = decodeHwpxTextContent(xml.slice(active.contentStart, token.start))
+        result.push({
+          sectionPath,
+          textNodeId: `${sectionPath}#hp:t:${active.ordinal}`,
+          ordinal: active.ordinal,
+          text,
+          contentStart: active.contentStart,
+          contentEnd: token.start
+        })
+      } catch {
+        // 사용자 정의 entity나 알 수 없는 inline control은 안전하게 복원할 수 없으므로 노출하지 않는다.
       }
       active = undefined
       continue
     }
-    active.complex = true
   }
   if (active) throw new Error('끝나지 않은 hp:t node가 있습니다.')
   return result
@@ -265,7 +286,10 @@ export function applyReplaceTextCommand(
 
   const removed = sourceNode.text.slice(command.from, command.to)
   const nextText = sourceNode.text.slice(0, command.from) + command.insert + sourceNode.text.slice(command.to)
-  const nextXml = xml.slice(0, sourceNode.contentStart) + escapeXmlText(nextText) + xml.slice(sourceNode.contentEnd)
+  const nextXml =
+    xml.slice(0, sourceNode.contentStart) +
+    encodeHwpxTextContent(nextText) +
+    xml.slice(sourceNode.contentEnd)
   const nextPackage = sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml, 'utf8'))
   const entries = sourcePackage.listEntries()
   const hasPreview = entries.some((entry) => entry.path.startsWith('Preview/'))
