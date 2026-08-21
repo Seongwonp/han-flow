@@ -1,16 +1,8 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.node.json",
-  "include": ["src/main/**/*", "src/core/**/*", "src/shared/**/*", "electron.vite.config.ts"],
-  "exclude": [
-    "src/core/parser/parser.ts",
-    "src/core/parser/normalization.ts",
-    "src/core/renderer-engine/**/*"
-  ],
+  "include": ["src/main/**/*", "src/core/**/*", "electron.vite.config.ts"],
   "compilerOptions": {
     "composite": true,
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["src/shared/*"]
-    }
+    "baseUrl": "."
   }
 }

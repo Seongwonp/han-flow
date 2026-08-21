@@ -8,6 +8,28 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-21 — Sprint 0 legacy inventory와 자동 관문 완료
+
+main·decoder worker·preload·renderer의 production 진입점과 Jest·scripts 참조를 대조했다.
+도달 불가능한 초기 `parser.ts`, `normalization.ts`, `renderer-engine`, Zustand store와 이들만
+사용한 `shared/types.ts`를 삭제했다. 현재 코드에서 import가 없던 `zustand`, `katex`,
+`@types/katex`, `react-icons`도 package와 lockfile에서 제거했다.
+
+과거 구현은 ZIP·resource 상한 없이 전체 base64를 만들고 unknown package 구조를 버리며,
+snapshot deep copy와 직접 구조 변경을 사용하므로 experimental 사본으로도 유지하지 않는다.
+현재 보기·편집 계약은 `ViewerDocument`·`FixedPageDocument`, `HwpxSourcePackage`, command와
+transaction, main-process editing session으로 한정했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| inventory | production·development-only·legacy 판정표 작성 |
+| 삭제 | legacy source 5개, 직접 dependency 4종 제거 |
+| TypeScript | 임시 exclude 없이 main·core·renderer typecheck 통과 |
+| Jest | 23 suites passed, 2 skipped; 133 passed, 11 skipped |
+| parser probe | 8 passed |
+| production build | main·preload·renderer 성공 |
+| production dependency audit | 0 vulnerabilities |
+
 ## 2026-08-21 — Sprint 0 XML·이미지 resource exhaustion 방어
 
 HWPX ordered XML을 parse하기 전에 깊이 256, node 1,000,000개, text 50,000,000자와

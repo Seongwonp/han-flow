@@ -159,9 +159,9 @@ V3의 저장 순서는 다음과 같다.
 
 | 파일 | 현재 판정 | 이유와 조치 |
 | --- | --- | --- |
-| `src/renderer/src/store.ts` | 폐기 후보 | 실행 경로에서 import되지 않는다. `NormalizedDocument` 전체 deep copy history, `any`, `Date.now()` ID와 action 내부 store update를 사용한다. V3 store의 근거로 쓰지 않는다. |
-| `src/shared/types.ts`의 `NormalizedDocument` | 참고만 유지 | 초기 parser/editor용 모델이다. 원본 package와 알 수 없는 XML을 소유하지 않아 저장 원본으로 부적합하다. |
-| `src/core/parser/parser.ts`·`normalization.ts` | 격리 후보 | 현재 `DocumentImporter` 경로에서 사용되지 않는 초기 parser다. 조기 normalization으로 원본 구조가 손실된다. |
+| 과거 renderer Zustand store | 삭제 완료 | 실행 경로에서 import되지 않고 전체 deep copy history, `any`, 시간 기반 ID와 action 내부 update를 사용해 Sprint 0에서 제거했다. |
+| 과거 `NormalizedDocument`와 Zustand store | 삭제 완료 | 초기 parser/editor용 모델이며 원본 package와 unknown XML을 소유하지 않아 저장 원본으로 부적합하다. |
+| 과거 `parser.ts`·`normalization.ts`·`renderer-engine` | 삭제 완료 | `DocumentImporter`에서 도달하지 않고 조기 normalization으로 원본 구조를 손실하므로 Sprint 0에서 제거했다. |
 | 과거 `src/core/parser/serialization.ts` | 제거 완료 | header와 section만 새로 만들며 package entry·이미지·미지원 XML을 보존하지 않았다. 실제 OWPML attribute/구조와 다른 임시 표현도 포함했다. |
 | 과거 main `hwpx:save` | 제거 완료 | renderer의 `any` payload를 받아 목적지에 직접 동기 write했다. `mimetype` 값도 `application/ovf+xml`로 잘못 기록했고 schema, sender, 원본 보호와 저장 후 검증이 없었다. |
 | `HwpxPackageReader` | 확장해 재사용 | mimetype·필수 entry·section·resource index와 byte read는 검증됐다. 모든 entry snapshot, duplicate/path/size 제한과 compression metadata를 추가한다. |

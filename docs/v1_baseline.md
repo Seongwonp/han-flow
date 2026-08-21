@@ -29,7 +29,7 @@ v1에서 하지 않는 일:
 | ZIP/XML 읽기 | `unzipper`, `fast-xml-parser`, main process 파일 접근 | 모든 섹션·이미지 동시 buffer/base64 로딩 | 작은 문서에는 동작하지만 점진 로딩과 메모리 목표에 반한다 |
 | 정규화 | 스타일을 ID map으로 만드는 방향 | `any`, 무작위/시간 기반 ID, 객체 키 순회로 문서 순서 추론 | 결정적 snapshot 테스트가 불가능하고 혼합 자식 순서를 잃는다 |
 | 문서 모델 | parser와 UI 사이에 모델을 둔 방향 | 편집 가능한 `NormalizedDocument`, 원본 속성의 조기 손실 | layout에 필요한 단위·페이지·배치 정보가 없다 |
-| renderer-engine | 스타일 해석기를 별도 파일로 둔 점 | 문자열 CSS 생성, 잘못된 HWPUNIT 변환, layout 단계 부재 | 현재 구현은 style adapter이며 renderer/layout engine은 아니다 |
+| renderer-engine | 스타일 해석기를 별도 파일로 둔 점 | 문자열 CSS 생성, 잘못된 HWPUNIT 변환, layout 단계 부재 | production 미사용 판정 후 Sprint 0에서 삭제했다 |
 | React UI | 문서 canvas의 기본 골격, drag/drop 일부 | `contentEditable`, ribbon, 수식/표/이미지 편집 UI | 대부분이 v1 외 기능이고 검증 표면을 키운다 |
 | Zustand | 앱 상태 저장소라는 선택 | 문서 전체 history/deep copy와 mutation action | 뷰어에는 load/session/viewport 상태만 필요하다 |
 | serialization | v3 참고 구현으로 보관 가능 | v1 런타임과 IPC에서 제거 | 미지원 XML을 유실할 수 있어 기존 파일 저장은 위험하다 |

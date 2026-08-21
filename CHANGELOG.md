@@ -16,6 +16,9 @@
 - XML depth·node·text·DOCTYPE 사전 검사와 실제 깊이 폭탄 HWPX 회귀 fixture
 - 이미지 개수·byte·decoded dimension·pixel budget과 dimension 폭탄 HWPX 회귀 fixture
 - `BinData` resource를 순차적으로 읽어 일시적인 병렬 메모리 할당 제거
+- production 진입점 기준 [legacy inventory](docs/legacy_inventory.md) 작성
+- 손실성 초기 parser·normalization·renderer-engine·Zustand store와 구형 shared 타입 제거
+- 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
 
 ### V3 HWPX 편집 기반
 

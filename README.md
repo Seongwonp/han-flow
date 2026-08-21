@@ -153,7 +153,7 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며,
 | V1 — HWPX 뷰어 | 완료 | 읽기, 점진 로딩, PDF, macOS UX |
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
 | V3 — 편집 | 승인 대기 | 코드·macOS native smoke 완료, 물리 IME matrix·Windows 한/글 재열기 대기 |
-| Sprint 0 — 기반 정비 | 진행 중 | Windows CI·resource budget 완료, legacy inventory 남음 |
+| Sprint 0 — 기반 정비 | 완료 | Windows CI·P0 방어·resource budget·legacy 제거 |
 | V4 — 사용자 배포 | 준비 중 | Windows 후보와 macOS arm64 서명·공증·설치 대기 |
 
 단일 완료율은 범위와 검증 수준을 숨길 수 있어 더 이상 공개 완료 판정으로 사용하지 않습니다.

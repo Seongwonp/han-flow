@@ -257,7 +257,7 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 설계 관문 뒤에 진행한다. 자동 코드 범위에서 다음 우선순위는 Windows 한/글 재열기용 공개
 호환성 package와 수동 판정표를 준비하는 것이다.
 
-## 현재 milestone: Sprint 0 재현성과 P0 방어
+## 완료한 milestone: Sprint 0 재현성과 P0 방어
 
 1. [x] Node.js 22와 npm 10 version contract를 저장소에 기록한다.
 2. [x] Windows clean install·test·probe·build CI 초안을 추가한다. package가 필요한 notice
@@ -267,13 +267,15 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 5. [x] clean Windows npm 환경에서 전체 CI 명령을 통과한다. GitHub Actions와 로컬
    Node.js 22.23.2 clean install에서 같은 test·typecheck·probe·build 관문을 확인했다.
 6. [x] main·core·renderer의 project 범위를 바로잡고 독립 `typecheck` 관문을 추가한다.
-   production에서 import되지 않는 초기 parser·normalization·renderer-engine과 과거 store는
-   명시적으로 제외했으며 후속 legacy 제거 대상으로 유지한다.
+   production에서 import되지 않던 초기 parser·normalization·renderer-engine과 과거 store는
+   inventory 판정 뒤 삭제했으며 임시 typecheck 제외도 제거했다.
 7. [x] XML·이미지 resource budget과 adversarial fixture를 추가한다. XML은 parse 전에
    depth·node·text·DOCTYPE을 검사하고, image resource는 순차 read 중 count·bytes·decoded
    dimension·pixel 합계를 제한한다. 실제 ZIP 형태의 깊이·PNG dimension 폭탄은
    `HWPX_IMPORT_FAILED`로 종료한다.
-8. [ ] legacy production 비사용 코드를 제거하거나 experimental로 격리한다.
+8. [x] legacy production 비사용 코드를 제거하거나 experimental로 격리한다. 손실성 parser와
+   normalization, 문자열 renderer, snapshot store와 전용 타입을 삭제하고 미사용 dependency
+   네 종을 lockfile에서 제거했다. 상세 판정은 [production·legacy inventory](legacy_inventory.md)에 있다.
 
 상세 장기 순서와 완료 규칙은 [장기 완성도 로드맵](long_term_roadmap.md)을 따른다.
 

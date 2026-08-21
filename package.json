@@ -100,17 +100,13 @@
     "release:check": "node scripts/release_check.mjs"
   },
   "dependencies": {
-    "@types/katex": "^0.16.8",
     "adm-zip": "0.6.0",
     "cfb": "^1.2.2",
     "fast-xml-parser": "5.11.0",
     "font-list": "^2.1.0",
-    "katex": "^0.17.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-icons": "^5.6.0",
-    "unzipper": "0.12.5",
-    "zustand": "^4.4.7"
+    "unzipper": "0.12.5"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",

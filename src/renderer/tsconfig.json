@@ -1,18 +1,11 @@
 {
   "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
-  "include": ["./**/*", "../core/**/*", "../shared/**/*"],
-  "exclude": [
-    "./src/store.ts",
-    "../core/parser/parser.ts",
-    "../core/parser/normalization.ts",
-    "../core/renderer-engine/**/*"
-  ],
+  "include": ["./**/*", "../core/**/*"],
   "compilerOptions": {
     "composite": true,
     "baseUrl": "../..",
     "paths": {
-      "@renderer/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@renderer/*": ["src/renderer/*"]
     }
   }
 }
