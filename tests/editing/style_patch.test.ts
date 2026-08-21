@@ -19,8 +19,9 @@ const sectionPath = 'Contents/section0.xml'
 function selection(textNodeId: string): EditorSelection {
   return {
     sectionPath,
-    textNodeId,
+    anchorTextNodeId: textNodeId,
     anchorOffset: 0,
+    focusTextNodeId: textNodeId,
     focusOffset: 0
   }
 }

@@ -32,7 +32,7 @@ function isEditingSelection(value: unknown): boolean {
   return (
     value !== null &&
     typeof value === 'object' &&
-    ['sectionPath', 'textNodeId'].every(
+    ['sectionPath', 'anchorTextNodeId', 'focusTextNodeId'].every(
       (field) => typeof (value as Record<string, unknown>)[field] === 'string'
     ) &&
     ['anchorOffset', 'focusOffset'].every(

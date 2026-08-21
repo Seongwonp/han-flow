@@ -279,6 +279,19 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 
 상세 장기 순서와 완료 규칙은 [장기 완성도 로드맵](long_term_roadmap.md)을 따른다.
 
+## 진행 중인 milestone: Sprint 2 selection과 multi-run range
+
+1. [x] anchor와 focus가 각각 text node ID와 UTF-16 offset을 갖는 selection domain을 분리한다.
+2. [x] ordered `hp:t` 순서로 순방향·역방향 여러 run 범위를 정규화한다.
+3. [x] 없는 run, 범위 밖 offset과 surrogate pair 중간 offset을 transaction 전에 거부한다.
+4. [x] transaction grouping, history, IPC와 renderer의 단일 run 선택을 새 모델로 이관한다.
+5. [ ] 실제 DOM에서 Shift+방향키와 pointer drag로 인접 run 범위를 만든다.
+6. [ ] 여러 run 치환을 원자적 command 배열로 만들고 빈 run 정리 정책을 확정한다.
+7. [ ] multi-run 치환의 undo/redo 방향·focus와 Save As 재개봉을 검증한다.
+
+글자 style command는 아직 한 run만 허용하며, 여러 run 요청은 명시적으로 거부한다. 다음 코드
+관문은 DOM selection adapter와 여러 run text replacement command다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

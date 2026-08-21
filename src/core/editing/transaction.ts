@@ -2,7 +2,6 @@ import {
   applyReplaceTextCommand,
   HwpxEditConflictError,
   HwpxLossReport,
-  listHwpxTextAnchors,
   ReplaceTextCommand
 } from './text_patch'
 import {
@@ -18,6 +17,13 @@ import {
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
+import {
+  EditorSelection,
+  equalEditorSelections,
+  validateEditorSelection
+} from './selection'
+
+export type { EditorSelection } from './selection'
 
 export type EditCommand =
   | Omit<ReplaceTextCommand, 'revision'>
@@ -25,13 +31,6 @@ export type EditCommand =
   | ApplyParagraphStyleCommand
   | RestoreStyleCommand
   | RestoreCharacterRunCommand
-
-export interface EditorSelection {
-  sectionPath: string
-  textNodeId: string
-  anchorOffset: number
-  focusOffset: number
-}
 
 export interface EditTransaction {
   id: string
@@ -56,32 +55,6 @@ export const MAX_TRANSACTION_COMMANDS = 1_000
 function stripRevision(command: ReplaceTextCommand): EditCommand {
   const { revision: _revision, ...operation } = command
   return operation
-}
-
-function isTextBoundary(text: string, offset: number): boolean {
-  return !(
-    offset > 0 &&
-    offset < text.length &&
-    /[\uD800-\uDBFF]/.test(text[offset - 1]) &&
-    /[\uDC00-\uDFFF]/.test(text[offset])
-  )
-}
-
-export function validateEditorSelection(sourcePackage: HwpxSourcePackage, selection: EditorSelection): void {
-  const anchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
-    (candidate) => candidate.textNodeId === selection.textNodeId
-  )
-  if (!anchor) throw new HwpxEditConflictError(`selection anchor를 찾을 수 없습니다: ${selection.textNodeId}`)
-  for (const offset of [selection.anchorOffset, selection.focusOffset]) {
-    if (
-      !Number.isInteger(offset) ||
-      offset < 0 ||
-      offset > anchor.text.length ||
-      !isTextBoundary(anchor.text, offset)
-    ) {
-      throw new HwpxEditConflictError(`selection 범위가 올바르지 않습니다: ${offset}`)
-    }
-  }
 }
 
 function validateTransactionShape(transaction: EditTransaction): void {
@@ -183,15 +156,6 @@ export function rebaseTransaction(transaction: EditTransaction, revision: number
   return { ...transaction, baseRevision: revision }
 }
 
-function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
-  return (
-    left.sectionPath === right.sectionPath &&
-    left.textNodeId === right.textNodeId &&
-    left.anchorOffset === right.anchorOffset &&
-    left.focusOffset === right.focusOffset
-  )
-}
-
 const GROUPABLE_INPUT_TYPES = new Set(['insertText', 'deleteContentBackward', 'deleteContentForward'])
 
 export function shouldGroupTransactions(previous: EditTransaction, next: EditTransaction, windowMs = 1_000): boolean {
@@ -206,7 +170,7 @@ export function shouldGroupTransactions(previous: EditTransaction, next: EditTra
     next.compositionId ||
     next.timestamp < previous.timestamp ||
     next.timestamp - previous.timestamp > windowMs ||
-    !sameSelection(previous.selectionAfter, next.selectionBefore)
+    !equalEditorSelections(previous.selectionAfter, next.selectionBefore)
   ) {
     return false
   }

@@ -26,8 +26,9 @@ function hash(bytes: Buffer): string {
 function selection(textNodeId: string, offset: number): EditorSelection {
   return {
     sectionPath,
-    textNodeId,
+    anchorTextNodeId: textNodeId,
     anchorOffset: offset,
+    focusTextNodeId: textNodeId,
     focusOffset: offset
   }
 }
@@ -353,8 +354,9 @@ describe('HWPX edit transaction과 bounded history', () => {
       if (!anchor) throw new Error('실문서 text anchor를 찾을 수 없습니다.')
       const privateSelection = (offset: number): EditorSelection => ({
         sectionPath: privateSection,
-        textNodeId: anchor.textNodeId,
+        anchorTextNodeId: anchor.textNodeId,
         anchorOffset: offset,
+        focusTextNodeId: anchor.textNodeId,
         focusOffset: offset
       })
       const history = new HwpxEditHistory(source)

@@ -122,6 +122,22 @@ interface EditTransaction {
 }
 ```
 
+selection은 한 text node에 종속되지 않는다.
+
+```ts
+interface EditorSelection {
+  sectionPath: string
+  anchorTextNodeId: string
+  anchorOffset: number
+  focusTextNodeId: string
+  focusOffset: number
+}
+```
+
+anchor와 focus 방향은 사용자의 드래그 방향 복원을 위해 유지하고, command 생성 시에만 ordered
+`hp:t` 순서의 start/end로 정규화한다. 서로 다른 section을 가로지르는 선택은 이 단계의 범위가
+아니다.
+
 첫 command는 source text 범위를 바꾸는 형태다.
 
 ```ts

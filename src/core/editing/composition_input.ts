@@ -1,4 +1,5 @@
 import { EditorSelection } from './transaction'
+import { createEditorSelection } from './selection'
 
 export interface TextSelection {
   anchorOffset: number
@@ -247,10 +248,10 @@ export function toEditorSelection(
   textNodeId: string,
   selection: TextSelection
 ): EditorSelection {
-  return {
+  return createEditorSelection(
     sectionPath,
     textNodeId,
-    anchorOffset: selection.anchorOffset,
-    focusOffset: selection.focusOffset
-  }
+    selection.anchorOffset,
+    selection.focusOffset
+  )
 }

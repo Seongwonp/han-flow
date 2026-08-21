@@ -98,6 +98,12 @@ export class EditingSessionManager {
   ): Promise<EditingActionResult> {
     return this.enqueue(senderId, async () => {
       const session = this.requireSession(senderId, request.sessionId)
+      if (
+        request.selection.anchorTextNodeId !== request.selection.focusTextNodeId ||
+        request.selection.anchorTextNodeId !== request.textNodeId
+      ) {
+        throw new Error('여러 글자 run에 걸친 style 적용은 아직 지원하지 않습니다.')
+      }
       const from = Math.min(request.selection.anchorOffset, request.selection.focusOffset)
       const to = Math.max(request.selection.anchorOffset, request.selection.focusOffset)
       const anchor = listHwpxTextAnchors(session.history.package, request.sectionPath).find(
@@ -108,10 +114,11 @@ export class EditingSessionManager {
         from !== to && (from > 0 || to < anchor.text.length)
           ? {
               sectionPath: request.sectionPath,
-              textNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
+              anchorTextNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
               anchorOffset: request.selection.anchorOffset <= request.selection.focusOffset
                 ? 0
                 : to - from,
+              focusTextNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
               focusOffset: request.selection.anchorOffset <= request.selection.focusOffset
                 ? to - from
                 : 0

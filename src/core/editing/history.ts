@@ -6,9 +6,9 @@ import {
   EditTransactionResult,
   EditorSelection,
   rebaseTransaction,
-  shouldGroupTransactions,
-  validateEditorSelection
+  shouldGroupTransactions
 } from './transaction'
+import { equalEditorSelections, validateEditorSelection } from './selection'
 
 export interface EditHistoryOptions {
   maxEntries?: number
@@ -180,12 +180,7 @@ export class HwpxEditHistory {
   commit(transaction: EditTransaction): EditTransactionResult {
     if (this.currentSelection) {
       const before = transaction.selectionBefore
-      if (
-        before.sectionPath !== this.currentSelection.sectionPath ||
-        before.textNodeId !== this.currentSelection.textNodeId ||
-        before.anchorOffset !== this.currentSelection.anchorOffset ||
-        before.focusOffset !== this.currentSelection.focusOffset
-      ) {
+      if (!equalEditorSelections(before, this.currentSelection)) {
         throw new Error('transaction selectionBefore가 현재 selection과 다릅니다.')
       }
     }

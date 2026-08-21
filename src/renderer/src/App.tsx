@@ -163,7 +163,7 @@ export function ParagraphView({
       restoreToken={activeEditing.restoreToken}
       ariaLabel={activeEditing.surfaceLabel}
       desiredSelection={
-        activeEditing.desiredSelection?.textNodeId === editableText.sourceAnchor!.textNodeId
+        activeEditing.desiredSelection?.focusTextNodeId === editableText.sourceAnchor!.textNodeId
           ? activeEditing.desiredSelection
           : undefined
       }
@@ -740,7 +740,8 @@ export default function App() {
   ) => {
     setEditingSelection({
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
+      focusTextNodeId: anchor.textNodeId,
       ...selection
     })
   }, [])
@@ -760,12 +761,14 @@ export default function App() {
       insert: intent.insert,
       selectionBefore: {
         sectionPath: anchor.sectionPath,
-        textNodeId: anchor.textNodeId,
+        anchorTextNodeId: anchor.textNodeId,
+        focusTextNodeId: anchor.textNodeId,
         ...intent.selectionBefore
       },
       selectionAfter: {
         sectionPath: anchor.sectionPath,
-        textNodeId: anchor.textNodeId,
+        anchorTextNodeId: anchor.textNodeId,
+        focusTextNodeId: anchor.textNodeId,
         ...intent.selectionAfter
       },
       inputType: intent.inputType,
@@ -791,7 +794,7 @@ export default function App() {
           (item) =>
             item.type === 'text' &&
             item.sourceAnchor?.sectionPath === editingSelection.sectionPath &&
-            item.sourceAnchor.textNodeId === editingSelection.textNodeId
+            item.sourceAnchor.textNodeId === editingSelection.focusTextNodeId
         )
         if (!text || text.type !== 'text') continue
         return {
@@ -810,7 +813,7 @@ export default function App() {
       }
     }
     return undefined
-  }, [document, editingSelection?.sectionPath, editingSelection?.textNodeId])
+  }, [document, editingSelection?.sectionPath, editingSelection?.focusTextNodeId])
   const applyCharacterStyle = useCallback(async (
     style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string }
   ) => {
@@ -822,7 +825,7 @@ export default function App() {
         sessionId: editing.sessionId,
         transactionId: `ui-style-${++editSequence.current}`,
         sectionPath: editingSelection.sectionPath,
-        textNodeId: editingSelection.textNodeId,
+        textNodeId: editingSelection.focusTextNodeId,
         selection: editingSelection,
         ...style,
         timestamp: performance.now()
@@ -861,7 +864,7 @@ export default function App() {
         sessionId: editing.sessionId,
         transactionId: `ui-style-${++editSequence.current}`,
         sectionPath: editingSelection.sectionPath,
-        textNodeId: editingSelection.textNodeId,
+        textNodeId: editingSelection.focusTextNodeId,
         selection: editingSelection,
         ...style,
         timestamp: performance.now()

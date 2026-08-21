@@ -82,6 +82,12 @@ composition ID를 가진다. command는 순서대로 immutable package에 적용
 grouping하지 않아 undo가 저장 상태를 건너뛰지 않는다. dirty 판정은 계속 증가하는 package
 revision이 아니라 logical state ID와 savepoint ID를 비교한다.
 
+Sprint 2부터 `EditorSelection`은 section 하나와 독립적인 anchor/focus text node ID·UTF-16
+offset을 가진다. 코어는 ordered `hp:t` 순서로 여러 run 범위를 정규화하고 역방향 여부를
+보존하며, 없는 anchor와 surrogate pair 중간 offset을 거부한다. 현재 renderer 입력 surface와
+글자 style command는 한 run 범위만 만들고 적용한다. 실제 DOM multi-run 선택과 여러 command
+치환은 다음 관문에서 이 모델 위에 연결한다.
+
 V3-4에서 source package와 history의 실제 소유자를 Electron main으로 확정했다. 각
 `webContents.id`에는 하나의 무작위 session ID만 연결되고 commit은 sender별 queue에서
 직렬 실행된다. renderer는 source ZIP bytes나 revision을 소유하지 않으며 text node ID,

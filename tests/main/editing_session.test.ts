@@ -23,8 +23,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(7, fixture)
     const before = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: anchor.text.length,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: anchor.text.length
     }
     const after = {
@@ -73,8 +74,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(21, fixture)
     const caret = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     const boldOff = await manager.applyCharacterStyle(21, {
@@ -130,8 +132,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(23, fixture)
     const emptyCaret = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     await manager.commit(23, {
@@ -165,8 +168,9 @@ describe('main process HWPX editing session', () => {
     ])
     expect(styled.selection).toEqual({
       ...selected,
-      textNodeId: `${anchor.sectionPath}#hp:t:${anchor.ordinal + 1}`,
+      anchorTextNodeId: `${anchor.sectionPath}#hp:t:${anchor.ordinal + 1}`,
       anchorOffset: 2,
+      focusTextNodeId: `${anchor.sectionPath}#hp:t:${anchor.ordinal + 1}`,
       focusOffset: 0
     })
     expect(
@@ -194,8 +198,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(26, fixture)
     const caret = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     const styled = await manager.applyCharacterStyle(26, {
@@ -232,8 +237,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(27, fixture)
     const caret = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     const styled = await manager.applyParagraphStyle(27, {
@@ -279,8 +285,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(25, fixture)
     const emptyCaret = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     await manager.commit(25, {
@@ -298,8 +305,9 @@ describe('main process HWPX editing session', () => {
     })
     const selection = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 4,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 2
     }
     const styled = await manager.applyCharacterStyle(25, {
@@ -316,7 +324,7 @@ describe('main process HWPX editing session', () => {
       sessionId: started.sessionId,
       transactionId: 'styled-save-paragraph',
       sectionPath: anchor.sectionPath,
-      textNodeId: styled.selection!.textNodeId,
+      textNodeId: styled.selection!.focusTextNodeId,
       selection: styled.selection!,
       align: 'CENTER',
       timestamp: 3
@@ -348,8 +356,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(24, fixture)
     const before = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: anchor.text.length,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: anchor.text.length
     }
     const after = {
@@ -389,8 +398,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(22, fixture)
     const atEnd = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: anchor.text.length,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: anchor.text.length
     }
     await manager.commit(22, {
@@ -449,8 +459,9 @@ describe('main process HWPX editing session', () => {
     expect(manager.isDirty(11, started.sessionId)).toBe(false)
     const before = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: anchor.text.length,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: anchor.text.length
     }
     const after = {
@@ -509,8 +520,9 @@ describe('main process HWPX editing session', () => {
     const started = await manager.start(12, fixture)
     const selection = {
       sectionPath: anchor.sectionPath,
-      textNodeId: anchor.textNodeId,
+      anchorTextNodeId: anchor.textNodeId,
       anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
     await manager.commit(12, {
