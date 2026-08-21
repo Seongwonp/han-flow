@@ -75,6 +75,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit && tsc -p src/renderer/tsconfig.json --noEmit",
     "package:mac": "npm run build && electron-builder --mac dir",
+    "package:win": "npm run build && electron-builder --win dir --x64",
     "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64",
     "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal",
     "preview": "electron-vite preview",

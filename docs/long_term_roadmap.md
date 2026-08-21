@@ -84,7 +84,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [ ] Windows 한/글 WIN-01~08 실행
 - [ ] 한/글에서 다시 저장한 파일을 Han-Flow로 역재개봉
 - [ ] 실제 macOS 물리 두벌식 matrix 완료
-- [ ] 일반 문단·표 cell·style·dirty 보호를 package 앱에서 재확인
+- [x] 일반 문단·표 cell·style·dirty 보호를 Windows package 앱에서 재확인
 - [ ] 실패 문서를 개인정보 없는 최소 fixture로 축소
 
 원본 hash 불변, Han-Flow와 한/글 재개봉, 복구 경고 0과 필수 IME matrix를 모두 만족한

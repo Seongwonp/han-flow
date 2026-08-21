@@ -19,6 +19,7 @@
 - production 진입점 기준 [legacy inventory](docs/legacy_inventory.md) 작성
 - 손실성 초기 parser·normalization·renderer-engine·Zustand store와 구형 shared 타입 제거
 - 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
+- Windows x64 production `dir` package 명령과 OS별 V3 acceptance bundle 생성 지원
 
 ### V3 HWPX 편집 기반
 

@@ -1,14 +1,25 @@
 # V3 Windows 한/글 재열기 matrix
 
-상태: **공개 호환성 bundle 자동 생성 완료 — Windows 한/글 실기 실행 대기**
+상태: **Windows production bundle 자동 검증 완료 — Windows 한/글 실기 실행 대기**
 
 이 문서는 Han-Flow가 저장한 HWPX를 Windows 한/글에서 실제로 다시 열어 확인하는 V3 외부
 승인 체크리스트다. 개인정보 없는 결정적 synthetic fixture만 사용하며 결과에는 Windows와
 한/글 버전, 통과 여부와 비식별 현상만 기록한다.
 
-## 1. macOS에서 bundle 생성
+## 1. production 앱에서 bundle 생성
 
-현재 commit의 production 앱으로 파일을 만들어야 한다.
+현재 commit의 production 앱으로 파일을 만들어야 한다. 생성기는 실행 OS에 따라 Windows
+`Han-Flow.exe` 또는 macOS `Han-Flow.app`을 선택한다.
+
+Windows:
+
+```powershell
+npm test -- --runInBand
+npm run package:win
+npm run fixture:v3-windows
+```
+
+macOS:
 
 ```bash
 npm test -- --runInBand
@@ -32,10 +43,27 @@ npm run fixture:v3-windows
 
 identity 생성은 `HwpxSourcePackage.open → saveHwpxAs` production 경로를 사용한다. entry 순서,
 압축 방식, CRC, 크기와 content bytes가 모두 일치한 뒤에만 파일이 만들어진다. edited와
-cell-edited는 패키지 앱 UI에서 실제 command를 수행하고 Save As한 뒤 Han-Flow로 다시 연다.
+cell-edited는 해당 OS의 packaged 앱에서 UI command를 수행하고 Save As한 뒤 Han-Flow로 다시 연다.
 ZIP container timestamp 때문에 original과 identity의 파일 전체 SHA-256은 달라질 수 있다.
 `containerSha256Equal`은 이를 숨기지 않고 기록하며 identity 판정은 entry metadata와 content
 bytes 비교를 기준으로 한다.
+
+### 2026-08-21 Windows 자동 사전 관문
+
+Windows 10.0.26200 x64에서 `Han-Flow.exe` 1.0.0-rc.1을 생성했다. 전체 unpacked package는
+279,556,778 bytes다. 이 앱으로 만든 bundle은 다음 자동 관문을 통과했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| identity | 5 entries, source/container SHA-256 동일, entry identity 통과 |
+| 일반 문단·style | text·부분 run·굵게·기울임·밑줄·취소선·11pt·색상·정렬·간격·들여쓰기 통과 |
+| 표 cell | `table-cell` surface 편집·Save As 통과 |
+| 저장본 재열기 | 일반·cell 모두 3쪽·이미지 4개·overflow 0 |
+| dirty 종료 | 버리기 통과, 저장은 원본 불변·저장본 3쪽·overflow 0 |
+| bundle hash | PowerShell에서 다섯 HWPX 모두 `[PASS]` |
+
+이 PC에는 Windows 한/글이 설치돼 있지 않아 아래 WIN-01~08은 자동 관문과 구분해 계속
+`미실행`으로 둔다. 한/글 제품 설치 후 사람의 복구 경고·레이아웃·style 판정이 필요하다.
 
 ## 2. Windows 전송 무결성
 

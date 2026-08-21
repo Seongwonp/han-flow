@@ -9,7 +9,10 @@ const ts = require('typescript')
 const AdmZip = require('adm-zip')
 const generatorPath = resolve('tests/fixtures/public/create_synthetic_hwpx.ts')
 const outputDirectory = resolve(process.argv[2] ?? 'artifacts/v3-acceptance')
-const appBinary = resolve('release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const defaultAppBinary = process.platform === 'win32'
+  ? 'release/win-unpacked/Han-Flow.exe'
+  : 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow'
+const appBinary = resolve(process.env.HAN_FLOW_ACCEPTANCE_APP ?? defaultAppBinary)
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
 
 function registerTypeScriptLoader() {
@@ -124,6 +127,11 @@ const identitySha256 = await sha256(identityPath)
 const manifest = {
   generatedAt: new Date().toISOString(),
   commit,
+  generator: {
+    platform: process.platform,
+    architecture: process.arch,
+    packagedApp: process.platform === 'win32' ? 'Han-Flow.exe' : 'Han-Flow.app'
+  },
   source: 'tests/fixtures/public/create_synthetic_hwpx.ts',
   files: {
     original: {

@@ -290,6 +290,8 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 6. [x] 실제 key code로 Backspace·Escape·양방향 범위 치환과 `⌘Z`·`⇧⌘Z`를 자동 검증한다.
 7. [x] production identity·일반 문단 style·표 cell·A4를 묶은 Windows 전송 bundle을 생성한다.
 8. [x] manifest SHA-256, PowerShell 검사와 WIN-01~08 결과 양식을 제공한다.
+9. [x] Windows x64 production `dir` package를 만들고 같은 packaged 앱에서 일반 문단·표 cell,
+   전체 제한 style, undo/redo, Save As·재열기와 dirty 종료의 저장·버리기를 자동 검증한다.
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 

@@ -8,6 +8,28 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-21 — Windows production package와 V3 자동 승인 bundle
+
+acceptance bundle 생성기의 macOS 실행 파일 하드코딩을 제거하고 Windows에서는
+`release/win-unpacked/Han-Flow.exe`를 사용하도록 변경했다. Windows 10.0.26200 x64에서
+1.0.0-rc.1 `dir` package를 생성했으며 unpacked 논리 크기는 279,556,778 bytes다.
+
+Windows packaged 앱에서 일반 문단과 표 cell 편집, 전체 제한 style, undo/redo, Save As와
+저장본 재열기를 실행했다. 별도 dirty close probe는 버리기와 저장을 모두 통과했고 저장 경로는
+원본 hash 불변, 저장본 3쪽과 overflow 0을 확인했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| Windows package | x64 `Han-Flow.exe`, production build 성공 |
+| identity | 5 entries, source/container SHA-256 동일 |
+| 일반 편집·style | 모든 probe flag true, 원본 불변 |
+| 표 cell | `table-cell`, 저장본 3쪽·이미지 4개·overflow 0 |
+| dirty discard/save | 두 경로 통과, save 결과 3쪽·overflow 0 |
+| bundle integrity | PowerShell SHA-256 다섯 파일 `[PASS]` |
+
+한컴오피스/Windows 한/글 설치는 발견되지 않았다. 따라서 WIN-01~08의 복구 경고·육안 style
+판정과 한/글 재저장 후 Han-Flow 역재개봉은 외부 수동 관문으로 남긴다.
+
 ## 2026-08-21 — Sprint 0 legacy inventory와 자동 관문 완료
 
 main·decoder worker·preload·renderer의 production 진입점과 Jest·scripts 참조를 대조했다.
