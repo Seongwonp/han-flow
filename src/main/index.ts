@@ -9,7 +9,8 @@ import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
   EditingParagraphStyleRequest,
-  EditingRangeCommitRequest
+  EditingRangeCommitRequest,
+  EditingSplitParagraphRequest
 } from '../core/editing/editing_contract'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
@@ -947,6 +948,24 @@ app.whenReady().then(() => {
       throw new Error('HWPX multi-run 편집 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.commitRange(event.sender.id, request as EditingRangeCommitRequest)
+  })
+
+  ipcMain.handle('editing:splitParagraph', async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new Error('HWPX 문단 나눔 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.splitParagraph(
+      event.sender.id,
+      request as EditingSplitParagraphRequest
+    )
   })
 
   ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {

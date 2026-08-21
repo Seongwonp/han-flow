@@ -541,6 +541,15 @@ Shift+Enter는 Chromium이 contentEditable 내부에 만드는 DOM 모양에 맡
 사용한다. 일반 Enter는 서로 다른 `hp:p` 두 개를 만들어야 하고 stale `hp:linesegarray` 처리와
 exact inverse가 필요하므로 별도 paragraph fragment command에서 구현한다.
 
+첫 paragraph fragment slice는 최상위 일반 텍스트 문단을 대상으로 구현했다. Enter selection이
+있는 경우 선택 범위를 제거하며 대상 run을 양쪽에 복제하고, 이전·이후 run은 각 문단에
+분배한다. 두 문단의 빈 `hp:t`를 유지해 source anchor가 사라지지 않으며 두 fragment에서는
+stale `hp:linesegarray`를 제거한다. inverse는 원래 문단 XML bytes 전체를 보관해 undo에서
+정확히 복원한다. 숫자 문단 ID가 있으면 section 최대 ID 다음 값을 새 문단에 할당한다.
+
+표 셀·제어·도형·알 수 없는 inline 콘텐츠가 섞인 문단은 fail-closed한다. 문단 시작 Backspace와
+끝 Delete의 merge는 인접 두 문단의 호환성을 검증하는 다음 구조 command로 분리한다.
+
 구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
 [한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.
 

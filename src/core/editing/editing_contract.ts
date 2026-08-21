@@ -42,6 +42,13 @@ export interface EditingRangeCommitRequest {
   timestamp: number
 }
 
+export interface EditingSplitParagraphRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

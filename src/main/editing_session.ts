@@ -6,10 +6,12 @@ import {
   EditingCommitRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
+  EditingSplitParagraphRequest,
   EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
 import { HwpxEditHistory } from '../core/editing/history'
+import { planSplitParagraph } from '../core/editing/paragraph_patch'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
@@ -117,6 +119,32 @@ export class EditingSessionManager {
         document: result.changed
           ? await projectEditTransaction(result)
           : await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async splitParagraph(
+    senderId: number,
+    request: EditingSplitParagraphRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const plan = planSplitParagraph(session.history.package, request.selectionBefore)
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [plan.command],
+        selectionBefore: { ...request.selectionBefore },
+        selectionAfter: plan.selectionAfter,
+        inputType: 'insertParagraph',
+        timestamp: request.timestamp
+      }
+      session.history.setSelection(transaction.selectionBefore)
+      const result = session.history.commit(transaction)
+      return {
+        document: await projectEditTransaction(result),
         selection: session.history.selection,
         ...status(session)
       }

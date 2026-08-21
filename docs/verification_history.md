@@ -8,6 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-21 — Sprint 2 최상위 문단 Enter split
+
+최상위 일반 텍스트 `hp:p`를 caret 또는 단일 run selection에서 둘로 나누는 source-preserving
+paragraph fragment command를 추가했다. 여러 run의 기존 XML과 char style은 앞뒤 문단에
+분배하고 빈 `hp:t` anchor를 유지한다. 새 fragment에서는 stale `hp:linesegarray`를 제거하며,
+inverse는 원래 문단 fragment bytes를 복원한다. renderer의 `insertParagraph`는 제한된 IPC를
+거쳐 main-process history 한 단위로 commit한다.
+
+여러 run·inline line break가 있는 공개 fixture에서 selection 제거, 새 숫자 문단 ID, cache 제거,
+selection 이동과 byte-exact undo/redo를 검증했다. main session에서는 Enter split → undo → redo →
+Save As → 재개봉을 통과했다. 표 셀·복합 문단 Enter와 Backspace/Delete merge는 후속 관문이다.
+
 ## 2026-08-21 — Sprint 2 HWPX inline 줄 나눔
 
 `hp:t` 혼합 콘텐츠에서 `hp:lineBreak`와 `hp:tab`을 각각 논리 `\n`·`\t`로 읽고, 편집된 줄바꿈을

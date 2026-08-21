@@ -28,6 +28,7 @@ interface ParagraphInputSurfaceProps {
     inputType: string,
     timestamp: number
   ) => void
+  onSplitParagraph?: (selection: EditorSelection, timestamp: number) => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -101,7 +102,8 @@ export function ParagraphInputSurface({
   onBoundaryNavigate,
   onBoundaryExtend,
   getRangeSelection,
-  onRangeCommit
+  onRangeCommit,
+  onSplitParagraph
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -115,6 +117,7 @@ export function ParagraphInputSurface({
   const onSelectionChangeRef = useRef(onSelectionChange)
   const getRangeSelectionRef = useRef(getRangeSelection)
   const onRangeCommitRef = useRef(onRangeCommit)
+  const onSplitParagraphRef = useRef(onSplitParagraph)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
@@ -125,6 +128,7 @@ export function ParagraphInputSurface({
   onSelectionChangeRef.current = onSelectionChange
   getRangeSelectionRef.current = getRangeSelection
   onRangeCommitRef.current = onRangeCommit
+  onSplitParagraphRef.current = onSplitParagraph
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -231,6 +235,19 @@ export function ParagraphInputSurface({
     const beforeInput = (event: InputEvent) => {
       if (event.inputType === 'insertParagraph') {
         event.preventDefault()
+        if (event.isComposing || controller.isComposing) return
+        const modeledSelection = getRangeSelectionRef.current?.()
+        const selection = textSelection(element)
+        onSplitParagraphRef.current?.(
+          modeledSelection ?? {
+            sectionPath: sourceAnchorRef.current.sectionPath,
+            anchorTextNodeId: sourceAnchorRef.current.textNodeId,
+            anchorOffset: selection.anchorOffset,
+            focusTextNodeId: sourceAnchorRef.current.textNodeId,
+            focusOffset: selection.focusOffset
+          },
+          performance.now()
+        )
         return
       }
       const rangeSelection = getRangeSelectionRef.current?.()

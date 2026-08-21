@@ -56,6 +56,14 @@ function commandBytes(transaction: EditTransaction): number {
       if (command.type === 'replace-text') {
         return sum + common + Buffer.byteLength(command.insert, 'utf8')
       }
+      if (command.type === 'replace-paragraph-fragment') {
+        return (
+          sum +
+          common +
+          Buffer.byteLength(command.expectedFragment, 'utf8') +
+          Buffer.byteLength(command.replacementFragment, 'utf8')
+        )
+      }
       if (command.type === 'apply-character-style' || command.type === 'apply-paragraph-style') {
         return sum + common + 32
       }

@@ -34,6 +34,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - Worker 기반 점진 decode와 페이지 가상화
 - 원본 `hp:t` source anchor 기반의 제한된 일반 문단·표 body cell 텍스트 편집
 - `hp:t` 내부 `hp:lineBreak` 왕복, Shift+Enter와 여러 줄 plain-text 붙여넣기
+- 최상위 일반 텍스트 문단의 Enter 분할과 selection·Undo/Redo·Save As 복원
 - 연속 음절 burst·스페이스바 조합 종료를 보존하는 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
@@ -182,8 +183,9 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다. 글꼴 family
   편집은 HWPX font-face ID와 설치·라이선스 mapping 정책이 필요해 후속 범위로 둡니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
-- Shift+Enter와 plain-text 붙여넣기의 줄바꿈은 `hp:t` 내부 `hp:lineBreak`로 저장합니다. 일반
-  Enter의 새 `hp:p` 생성, 문단 앞 Backspace 병합과 여러 문단 선택은 아직 지원하지 않습니다.
+- Shift+Enter와 plain-text 붙여넣기의 줄바꿈은 `hp:t` 내부 `hp:lineBreak`로 저장합니다. 최상위
+  일반 텍스트 문단은 Enter로 새 `hp:p`를 만들 수 있습니다. 표 셀 Enter, 문단 앞 Backspace
+  병합과 여러 문단 선택은 아직 지원하지 않습니다.
 - 문단 모양은 최상위 일반 문단의 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄 들여쓰기·내어쓰기를 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.

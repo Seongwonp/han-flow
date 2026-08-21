@@ -98,8 +98,9 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [x] 모델 기반 multi-run range와 여러 run 치환·undo/redo 복원
 - [x] `hp:t` inline line break·tab anchor와 Shift+Enter·여러 줄 plain-text paste
 - [ ] 공통 paragraph editing host 기반 native pointer selection
-- [ ] 일반 Enter 문단 split과 경계 Backspace/Delete merge
-- [ ] 구조 편집 시 `hp:linesegarray` 무효화와 exact inverse
+- [x] 최상위 일반 텍스트 문단 Enter split
+- [x] split 시 `hp:linesegarray` 무효화와 exact inverse
+- [ ] 문단 경계 Backspace/Delete merge
 - capability·loss policy와 stale anchor UX
 - transaction atomic rollback과 저장 revision 추적
 - renderer의 문서·viewer·editor·IME 임시 상태 분리

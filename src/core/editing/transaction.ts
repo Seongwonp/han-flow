@@ -14,6 +14,10 @@ import {
   RestoreCharacterRunCommand,
   RestoreStyleCommand
 } from './style_patch'
+import {
+  applyReplaceParagraphFragmentCommand,
+  ReplaceParagraphFragmentCommand
+} from './paragraph_patch'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
@@ -31,6 +35,7 @@ export type EditCommand =
   | ApplyParagraphStyleCommand
   | RestoreStyleCommand
   | RestoreCharacterRunCommand
+  | ReplaceParagraphFragmentCommand
 
 export interface EditTransaction {
   id: string
@@ -105,7 +110,9 @@ export function applyEditTransaction(
             ? applyParagraphStyleCommand(currentPackage, command)
             : command.type === 'restore-style'
               ? applyRestoreStyleCommand(currentPackage, command)
-              : applyRestoreCharacterRunCommand(currentPackage, command)
+              : command.type === 'restore-character-run'
+                ? applyRestoreCharacterRunCommand(currentPackage, command)
+                : applyReplaceParagraphFragmentCommand(currentPackage, command)
     if (result.package !== currentPackage) {
       const inverse =
         command.type === 'replace-text'

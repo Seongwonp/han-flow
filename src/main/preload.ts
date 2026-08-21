@@ -4,6 +4,7 @@ import type {
   EditingCommitRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
+  EditingSplitParagraphRequest,
   EditingStartRequest
 } from '../core/editing/editing_contract'
 
@@ -47,6 +48,8 @@ const api = {
   commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
   commitRangeEditing: (request: EditingRangeCommitRequest) =>
     ipcRenderer.invoke('editing:commitRange', request),
+  splitParagraphEditing: (request: EditingSplitParagraphRequest) =>
+    ipcRenderer.invoke('editing:splitParagraph', request),
   applyCharacterStyle: (request: EditingCharacterStyleRequest) =>
     ipcRenderer.invoke('editing:applyCharacterStyle', request),
   applyParagraphStyle: (request: EditingParagraphStyleRequest) =>

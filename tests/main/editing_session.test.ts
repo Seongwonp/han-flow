@@ -108,6 +108,48 @@ describe('main process HWPX editing session', () => {
     expect(reopenedFirst?.text).toBe(`${first.text.slice(0, 1)}다중범위`)
   })
 
+  test('Enter 문단 나눔을 undo/redo하고 Save As 재개봉한다', async () => {
+    const manager = new EditingSessionManager(() => 'split-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === ''
+    )!
+    const emptyCount = listHwpxTextAnchors(source, sectionPath).filter(
+      (candidate) => candidate.text === ''
+    ).length
+    const started = await manager.start(29, fixture)
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 0
+    }
+    const split = await manager.splitParagraph(29, {
+      sessionId: started.sessionId,
+      transactionId: 'split-paragraph',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(split).toMatchObject({ revision: 1, canUndo: true, isDirty: true })
+    expect(split.selection).toEqual({
+      ...selection,
+      anchorTextNodeId: `${sectionPath}#hp:t:${anchor.ordinal + 1}`,
+      focusTextNodeId: `${sectionPath}#hp:t:${anchor.ordinal + 1}`
+    })
+    expect((await manager.undo(29, started.sessionId)).selection).toEqual(selection)
+    expect((await manager.redo(29, started.sessionId)).selection).toEqual(split.selection)
+
+    const destination = join(directory, 'paragraph-split-save.hwpx')
+    await manager.saveAs(29, started.sessionId, destination)
+    const reopened = await HwpxSourcePackage.open(destination)
+    expect(listHwpxTextAnchors(reopened, sectionPath).filter(
+      (candidate) => candidate.text === ''
+    )).toHaveLength(emptyCount + 1)
+  })
+
   test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'style-session')
     const source = await HwpxSourcePackage.open(fixture)

@@ -300,13 +300,13 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 2. [x] 알 수 없는 inline control은 viewer와 source editor 모두 편집 불가로 판정한다.
 3. [x] Shift+Enter를 결정적인 `insertLineBreak` transaction으로 보내고 `<hp:lineBreak/>`로 저장한다.
 4. [x] 단일·다중 run plain-text 붙여넣기의 줄바꿈을 같은 command 경로로 왕복한다.
-5. [ ] 일반 Enter에서 현재 `hp:p`를 두 문단으로 분할한다.
+5. [x] 일반 Enter에서 최상위 일반 텍스트 `hp:p`를 두 문단으로 분할한다.
 6. [ ] 문단 시작 Backspace/Delete에서 인접 문단을 병합한다.
-7. [ ] split/merge 시 stale `hp:linesegarray`를 제거하고 inverse에서 원문 fragment를 복원한다.
-8. [ ] 문단 경계를 포함한 selection·undo/redo·Save As를 실제 DOM과 공개 fixture에서 검증한다.
+7. [x] split 시 stale `hp:linesegarray`를 제거하고 inverse에서 원문 fragment bytes를 복원한다.
+8. [x] split selection·undo/redo·Save As 재개봉을 공개 fixture와 main session에서 검증한다.
 
-다음 코드 관문은 source-preserving 문단 fragment command와 일반 Enter split이다. 줄 나눔과
-문단 나눔을 같은 XML 치환으로 처리하지 않는다.
+다음 코드 관문은 문단 시작 Backspace와 문단 끝 Delete의 인접 문단 merge다. 표 셀 Enter와
+여러 문단 선택은 cell 편집 경계를 확장한 뒤 진행한다.
 
 ## 다음 milestone: V3 외부 승인
 
