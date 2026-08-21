@@ -1,8 +1,8 @@
 # Han-Flow 장기 완성도 로드맵
 
-상태: **활성 계획 — Sprint 0 기반 정비 진행 중**
+상태: **활성 계획 — Sprint 0 legacy 정리 진행 중**
 
-기준일: 2026-08-20
+기준일: 2026-08-21
 
 ## 1. 제품 계약
 
@@ -67,12 +67,12 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [x] Electron sandbox와 명시적 context isolation 적용
 - [x] 외부 navigation을 HTTPS로 제한
 - [x] 미사용 updater 제거와 ZIP/XML production dependency audit 0건
-- [ ] clean Windows에서 `npm ci`, test, probe와 build 통과
+- [x] clean Windows에서 `npm ci`, test, probe와 build 통과
 - [x] main·preload·renderer를 모두 포함하는 독립 typecheck 설정과 CI 관문 추가
-- [ ] XML depth·node·text 상한 감사 및 adversarial fixture 추가
-- [ ] 이미지 decoded dimension·resource budget 추가
+- [x] XML depth·node·text 상한 감사 및 adversarial fixture 추가
+- [x] 이미지 decoded dimension·resource budget 추가
 - [ ] production/legacy 코드 inventory와 제거 결정
-- [ ] README·검증 이력의 자동 수치 재측정
+- [x] README·검증 이력의 자동 수치 재측정
 
 완료 조건은 GitHub Actions Windows가 같은 commit의 install, test, probe와 build를
 연속 통과하고 악성 package가 crash나 무제한 할당 없이 구조화된 오류로 끝나는 것이다.

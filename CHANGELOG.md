@@ -13,6 +13,9 @@
 - production dependency audit 0 vulnerabilities 검증
 - main·core·renderer 독립 TypeScript typecheck와 Windows CI 관문 추가
 - CFB FileHeader·nullable window·PDF dialog·editable union·InputEvent 타입 오류 정리
+- XML depth·node·text·DOCTYPE 사전 검사와 실제 깊이 폭탄 HWPX 회귀 fixture
+- 이미지 개수·byte·decoded dimension·pixel budget과 dimension 폭탄 HWPX 회귀 fixture
+- `BinData` resource를 순차적으로 읽어 일시적인 병렬 메모리 할당 제거
 
 ### V3 HWPX 편집 기반
 

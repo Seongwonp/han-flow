@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
+import { validateXmlResourceBudget } from './resource_budget'
 
 export interface OrderedXmlNode {
   name: string
@@ -39,7 +40,8 @@ function convert(entry: Record<string, unknown>, context: ConvertContext): Order
 }
 
 export function parseOrderedXml(xml: Buffer | string): OrderedXmlNode[] {
-  const parsed = parser.parse(xml) as Record<string, unknown>[]
+  const validatedXml = validateXmlResourceBudget(xml)
+  const parsed = parser.parse(validatedXml) as Record<string, unknown>[]
   const context: ConvertContext = { textOrdinal: 0 }
   return parsed.map((entry) => convert(entry, context))
 }

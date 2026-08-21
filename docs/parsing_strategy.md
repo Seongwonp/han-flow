@@ -8,6 +8,12 @@ HWPX는 ZIP 아카이브 안에 OWPML XML과 이미지 resource가 들어 있는
 원본 XML의 혼합 자식 순서를 보존하는 ordered AST를 거쳐 읽기 전용 `ViewerDocument`로
 변환한다.
 
+ZIP metadata preflight 뒤 XML은 ordered parser에 전달하기 전에 최대 깊이 256, node
+1,000,000개, text 50,000,000자와 DOCTYPE 금지를 검사한다. 이미지 resource는 한꺼번에
+`Promise.all`로 확장하지 않고 순서대로 읽으며 최대 2,000개, 개별 32 MiB, 전체 192 MiB를
+적용한다. PNG·JPEG·GIF·BMP·WebP는 header에서 decoded dimension을 읽어 한 변 32,768px,
+개별 40,000,000 pixels, 전체 160,000,000 pixels를 넘기기 전에 거부한다.
+
 V3 편집은 이 `ViewerDocument`를 역직렬화하지 않는다. 모든 package entry와 알 수 없는 XML을
 보존하는 source model에서 수정 범위만 patch하고, 그 결과를 다시 `ViewerDocument`로
 projection한다. 자세한 계약은

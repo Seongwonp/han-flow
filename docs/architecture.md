@@ -22,6 +22,11 @@ parser는 React와 CSS를 모르고 renderer는 ZIP/XML을 해석하지 않는�
 HWPUNIT 정수로 유지하고 화면 경계에서만 CSS px로 변환한다. 동일 입력은 source 위치 기반의
 결정적 ID를 만들어 테스트와 캐시가 재현 가능해야 한다.
 
+HWPX의 read-only와 editing source package는 같은 ZIP metadata preflight를 사용한다. ordered
+XML parser 앞에서는 depth·node·text 예산과 DOCTYPE 금지를 적용한다. `BinData`는 순차적으로
+읽으며 원본 byte와 raster header의 decoded dimension·pixel 예산을 함께 누적한다. 예산 초과나
+손상 raster header는 renderer image decode 전에 importer의 구조화된 HWPX 오류로 끝난다.
+
 ## V3 편집 경계
 
 V3는 `ViewerDocument`를 저장 원본으로 사용하지 않는다. HWPX의 모든 ZIP entry와 알 수 없는

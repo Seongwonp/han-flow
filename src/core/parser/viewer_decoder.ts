@@ -1,6 +1,7 @@
 import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
+import { ImageResourceBudget } from './resource_budget'
 
 const num = (value?: string): number => Number(value ?? 0)
 const children = (node: OrderedXmlNode, name: string): OrderedXmlNode[] => node.children.filter((child) => child.name === name)
@@ -243,12 +244,17 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
       }))
     }
   })
-  const resources = Object.fromEntries(await Promise.all(resourcePaths.map(async (path) => {
+  const imageBudget = new ImageResourceBudget()
+  const resourceEntries: Array<[string, { id: string; path: string; mime: string; data: string }]> = []
+  for (const path of resourcePaths) {
     const id = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? path
     const extension = path.split('.').pop()?.toLowerCase()
     const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension ?? 'png'}`
-    return [id, { id, path, mime, data: (await reader.readBuffer(path)).toString('base64') }]
-  })))
+    const bytes = await reader.readBuffer(path)
+    imageBudget.add(path, bytes)
+    resourceEntries.push([id, { id, path, mime, data: bytes.toString('base64') }])
+  }
+  const resources = Object.fromEntries(resourceEntries)
   return {
     page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin), headerOffset: num(margin?.attributes.header), footerOffset: num(margin?.attributes.footer) },
     ...header,

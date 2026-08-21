@@ -8,6 +8,27 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-21 — Sprint 0 XML·이미지 resource exhaustion 방어
+
+HWPX ordered XML을 parse하기 전에 깊이 256, node 1,000,000개, text 50,000,000자와
+DOCTYPE 금지를 검사한다. `BinData`는 순차 read로 바꾸고 resource 2,000개, 개별 32 MiB,
+전체 192 MiB, 한 변 32,768px, 개별 40,000,000 pixels와 전체 160,000,000 pixels 상한을
+적용했다. PNG·JPEG·GIF·BMP·WebP는 decoded dimension을 header에서 확인한다.
+
+실제 ZIP package로 만든 XML 깊이 폭탄과 PNG dimension 폭탄은 crash나 renderer decode 없이
+`HWPX_IMPORT_FAILED`로 종료한다. 정상 공개 fixture와 기존 production 경로는 모두 회귀 통과했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| clean Windows CI | `fa64a1a`, install·122 tests·typecheck·8 probes·build 성공 |
+| 로컬 clean install | Node.js 22.23.2·npm 10.9.8, 811 packages 설치 성공 |
+| Jest | 23 suites passed, 2 skipped; 133 passed, 11 skipped |
+| adversarial package | XML depth·PNG dimension 2종 모두 구조화 오류 통과 |
+| parser probe | 8 passed |
+| TypeScript | main·core·renderer 독립 typecheck 통과 |
+| production build | main·preload·renderer 성공 |
+| production dependency audit | 0 vulnerabilities |
+
 ## 2026-08-20 — Sprint 0 Windows 기준선과 P0 방어 착수
 
 Windows 주 개발 환경을 공식화하고 Node.js 22·npm 10 계약과 Windows CI를 추가했다. HWPX
