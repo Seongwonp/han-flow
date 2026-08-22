@@ -547,8 +547,15 @@ exact inverse가 필요하므로 별도 paragraph fragment command에서 구현�
 stale `hp:linesegarray`를 제거한다. inverse는 원래 문단 XML bytes 전체를 보관해 undo에서
 정확히 복원한다. 숫자 문단 ID가 있으면 section 최대 ID 다음 값을 새 문단에 할당한다.
 
-표 셀·제어·도형·알 수 없는 inline 콘텐츠가 섞인 문단은 fail-closed한다. 문단 시작 Backspace와
-끝 Delete의 merge는 인접 두 문단의 호환성을 검증하는 다음 구조 command로 분리한다.
+인접 문단 merge도 같은 paragraph fragment command에 연결했다. 다음 문단 첫 run의 offset 0에서
+Backspace를 누르거나 이전 문단 마지막 run 끝에서 Delete를 누를 때만 실행한다. 결과는 앞 문단의
+open tag와 문단 모양을 유지하고 두 문단의 모든 run을 순서대로 합치며, 양쪽 `linesegarray`는
+제거한다. 두 입력 방향은 동일한 replacement fragment를 만들고 현재 caret의 text node ID와
+offset을 유지한다. inverse는 사이 공백을 포함한 원래 두 문단 bytes를 복원한다.
+
+이웃이 없으면 UI에서는 no-op로 처리한다. 인접 문단이 복합 구조이거나 두 문단 사이에 보존해야
+할 XML element가 있으면 fail-closed 오류로 남긴다. 표 셀 구조 편집과 여러 문단 selection은
+공통 paragraph host 설계 뒤로 유지한다.
 
 구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
 [한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.

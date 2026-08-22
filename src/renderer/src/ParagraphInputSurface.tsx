@@ -29,6 +29,14 @@ interface ParagraphInputSurfaceProps {
     timestamp: number
   ) => void
   onSplitParagraph?: (selection: EditorSelection, timestamp: number) => void
+  onMergeParagraph?: (
+    selection: EditorSelection,
+    direction: 'previous' | 'next',
+    inputType: 'deleteContentBackward' | 'deleteContentForward',
+    timestamp: number
+  ) => void
+  allowMergePrevious?: boolean
+  allowMergeNext?: boolean
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -103,7 +111,10 @@ export function ParagraphInputSurface({
   onBoundaryExtend,
   getRangeSelection,
   onRangeCommit,
-  onSplitParagraph
+  onSplitParagraph,
+  onMergeParagraph,
+  allowMergePrevious = false,
+  allowMergeNext = false
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -118,6 +129,7 @@ export function ParagraphInputSurface({
   const getRangeSelectionRef = useRef(getRangeSelection)
   const onRangeCommitRef = useRef(onRangeCommit)
   const onSplitParagraphRef = useRef(onSplitParagraph)
+  const onMergeParagraphRef = useRef(onMergeParagraph)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
@@ -129,6 +141,7 @@ export function ParagraphInputSurface({
   getRangeSelectionRef.current = getRangeSelection
   onRangeCommitRef.current = onRangeCommit
   onSplitParagraphRef.current = onSplitParagraph
+  onMergeParagraphRef.current = onMergeParagraph
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -232,6 +245,37 @@ export function ParagraphInputSurface({
       clearCompositionTimer()
       compositionTimerRef.current = setTimeout(flushCompositionBuffer, 450)
     }
+    const commitBoundaryMerge = (
+      inputType: 'deleteContentBackward' | 'deleteContentForward'
+    ): boolean => {
+      const direction = inputType === 'deleteContentBackward' ? 'previous' : 'next'
+      if (
+        (direction === 'previous' && !allowMergePrevious) ||
+        (direction === 'next' && !allowMergeNext)
+      ) return false
+      const nativeSelection = textSelection(element)
+      const modeledSelection = getRangeSelectionRef.current?.() ?? {
+        sectionPath: sourceAnchorRef.current.sectionPath,
+        anchorTextNodeId: sourceAnchorRef.current.textNodeId,
+        anchorOffset: nativeSelection.anchorOffset,
+        focusTextNodeId: sourceAnchorRef.current.textNodeId,
+        focusOffset: nativeSelection.focusOffset
+      }
+      if (
+        modeledSelection.anchorTextNodeId !== modeledSelection.focusTextNodeId ||
+        modeledSelection.anchorOffset !== modeledSelection.focusOffset ||
+        modeledSelection.focusTextNodeId !== sourceAnchorRef.current.textNodeId
+      ) return false
+      const boundary = direction === 'previous' ? 0 : element.textContent?.length ?? 0
+      if (modeledSelection.focusOffset !== boundary) return false
+      onMergeParagraphRef.current?.(
+        modeledSelection,
+        direction,
+        inputType,
+        performance.now()
+      )
+      return Boolean(onMergeParagraphRef.current)
+    }
     const beforeInput = (event: InputEvent) => {
       if (event.inputType === 'insertParagraph') {
         event.preventDefault()
@@ -290,6 +334,13 @@ export function ParagraphInputSurface({
           event.inputType || 'insertText',
           performance.now()
         )
+        return
+      }
+      if (
+        (event.inputType === 'deleteContentBackward' || event.inputType === 'deleteContentForward') &&
+        commitBoundaryMerge(event.inputType)
+      ) {
+        event.preventDefault()
         return
       }
       inputTypeRef.current = event.inputType
@@ -373,6 +424,14 @@ export function ParagraphInputSurface({
       }
       const selection = textSelection(element)
       const textLength = element.textContent?.length ?? 0
+      if (event.key === 'Backspace' && commitBoundaryMerge('deleteContentBackward')) {
+        event.preventDefault()
+        return
+      }
+      if (event.key === 'Delete' && commitBoundaryMerge('deleteContentForward')) {
+        event.preventDefault()
+        return
+      }
       if (event.shiftKey) {
         if (event.key === 'ArrowLeft' && selection.focusOffset === 0) {
           event.preventDefault()

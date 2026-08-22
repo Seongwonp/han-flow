@@ -8,6 +8,17 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-22 — Sprint 2 문단 경계 Backspace/Delete merge
+
+최상위 일반 텍스트 문단의 첫 run 시작 Backspace와 마지막 run 끝 Delete를 인접 문단 merge
+command에 연결했다. 두 방향은 앞 문단의 문단 모양과 양쪽의 모든 글자 run을 보존하는 동일한
+replacement fragment를 생성하며 stale `hp:linesegarray`를 제거한다. 현재 caret text node ID와
+offset은 유지하고 inverse는 두 원문 문단 bytes를 정확히 복원한다.
+
+여러 run과 inline line break가 있는 공개 fixture에서 양방향 결과 일치, 경계 검증, 중간 XML
+element fail-closed와 history undo/redo를 통과했다. main session은 Backspace merge → undo → redo →
+Save As → 재개봉을 검증했다. 표 셀·복합 문단 구조 편집과 여러 문단 선택은 후속 관문이다.
+
 ## 2026-08-21 — Sprint 2 최상위 문단 Enter split
 
 최상위 일반 텍스트 `hp:p`를 caret 또는 단일 run selection에서 둘로 나누는 source-preserving

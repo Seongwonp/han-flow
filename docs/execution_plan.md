@@ -294,19 +294,19 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 중 cross-run 치환은 DOM 손상을 피하기 위해 차단하고, 단일 run으로 caret를 옮긴 뒤 입력하도록
 유지한다.
 
-## 진행 중인 milestone: Sprint 2 문단 구조 입력
+## 완료한 milestone: Sprint 2 문단 구조 입력
 
 1. [x] `hp:t`의 plain text와 `hp:lineBreak`·`hp:tab` 혼합 콘텐츠를 하나의 UTF-16 anchor로 읽는다.
 2. [x] 알 수 없는 inline control은 viewer와 source editor 모두 편집 불가로 판정한다.
 3. [x] Shift+Enter를 결정적인 `insertLineBreak` transaction으로 보내고 `<hp:lineBreak/>`로 저장한다.
 4. [x] 단일·다중 run plain-text 붙여넣기의 줄바꿈을 같은 command 경로로 왕복한다.
 5. [x] 일반 Enter에서 최상위 일반 텍스트 `hp:p`를 두 문단으로 분할한다.
-6. [ ] 문단 시작 Backspace/Delete에서 인접 문단을 병합한다.
-7. [x] split 시 stale `hp:linesegarray`를 제거하고 inverse에서 원문 fragment bytes를 복원한다.
-8. [x] split selection·undo/redo·Save As 재개봉을 공개 fixture와 main session에서 검증한다.
+6. [x] 문단 시작 Backspace와 문단 끝 Delete에서 인접 최상위 일반 문단을 병합한다.
+7. [x] split/merge 시 stale `hp:linesegarray`를 제거하고 inverse에서 원문 fragment bytes를 복원한다.
+8. [x] split/merge selection·undo/redo·Save As 재개봉을 공개 fixture와 main session에서 검증한다.
 
-다음 코드 관문은 문단 시작 Backspace와 문단 끝 Delete의 인접 문단 merge다. 표 셀 Enter와
-여러 문단 선택은 cell 편집 경계를 확장한 뒤 진행한다.
+다음 코드 관문은 여러 문단 selection domain과 공통 paragraph editing host다. 표 셀 구조
+편집은 cell의 여러 문단 편집 경계를 확장한 뒤 진행한다.
 
 ## 다음 milestone: V3 외부 승인
 

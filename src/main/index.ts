@@ -8,6 +8,7 @@ import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigati
 import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
+  EditingMergeParagraphRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest
@@ -965,6 +966,25 @@ app.whenReady().then(() => {
     return editingSessions.splitParagraph(
       event.sender.id,
       request as EditingSplitParagraphRequest
+    )
+  })
+
+  ipcMain.handle('editing:mergeParagraph', async (event, request: unknown) => {
+    const value = request as Record<string, unknown>
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every((key) => typeof value[key] === 'string') ||
+      !['previous', 'next'].includes(String(value['direction'])) ||
+      !['deleteContentBackward', 'deleteContentForward'].includes(String(value['inputType'])) ||
+      !Number.isFinite(value['timestamp']) ||
+      !isEditingSelection(value['selectionBefore'])
+    ) {
+      throw new Error('HWPX 문단 병합 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.mergeParagraph(
+      event.sender.id,
+      request as EditingMergeParagraphRequest
     )
   })
 

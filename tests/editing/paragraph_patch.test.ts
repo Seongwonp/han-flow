@@ -4,6 +4,7 @@ import { join } from 'path'
 import { HwpxEditHistory } from '../../src/core/editing/history'
 import {
   applyReplaceParagraphFragmentCommand,
+  planMergeParagraph,
   planSplitParagraph
 } from '../../src/core/editing/paragraph_patch'
 import { createEditorSelection } from '../../src/core/editing/selection'
@@ -24,6 +25,15 @@ describe('HWPX paragraph split', () => {
     const xml = source.readEntry(sectionPath).toString('utf8').replace(
       '</hs:sec>',
       '<hp:p id="10" paraPrIDRef="0" pageBreak="0" columnBreak="0"><hp:run charPrIDRef="0"><hp:t>앞 run</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>가나<hp:lineBreak/>다라</hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>뒤 run</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
+    )
+    return source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
+  }
+
+  async function sourceWithAdjacentParagraphs(): Promise<HwpxSourcePackage> {
+    const source = await sourceWithEditableParagraph()
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hs:sec>',
+      '<hp:p id="20" paraPrIDRef="1"><hp:run charPrIDRef="3"><hp:t>다음 앞</hp:t></hp:run><hp:run charPrIDRef="4"><hp:t>다음 뒤</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
     )
     return source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
   }
@@ -102,5 +112,86 @@ describe('HWPX paragraph split', () => {
       complex,
       createEditorSelection(sectionPath, complexAnchor.textNodeId, 1)
     )).toThrow('복합 run')
+  })
+
+  test('문단 시작 Backspace와 문단 끝 Delete가 같은 인접 문단 merge를 계획한다', async () => {
+    const source = await sourceWithAdjacentParagraphs()
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const previousEnd = anchors.find((candidate) => candidate.text === '뒤 run')!
+    const nextStart = anchors.find((candidate) => candidate.text === '다음 앞')!
+    const backward = planMergeParagraph(
+      source,
+      createEditorSelection(sectionPath, nextStart.textNodeId, 0),
+      'previous'
+    )
+    const forward = planMergeParagraph(
+      source,
+      createEditorSelection(sectionPath, previousEnd.textNodeId, previousEnd.text.length),
+      'next'
+    )
+
+    expect(backward.command).toEqual(forward.command)
+    const result = applyReplaceParagraphFragmentCommand(source, backward.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+    expect(backward.command.replacementFragment).not.toContain('hp:linesegarray')
+    expect(xml).toContain(
+      '<hp:p id="10" paraPrIDRef="0" pageBreak="0" columnBreak="0"><hp:run charPrIDRef="0"><hp:t>앞 run</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>가나<hp:lineBreak/>다라</hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>뒤 run</hp:t></hp:run><hp:run charPrIDRef="3"><hp:t>다음 앞</hp:t></hp:run><hp:run charPrIDRef="4"><hp:t>다음 뒤</hp:t></hp:run></hp:p>'
+    )
+    expect(listHwpxTextAnchors(result.package, sectionPath).find(
+      (candidate) => candidate.textNodeId === nextStart.textNodeId
+    )?.text).toBe('다음 앞')
+  })
+
+  test('merge를 한 history 단위로 undo/redo하고 원문 bytes를 복원한다', async () => {
+    const source = await sourceWithAdjacentParagraphs()
+    const original = source.readEntry(sectionPath)
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '다음 앞'
+    )!
+    const selection = createEditorSelection(sectionPath, anchor.textNodeId, 0)
+    const plan = planMergeParagraph(source, selection, 'previous')
+    const history = new HwpxEditHistory(source)
+    history.setSelection(selection)
+    history.commit({
+      id: 'merge-paragraph',
+      baseRevision: source.revision,
+      commands: [plan.command],
+      selectionBefore: selection,
+      selectionAfter: plan.selectionAfter,
+      inputType: 'deleteContentBackward',
+      timestamp: 1
+    })
+
+    expect(history.selection).toEqual(selection)
+    expect(history.undo()?.selection).toEqual(selection)
+    expect(history.package.readEntry(sectionPath)).toEqual(original)
+    expect(history.redo()?.selection).toEqual(selection)
+    expect(history.package.readEntry(sectionPath)).not.toEqual(original)
+  })
+
+  test('문단 내부 caret과 중간 XML 요소가 있는 인접 문단 merge를 거부한다', async () => {
+    const source = await sourceWithAdjacentParagraphs()
+    const next = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '다음 앞'
+    )!
+    expect(() => planMergeParagraph(
+      source,
+      createEditorSelection(sectionPath, next.textNodeId, 1),
+      'previous'
+    )).toThrow('맨 앞')
+
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hp:p><hp:p id="20"',
+      '</hp:p><hfx:keep/><hp:p id="20"'
+    )
+    const separated = source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
+    const separatedNext = listHwpxTextAnchors(separated, sectionPath).find(
+      (candidate) => candidate.text === '다음 앞'
+    )!
+    expect(() => planMergeParagraph(
+      separated,
+      createEditorSelection(sectionPath, separatedNext.textNodeId, 0),
+      'previous'
+    )).toThrow('보존해야 할 콘텐츠')
   })
 })

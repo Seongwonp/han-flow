@@ -118,6 +118,12 @@ interface ParagraphEditingProps {
     timestamp: number
   ) => void
   onSplitParagraph: (selection: EditorSelection, timestamp: number) => void
+  onMergeParagraph: (
+    selection: EditorSelection,
+    direction: 'previous' | 'next',
+    inputType: 'deleteContentBackward' | 'deleteContentForward',
+    timestamp: number
+  ) => void
 }
 
 export function isEditableTextParagraph(
@@ -232,6 +238,9 @@ export function ParagraphView({
       }}
       onRangeCommit={activeEditing.onRangeCommit}
       onSplitParagraph={activeEditing.onSplitParagraph}
+      onMergeParagraph={activeEditing.onMergeParagraph}
+      allowMergePrevious={index === 0}
+      allowMergeNext={index === editableTexts.length - 1}
       onBoundaryNavigate={(direction) => {
         const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
         if (!neighbor?.sourceAnchor) return
@@ -903,6 +912,36 @@ export default function App() {
       setEditingPending((current) => Math.max(0, current - 1))
     })
   }, [editing?.sessionId, applyEditingResult])
+  const mergeEditingParagraph = useCallback((
+    selection: EditorSelection,
+    direction: 'previous' | 'next',
+    inputType: 'deleteContentBackward' | 'deleteContentForward',
+    timestamp: number
+  ) => {
+    if (!editing || editingComposing.current) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('문단 합치는 중…')
+    void api().mergeParagraphEditing({
+      sessionId: editing.sessionId,
+      transactionId: `ui-merge-${++editSequence.current}`,
+      selectionBefore: selection,
+      direction,
+      inputType,
+      timestamp
+    }).then((result: EditingActionResult) => {
+      applyEditingResult(result)
+      setEditingStatus('편집 중')
+    }).catch((reason: unknown) => {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      setEditingStatus(
+        message.includes('병합할 인접 문단이 없습니다')
+          ? '편집 중'
+          : `문단 병합 오류: ${message}`
+      )
+    }).finally(() => {
+      setEditingPending((current) => Math.max(0, current - 1))
+    })
+  }, [editing?.sessionId, applyEditingResult])
   const onComposingChange = useCallback((composing: boolean) => {
     editingComposing.current = composing
   }, [])
@@ -1386,7 +1425,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}

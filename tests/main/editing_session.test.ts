@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
+import { saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { EditingSessionManager } from '../../src/main/editing_session'
 import { createRoundTripHwpx } from '../fixtures/public/create_synthetic_hwpx'
@@ -148,6 +149,55 @@ describe('main process HWPX editing session', () => {
     expect(listHwpxTextAnchors(reopened, sectionPath).filter(
       (candidate) => candidate.text === ''
     )).toHaveLength(emptyCount + 1)
+  })
+
+  test('문단 시작 Backspace 병합을 undo/redo하고 Save As 재개봉한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hs:sec>',
+      '<hp:p id="30" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>병합 앞</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p><hp:p id="31" paraPrIDRef="1"><hp:run charPrIDRef="1"><hp:t>병합 뒤</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
+    )
+    const mergeFixture = join(directory, 'paragraph-merge-input.hwpx')
+    await saveHwpxAs(
+      source.withEntry(sectionPath, Buffer.from(xml, 'utf8')),
+      mergeFixture
+    )
+    const mergeSource = await HwpxSourcePackage.open(mergeFixture)
+    const anchor = listHwpxTextAnchors(mergeSource, sectionPath).find(
+      (candidate) => candidate.text === '병합 뒤'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 0
+    }
+    const manager = new EditingSessionManager(() => 'merge-session')
+    const started = await manager.start(30, mergeFixture)
+    const merged = await manager.mergeParagraph(30, {
+      sessionId: started.sessionId,
+      transactionId: 'merge-previous',
+      selectionBefore: selection,
+      direction: 'previous',
+      inputType: 'deleteContentBackward',
+      timestamp: 1
+    })
+
+    expect(merged).toMatchObject({ revision: 1, canUndo: true, isDirty: true })
+    expect(merged.selection).toEqual(selection)
+    expect((await manager.undo(30, started.sessionId)).selection).toEqual(selection)
+    expect((await manager.redo(30, started.sessionId)).selection).toEqual(selection)
+
+    const destination = join(directory, 'paragraph-merge-save.hwpx')
+    await manager.saveAs(30, started.sessionId, destination)
+    const reopened = await HwpxSourcePackage.open(destination)
+    const reopenedXml = reopened.readEntry(sectionPath).toString('utf8')
+    expect(reopenedXml).toContain(
+      '<hp:p id="30" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>병합 앞</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>병합 뒤</hp:t></hp:run></hp:p>'
+    )
+    expect(reopenedXml).not.toContain('<hp:p id="31"')
   })
 
   test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {

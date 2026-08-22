@@ -20,6 +20,13 @@ export interface SplitParagraphPlan {
   selectionAfter: EditorSelection
 }
 
+export type MergeParagraphDirection = 'previous' | 'next'
+
+export interface MergeParagraphPlan {
+  command: ReplaceParagraphFragmentCommand
+  selectionAfter: EditorSelection
+}
+
 export interface ParagraphPatchResult {
   package: HwpxSourcePackage
   inverse: ReplaceParagraphFragmentCommand
@@ -268,6 +275,27 @@ function changedTextRun(context: ParagraphContext, text: string): string {
   )
 }
 
+function paragraphTextNodes(context: ParagraphContext): XmlElementSpan[] {
+  return context.spans.filter(
+    (span) =>
+      span.name === 'hp:t' &&
+      span.start >= context.paragraph.openEnd &&
+      span.end <= context.paragraph.closeStart
+  )
+}
+
+function textNodeIdForSpan(
+  sectionPath: string,
+  spans: XmlElementSpan[],
+  target: XmlElementSpan
+): string {
+  const ordinal = spans.filter((span) => span.name === 'hp:t').findIndex(
+    (span) => span.start === target.start
+  )
+  if (ordinal < 0) throw new HwpxEditConflictError('문단 text ordinal을 찾을 수 없습니다.')
+  return `${sectionPath}#hp:t:${ordinal}`
+}
+
 export function planSplitParagraph(
   sourcePackage: HwpxSourcePackage,
   selection: EditorSelection
@@ -313,6 +341,95 @@ export function planSplitParagraph(
       focusTextNodeId: rightTextNodeId,
       focusOffset: 0
     }
+  }
+}
+
+export function planMergeParagraph(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection,
+  direction: MergeParagraphDirection
+): MergeParagraphPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  if (
+    normalized.start.textNodeId !== normalized.end.textNodeId ||
+    normalized.start.offset !== normalized.end.offset
+  ) {
+    throw new HwpxEditConflictError('문단 병합은 접힌 caret에서만 지원합니다.')
+  }
+  const current = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  assertSimpleParagraph(current)
+  const currentTexts = paragraphTextNodes(current)
+  const currentAnchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
+    (candidate) => candidate.textNodeId === normalized.start.textNodeId
+  )!
+  if (
+    direction === 'previous' &&
+    (currentTexts[0]?.start !== current.textNode.start || normalized.start.offset !== 0)
+  ) {
+    throw new HwpxEditConflictError('이전 문단 병합은 문단 맨 앞에서만 지원합니다.')
+  }
+  if (
+    direction === 'next' &&
+    (
+      currentTexts[currentTexts.length - 1]?.start !== current.textNode.start ||
+      normalized.start.offset !== currentAnchor.text.length
+    )
+  ) {
+    throw new HwpxEditConflictError('다음 문단 병합은 문단 맨 끝에서만 지원합니다.')
+  }
+
+  const topLevelParagraphs = current.spans.filter(
+    (span) => span.name === 'hp:p' && span.parent?.name === 'hs:sec'
+  )
+  const currentIndex = topLevelParagraphs.findIndex(
+    (paragraph) => paragraph.start === current.paragraph.start
+  )
+  const neighborIndex = currentIndex + (direction === 'previous' ? -1 : 1)
+  const neighborParagraph = topLevelParagraphs[neighborIndex]
+  if (currentIndex < 0 || !neighborParagraph) {
+    throw new HwpxEditConflictError('병합할 인접 문단이 없습니다.')
+  }
+  const neighborText = current.spans.find(
+    (span) =>
+      span.name === 'hp:t' &&
+      span.start >= neighborParagraph.openEnd &&
+      span.end <= neighborParagraph.closeStart
+  )
+  if (!neighborText) throw new HwpxEditConflictError('인접 문단에 text anchor가 없습니다.')
+  const neighbor = locateParagraph(
+    sourcePackage,
+    selection.sectionPath,
+    textNodeIdForSpan(selection.sectionPath, current.spans, neighborText)
+  )
+  assertSimpleParagraph(neighbor)
+
+  const first = direction === 'previous' ? neighbor : current
+  const second = direction === 'previous' ? current : neighbor
+  if (current.xml.slice(first.paragraph.end, second.paragraph.start).trim()) {
+    throw new HwpxEditConflictError('두 문단 사이에 보존해야 할 콘텐츠가 있어 병합할 수 없습니다.')
+  }
+  const firstRuns = assertSimpleParagraph(first)
+  const secondRuns = assertSimpleParagraph(second)
+  const mergedFragment =
+    current.xml.slice(first.paragraph.start, first.paragraph.openEnd) +
+    firstRuns.map((run) => current.xml.slice(run.start, run.end)).join('') +
+    secondRuns.map((run) => current.xml.slice(run.start, run.end)).join('') +
+    current.xml.slice(first.paragraph.closeStart, first.paragraph.end)
+  const expectedFragment = current.xml.slice(first.paragraph.start, second.paragraph.end)
+  const locatorTextNodeId = textNodeIdForSpan(
+    selection.sectionPath,
+    current.spans,
+    paragraphTextNodes(first)[0]
+  )
+  return {
+    command: {
+      type: 'replace-paragraph-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: locatorTextNodeId,
+      expectedFragment,
+      replacementFragment: mergedFragment
+    },
+    selectionAfter: { ...selection }
   }
 }
 

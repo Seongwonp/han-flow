@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   EditingCharacterStyleRequest,
   EditingCommitRequest,
+  EditingMergeParagraphRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
@@ -50,6 +51,8 @@ const api = {
     ipcRenderer.invoke('editing:commitRange', request),
   splitParagraphEditing: (request: EditingSplitParagraphRequest) =>
     ipcRenderer.invoke('editing:splitParagraph', request),
+  mergeParagraphEditing: (request: EditingMergeParagraphRequest) =>
+    ipcRenderer.invoke('editing:mergeParagraph', request),
   applyCharacterStyle: (request: EditingCharacterStyleRequest) =>
     ipcRenderer.invoke('editing:applyCharacterStyle', request),
   applyParagraphStyle: (request: EditingParagraphStyleRequest) =>

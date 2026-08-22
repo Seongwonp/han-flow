@@ -49,6 +49,15 @@ export interface EditingSplitParagraphRequest {
   timestamp: number
 }
 
+export interface EditingMergeParagraphRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  direction: 'previous' | 'next'
+  inputType: 'deleteContentBackward' | 'deleteContentForward'
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string
