@@ -200,6 +200,62 @@ describe('main process HWPX editing session', () => {
     expect(reopenedXml).not.toContain('<hp:p id="31"')
   })
 
+  test('여러 문단 범위 치환을 구조 command로 commit하고 Save As 재개봉한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hs:sec>',
+      '<hp:p id="40" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>문단 시작</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p><hp:p id="41" paraPrIDRef="1"><hp:run charPrIDRef="1"><hp:t>문단 끝</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
+    )
+    const rangeFixture = join(directory, 'paragraph-range-input.hwpx')
+    await saveHwpxAs(
+      source.withEntry(sectionPath, Buffer.from(xml, 'utf8')),
+      rangeFixture
+    )
+    const rangeSource = await HwpxSourcePackage.open(rangeFixture)
+    const anchors = listHwpxTextAnchors(rangeSource, sectionPath)
+    const start = anchors.find((candidate) => candidate.text === '문단 시작')!
+    const end = anchors.find((candidate) => candidate.text === '문단 끝')!
+    const backward = {
+      sectionPath,
+      anchorTextNodeId: end.textNodeId,
+      anchorOffset: 2,
+      focusTextNodeId: start.textNodeId,
+      focusOffset: 2
+    }
+    const manager = new EditingSessionManager(() => 'paragraph-range-session')
+    const started = await manager.start(31, rangeFixture)
+    const committed = await manager.commitRange(31, {
+      sessionId: started.sessionId,
+      transactionId: 'paragraph-range-replace',
+      selectionBefore: backward,
+      insert: '범위',
+      inputType: 'insertText',
+      timestamp: 1
+    })
+
+    expect(committed).toMatchObject({ revision: 1, canUndo: true, isDirty: true })
+    expect(committed.selection).toEqual({
+      sectionPath,
+      anchorTextNodeId: start.textNodeId,
+      anchorOffset: 4,
+      focusTextNodeId: start.textNodeId,
+      focusOffset: 4
+    })
+    expect((await manager.undo(31, started.sessionId)).selection).toEqual(backward)
+    expect((await manager.redo(31, started.sessionId)).selection).toEqual(committed.selection)
+
+    const destination = join(directory, 'paragraph-range-save.hwpx')
+    await manager.saveAs(31, started.sessionId, destination)
+    const reopenedXml = (await HwpxSourcePackage.open(destination))
+      .readEntry(sectionPath)
+      .toString('utf8')
+    expect(reopenedXml).toContain(
+      '<hp:p id="40" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>문단범위</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t> 끝</hp:t></hp:run></hp:p>'
+    )
+    expect(reopenedXml).not.toContain('<hp:p id="41"')
+  })
+
   test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'style-session')
     const source = await HwpxSourcePackage.open(fixture)

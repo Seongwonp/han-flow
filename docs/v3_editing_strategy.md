@@ -557,6 +557,17 @@ offset을 유지한다. inverse는 사이 공백을 포함한 원래 두 문단 
 할 XML element가 있으면 fail-closed 오류로 남긴다. 표 셀 구조 편집과 여러 문단 selection은
 공통 paragraph host 설계 뒤로 유지한다.
 
+여러 문단 범위 치환 코어는 UI host보다 먼저 구현했다. 정규화된 시작·끝 anchor가 서로 다른
+최상위 일반 문단에 있으면 기존 run별 text command 대신 paragraph fragment command 하나를
+만든다. 시작 문단의 선택 앞 prefix와 입력 문자열, 끝 문단의 선택 뒤 suffix를 앞 문단 모양 아래
+합치고 중간 문단을 제거한다. 시작 이전 run과 끝 이후 run은 원본 XML 그대로 유지하며 양 끝
+경계 run의 char style도 각각 보존한다.
+
+모든 선택 문단이 simple text 정책을 통과하고 문단 사이가 XML whitespace뿐일 때만 실행한다.
+inverse는 시작부터 끝 문단까지 원문 bytes를 보관한다. 기존 표 셀·중첩 anchor 범위는 이
+dispatcher 대상이 아니며 기존 multi-run text command 계약을 유지한다. main `commitRange`의
+undo/redo·Save As는 완료했지만 공통 paragraph host, pointer drag와 시각 selection은 다음 slice다.
+
 구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
 [한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.
 

@@ -27,6 +27,12 @@ export interface MergeParagraphPlan {
   selectionAfter: EditorSelection
 }
 
+export interface ReplaceParagraphSelectionPlan {
+  command: ReplaceParagraphFragmentCommand
+  selectionAfter: EditorSelection
+  affectedTextNodeIds: readonly string[]
+}
+
 export interface ParagraphPatchResult {
   package: HwpxSourcePackage
   inverse: ReplaceParagraphFragmentCommand
@@ -430,6 +436,131 @@ export function planMergeParagraph(
       replacementFragment: mergedFragment
     },
     selectionAfter: { ...selection }
+  }
+}
+
+export function selectionSpansParagraphs(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): boolean {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  if (normalized.start.textNodeId === normalized.end.textNodeId) return false
+  try {
+    const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+    const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+    return start.paragraph.start !== end.paragraph.start
+  } catch (reason) {
+    if (reason instanceof HwpxEditConflictError) return false
+    throw reason
+  }
+}
+
+export function planReplaceParagraphSelection(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection,
+  insert: string
+): ReplaceParagraphSelectionPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (start.paragraph.start === end.paragraph.start) {
+    throw new HwpxEditConflictError('같은 문단 선택은 text range command를 사용해야 합니다.')
+  }
+  if (start.paragraph.start > end.paragraph.start) {
+    throw new HwpxEditConflictError('정규화된 문단 선택 순서가 올바르지 않습니다.')
+  }
+  const topLevelParagraphs = start.spans.filter(
+    (span) => span.name === 'hp:p' && span.parent?.name === 'hs:sec'
+  )
+  const startParagraphIndex = topLevelParagraphs.findIndex(
+    (paragraph) => paragraph.start === start.paragraph.start
+  )
+  const endParagraphIndex = topLevelParagraphs.findIndex(
+    (paragraph) => paragraph.start === end.paragraph.start
+  )
+  if (startParagraphIndex < 0 || endParagraphIndex <= startParagraphIndex) {
+    throw new HwpxEditConflictError('여러 문단 selection 범위를 찾을 수 없습니다.')
+  }
+  const selectedParagraphs = topLevelParagraphs.slice(startParagraphIndex, endParagraphIndex + 1)
+  const contexts = selectedParagraphs.map((paragraph) => {
+    const text = start.spans.find(
+      (span) =>
+        span.name === 'hp:t' &&
+        span.start >= paragraph.openEnd &&
+        span.end <= paragraph.closeStart
+    )
+    if (!text) throw new HwpxEditConflictError('selection 문단에 text anchor가 없습니다.')
+    const context = locateParagraph(
+      sourcePackage,
+      selection.sectionPath,
+      textNodeIdForSpan(selection.sectionPath, start.spans, text)
+    )
+    assertSimpleParagraph(context)
+    return context
+  })
+  for (let index = 1; index < contexts.length; index += 1) {
+    if (start.xml.slice(contexts[index - 1].paragraph.end, contexts[index].paragraph.start).trim()) {
+      throw new HwpxEditConflictError('선택 문단 사이에 보존해야 할 콘텐츠가 있습니다.')
+    }
+  }
+
+  const startRuns = assertSimpleParagraph(start)
+  const endRuns = assertSimpleParagraph(end)
+  const startRunIndex = startRuns.findIndex((run) => run.start === start.run.start)
+  const endRunIndex = endRuns.findIndex((run) => run.start === end.run.start)
+  if (startRunIndex < 0 || endRunIndex < 0) {
+    throw new HwpxEditConflictError('selection 경계 run을 찾을 수 없습니다.')
+  }
+  const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
+  const startAnchorIndex = anchors.findIndex(
+    (anchor) => anchor.textNodeId === normalized.start.textNodeId
+  )
+  const endAnchorIndex = anchors.findIndex(
+    (anchor) => anchor.textNodeId === normalized.end.textNodeId
+  )
+  const startAnchor = anchors[startAnchorIndex]
+  const endAnchor = anchors[endAnchorIndex]
+  if (!startAnchor || !endAnchor) throw new HwpxEditConflictError('selection text anchor를 찾을 수 없습니다.')
+
+  const prefixRuns = startRuns
+    .slice(0, startRunIndex)
+    .map((run) => start.xml.slice(run.start, run.end))
+  const suffixRuns = endRuns
+    .slice(endRunIndex + 1)
+    .map((run) => start.xml.slice(run.start, run.end))
+  const changedStartRun = changedTextRun(
+    start,
+    startAnchor.text.slice(0, normalized.start.offset) + insert
+  )
+  const changedEndRun = changedTextRun(
+    end,
+    endAnchor.text.slice(normalized.end.offset)
+  )
+  const replacementFragment =
+    start.xml.slice(start.paragraph.start, start.paragraph.openEnd) +
+    prefixRuns.join('') +
+    changedStartRun +
+    changedEndRun +
+    suffixRuns.join('') +
+    start.xml.slice(start.paragraph.closeStart, start.paragraph.end)
+  return {
+    command: {
+      type: 'replace-paragraph-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      expectedFragment: start.xml.slice(start.paragraph.start, end.paragraph.end),
+      replacementFragment
+    },
+    selectionAfter: {
+      sectionPath: selection.sectionPath,
+      anchorTextNodeId: normalized.start.textNodeId,
+      anchorOffset: normalized.start.offset + insert.length,
+      focusTextNodeId: normalized.start.textNodeId,
+      focusOffset: normalized.start.offset + insert.length
+    },
+    affectedTextNodeIds: anchors
+      .slice(startAnchorIndex, endAnchorIndex + 1)
+      .map((anchor) => anchor.textNodeId)
   }
 }
 

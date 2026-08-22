@@ -308,6 +308,19 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 다음 코드 관문은 여러 문단 selection domain과 공통 paragraph editing host다. 표 셀 구조
 편집은 cell의 여러 문단 편집 경계를 확장한 뒤 진행한다.
 
+## 진행 중인 milestone: Sprint 2 여러 문단 selection
+
+1. [x] 최상위 일반 텍스트 문단을 가로지르는 순방향·역방향 selection을 정규화한다.
+2. [x] 시작 문단 prefix와 끝 문단 suffix를 앞 문단 모양 아래 합치고 중간 문단을 제거한다.
+3. [x] 양 끝 run style, inline line break, caret anchor와 빈 `hp:t`를 보존한다.
+4. [x] 중간 복합 문단·보존 XML element를 fail-closed하고 기존 중첩 run 경로와 구분한다.
+5. [x] main `commitRange`에서 구조 command 한 개로 undo/redo·Save As 재개봉을 검증한다.
+6. [ ] 공통 paragraph editing host에서 키보드와 pointer selection을 여러 문단으로 확장한다.
+7. [ ] 여러 문단 selection의 부분·전체 run 시각 강조와 IME 경계를 검증한다.
+
+코어와 main session은 완료했지만 renderer에는 여러 문단 selection을 만드는 입력 host가 아직
+없다. 다음 slice는 문서 mutation이 아니라 공통 host·selection 표시를 우선한다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

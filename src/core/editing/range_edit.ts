@@ -6,6 +6,10 @@ import {
   normalizeEditorSelection
 } from './selection'
 import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
+import {
+  planReplaceParagraphSelection,
+  selectionSpansParagraphs
+} from './paragraph_patch'
 
 export interface ReplaceSelectionPlan {
   commands: readonly EditCommand[]
@@ -18,6 +22,14 @@ export function planReplaceSelection(
   selection: EditorSelection,
   insert: string
 ): ReplaceSelectionPlan {
+  if (selectionSpansParagraphs(sourcePackage, selection)) {
+    const plan = planReplaceParagraphSelection(sourcePackage, selection, insert)
+    return {
+      commands: [plan.command],
+      selectionAfter: plan.selectionAfter,
+      affectedTextNodeIds: plan.affectedTextNodeIds
+    }
+  }
   const normalized = normalizeEditorSelection(sourcePackage, selection)
   const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
   const startIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.start.textNodeId)

@@ -5,6 +5,7 @@ import { HwpxEditHistory } from '../../src/core/editing/history'
 import {
   applyReplaceParagraphFragmentCommand,
   planMergeParagraph,
+  planReplaceParagraphSelection,
   planSplitParagraph
 } from '../../src/core/editing/paragraph_patch'
 import { createEditorSelection } from '../../src/core/editing/selection'
@@ -34,6 +35,15 @@ describe('HWPX paragraph split', () => {
     const xml = source.readEntry(sectionPath).toString('utf8').replace(
       '</hs:sec>',
       '<hp:p id="20" paraPrIDRef="1"><hp:run charPrIDRef="3"><hp:t>다음 앞</hp:t></hp:run><hp:run charPrIDRef="4"><hp:t>다음 뒤</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
+    )
+    return source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
+  }
+
+  async function sourceWithThreeParagraphs(): Promise<HwpxSourcePackage> {
+    const source = await sourceWithAdjacentParagraphs()
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hs:sec>',
+      '<hp:p id="21" paraPrIDRef="2"><hp:run charPrIDRef="5"><hp:t>마지막 앞</hp:t></hp:run><hp:run charPrIDRef="6"><hp:t>마지막 뒤</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hs:sec>'
     )
     return source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
   }
@@ -193,5 +203,66 @@ describe('HWPX paragraph split', () => {
       createEditorSelection(sectionPath, separatedNext.textNodeId, 0),
       'previous'
     )).toThrow('보존해야 할 콘텐츠')
+  })
+
+  test('여러 문단 선택을 시작 문단 하나로 치환하고 양 끝 run 서식을 보존한다', async () => {
+    const source = await sourceWithThreeParagraphs()
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const start = anchors.find((candidate) => candidate.text === '가나\n다라')!
+    const end = anchors.find((candidate) => candidate.text === '마지막 앞')!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: start.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: end.textNodeId,
+      focusOffset: 2
+    }
+    const plan = planReplaceParagraphSelection(source, selection, '교체\n')
+    const result = applyReplaceParagraphFragmentCommand(source, plan.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+
+    expect(plan.command.replacementFragment).not.toContain('hp:linesegarray')
+    expect(xml).toContain(
+      '<hp:p id="10" paraPrIDRef="0" pageBreak="0" columnBreak="0"><hp:run charPrIDRef="0"><hp:t>앞 run</hp:t></hp:run><hp:run charPrIDRef="1"><hp:t>가교체<hp:lineBreak/></hp:t></hp:run><hp:run charPrIDRef="5"><hp:t>막 앞</hp:t></hp:run><hp:run charPrIDRef="6"><hp:t>마지막 뒤</hp:t></hp:run></hp:p>'
+    )
+    expect(xml).not.toContain('<hp:p id="20"')
+    expect(xml).not.toContain('<hp:p id="21"')
+    expect(plan.selectionAfter).toEqual(
+      createEditorSelection(sectionPath, start.textNodeId, 4)
+    )
+    expect(plan.affectedTextNodeIds[0]).toBe(start.textNodeId)
+    expect(plan.affectedTextNodeIds.at(-1)).toBe(end.textNodeId)
+  })
+
+  test('역방향 여러 문단 치환을 undo/redo하고 원문 bytes·selection을 복원한다', async () => {
+    const source = await sourceWithThreeParagraphs()
+    const original = source.readEntry(sectionPath)
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const start = anchors.find((candidate) => candidate.text === '가나\n다라')!
+    const end = anchors.find((candidate) => candidate.text === '마지막 앞')!
+    const backward = {
+      sectionPath,
+      anchorTextNodeId: end.textNodeId,
+      anchorOffset: 2,
+      focusTextNodeId: start.textNodeId,
+      focusOffset: 1
+    }
+    const plan = planReplaceParagraphSelection(source, backward, '문단범위')
+    const history = new HwpxEditHistory(source)
+    history.setSelection(backward)
+    history.commit({
+      id: 'replace-paragraph-range',
+      baseRevision: source.revision,
+      commands: [plan.command],
+      selectionBefore: backward,
+      selectionAfter: plan.selectionAfter,
+      inputType: 'insertText',
+      timestamp: 1
+    })
+
+    expect(history.selection).toEqual(plan.selectionAfter)
+    expect(history.undo()?.selection).toEqual(backward)
+    expect(history.package.readEntry(sectionPath)).toEqual(original)
+    expect(history.redo()?.selection).toEqual(plan.selectionAfter)
   })
 })

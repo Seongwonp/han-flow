@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-22 — Sprint 2 여러 문단 범위 치환 코어
+
+서로 다른 최상위 일반 텍스트 문단의 selection을 paragraph fragment command 하나로 치환하는
+planner를 추가했다. 시작 prefix와 입력, 끝 suffix를 앞 문단 모양 아래 합치고 중간 문단을
+제거한다. 양 끝 경계 run의 char style, 시작 이전·끝 이후 run, inline line break와 caret anchor를
+보존하며 모든 stale `hp:linesegarray`는 결과 fragment에서 제외한다.
+
+세 문단 공개 fixture에서 순방향 치환, 역방향 selection undo/redo와 원문 byte 복원을 검증했다.
+main session은 기존 `commitRange` IPC로 여러 문단 치환 → undo → redo → Save As → 재개봉을
+통과했다. 기존 표 셀·중첩 multi-run 테스트도 유지했다. 공통 paragraph host, pointer drag와
+selection 시각 표시는 아직 renderer에 연결하지 않았다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 26 suite·151 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다.
+
 ## 2026-08-22 — Sprint 2 문단 경계 Backspace/Delete merge
 
 최상위 일반 텍스트 문단의 첫 run 시작 Backspace와 마지막 run 끝 Delete를 인접 문단 merge
