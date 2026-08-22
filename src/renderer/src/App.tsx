@@ -1,4 +1,4 @@
-import { CSSProperties, DragEvent, useCallback, useEffect, useMemo, useRef, useState, WheelEvent } from 'react'
+import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
@@ -15,7 +15,13 @@ import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
 import { ParagraphInputSurface } from './ParagraphInputSurface'
-import { readParagraphEditorSelection, restoreParagraphEditorSelection } from './paragraph_selection'
+import {
+  moveParagraphEditorSelection,
+  paragraphEditorRangeScope,
+  paragraphEditorSurfaces,
+  readParagraphEditorSelection,
+  restoreParagraphEditorSelection
+} from './paragraph_selection'
 
 const api = () => (window as any).api
 
@@ -103,6 +109,8 @@ interface ParagraphEditingProps {
   restoreToken?: unknown
   surfaceLabel?: string
   allowMultipleRuns?: boolean
+  allowParagraphRange?: boolean
+  editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
@@ -170,9 +178,19 @@ export function ParagraphView({
     : undefined
   const paragraphRef = useRef<HTMLDivElement>(null)
   const sectionPath = editableTexts?.[0]?.sourceAnchor?.sectionPath
+  const rangeScope = sectionPath && activeEditing
+    ? paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange))
+    : undefined
+  const editorHost = () => activeEditing?.editorHostRef?.current ?? paragraphRef.current
+  const readEditorSelection = () => {
+    const host = editorHost()
+    return activeEditing && sectionPath && rangeScope && host
+      ? readParagraphEditorSelection(host, sectionPath, rangeScope)
+      : undefined
+  }
   const syncEditorSelection = (preserveModeledRange = false) => {
-    if (!activeEditing || !sectionPath || !paragraphRef.current) return
-    const selection = readParagraphEditorSelection(paragraphRef.current, sectionPath)
+    if (!activeEditing) return
+    const selection = readEditorSelection()
     if (
       preserveModeledRange &&
       activeEditing.desiredSelection?.anchorTextNodeId !==
@@ -181,20 +199,6 @@ export function ParagraphView({
     ) return
     if (selection) activeEditing.onEditorSelectionChange(selection)
   }
-  useEffect(() => {
-    if (
-      !activeEditing?.desiredSelection ||
-      activeEditing.desiredSelection.anchorTextNodeId === activeEditing.desiredSelection.focusTextNodeId ||
-      !paragraphRef.current
-    ) return
-    restoreParagraphEditorSelection(paragraphRef.current, activeEditing.desiredSelection)
-  }, [
-    activeEditing?.restoreToken,
-    activeEditing?.desiredSelection?.anchorTextNodeId,
-    activeEditing?.desiredSelection?.anchorOffset,
-    activeEditing?.desiredSelection?.focusTextNodeId,
-    activeEditing?.desiredSelection?.focusOffset
-  ])
   return <div
     ref={paragraphRef}
     onMouseUp={() => syncEditorSelection()}
@@ -211,6 +215,7 @@ export function ParagraphView({
       pending={activeEditing.pending}
       restoreToken={activeEditing.restoreToken}
       ariaLabel={activeEditing.surfaceLabel}
+      rangeScope={rangeScope!}
       desiredSelection={
         activeEditing.desiredSelection?.anchorTextNodeId === activeEditing.desiredSelection?.focusTextNodeId &&
         activeEditing.desiredSelection?.focusTextNodeId === editableText.sourceAnchor!.textNodeId
@@ -221,9 +226,7 @@ export function ParagraphView({
       onComposingChange={activeEditing.onComposingChange}
       onSelectionChange={activeEditing.onSelectionChange}
       getRangeSelection={() => {
-        const nativeSelection = sectionPath && paragraphRef.current
-          ? readParagraphEditorSelection(paragraphRef.current, sectionPath)
-          : undefined
+        const nativeSelection = readEditorSelection()
         if (nativeSelection?.anchorTextNodeId !== nativeSelection?.focusTextNodeId) {
           return nativeSelection
         }
@@ -241,26 +244,49 @@ export function ParagraphView({
       onMergeParagraph={activeEditing.onMergeParagraph}
       allowMergePrevious={index === 0}
       allowMergeNext={index === editableTexts.length - 1}
-      onBoundaryNavigate={(direction) => {
-        const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
-        if (!neighbor?.sourceAnchor) return
-        const offset = direction === 'previous' ? neighbor.text.length : 0
-        activeEditing.onSelectionChange(neighbor.sourceAnchor, {
-          anchorOffset: offset,
-          focusOffset: offset
-        })
-      }}
-      onBoundaryExtend={(direction, selection) => {
-        const neighbor = editableTexts[index + (direction === 'previous' ? -1 : 1)]
+      onBoundaryNavigate={(direction, selection) => {
+        const host = editorHost()
         const currentAnchor = editableText.sourceAnchor
-        if (!neighbor?.sourceAnchor || !currentAnchor) return
-        activeEditing.onEditorSelectionChange({
+        if (!host || !currentAnchor) return
+        const modeled = readEditorSelection() ?? {
           sectionPath: currentAnchor.sectionPath,
           anchorTextNodeId: currentAnchor.textNodeId,
           anchorOffset: selection.anchorOffset,
-          focusTextNodeId: neighbor.sourceAnchor.textNodeId,
-          focusOffset: direction === 'previous' ? neighbor.text.length : 0
-        })
+          focusTextNodeId: currentAnchor.textNodeId,
+          focusOffset: selection.focusOffset
+        }
+        const moved = moveParagraphEditorSelection(
+          paragraphEditorSurfaces(host),
+          currentAnchor.textNodeId,
+          direction,
+          modeled,
+          false
+        )
+        if (moved) activeEditing.onEditorSelectionChange(moved)
+      }}
+      onBoundaryExtend={(direction, selection) => {
+        const host = editorHost()
+        const currentAnchor = editableText.sourceAnchor
+        if (!host || !currentAnchor) return
+        const modeled = readEditorSelection() ?? (
+          activeEditing.desiredSelection?.focusTextNodeId === currentAnchor.textNodeId
+            ? activeEditing.desiredSelection
+            : {
+                sectionPath: currentAnchor.sectionPath,
+                anchorTextNodeId: currentAnchor.textNodeId,
+                anchorOffset: selection.anchorOffset,
+                focusTextNodeId: currentAnchor.textNodeId,
+                focusOffset: selection.focusOffset
+              }
+        )
+        const moved = moveParagraphEditorSelection(
+          paragraphEditorSurfaces(host),
+          currentAnchor.textNodeId,
+          direction,
+          modeled,
+          true
+        )
+        if (moved) activeEditing.onEditorSelectionChange(moved)
       }}
     />)
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
@@ -316,7 +342,12 @@ function TableView({
       measurable={measurable}
       editing={
         isEditableTableCell(cell, measurable) && editing
-          ? { ...editing, surfaceLabel: 'HWPX 표 셀 편집', allowMultipleRuns: false }
+          ? {
+              ...editing,
+              surfaceLabel: 'HWPX 표 셀 편집',
+              allowMultipleRuns: false,
+              allowParagraphRange: false
+            }
           : undefined
       }
     />)}</td>
@@ -485,6 +516,7 @@ export default function App() {
   const [editingPending, setEditingPending] = useState(0)
   const [editingStatus, setEditingStatus] = useState<string | null>(null)
   const measurementRef = useRef<HTMLDivElement>(null)
+  const editingHostRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchSequence = useRef(0)
   const activeLoadId = useRef('')
@@ -516,6 +548,24 @@ export default function App() {
   const virtualized = pageCount > 50 && !printing
   const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
   const pageStride = (pageHeight + 24) * zoom
+  useLayoutEffect(() => {
+    if (
+      !editing ||
+      !editingSelection ||
+      editingSelection.anchorTextNodeId === editingSelection.focusTextNodeId ||
+      !editingHostRef.current
+    ) return
+    restoreParagraphEditorSelection(editingHostRef.current, editingSelection)
+  }, [
+    editing?.sessionId,
+    editingSelection?.anchorTextNodeId,
+    editingSelection?.anchorOffset,
+    editingSelection?.focusTextNodeId,
+    editingSelection?.focusOffset,
+    layoutMeasurements,
+    visibleRange.start,
+    visibleRange.end
+  ])
   const updateVisibleRange = (scrollTop: number, viewportHeight: number) => {
     if (!virtualized) return
     const next = fixedDocument
@@ -1419,13 +1469,13 @@ export default function App() {
       {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
       {error && <div className="viewer-empty viewer-error" data-error-code={errorCode ?? undefined}>{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
       {!loading && !error && !hasDocument && <div className="viewer-empty"><div className="viewer-drop-icon">한</div><h1>HWP 또는 HWPX를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
-      {effectiveDocument && !loading && <div className={`viewer-pages${virtualized ? ' viewer-pages-virtualized' : ''}`} data-document-format="hwpx" data-total-pages={pages.length} data-document-loading={documentLoading} data-layout-measured={Boolean(layoutMeasurements)} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
+      {effectiveDocument && !loading && <div ref={editingHostRef} className={`viewer-pages${editing ? ' viewer-editing-host' : ''}${virtualized ? ' viewer-pages-virtualized' : ''}`} data-document-format="hwpx" data-total-pages={pages.length} data-document-loading={documentLoading} data-layout-measured={Boolean(layoutMeasurements)} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}
         {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}

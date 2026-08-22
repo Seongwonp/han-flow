@@ -305,8 +305,8 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 7. [x] split/merge 시 stale `hp:linesegarray`를 제거하고 inverse에서 원문 fragment bytes를 복원한다.
 8. [x] split/merge selection·undo/redo·Save As 재개봉을 공개 fixture와 main session에서 검증한다.
 
-다음 코드 관문은 여러 문단 selection domain과 공통 paragraph editing host다. 표 셀 구조
-편집은 cell의 여러 문단 편집 경계를 확장한 뒤 진행한다.
+여러 문단 selection domain과 공통 paragraph editing host까지 연결했다. 표 셀 구조 편집은
+cell의 여러 문단 편집 경계를 별도 scope로 확장한 뒤 진행한다.
 
 ## 진행 중인 milestone: Sprint 2 여러 문단 selection
 
@@ -315,11 +315,11 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 3. [x] 양 끝 run style, inline line break, caret anchor와 빈 `hp:t`를 보존한다.
 4. [x] 중간 복합 문단·보존 XML element를 fail-closed하고 기존 중첩 run 경로와 구분한다.
 5. [x] main `commitRange`에서 구조 command 한 개로 undo/redo·Save As 재개봉을 검증한다.
-6. [ ] 공통 paragraph editing host에서 키보드와 pointer selection을 여러 문단으로 확장한다.
-7. [ ] 여러 문단 selection의 부분·전체 run 시각 강조와 IME 경계를 검증한다.
+6. [x] 공통 paragraph editing host에서 키보드와 pointer selection을 여러 문단으로 확장한다.
+7. [x] 여러 문단 selection의 시각 강조와 입력·삭제·붙여넣기·조합 종료 routing을 연결한다.
 
-코어와 main session은 완료했지만 renderer에는 여러 문단 selection을 만드는 입력 host가 아직
-없다. 다음 slice는 문서 mutation이 아니라 공통 host·selection 표시를 우선한다.
+같은 section의 최상위 문단은 공통 host scope를 공유하고 표 셀 문단은 고유 scope로 격리한다.
+macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부 승인 matrix에 남긴다.
 
 ## 다음 milestone: V3 외부 승인
 

@@ -15,11 +15,12 @@ interface ParagraphInputSurfaceProps {
   pending: boolean
   restoreToken?: unknown
   ariaLabel?: string
+  rangeScope: string
   desiredSelection?: TextSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
   onSelectionChange: (anchor: ViewerSourceAnchor, selection: TextSelection) => void
-  onBoundaryNavigate?: (direction: 'previous' | 'next') => void
+  onBoundaryNavigate?: (direction: 'previous' | 'next', selection: TextSelection) => void
   onBoundaryExtend?: (direction: 'previous' | 'next', selection: TextSelection) => void
   getRangeSelection?: () => EditorSelection | undefined
   onRangeCommit?: (
@@ -103,6 +104,7 @@ export function ParagraphInputSurface({
   pending,
   restoreToken,
   ariaLabel = 'HWPX 문단 편집',
+  rangeScope,
   desiredSelection,
   onCommit,
   onComposingChange,
@@ -120,6 +122,7 @@ export function ParagraphInputSurface({
   const controllerRef = useRef(new CompositionInputController(text))
   const compositionBufferRef = useRef(new CompositionCommitBuffer())
   const compositionTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const rangeCompositionRef = useRef<EditorSelection>()
   const boundaryNavigateRef = useRef(onBoundaryNavigate)
   const boundaryExtendRef = useRef(onBoundaryExtend)
   const sourceAnchorRef = useRef(sourceAnchor)
@@ -277,6 +280,10 @@ export function ParagraphInputSurface({
       return Boolean(onMergeParagraphRef.current)
     }
     const beforeInput = (event: InputEvent) => {
+      if (rangeCompositionRef.current) {
+        event.preventDefault()
+        return
+      }
       if (event.inputType === 'insertParagraph') {
         event.preventDefault()
         if (event.isComposing || controller.isComposing) return
@@ -352,6 +359,15 @@ export function ParagraphInputSurface({
     }
     const compositionStart = () => {
       clearCompositionTimer()
+      const rangeSelection = getRangeSelectionRef.current?.()
+      if (
+        rangeSelection &&
+        rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId
+      ) {
+        rangeCompositionRef.current = rangeSelection
+        onComposingChangeRef.current(true)
+        return
+      }
       const snapshot = read()
       controller.reset(snapshot.text, snapshot.selection)
       const compositionId = controller.compositionStart(snapshot.text, snapshot.selection)
@@ -365,6 +381,7 @@ export function ParagraphInputSurface({
     }
     const input = (event: Event) => {
       if (!(event instanceof InputEvent)) return
+      if (rangeCompositionRef.current) return
       const snapshot = read()
       const intent = controller.input({
         ...snapshot,
@@ -384,7 +401,21 @@ export function ParagraphInputSurface({
         onCommitRef.current(sourceAnchorRef.current, intent)
       }
     }
-    const compositionEnd = () => {
+    const compositionEnd = (event: CompositionEvent) => {
+      const rangeSelection = rangeCompositionRef.current
+      if (rangeSelection) {
+        rangeCompositionRef.current = undefined
+        onComposingChangeRef.current(false)
+        if (event.data) {
+          onRangeCommitRef.current?.(
+            rangeSelection,
+            event.data,
+            'insertCompositionText',
+            performance.now()
+          )
+        }
+        return
+      }
       const snapshot = read()
       const intent = controller.compositionEnd({
         ...snapshot,
@@ -445,10 +476,10 @@ export function ParagraphInputSurface({
       if (selection.anchorOffset !== selection.focusOffset) return
       if (event.key === 'ArrowLeft' && selection.anchorOffset === 0) {
         event.preventDefault()
-        boundaryNavigateRef.current?.('previous')
+        boundaryNavigateRef.current?.('previous', selection)
       } else if (event.key === 'ArrowRight' && selection.anchorOffset === textLength) {
         event.preventDefault()
-        boundaryNavigateRef.current?.('next')
+        boundaryNavigateRef.current?.('next', selection)
       }
     }
     const blur = () => {
@@ -509,6 +540,7 @@ export function ParagraphInputSurface({
       element.removeEventListener('paste', paste)
       delete element.dataset.inputReady
       compositionBuffer.clear()
+      rangeCompositionRef.current = undefined
       onComposingChangeRef.current(false)
     }
   }, [sourceAnchor.sectionPath, sourceAnchor.textNodeId])
@@ -520,6 +552,7 @@ export function ParagraphInputSurface({
       role="textbox"
       aria-label={ariaLabel}
       data-source-text-node-id={sourceAnchor.textNodeId}
+      data-editor-range-scope={rangeScope}
       aria-multiline="true"
       spellCheck={false}
       suppressContentEditableWarning

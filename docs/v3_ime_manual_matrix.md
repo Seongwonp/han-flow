@@ -67,7 +67,7 @@ stale 경고를 확인한다. 저장하지 않고 앱을 닫은 변경은 사라
 | PARA-01 | 최상위 일반 텍스트 문단에서 Enter 입력 | caret 위치에서 두 문단으로 나뉘고 새 문단 첫 위치로 caret 이동 | 자동 core 통과·물리 확인 대기 |
 | PARA-02 | 다음 문단 맨 앞에서 Backspace | 앞 문단 모양으로 병합되고 현재 caret·양쪽 글자 run 유지 | 자동 core 통과·물리 확인 대기 |
 | PARA-03 | 이전 문단 맨 끝에서 Delete | PARA-02와 같은 XML 결과가 생성되고 undo에서 두 문단 복원 | 자동 core 통과·물리 확인 대기 |
-| PARA-04 | 여러 최상위 문단을 선택해 입력·붙여넣기 | 시작 prefix·입력·끝 suffix만 한 문단에 남고 caret이 입력 뒤로 이동 | core/main 자동 통과·UI host 대기 |
+| PARA-04 | 여러 최상위 문단을 선택해 입력·붙여넣기 | 시작 prefix·입력·끝 suffix만 한 문단에 남고 caret이 입력 뒤로 이동 | core/main/renderer routing 자동 통과·물리 IME 대기 |
 | LIMIT-01 | 표 셀 또는 복합 문단에서 Enter·경계 삭제 | 현재 제한대로 구조 변경 없이 오류 상태 표시 | 미실행 |
 | HWP-01 | `.hwp` 문서를 열기 | 편집 버튼과 editable surface가 노출되지 않음 | 미실행 |
 | DIRTY-01 | 수정 뒤 다른 문서를 열고 취소 선택 | 현재 문서·수정 내용·selection 유지 | 미실행 |

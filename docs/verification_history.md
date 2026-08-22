@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-08-22 — Sprint 2 공통 paragraph editing host
+
+HWPX page 묶음을 renderer의 공통 selection host로 승격했다. editable surface는 source anchor와
+range scope를 노출하며 같은 section의 최상위 일반 문단만 scope를 공유한다. 표 셀 문단은 고유
+scope로 격리해 최상위 문단 구조 치환과 섞이지 않는다.
+
+native pointer drag selection을 공통 host에서 모델 selection으로 읽고 history 재투영에서는 양 끝
+anchor·offset·방향을 복원한다. 좌우 경계 이동과 Shift+방향키 확장은 공통 surface 순서를 사용해
+여러 run·문단을 넘는다. native selection 색을 명시하고 입력·삭제·plain-text paste와 조합 종료를
+기존 `commitRange`에 연결했다. 실제 macOS 두벌식 여러 문단 조합은 물리 matrix에 남아 있다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 27 suite·155 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다. selection 단위 테스트는 문단 경계
+이동, 역방향 다중 문단 Shift 확장, 최상위·표 셀 scope 격리를 포함한다.
+
 ## 2026-08-22 — Sprint 2 여러 문단 범위 치환 코어
 
 서로 다른 최상위 일반 텍스트 문단의 selection을 paragraph fragment command 하나로 치환하는
