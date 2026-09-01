@@ -187,8 +187,8 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 - HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 문단을 지원합니다. 부분 style로
   나뉜 여러 run과 여러 최상위 문단은 키보드·pointer 범위 선택과 치환을 지원합니다.
 - 반복 머리글, 병합·`rowSpan`, continuation fragment, 여러 문단 cell과 머리말·꼬리말은 읽기 전용입니다.
-- 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다. 글꼴 family
-  편집은 HWPX font-face ID와 설치·라이선스 mapping 정책이 필요해 후속 범위로 둡니다.
+- 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다.
+  글꼴은 문서 `HANGUL` font-face에 이미 선언된 family만 ID로 재사용하며 새 글꼴 추가·포함은 지원하지 않습니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
 - 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
   단축키를 비활성화합니다.

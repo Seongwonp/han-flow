@@ -233,6 +233,7 @@ export class EditingSessionManager {
             strikeout: request.strikeout,
             height: request.height,
             color: request.color,
+            fontId: request.fontId,
             from,
             to
           }
@@ -250,7 +251,9 @@ export class EditingSessionManager {
                   ? 'formatStrikeThrough'
             : request.height !== undefined
               ? 'formatFontSize'
-              : 'formatFontColor',
+              : request.color !== undefined
+                ? 'formatFontColor'
+                : 'formatFontName',
         timestamp: request.timestamp
       }
       const result = session.history.commitSynchronized(transaction)

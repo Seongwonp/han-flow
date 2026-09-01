@@ -76,6 +76,7 @@ export interface EditingCharacterStyleRequest extends EditingStyleRequestBase {
   strikeout?: boolean
   height?: number
   color?: string
+  fontId?: string
 }
 
 export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {

@@ -9,6 +9,8 @@ export interface RibbonStyleState {
   strikeout: boolean
   height: number
   color: string
+  fontId?: string
+  fontFamily?: string
   align: ParagraphAlignment
   lineSpacing: number
   indent: number
@@ -38,6 +40,7 @@ interface ViewerToolbarProps {
   paragraphStyleAvailable: boolean
   characterStyleTitle?: string
   paragraphStyleTitle?: string
+  documentFonts: Array<{ id: string; family: string }>
   onSearchQueryChange: (query: string) => void
   onSearchStep: (direction: number) => void
   onSearchClose: () => void
@@ -56,6 +59,7 @@ interface ViewerToolbarProps {
     strikeout?: boolean
     height?: number
     color?: string
+    fontId?: string
   }) => void
   onParagraphStyle: (style: {
     align?: ParagraphAlignment
@@ -89,6 +93,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     paragraphStyleAvailable,
     characterStyleTitle,
     paragraphStyleTitle,
+    documentFonts,
     onSearchQueryChange,
     onSearchStep,
     onSearchClose,
@@ -163,6 +168,16 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
         </div>
         <div className="viewer-ribbon-group viewer-ribbon-font-group" title={characterStyleTitle}>
           <div className="viewer-ribbon-controls">
+            <select
+              aria-label="문서 글꼴"
+              title="문서에 포함된 한글 글꼴"
+              value={activeStyle?.fontId ?? ''}
+              onChange={(event) => onCharacterStyle({ fontId: event.target.value })}
+              disabled={!characterStyleAvailable || !activeStyle || !documentFonts.length || pending}
+            >
+              {!activeStyle?.fontId && <option value="">글꼴 선택</option>}
+              {documentFonts.map((font) => <option key={font.id} value={font.id}>{font.family}</option>)}
+            </select>
             <button aria-label="현재 텍스트 블록 굵게" title="굵게" aria-pressed={activeStyle?.bold ?? false} className="viewer-style-bold" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ bold: !(activeStyle?.bold ?? false) })} disabled={!characterStyleAvailable || pending}>B</button>
             <button aria-label="현재 텍스트 블록 기울임" title="기울임 (⌘I)" aria-pressed={activeStyle?.italic ?? false} className="viewer-style-italic" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ italic: !(activeStyle?.italic ?? false) })} disabled={!characterStyleAvailable || pending}>I</button>
             <button aria-label="현재 텍스트 블록 밑줄" title="밑줄 (⌘U)" aria-pressed={activeStyle?.underline ?? false} className="viewer-style-underline" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ underline: !(activeStyle?.underline ?? false) })} disabled={!characterStyleAvailable || pending}>U</button>

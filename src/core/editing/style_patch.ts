@@ -18,6 +18,7 @@ export interface ApplyCharacterStyleCommand {
   strikeout?: boolean
   height?: number
   color?: string
+  fontId?: string
   from?: number
   to?: number
 }
@@ -405,6 +406,32 @@ function setCharacterStyleAttributes(
   return openTag + xml.slice(openEnd)
 }
 
+function hangulFontIds(headerXml: string): Set<string> {
+  const spans = scanXmlElements(headerXml)
+  const fontface = spans.find((span) =>
+    span.name === 'hh:fontface' &&
+    attribute(headerXml.slice(span.start, span.openEnd), 'lang') === 'HANGUL'
+  )
+  if (!fontface) return new Set()
+  return new Set(directChildren(spans, fontface, 'hh:font').map((font) =>
+    attribute(headerXml.slice(font.start, font.openEnd), 'id')
+  ).filter((id): id is string => id !== undefined))
+}
+
+function setCharacterFontRef(xml: string, fontId?: string): string {
+  if (fontId === undefined) return xml
+  const pattern = characterChildPattern('fontRef')
+  const existing = xml.match(pattern)?.[0]
+  if (existing) {
+    const openEnd = findTagEnd(existing, 0)
+    return xml.replace(
+      existing,
+      setAttribute(existing.slice(0, openEnd), 'hangul', fontId) + existing.slice(openEnd)
+    )
+  }
+  return insertCharacterChild(xml, 'fontRef', `<hh:fontRef hangul="${fontId}"/>`)
+}
+
 function setAlignment(xml: string, align: ParagraphAlignment): string {
   const alignPattern = /<hh:align(?:\s[^>]*)?\s*\/>/
   const existing = xml.match(alignPattern)?.[0]
@@ -600,7 +627,8 @@ export function applyCharacterStyleCommand(
   if (command.type !== 'apply-character-style') throw new Error('지원하지 않는 글자 style command입니다.')
   if (
     command.bold === undefined && command.italic === undefined && command.underline === undefined &&
-    command.strikeout === undefined && command.height === undefined && command.color === undefined
+    command.strikeout === undefined && command.height === undefined && command.color === undefined &&
+    command.fontId === undefined
   ) {
     throw new Error('적용할 글자 style 값이 없습니다.')
   }
@@ -622,6 +650,13 @@ export function applyCharacterStyleCommand(
   }
   if (command.color !== undefined && !/^#[\da-f]{6}$/i.test(command.color)) {
     throw new Error('글자 색상은 #RRGGBB 형식이어야 합니다.')
+  }
+  if (command.fontId !== undefined) {
+    if (!command.fontId || !hangulFontIds(
+      sourcePackage.readEntry('Contents/header.xml').toString('utf8')
+    ).has(command.fontId)) {
+      throw new Error('문서에 선언되지 않은 한글 글꼴은 적용할 수 없습니다.')
+    }
   }
   const anchor = listHwpxTextAnchors(sourcePackage, command.sectionPath).find(
     (candidate) => candidate.textNodeId === command.textNodeId
@@ -661,7 +696,7 @@ export function applyCharacterStyleCommand(
       mutated = command.strikeout === undefined
         ? mutated
         : setLineDecoration(mutated, 'strikeout', command.strikeout)
-      return setCharacterStyleAttributes(mutated, command)
+      return setCharacterFontRef(setCharacterStyleAttributes(mutated, command), command.fontId)
     }
   })
   if (!styled.changed || from === to || (from === 0 && to === anchor.text.length)) return styled

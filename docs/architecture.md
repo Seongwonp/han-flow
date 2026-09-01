@@ -143,6 +143,12 @@ status bar는 revision·진행률·진단 표시만 소유한다. `App`은 문�
 orchestration 및 page content 조합에 집중한다. IME DOM lifecycle은 이미 분리된
 `ParagraphInputSurface`에 남아 shell 재렌더가 composition buffer를 소유하지 않게 한다.
 
+Sprint 3의 첫 글꼴 편집은 새 font-face writer가 아니다. decoder가 이미 projection한 HANGUL
+font-face ID 목록을 ribbon에 제공하고, character style command는 선택된 ID가
+`Contents/header.xml`의 HANGUL collection에 실제 존재하는지 다시 검증한다. 성공하면 기존
+charPr 복제·signature deduplication·reference 교체와 inverse 경로를 사용한다. 시스템 font 목록과
+family 문자열은 command에 들어가지 않으므로 renderer가 임의 package font를 만들 수 없다.
+
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
 `close` handler는 renderer가 응답할 수 없는 `⌘Q`와 창 닫기를 직접 보호한다. 선택지는

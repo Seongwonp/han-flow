@@ -388,6 +388,20 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 전달한다. HWPX의 표·문단 재귀 renderer는 기존 measurement·selection 회귀를 유지하기 위해 이번
 단계에서 재작성하지 않고 독립 함수 컴포넌트 경계를 그대로 보존했다.
 
+## 완료한 milestone: Sprint 3 기존 font-face 재사용 기반
+
+1. [x] `ViewerDocument.fonts`의 HANGUL font-face ID·family projection을 편집 선택 UI에 연결한다.
+2. [x] `ApplyCharacterStyleCommand.fontId`는 header에 실제 선언된 ID만 허용한다.
+3. [x] 기존 charPr 복제·동등 definition 재사용·부분 run split과 exact inverse를 그대로 사용한다.
+4. [x] main IPC가 비어 있거나 형식이 잘못된 font ID 요청을 차단한다.
+5. [x] ribbon은 시스템 전체 글꼴이 아니라 현재 문서 font-face만 선택지로 제공한다.
+6. [x] font 전환·decoder projection·undo 복원·미선언 ID 거부와 UI option을 자동 검증한다.
+
+이 단계는 font file을 포함하거나 시스템 글꼴 이름을 HWPX에 새로 기록하지 않는다. 저장 command는
+문서 header의 `hh:fontface lang="HANGUL"` 아래 존재하는 `hh:font` ID만 받아 `hh:fontRef`의
+`hangul` 참조를 바꾼 charPr를 생성 또는 재사용한다. 따라서 설치 여부와 재배포 라이선스 판단은
+보기의 대체 글꼴 안내에 남고 package mutation 범위로 확대되지 않는다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

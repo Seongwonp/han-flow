@@ -441,6 +441,17 @@ dirty를 함께 전달해 이 차이를 숨기지 않는다.
 - React 정적 markup 테스트로 ribbon disabled/pressed 경계, empty/page stage, virtual spacer와 상태
   표시를 검증하고 기존 measurement·composition 회귀를 함께 실행한다.
 
+2026-09-01 기존 font-face 재사용 기반:
+
+- 글꼴 선택은 HWPX header의 `HANGUL` font-face로 이미 선언된 ID·family만 표시한다.
+- renderer는 family 이름 대신 선택 ID를 보내며 main IPC와 core가 형식 및 실제 header membership을
+  각각 검증한다.
+- font 변경도 기존 character style definition 복제·deduplication, 부분 run split과 inverse를 사용해
+  undo/redo 및 Save As 보존 계약을 공유한다.
+- 미선언 ID, 새 font-face 생성, font file 포함과 라이선스 판단은 지원하지 않는다.
+- 공개 fixture 변형으로 두 번째 font-face 전환, decoder family projection, header exact inverse와
+  미선언 ID 거부를 검증하고 ribbon에는 문서 글꼴 option만 노출한다.
+
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
 adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
 하나만 commit한다.

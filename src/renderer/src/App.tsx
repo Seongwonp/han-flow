@@ -1065,6 +1065,8 @@ export default function App() {
       strikeout: charStyle?.strikeout ?? false,
       height: charStyle?.height ?? 1000,
       color: charStyle?.color ?? '#000000',
+      fontId: charStyle?.fontId,
+      fontFamily: charStyle?.fontFamily,
       align: (paraStyle?.align ?? 'LEFT') as ParagraphAlignment,
       lineSpacing: paraStyle?.lineSpacing || 160,
       indent: paraStyle?.indent ?? 0,
@@ -1078,7 +1080,7 @@ export default function App() {
     activeStyle && editingCapabilityState.paragraphStyle.available
   )
   const applyCharacterStyle = useCallback(async (
-    style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string }
+    style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string; fontId?: string }
   ) => {
     if (
       !editing ||
@@ -1110,7 +1112,9 @@ export default function App() {
                 ? style.strikeout ? '취소선 적용' : '취소선 해제'
           : style.height !== undefined
             ? `글자 크기 ${style.height / 100}pt`
-            : '글자 색상 적용'
+            : style.color !== undefined
+              ? '글자 색상 적용'
+              : '문서 글꼴 적용'
       )
     } catch (reason) {
       await recoverEditingFailure('글자 모양', reason)
@@ -1416,6 +1420,7 @@ export default function App() {
         '문단 모양',
         editingCapabilityState.paragraphStyle.reason
       )}
+      documentFonts={Object.entries(document?.fonts ?? {}).map(([id, family]) => ({ id, family }))}
       onSearchQueryChange={setSearchQuery}
       onSearchStep={stepSearchResult}
       onSearchClose={closeSearch}

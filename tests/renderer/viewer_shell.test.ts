@@ -37,6 +37,7 @@ describe('viewer shell components', () => {
       searchInputRef: createRef<HTMLInputElement>(),
       characterStyleAvailable: false,
       paragraphStyleAvailable: false,
+      documentFonts: [{ id: '0', family: 'HanFlow Test Sans' }],
       onSearchQueryChange: noop,
       onSearchStep: noop,
       onSearchClose: noop,
@@ -56,6 +57,8 @@ describe('viewer shell components', () => {
     expect(markup).toContain('125%')
     expect(markup).toContain('aria-label="HWPX 편집 리본"')
     expect(markup).toContain('aria-label="HWPX 변경본 저장"')
+    expect(markup).toContain('aria-label="문서 글꼴"')
+    expect(markup).toContain('HanFlow Test Sans')
     expect(markup).toContain('aria-label="다시 실행"')
   })
 

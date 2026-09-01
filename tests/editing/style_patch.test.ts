@@ -160,6 +160,41 @@ describe('HWPX 문단·글자 style patch', () => {
     })).toThrow('#RRGGBB')
   })
 
+  test('문서에 선언된 HANGUL font-face만 재사용하고 inverse로 복원한다', async () => {
+    const source = await sourceWithCounts()
+    const headerPath = 'Contents/header.xml'
+    const withSecondFont = source.withEntry(headerPath, Buffer.from(
+      source.readEntry(headerPath).toString('utf8').replace(
+        '<hh:font id="0" face="HanFlow Test Sans"/>',
+        '<hh:font id="0" face="HanFlow Test Sans"/><hh:font id="1" face="HanFlow Serif"/>'
+      )
+    ))
+    const anchor = editableAnchor(withSecondFont)
+    const originalHeader = withSecondFont.readEntry(headerPath)
+    const styled = applyCharacterStyleCommand(withSecondFont, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      fontId: '1'
+    })
+
+    expect(styled.package.readEntry(headerPath).toString('utf8')).toContain(
+      '<hh:fontRef hangul="1"/>'
+    )
+    expect((await decodeViewerDocument(styled.package)).charStyles['1']).toMatchObject({
+      fontId: '1',
+      fontFamily: 'HanFlow Serif'
+    })
+    expect(applyRestoreStyleCommand(styled.package, styled.inverse!).package.readEntry(headerPath))
+      .toEqual(originalHeader)
+    expect(() => applyCharacterStyleCommand(withSecondFont, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      fontId: '999'
+    })).toThrow('문서에 선언되지 않은')
+  })
+
   test('기울임·밑줄·취소선을 OWPML 순서로 추가하고 해제와 inverse를 보존한다', async () => {
     const source = await sourceWithCounts()
     const anchor = editableAnchor(source)

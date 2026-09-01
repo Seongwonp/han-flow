@@ -1029,15 +1029,17 @@ app.whenReady().then(() => {
     const hasStrikeout = typeof style?.['strikeout'] === 'boolean'
     const hasHeight = Number.isFinite(style?.['height'])
     const hasColor = typeof style?.['color'] === 'string'
+    const hasFontId = typeof style?.['fontId'] === 'string' && Boolean(style['fontId'])
     if (
       !isStyleRequestBase(request) ||
-      (!hasBold && !hasItalic && !hasUnderline && !hasStrikeout && !hasHeight && !hasColor) ||
+      (!hasBold && !hasItalic && !hasUnderline && !hasStrikeout && !hasHeight && !hasColor && !hasFontId) ||
       ('bold' in style && !hasBold) ||
       ('italic' in style && !hasItalic) ||
       ('underline' in style && !hasUnderline) ||
       ('strikeout' in style && !hasStrikeout) ||
       ('height' in style && !hasHeight) ||
-      ('color' in style && !hasColor)
+      ('color' in style && !hasColor) ||
+      ('fontId' in style && !hasFontId)
     ) {
       throw new EditingOperationError(
         'EDITING_INVALID_REQUEST',
