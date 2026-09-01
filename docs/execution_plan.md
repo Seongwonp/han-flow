@@ -286,13 +286,13 @@ identity·viewer 재해석 → 새 목적지 hard link 순서다. 저장 성공 
 3. [x] 없는 run, 범위 밖 offset과 surrogate pair 중간 offset을 transaction 전에 거부한다.
 4. [x] transaction grouping, history, IPC와 renderer의 단일 run 선택을 새 모델로 이관한다.
 5. [x] run 경계에서 Shift+방향키로 인접 run selection을 만든다.
-6. [ ] 공통 paragraph editing host에서 pointer drag native selection을 만든다.
+6. [x] 공통 paragraph editing host에서 pointer drag native selection을 만든다.
 7. [x] 여러 run 치환을 원자적 command 배열로 만들고 빈 run은 보존한다.
 8. [x] multi-run 치환의 undo/redo 방향·focus와 Save As 재개봉을 검증한다.
 
-글자 style command는 아직 한 run만 허용하며, 여러 run 요청은 명시적으로 거부한다. IME 조합
-중 cross-run 치환은 DOM 손상을 피하기 위해 차단하고, 단일 run으로 caret를 옮긴 뒤 입력하도록
-유지한다.
+글자 style command는 아직 한 run만 허용한다. renderer capability가 여러 run 선택에서 글자 모양
+control과 단축키를 비활성화하고 main도 같은 요청을 안정적인 지원 제한 오류로 거부한다. text
+입력의 cross-run·cross-paragraph 조합 종료는 공통 range commit 경로로 연결되어 있다.
 
 ## 완료한 milestone: Sprint 2 문단 구조 입력
 
@@ -320,6 +320,17 @@ cell의 여러 문단 편집 경계를 별도 scope로 확장한 뒤 진행한�
 
 같은 section의 최상위 문단은 공통 host scope를 공유하고 표 셀 문단은 고유 scope로 격리한다.
 macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부 승인 matrix에 남긴다.
+
+## 진행 중인 milestone: Sprint 2 capability와 오류 UX
+
+1. [x] 편집 오류를 conflict, unsupported, invalid request, not applicable, session expired,
+   history limit, save failure와 internal로 분류한다.
+2. [x] main IPC에서 오류 code·복구 정책만 직렬화하고 내부 오류 본문·경로는 숨긴다.
+3. [x] renderer에서 지원 제한·충돌·세션 종료·저장 실패를 서로 다른 안내로 표시한다.
+4. [x] 인접 문단이 없는 경계 merge는 문자열 비교 없이 not-applicable no-op로 처리한다.
+5. [x] 여러 run selection의 글자 모양 control과 단축키를 요청 전에 비활성화한다.
+6. [ ] 문단 split/merge, 글자·문단 style의 세부 구조 capability를 selection마다 계산한다.
+7. [ ] stale selection conflict에서 최신 projection과 안전한 caret 복구 동작을 연결한다.
 
 ## 다음 milestone: V3 외부 승인
 

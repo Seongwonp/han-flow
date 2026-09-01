@@ -8,6 +8,12 @@ import type {
   EditingSplitParagraphRequest,
   EditingStartRequest
 } from '../core/editing/editing_contract'
+import { EditingIpcResult, unwrapEditingIpcResult } from '../core/editing/editing_error'
+
+const invokeEditing = <T>(channel: string, ...args: unknown[]): Promise<T> =>
+  ipcRenderer.invoke(channel, ...args).then((result: EditingIpcResult<T>) =>
+    unwrapEditingIpcResult(result)
+  )
 
 // Custom APIs for renderer
 const api = {
@@ -45,23 +51,23 @@ const api = {
   exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean }) => ipcRenderer.invoke('pdf:export', options),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
-  startEditing: (request: EditingStartRequest) => ipcRenderer.invoke('editing:start', request),
-  commitEditing: (request: EditingCommitRequest) => ipcRenderer.invoke('editing:commit', request),
+  startEditing: (request: EditingStartRequest) => invokeEditing('editing:start', request),
+  commitEditing: (request: EditingCommitRequest) => invokeEditing('editing:commit', request),
   commitRangeEditing: (request: EditingRangeCommitRequest) =>
-    ipcRenderer.invoke('editing:commitRange', request),
+    invokeEditing('editing:commitRange', request),
   splitParagraphEditing: (request: EditingSplitParagraphRequest) =>
-    ipcRenderer.invoke('editing:splitParagraph', request),
+    invokeEditing('editing:splitParagraph', request),
   mergeParagraphEditing: (request: EditingMergeParagraphRequest) =>
-    ipcRenderer.invoke('editing:mergeParagraph', request),
+    invokeEditing('editing:mergeParagraph', request),
   applyCharacterStyle: (request: EditingCharacterStyleRequest) =>
-    ipcRenderer.invoke('editing:applyCharacterStyle', request),
+    invokeEditing('editing:applyCharacterStyle', request),
   applyParagraphStyle: (request: EditingParagraphStyleRequest) =>
-    ipcRenderer.invoke('editing:applyParagraphStyle', request),
-  undoEditing: (sessionId: string) => ipcRenderer.invoke('editing:undo', sessionId),
-  redoEditing: (sessionId: string) => ipcRenderer.invoke('editing:redo', sessionId),
-  saveEditingAs: (sessionId: string) => ipcRenderer.invoke('editing:saveAsDialog', sessionId),
-  resolveDirtyEditing: (sessionId: string) => ipcRenderer.invoke('editing:resolveDirty', sessionId),
-  stopEditing: () => ipcRenderer.invoke('editing:stop'),
+    invokeEditing('editing:applyParagraphStyle', request),
+  undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
+  redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
+  saveEditingAs: (sessionId: string) => invokeEditing('editing:saveAsDialog', sessionId),
+  resolveDirtyEditing: (sessionId: string) => invokeEditing('editing:resolveDirty', sessionId),
+  stopEditing: () => invokeEditing('editing:stop'),
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl)
 }
 

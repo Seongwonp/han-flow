@@ -13,6 +13,10 @@ import type {
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest
 } from '../core/editing/editing_contract'
+import {
+  captureEditingIpcResult,
+  EditingOperationError
+} from '../core/editing/editing_error'
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const isE2E = process.env['HAN_FLOW_E2E'] === '1'
@@ -54,6 +58,16 @@ function isStyleRequestBase(request: unknown): request is Record<string, unknown
     Number.isFinite((request as Record<string, unknown>)['timestamp']) &&
     isEditingSelection((request as Record<string, unknown>)['selection'])
   )
+}
+
+function editingIpcHandler<TArgs extends unknown[], TResult>(
+  handler: (
+    event: Electron.IpcMainInvokeEvent,
+    ...args: TArgs
+  ) => TResult | Promise<TResult>
+) {
+  return (event: Electron.IpcMainInvokeEvent, ...args: TArgs) =>
+    captureEditingIpcResult(() => handler(event, ...args))
 }
 
 async function showMessageBox(
@@ -906,18 +920,21 @@ app.whenReady().then(() => {
     )
   })
 
-  ipcMain.handle('editing:start', async (event, request: unknown) => {
+  ipcMain.handle('editing:start', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
       typeof (request as { filePath?: unknown }).filePath !== 'string'
     ) {
-      throw new Error('HWPX 편집 시작 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 편집 시작 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.start(event.sender.id, (request as { filePath: string }).filePath)
-  })
+  }))
 
-  ipcMain.handle('editing:commit', async (event, request: unknown) => {
+  ipcMain.handle('editing:commit', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -931,12 +948,15 @@ app.whenReady().then(() => {
         return isEditingSelection((request as Record<string, unknown>)[key])
       })
     ) {
-      throw new Error('HWPX 편집 commit 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 편집 commit 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.commit(event.sender.id, request as EditingCommitRequest)
-  })
+  }))
 
-  ipcMain.handle('editing:commitRange', async (event, request: unknown) => {
+  ipcMain.handle('editing:commitRange', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -946,12 +966,15 @@ app.whenReady().then(() => {
       !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
       !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
     ) {
-      throw new Error('HWPX multi-run 편집 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 범위 편집 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.commitRange(event.sender.id, request as EditingRangeCommitRequest)
-  })
+  }))
 
-  ipcMain.handle('editing:splitParagraph', async (event, request: unknown) => {
+  ipcMain.handle('editing:splitParagraph', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -961,15 +984,18 @@ app.whenReady().then(() => {
       !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
       !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
     ) {
-      throw new Error('HWPX 문단 나눔 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 문단 나눔 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.splitParagraph(
       event.sender.id,
       request as EditingSplitParagraphRequest
     )
-  })
+  }))
 
-  ipcMain.handle('editing:mergeParagraph', async (event, request: unknown) => {
+  ipcMain.handle('editing:mergeParagraph', editingIpcHandler(async (event, request: unknown) => {
     const value = request as Record<string, unknown>
     if (
       !request ||
@@ -980,15 +1006,18 @@ app.whenReady().then(() => {
       !Number.isFinite(value['timestamp']) ||
       !isEditingSelection(value['selectionBefore'])
     ) {
-      throw new Error('HWPX 문단 병합 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 문단 병합 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.mergeParagraph(
       event.sender.id,
       request as EditingMergeParagraphRequest
     )
-  })
+  }))
 
-  ipcMain.handle('editing:applyCharacterStyle', async (event, request: unknown) => {
+  ipcMain.handle('editing:applyCharacterStyle', editingIpcHandler(async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasBold = typeof style?.['bold'] === 'boolean'
     const hasItalic = typeof style?.['italic'] === 'boolean'
@@ -1006,15 +1035,18 @@ app.whenReady().then(() => {
       ('height' in style && !hasHeight) ||
       ('color' in style && !hasColor)
     ) {
-      throw new Error('HWPX 글자 style 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 글자 style 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.applyCharacterStyle(
       event.sender.id,
       request as unknown as EditingCharacterStyleRequest
     )
-  })
+  }))
 
-  ipcMain.handle('editing:applyParagraphStyle', async (event, request: unknown) => {
+  ipcMain.handle('editing:applyParagraphStyle', editingIpcHandler(async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasAlign = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(style?.['align']))
     const hasLineSpacing = Number.isFinite(style?.['lineSpacing'])
@@ -1030,27 +1062,37 @@ app.whenReady().then(() => {
       ('marginBefore' in style && !hasMarginBefore) ||
       ('marginAfter' in style && !hasMarginAfter)
     ) {
-      throw new Error('HWPX 문단 style 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 문단 style 요청 형식이 올바르지 않습니다.'
+      )
     }
     return editingSessions.applyParagraphStyle(
       event.sender.id,
       request as unknown as EditingParagraphStyleRequest
     )
-  })
+  }))
 
-  ipcMain.handle('editing:undo', (event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') throw new Error('HWPX undo 요청 형식이 올바르지 않습니다.')
-    return editingSessions.undo(event.sender.id, sessionId)
-  })
-
-  ipcMain.handle('editing:redo', (event, sessionId: unknown) => {
-    if (typeof sessionId !== 'string') throw new Error('HWPX redo 요청 형식이 올바르지 않습니다.')
-    return editingSessions.redo(event.sender.id, sessionId)
-  })
-
-  ipcMain.handle('editing:saveAsDialog', async (event, sessionId: unknown) => {
+  ipcMain.handle('editing:undo', editingIpcHandler((event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
-      throw new Error('HWPX Save As 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX undo 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.undo(event.sender.id, sessionId)
+  }))
+
+  ipcMain.handle('editing:redo', editingIpcHandler((event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX redo 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.redo(event.sender.id, sessionId)
+  }))
+
+  ipcMain.handle('editing:saveAsDialog', editingIpcHandler(async (event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX Save As 요청 형식이 올바르지 않습니다.'
+      )
     }
     return saveEditingSessionWithDialog(
       event.sender.id,
@@ -1058,23 +1100,26 @@ app.whenReady().then(() => {
       BrowserWindow.fromWebContents(event.sender),
       true
     )
-  })
+  }))
 
-  ipcMain.handle('editing:resolveDirty', async (event, sessionId: unknown) => {
+  ipcMain.handle('editing:resolveDirty', editingIpcHandler(async (event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
-      throw new Error('HWPX dirty 확인 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX dirty 확인 요청 형식이 올바르지 않습니다.'
+      )
     }
     return resolveDirtyEditing(
       event.sender.id,
       sessionId,
       BrowserWindow.fromWebContents(event.sender)
     )
-  })
+  }))
 
-  ipcMain.handle('editing:stop', (event) => {
+  ipcMain.handle('editing:stop', editingIpcHandler((event) => {
     editingSessions.stop(event.sender.id)
     return true
-  })
+  }))
 
   const commandLinePath = pathFromArguments(process.argv)
   createWindow(pendingOpen ?? (commandLinePath ? { filePath: commandLinePath, receivedAt: processStartedAt } : undefined))

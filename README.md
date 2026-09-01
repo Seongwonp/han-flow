@@ -37,6 +37,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - 최상위 일반 텍스트 문단의 Enter 분할과 selection·Undo/Redo·Save As 복원
 - 문단 경계 Backspace/Delete 병합과 앞 문단 서식·양쪽 글자 run 보존
 - 최상위 여러 문단의 keyboard·pointer 선택, 구조적 치환과 exact Undo/Redo·Save As
+- 편집 충돌·지원 제한·세션 종료·기록 한도·저장 실패를 구분하는 오류 안내
 - 연속 음절 burst·스페이스바 조합 종료를 보존하는 한국어 IME commit과 `⌘Z`·`⇧⌘Z`
 - 원본을 보존하는 검증형 HWPX Save As와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
@@ -185,6 +186,8 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다. 글꼴 family
   편집은 HWPX font-face ID와 설치·라이선스 mapping 정책이 필요해 후속 범위로 둡니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
+- 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
+  단축키를 비활성화합니다.
 - Shift+Enter와 plain-text 붙여넣기의 줄바꿈은 `hp:t` 내부 `hp:lineBreak`로 저장합니다. 최상위
   일반 텍스트 문단은 Enter 분할과 문단 경계 Backspace/Delete 병합을 지원합니다. 표 셀 구조
   편집과 복합 문단 병합은 아직 지원하지 않습니다. 여러 문단 범위는 같은 section의 최상위

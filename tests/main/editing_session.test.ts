@@ -627,15 +627,22 @@ describe('main process HWPX editing session', () => {
   test('sender와 session ID가 다르면 편집 상태에 접근하지 못한다', async () => {
     const manager = new EditingSessionManager(() => 'bound-session')
     await manager.start(1, fixture)
-    await expect(manager.undo(2, 'bound-session')).rejects.toThrow('유효하지 않거나 종료된')
-    await expect(manager.redo(1, 'other-session')).rejects.toThrow('유효하지 않거나 종료된')
+    await expect(manager.undo(2, 'bound-session')).rejects.toMatchObject({
+      code: 'EDITING_SESSION_EXPIRED',
+      recovery: 'restart-session'
+    })
+    await expect(manager.redo(1, 'other-session')).rejects.toMatchObject({
+      code: 'EDITING_SESSION_EXPIRED',
+      recovery: 'restart-session'
+    })
   })
 
   test('.hwp는 편집 session을 시작하지 않는다', async () => {
     const manager = new EditingSessionManager()
-    await expect(manager.start(1, join(directory, 'document.hwp'))).rejects.toThrow(
-      'HWPX 문서만'
-    )
+    await expect(manager.start(1, join(directory, 'document.hwp'))).rejects.toMatchObject({
+      code: 'EDITING_UNSUPPORTED',
+      message: expect.stringContaining('HWPX 문서만')
+    })
   })
 
   test('검증형 Save As 성공 뒤에만 savepoint를 이동하고 원본을 보존한다', async () => {
@@ -732,7 +739,9 @@ describe('main process HWPX editing session', () => {
     const existing = join(directory, 'existing-save.hwpx')
     writeFileSync(existing, '기존 파일')
     await expect(manager.saveAs(12, started.sessionId, existing)).rejects.toMatchObject({
-      code: 'EEXIST'
+      code: 'EDITING_SAVE_FAILED',
+      recovery: 'retry',
+      message: expect.stringContaining('변경본을 검증해 저장하지 못했습니다')
     })
     expect(readFileSync(existing, 'utf8')).toBe('기존 파일')
     expect(await manager.undo(12, started.sessionId)).toMatchObject({ isDirty: false })

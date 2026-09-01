@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-01 — Sprint 2 capability와 편집 오류 contract 1차
+
+main 편집 IPC의 성공·실패를 명시적인 envelope로 통일하고 conflict, unsupported, invalid request,
+not applicable, session expired, history limit, save failure와 internal code를 추가했다. 오류에는
+복구 정책을 함께 싣고 분류되지 않은 내부 오류의 원문·파일 경로는 renderer에 전달하지 않는다.
+Electron이 reject message 앞에 문구를 추가해도 고정 marker 뒤 payload만 복원한다.
+
+renderer는 code별로 지원 제한, 변경되지 않은 conflict, 세션 종료와 dirty가 유지된 저장 실패를
+구분한다. 인접 문단이 없는 merge의 기존 문자열 비교를 제거했고, 여러 run selection에서는 아직
+지원하지 않는 글자 모양 control과 단축키를 사전에 비활성화한다. 단위 테스트는 오류 분류,
+transport 복원, 내부 정보 비노출, no-op와 capability 경계를 검증한다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 30 suite·167 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다.
+
 ## 2026-08-22 — Sprint 2 공통 paragraph editing host
 
 HWPX page 묶음을 renderer의 공통 selection host로 승격했다. editable surface는 source anchor와

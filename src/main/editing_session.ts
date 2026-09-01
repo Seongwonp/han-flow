@@ -11,12 +11,13 @@ import {
   EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
+import { EditingOperationError } from '../core/editing/editing_error'
 import { HwpxEditHistory } from '../core/editing/history'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
-import { listHwpxTextAnchors } from '../core/editing/text_patch'
+import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
 import { HwpxSourcePackage } from '../core/parser/source_package'
 import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 
@@ -27,7 +28,10 @@ interface EditingSession {
 
 function assertHwpxPath(filePath: string): void {
   if (typeof filePath !== 'string' || extname(filePath).toLowerCase() !== '.hwpx') {
-    throw new Error('편집 모드는 HWPX 문서만 지원합니다.')
+    throw new EditingOperationError(
+      'EDITING_UNSUPPORTED',
+      '편집 모드는 HWPX 문서만 지원합니다.'
+    )
   }
 }
 
@@ -192,14 +196,17 @@ export class EditingSessionManager {
         request.selection.anchorTextNodeId !== request.selection.focusTextNodeId ||
         request.selection.anchorTextNodeId !== request.textNodeId
       ) {
-        throw new Error('여러 글자 run에 걸친 style 적용은 아직 지원하지 않습니다.')
+        throw new EditingOperationError(
+          'EDITING_UNSUPPORTED',
+          '여러 글자 run에 걸친 style 적용은 아직 지원하지 않습니다.'
+        )
       }
       const from = Math.min(request.selection.anchorOffset, request.selection.focusOffset)
       const to = Math.max(request.selection.anchorOffset, request.selection.focusOffset)
       const anchor = listHwpxTextAnchors(session.history.package, request.sectionPath).find(
         (candidate) => candidate.textNodeId === request.textNodeId
       )
-      if (!anchor) throw new Error(`글자 style anchor를 찾을 수 없습니다: ${request.textNodeId}`)
+      if (!anchor) throw new HwpxEditConflictError('글자 style 기준 위치를 찾을 수 없습니다.')
       const splitSelection =
         from !== to && (from > 0 || to < anchor.text.length)
           ? {
@@ -355,8 +362,22 @@ export class EditingSessionManager {
   ): Promise<EditingSavedResult> {
     return this.enqueue(senderId, async () => {
       const session = this.requireSession(senderId, sessionId)
-      if (!session.history.isDirty) throw new Error('저장할 HWPX 변경 내용이 없습니다.')
-      const result = await saveHwpxAs(session.history.package, destinationPath)
+      if (!session.history.isDirty) {
+        throw new EditingOperationError(
+          'EDITING_NOT_APPLICABLE',
+          '저장할 HWPX 변경 내용이 없습니다.'
+        )
+      }
+      let result: Awaited<ReturnType<typeof saveHwpxAs>>
+      try {
+        result = await saveHwpxAs(session.history.package, destinationPath)
+      } catch {
+        throw new EditingOperationError(
+          'EDITING_SAVE_FAILED',
+          '변경본을 검증해 저장하지 못했습니다. 목적지와 파일 상태를 확인해 주세요.',
+          'retry'
+        )
+      }
       session.history.markSaved()
       const hasPreview = session.history.package
         .listEntries()
@@ -378,7 +399,11 @@ export class EditingSessionManager {
   private requireSession(senderId: number, sessionId: string): EditingSession {
     const session = this.sessions.get(senderId)
     if (!session || session.id !== sessionId) {
-      throw new Error('유효하지 않거나 종료된 HWPX 편집 session입니다.')
+      throw new EditingOperationError(
+        'EDITING_SESSION_EXPIRED',
+        '편집 session이 종료되었습니다. 문서를 다시 열어 주세요.',
+        'restart-session'
+      )
     }
     return session
   }

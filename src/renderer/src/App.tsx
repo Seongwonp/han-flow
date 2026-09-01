@@ -4,6 +4,7 @@ import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, Vie
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { EditingActionResult, EditingHistoryStatus, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
+import { characterStyleCapability } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
@@ -15,6 +16,7 @@ import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
 import { ParagraphInputSurface } from './ParagraphInputSurface'
+import { editingErrorStatus, editingStatusTone } from './editing_error_status'
 import {
   moveParagraphEditorSelection,
   paragraphEditorRangeScope,
@@ -619,7 +621,7 @@ export default function App() {
         }
       } catch (reason) {
         setEditingStatus(
-          `문서 교체 오류: ${reason instanceof Error ? reason.message : String(reason)}`
+          editingErrorStatus('문서 교체', reason) ?? '문서 교체 취소'
         )
         return
       }
@@ -914,7 +916,7 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(`편집 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('편집', reason) ?? '편집 중')
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
@@ -939,7 +941,7 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(`범위 편집 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('범위 편집', reason) ?? '편집 중')
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
@@ -957,7 +959,7 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(`문단 나눔 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('문단 나눔', reason) ?? '편집 중')
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
@@ -982,12 +984,7 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      const message = reason instanceof Error ? reason.message : String(reason)
-      setEditingStatus(
-        message.includes('병합할 인접 문단이 없습니다')
-          ? '편집 중'
-          : `문단 병합 오류: ${message}`
-      )
+      setEditingStatus(editingErrorStatus('문단 병합', reason) ?? '편집 중')
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
@@ -1023,10 +1020,24 @@ export default function App() {
     }
     return undefined
   }, [document, editingSelection?.sectionPath, editingSelection?.focusTextNodeId])
+  const characterStyleState = useMemo(
+    () => characterStyleCapability(editingSelection),
+    [
+      editingSelection?.anchorTextNodeId,
+      editingSelection?.focusTextNodeId
+    ]
+  )
+  const characterStyleAvailable = Boolean(activeStyle && characterStyleState.available)
   const applyCharacterStyle = useCallback(async (
     style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string }
   ) => {
-    if (!editing || !editingSelection || editingPending || editingComposing.current) return
+    if (
+      !editing ||
+      !editingSelection ||
+      !characterStyleState.available ||
+      editingPending ||
+      editingComposing.current
+    ) return
     setEditingPending((current) => current + 1)
     setEditingStatus('글자 모양 반영 중…')
     try {
@@ -1053,11 +1064,17 @@ export default function App() {
             : '글자 색상 적용'
       )
     } catch (reason) {
-      setEditingStatus(`글자 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('글자 모양', reason) ?? '편집 중')
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
-  }, [editing?.sessionId, editingSelection, editingPending, applyEditingResult])
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    characterStyleState.available,
+    editingPending,
+    applyEditingResult
+  ])
   const applyParagraphStyle = useCallback(async (style: {
     align?: ParagraphAlignment
     lineSpacing?: number
@@ -1090,7 +1107,7 @@ export default function App() {
                 : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
       )
     } catch (reason) {
-      setEditingStatus(`문단 모양 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('문단 모양', reason) ?? '편집 중')
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
@@ -1110,7 +1127,7 @@ export default function App() {
       })
       setEditingStatus('편집 중 · 일반 문단·표 셀')
     } catch (reason) {
-      setEditingStatus(`편집 시작 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('편집 시작', reason) ?? '편집 시작 취소')
     }
   }
   const undoEditing = useCallback(async () => {
@@ -1119,7 +1136,7 @@ export default function App() {
       applyEditingResult(await api().undoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('실행 취소')
     } catch (reason) {
-      setEditingStatus(`실행 취소 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('실행 취소', reason) ?? '편집 중')
     }
   }, [editing?.sessionId, editingPending, applyEditingResult])
   const redoEditing = useCallback(async () => {
@@ -1128,7 +1145,7 @@ export default function App() {
       applyEditingResult(await api().redoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('다시 실행')
     } catch (reason) {
-      setEditingStatus(`다시 실행 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('다시 실행', reason) ?? '편집 중')
     }
   }, [editing?.sessionId, editingPending, applyEditingResult])
   const saveEditingAs = useCallback(async () => {
@@ -1153,7 +1170,7 @@ export default function App() {
         `저장 완료 · ${savedName} · Preview ${result.previewStatus === 'stale' ? '갱신 안 됨' : '없음'}`
       )
     } catch (reason) {
-      setEditingStatus(`저장 오류: ${reason instanceof Error ? reason.message : String(reason)}`)
+      setEditingStatus(editingErrorStatus('저장', reason) ?? '편집 중')
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
@@ -1166,17 +1183,17 @@ export default function App() {
         return
       }
       if (!event.metaKey) return
-      if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle) {
+      if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ bold: !activeStyle.bold })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'i' && editing && activeStyle) {
+      if (event.key.toLocaleLowerCase() === 'i' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ italic: !activeStyle.italic })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'u' && editing && activeStyle) {
+      if (event.key.toLocaleLowerCase() === 'u' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ underline: !activeStyle.underline })
         return
@@ -1210,6 +1227,7 @@ export default function App() {
     searchResults.length,
     editing,
     activeStyle,
+    characterStyleAvailable,
     applyCharacterStyle,
     undoEditing,
     redoEditing,
@@ -1278,6 +1296,15 @@ export default function App() {
           `열기→첫 화면 ${loadTiming.openToFirstPaintMs === undefined ? '측정 중' : ms(loadTiming.openToFirstPaintMs)}`
         ]
     : []
+  const editingStatusText = editingStatus
+    ? `${editingStatus}${editing?.isDirty ? ' · 저장 안 됨' : ''}`
+    : null
+  const editingTone = editingStatusTone(editingStatusText)
+  const editingStatusClass = editingTone === 'error'
+    ? 'viewer-status-error'
+    : editingTone === 'warning'
+      ? 'viewer-status-warn'
+      : ''
   const totalSearchOccurrences = searchResults.reduce((sum, result) => sum + result.occurrences, 0)
   const activeSearchPage = searchResults[activeSearchResult]?.pageIndex
 
@@ -1345,7 +1372,12 @@ export default function App() {
             </div>
             <span className="viewer-ribbon-group-label">기록</span>
           </div>
-          <div className="viewer-ribbon-group viewer-ribbon-font-group">
+          <div
+            className="viewer-ribbon-group viewer-ribbon-font-group"
+            title={characterStyleState.reason === 'MULTI_RUN_SELECTION'
+              ? '여러 글자 run에 걸친 글자 모양은 아직 지원하지 않습니다.'
+              : undefined}
+          >
             <div className="viewer-ribbon-controls">
               <button
                 aria-label="현재 텍스트 블록 굵게"
@@ -1354,7 +1386,7 @@ export default function App() {
                 className="viewer-style-bold"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
-                disabled={!activeStyle || Boolean(editingPending)}
+                disabled={!characterStyleAvailable || Boolean(editingPending)}
               >B</button>
               <button
                 aria-label="현재 텍스트 블록 기울임"
@@ -1363,7 +1395,7 @@ export default function App() {
                 className="viewer-style-italic"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => void applyCharacterStyle({ italic: !(activeStyle?.italic ?? false) })}
-                disabled={!activeStyle || Boolean(editingPending)}
+                disabled={!characterStyleAvailable || Boolean(editingPending)}
               >I</button>
               <button
                 aria-label="현재 텍스트 블록 밑줄"
@@ -1372,7 +1404,7 @@ export default function App() {
                 className="viewer-style-underline"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => void applyCharacterStyle({ underline: !(activeStyle?.underline ?? false) })}
-                disabled={!activeStyle || Boolean(editingPending)}
+                disabled={!characterStyleAvailable || Boolean(editingPending)}
               >U</button>
               <button
                 aria-label="현재 텍스트 블록 취소선"
@@ -1381,7 +1413,7 @@ export default function App() {
                 className="viewer-style-strikeout"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => void applyCharacterStyle({ strikeout: !(activeStyle?.strikeout ?? false) })}
-                disabled={!activeStyle || Boolean(editingPending)}
+                disabled={!characterStyleAvailable || Boolean(editingPending)}
               >S</button>
               <div className="viewer-style-size-control">
                 <button
@@ -1389,7 +1421,7 @@ export default function App() {
                   title="글자 크기 줄이기"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => activeStyle && void applyCharacterStyle({ height: Math.max(500, activeStyle.height - 100) })}
-                  disabled={!activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
+                  disabled={!characterStyleAvailable || !activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
                 >A−</button>
                 <span className="viewer-style-size" aria-label="현재 글자 크기">{activeStyle ? `${activeStyle.height / 100}pt` : '—'}</span>
                 <button
@@ -1397,7 +1429,7 @@ export default function App() {
                   title="글자 크기 늘리기"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => activeStyle && void applyCharacterStyle({ height: Math.min(7200, activeStyle.height + 100) })}
-                  disabled={!activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
+                  disabled={!characterStyleAvailable || !activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
                 >A+</button>
               </div>
               <label className="viewer-style-color-label" title="글자 색상">
@@ -1407,7 +1439,7 @@ export default function App() {
                   aria-label="글자 색상"
                   value={activeStyle && /^#[0-9a-f]{6}$/i.test(activeStyle.color) ? activeStyle.color : '#000000'}
                   onChange={(event) => void applyCharacterStyle({ color: event.target.value })}
-                  disabled={!activeStyle || Boolean(editingPending)}
+                  disabled={!characterStyleAvailable || Boolean(editingPending)}
                 />
                 <span>글자색</span>
               </label>
@@ -1506,6 +1538,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
     </section>
-    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatus && <span className={editingStatus.includes('오류') ? 'viewer-status-error' : editing?.isDirty ? 'viewer-status-warn' : ''}>{editingStatus}{editing?.isDirty ? ' · 저장 안 됨' : ''}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

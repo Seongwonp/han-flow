@@ -1,5 +1,6 @@
 import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
+import { EditingOperationError } from './editing_error'
 import {
   encodeHwpxTextContent,
   HwpxEditConflictError,
@@ -393,7 +394,10 @@ export function planMergeParagraph(
   const neighborIndex = currentIndex + (direction === 'previous' ? -1 : 1)
   const neighborParagraph = topLevelParagraphs[neighborIndex]
   if (currentIndex < 0 || !neighborParagraph) {
-    throw new HwpxEditConflictError('병합할 인접 문단이 없습니다.')
+    throw new EditingOperationError(
+      'EDITING_NOT_APPLICABLE',
+      '병합할 인접 문단이 없습니다.'
+    )
   }
   const neighborText = current.spans.find(
     (span) =>

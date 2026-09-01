@@ -575,6 +575,18 @@ scope를 사용해 최상위 구조 치환에 섞이지 않는다. 선택은 nat
 입력·삭제·plain-text paste·조합 종료는 범위 전체를 `commitRange`로 보낸다. history 재투영 때는
 공통 host에서 양 끝 source anchor를 찾아 방향과 offset을 복원한다.
 
+2026-09-01에는 편집 오류를 Electron 기본 reject 문자열에 맡기지 않고 안정적인 IPC payload로
+분류했다. payload는 오류 code, 사용자용 message, recoverable 여부와 `preserve`, `retry`,
+`restart-session`, `none` 복구 정책만 가진다. 알 수 없는 내부 오류는 문서 경로나 원문을 전달하지
+않고 일반화한다. preload가 payload를 고정 marker로 unwrap하고 renderer가 marker 위치와 무관하게
+다시 읽으므로 Electron이 오류 접두 문구를 추가해도 code가 유지된다.
+
+renderer는 conflict에서 변경이 적용되지 않았음을, save failure에서 dirty 변경이 유지됐음을
+알린다. session expired와 history limit도 별도 상태로 표시하며 인접 문단이 없는 merge는
+`EDITING_NOT_APPLICABLE` no-op로 처리한다. 첫 capability slice는 여러 source run selection에서
+글자 모양 control과 단축키를 비활성화한다. 복합 문단별 세부 capability와 stale projection 자동
+복구는 다음 slice다.
+
 구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
 [한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.
 
