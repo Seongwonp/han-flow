@@ -173,8 +173,9 @@ round-trip하고 source anchor로 여러 `hp:t` 범위를 수정한 뒤 검증�
 구현됐습니다. 여러 command의 원자적 transaction, selection 복원, bounded undo/redo와
 savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 session과 제한된 IPC를 통해
 최상위 텍스트 문단과 안전한 일반 표 body cell을 편집 UI에 연결했고, 패키지
-앱에서 composition commit·undo·redo를 검증했습니다. 변경본은 Preview가 갱신되지 않을 수 있다는 확인 뒤
-새 HWPX 이름으로만 저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다.
+앱에서 composition commit·undo·redo를 검증했습니다. 변경본은 본문·글자 모양·문단 모양·문단 구조 중
+실제로 바뀐 범위, 손대지 않은 package 보존 정책과 Preview 상태를 확인한 뒤 새 HWPX 이름으로만
+저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다. 저장 완료 상태에도 같은 구조별 결과를 표시합니다.
 저장하지 않은 상태에서 다른 문서를 열거나 창·앱을 닫으면 저장, 버리기, 취소 중 하나를
 명시적으로 선택해야 합니다.
 편집 상태바는 현재 package mutation revision과 마지막으로 검증 저장된 revision을 함께 표시합니다.
@@ -202,7 +203,8 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
   편집과 복합 문단 병합은 아직 지원하지 않습니다. 여러 문단 범위는 같은 section의 최상위
   일반 텍스트 문단끼리만 연결하며 표 셀·중첩 문단과 scope를 섞지 않습니다.
 - 문단 모양은 최상위 일반 문단의 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄 들여쓰기·내어쓰기를 지원하며 표 cell style과 목록 모양은 아직 편집하지 않습니다.
-- HWPX Preview 미리보기는 현재 재생성하지 않으며 저장 확인창과 상태 표시에서 이를 알립니다.
+- HWPX Preview 미리보기는 현재 재생성하지 않습니다. 구조 편집이 남아 있으면 `stale`, 원문 상태로
+  undo했으면 `current`, 원래 없으면 `omitted`로 저장 확인창과 완료 상태에 표시합니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
 - 원문 글꼴이 없으면 대체 글꼴 폭에 따라 HWPX 줄바꿈과 페이지 분배가 달라질 수 있습니다.

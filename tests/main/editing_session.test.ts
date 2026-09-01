@@ -535,7 +535,21 @@ describe('main process HWPX editing session', () => {
 
     const destination = join(directory, 'styled-save-session.hwpx')
     const saved = await manager.saveAs(25, started.sessionId, destination)
-    expect(saved).toMatchObject({ isDirty: false, revision: 6 })
+    expect(saved).toMatchObject({
+      isDirty: false,
+      revision: 6,
+      lossPolicy: {
+        structures: [
+          { structure: 'text', compatibilityRisk: 'low' },
+          { structure: 'character-style', compatibilityRisk: 'low' },
+          { structure: 'paragraph-style', compatibilityRisk: 'low' }
+        ],
+        previewStatus: 'stale',
+        untouchedContent: 'preserved',
+        notices: ['PREVIEW_STALE'],
+        reviewRecommended: true
+      }
+    })
     const reopened = await HwpxSourcePackage.open(destination)
     const reopenedAnchors = listHwpxTextAnchors(reopened, anchor.sectionPath)
     expect(reopenedAnchors.filter((candidate) => candidate.textNodeId.startsWith(`${anchor.sectionPath}#hp:t:`)))
@@ -706,7 +720,14 @@ describe('main process HWPX editing session', () => {
       canUndo: true,
       canRedo: false,
       isDirty: false,
-      previewStatus: 'stale'
+      previewStatus: 'stale',
+      lossPolicy: {
+        structures: [{ structure: 'text', compatibilityRisk: 'low' }],
+        untouchedContent: 'preserved',
+        previewStatus: 'stale',
+        notices: ['PREVIEW_STALE'],
+        reviewRecommended: true
+      }
     })
     expect(existsSync(destination)).toBe(true)
     expect(manager.isDirty(11, started.sessionId)).toBe(false)

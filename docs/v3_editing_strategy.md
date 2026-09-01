@@ -404,6 +404,19 @@ history는 현재 immutable package의 `revision`과 마지막 검증 저장 성
 logical state ID가 savepoint와 같으면 clean이다. main IPC와 renderer 상태바는 두 revision과
 dirty를 함께 전달해 이 차이를 숨기지 않는다.
 
+2026-09-01 구조별 저장 정책 연결 결과:
+
+- transaction command를 본문 텍스트, 글자 모양, 문단 모양, 문단 구조의 개인정보 없는 kind로
+  분류하고 history entry에 전후 정책을 저장한다.
+- grouping은 kind를 합치고 undo/redo는 정책도 같은 logical state로 복원한다. 실패·no-op은 정책을
+  바꾸지 않으며 undo 뒤 새 branch는 취소된 branch의 분류를 남기지 않는다.
+- 저장 전 확인과 dirty 종료 안내는 실제 변경 구조, targeted source edit, 손대지 않은 XML·이미지·
+  package 보존과 Preview current/stale/omitted를 함께 표시한다.
+- 문단 split·merge는 저장 후 Han-Flow와 한/글 재열기를 권고하는 `review` 구조로, 텍스트·글자·
+  문단 모양은 `low`로 구분한다.
+- `EditingSavedResult`는 확인에 사용한 동일한 `HwpxSaveLossPolicy`를 snapshot으로 반환하고 renderer는
+  저장 revision, 파일명, 구조 목록과 Preview 결과를 함께 알린다.
+
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
 adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
 하나만 commit한다.

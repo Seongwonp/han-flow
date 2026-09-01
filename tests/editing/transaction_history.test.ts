@@ -236,6 +236,13 @@ describe('HWPX edit transaction과 bounded history', () => {
       { inputType: 'insertText', timestamp: 100 }
     )
     history.commit(first)
+    expect(history.saveLossPolicy).toMatchObject({
+      structures: [{ structure: 'text', compatibilityRisk: 'low' }],
+      previewStatus: 'stale',
+      untouchedContent: 'preserved',
+      notices: ['PREVIEW_STALE'],
+      reviewRecommended: true
+    })
     const second = transaction(
       history.package,
       'type-b',
@@ -260,8 +267,15 @@ describe('HWPX edit transaction과 bounded history', () => {
     expect(history.undo()?.selection).toEqual(selection(anchor.textNodeId, end))
     expect(history.package.readEntry(sectionPath)).toEqual(originalSection)
     expect(history.isDirty).toBe(false)
+    expect(history.saveLossPolicy).toMatchObject({
+      structures: [],
+      previewStatus: 'current',
+      notices: [],
+      reviewRecommended: false
+    })
     expect(history.redo()?.selection).toEqual(selection(anchor.textNodeId, end + 3))
     expect(textAnchor(history.package, '공개 헤더ABC')).toBeDefined()
+    expect(history.saveLossPolicy.structures.map(({ structure }) => structure)).toEqual(['text'])
   })
 
   test('savepoint 뒤 edit는 별도 undo 단위이며 저장 상태 dirty를 정확히 복원한다', async () => {

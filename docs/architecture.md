@@ -82,6 +82,13 @@ composition ID를 가진다. command는 순서대로 immutable package에 적용
 grouping하지 않아 undo가 저장 상태를 건너뛰지 않는다. dirty 판정은 계속 증가하는 package
 revision이 아니라 logical state ID와 savepoint ID를 비교한다.
 
+2026-09-01부터 history entry는 package delta와 함께 구조별 loss policy의 전후 상태도 가진다.
+command는 본문 텍스트, 글자 모양, 문단 모양, 문단 구조로 분류하며 연속 입력 grouping은 구조
+집합을 합친다. undo는 entry의 이전 정책, redo는 이후 정책을 복원하므로 취소된 편집이 저장
+안내에 남지 않는다. 이 정책은 source path나 본문 없이 구조 kind와 안정적인 notice code만
+노출한다. 손대지 않은 package 내용은 `preserved`, 수정 구조는 `targeted-source-edit`이며 문단
+구조만 호환성 `review`, 나머지는 `low`다.
+
 Sprint 2부터 `EditorSelection`은 section 하나와 독립적인 anchor/focus text node ID·UTF-16
 offset을 가진다. 코어는 ordered `hp:t` 순서로 여러 run 범위를 정규화하고 역방향 여부를
 보존하며, 없는 anchor와 surrogate pair 중간 offset을 거부한다. 같은 문단의 renderer surface는
@@ -112,6 +119,11 @@ V3-4 Save As는 renderer에 경로나 writer 단계를 조합할 권한을 주�
 queue에 저장을 넣어 진행 중 edit와 경쟁하지 않게 하며 `saveHwpxAs`가 성공한 뒤에만
 `HwpxEditHistory.markSaved()`를 호출한다. 기존의 무제한 `dialog:saveFile`과
 `dialog:confirmSave` preload API는 제거했다.
+
+저장 확인창과 dirty 종료창은 session history의 현재 `HwpxSaveLossPolicy`를 읽어 실제 변경된
+구조만 열거한다. Preview는 편집 구조가 남아 있고 entry가 존재하면 `stale`, 원문 상태로 undo한
+경우 `current`, 원래 entry가 없으면 `omitted`다. 검증 저장 결과도 같은 policy snapshot을 반환해
+renderer 완료 상태가 확인창과 다른 설명을 만들지 않게 한다.
 
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow

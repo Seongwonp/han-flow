@@ -1,6 +1,7 @@
 import { ViewerDocument } from '../document/viewer_document'
 import { EditorSelection } from './transaction'
 import type { ParagraphAlignment } from './style_patch'
+import type { HwpxSaveLossPolicy } from './loss_policy'
 
 export interface EditingHistoryStatus {
   revision: number
@@ -93,7 +94,8 @@ export interface EditingActionResult extends EditingHistoryStatus {
 export interface EditingSavedResult extends EditingHistoryStatus {
   destinationPath: string
   entryCount: number
-  previewStatus: 'stale' | 'omitted'
+  previewStatus: 'current' | 'stale' | 'omitted'
+  lossPolicy: HwpxSaveLossPolicy
 }
 
 export type EditingSaveAsDialogResult =

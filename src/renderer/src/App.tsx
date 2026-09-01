@@ -1216,9 +1216,23 @@ export default function App() {
         canRedo: result.canRedo,
         isDirty: result.isDirty
       } : current)
-      const savedName = result.destinationPath.split('/').pop() ?? result.destinationPath
+      const savedName = result.destinationPath.split(/[\\/]/).pop() ?? result.destinationPath
+      const structureLabels = {
+        text: '본문',
+        'character-style': '글자 모양',
+        'paragraph-style': '문단 모양',
+        'paragraph-structure': '문단 구조'
+      } as const
+      const savedStructures = result.lossPolicy.structures
+        .map(({ structure }) => structureLabels[structure])
+        .join('·') || '구조 변경 없음'
+      const previewStatus = result.previewStatus === 'stale'
+        ? 'Preview 갱신 안 됨'
+        : result.previewStatus === 'omitted'
+          ? 'Preview 없음'
+          : 'Preview 일치'
       setEditingStatus(
-        `저장 완료 · r${result.savedRevision} · ${savedName} · Preview ${result.previewStatus === 'stale' ? '갱신 안 됨' : '없음'}`
+        `저장 완료 · r${result.savedRevision} · ${savedName} · ${savedStructures} · ${previewStatus}`
       )
     } catch (reason) {
       setEditingStatus(editingErrorStatus('저장', reason) ?? '편집 중')

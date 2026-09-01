@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
 import { EditingSessionManager } from './editing_session'
+import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
 import type {
   EditingCharacterStyleRequest,
@@ -84,6 +85,10 @@ async function showSaveDialog(
   return window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options)
 }
 
+async function lossPolicyDetail(senderId: number, sessionId: string): Promise<string> {
+  return editingLossPolicyDetail(await editingSessions.lossPolicy(senderId, sessionId))
+}
+
 async function saveEditingSessionWithDialog(
   senderId: number,
   sessionId: string,
@@ -100,9 +105,7 @@ async function saveEditingSessionWithDialog(
       noLink: true,
       title: 'HWPX 변경본 저장',
       message: '원본은 그대로 두고 새 HWPX 파일을 만듭니다.',
-      detail:
-        '문서 본문 변경은 저장되지만 HWPX의 Preview 미리보기는 갱신되지 않을 수 있습니다. ' +
-        '알 수 없는 XML과 이미지 등 원본 package 항목은 그대로 보존합니다.'
+      detail: await lossPolicyDetail(senderId, sessionId)
     })
     if (confirmation.response !== 0) return { outcome: 'cancelled' as const }
   }
@@ -145,7 +148,8 @@ async function resolveDirtyEditing(
       title: '저장하지 않은 HWPX 변경',
       message: '이 문서의 변경 내용을 어떻게 처리하시겠습니까?',
       detail:
-        '저장하면 원본은 그대로 두고 새 HWPX를 만듭니다. Preview 미리보기는 갱신되지 않을 수 있습니다.'
+        '저장하면 원본은 그대로 두고 새 HWPX를 만듭니다. ' +
+        await lossPolicyDetail(senderId, sessionId)
     })
     response = confirmation.response
   }

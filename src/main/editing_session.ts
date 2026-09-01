@@ -13,6 +13,7 @@ import {
 } from '../core/editing/editing_contract'
 import { EditingOperationError } from '../core/editing/editing_error'
 import { HwpxEditHistory } from '../core/editing/history'
+import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
@@ -361,6 +362,12 @@ export class EditingSessionManager {
     return session.history.isDirty
   }
 
+  async lossPolicy(senderId: number, sessionId: string): Promise<HwpxSaveLossPolicy> {
+    return this.enqueue(senderId, async () =>
+      this.requireSession(senderId, sessionId).history.saveLossPolicy
+    )
+  }
+
   async saveAs(
     senderId: number,
     sessionId: string,
@@ -375,6 +382,7 @@ export class EditingSessionManager {
         )
       }
       let result: Awaited<ReturnType<typeof saveHwpxAs>>
+      const lossPolicy = session.history.saveLossPolicy
       try {
         result = await saveHwpxAs(session.history.package, destinationPath)
       } catch {
@@ -385,13 +393,11 @@ export class EditingSessionManager {
         )
       }
       session.history.markSaved()
-      const hasPreview = session.history.package
-        .listEntries()
-        .some((entry) => entry.path.startsWith('Preview/'))
       return {
         destinationPath: result.destinationPath,
         entryCount: result.entryCount,
-        previewStatus: hasPreview ? 'stale' : 'omitted',
+        previewStatus: lossPolicy.previewStatus,
+        lossPolicy,
         ...status(session)
       }
     })

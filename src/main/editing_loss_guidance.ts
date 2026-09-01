@@ -1,0 +1,28 @@
+import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
+
+const editedStructureLabels = {
+  text: '본문 텍스트',
+  'character-style': '글자 모양',
+  'paragraph-style': '문단 모양',
+  'paragraph-structure': '문단 나누기·병합'
+} as const
+
+export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
+  const structures = policy.structures
+    .map(({ structure }) => editedStructureLabels[structure])
+    .join(', ')
+  const preview = policy.previewStatus === 'stale'
+    ? 'Preview 미리보기는 갱신되지 않아 오래된 내용일 수 있습니다.'
+    : policy.previewStatus === 'omitted'
+      ? '이 문서에는 Preview 미리보기가 없습니다.'
+      : 'Preview 미리보기는 현재 본문과 일치합니다.'
+  const structureReview = policy.notices.includes('PARAGRAPH_STRUCTURE_CHANGED')
+    ? ' 문단 구조가 바뀌었으므로 저장 후 Han-Flow와 한/글에서 재열기를 권장합니다.'
+    : ''
+
+  return (
+    `현재 변경 구조: ${structures || '없음'}. ` +
+    '선택한 구조만 원본 XML에서 수정하며, 손대지 않은 XML·이미지·package 항목은 보존합니다. ' +
+    preview + structureReview
+  )
+}

@@ -104,7 +104,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [x] 최상위 여러 문단 범위의 구조적 치환·exact inverse 코어
 - [x] 안정적인 편집 오류 code·IPC envelope와 다중 run 글자 style capability 1차
 - [x] 최상위 문단·단순 표 셀별 구조 capability와 stale anchor projection 복구 UX
-- [ ] 구조별 loss policy를 사용자 확인과 저장 결과에 연결
+- [x] 구조별 loss policy를 사용자 확인과 저장 결과에 연결
 - [x] transaction atomic rollback과 현재·저장 revision 추적
 - renderer의 문서·viewer·editor·IME 임시 상태 분리
 - 거대한 화면 컴포넌트를 shell, ribbon, page와 input surface로 분할

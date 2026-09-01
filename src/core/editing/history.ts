@@ -9,6 +9,13 @@ import {
   shouldGroupTransactions
 } from './transaction'
 import { equalEditorSelections, validateEditorSelection } from './selection'
+import {
+  createSaveLossPolicy,
+  editedStructuresForCommands,
+  HwpxEditedStructure,
+  HwpxSaveLossPolicy,
+  mergeEditedStructures
+} from './loss_policy'
 
 export interface EditHistoryOptions {
   maxEntries?: number
@@ -38,6 +45,8 @@ interface HistoryEntry {
   inverse: EditTransaction
   beforeStateId: number
   afterStateId: number
+  beforeEditedStructures: HwpxEditedStructure[]
+  afterEditedStructures: HwpxEditedStructure[]
   estimatedBytes: number
 }
 
@@ -132,6 +141,7 @@ export class HwpxEditHistory {
   private currentStateId = 0
   private savedStateId = 0
   private savedPackageRevision: number
+  private currentEditedStructures: HwpxEditedStructure[] = []
   private nextStateId = 1
   private estimatedBytes = 0
   private readonly maxEntries: number
@@ -179,6 +189,10 @@ export class HwpxEditHistory {
     return this.savedPackageRevision
   }
 
+  get saveLossPolicy(): HwpxSaveLossPolicy {
+    return createSaveLossPolicy(this.currentPackage, this.currentEditedStructures)
+  }
+
   setSelection(selection: EditorSelection): void {
     validateEditorSelection(this.currentPackage, selection)
     this.currentSelection = { ...selection }
@@ -224,6 +238,10 @@ export class HwpxEditHistory {
       return result
     }
     if (!result.inverse) throw new Error('변경된 transaction에 inverse가 없습니다.')
+    const afterEditedStructures = mergeEditedStructures(
+      this.currentEditedStructures,
+      editedStructuresForCommands(transaction.commands)
+    )
 
     const previousEntry = this.undoStack[this.undoStack.length - 1]
     const canGroup =
@@ -244,6 +262,8 @@ export class HwpxEditHistory {
         inverse,
         beforeStateId: previousEntry.beforeStateId,
         afterStateId: this.nextStateId++,
+        beforeEditedStructures: [...previousEntry.beforeEditedStructures],
+        afterEditedStructures,
         estimatedBytes
       }
     } else {
@@ -254,6 +274,8 @@ export class HwpxEditHistory {
         inverse: result.inverse,
         beforeStateId: this.currentStateId,
         afterStateId: this.nextStateId++,
+        beforeEditedStructures: [...this.currentEditedStructures],
+        afterEditedStructures,
         estimatedBytes
       }
     }
@@ -265,6 +287,7 @@ export class HwpxEditHistory {
     this.currentPackage = result.package
     this.currentSelection = { ...transaction.selectionAfter }
     this.currentStateId = entry.afterStateId
+    this.currentEditedStructures = [...entry.afterEditedStructures]
     this.trimUndoStack()
     return result
   }
@@ -279,6 +302,7 @@ export class HwpxEditHistory {
     this.currentPackage = result.package
     this.currentSelection = { ...entry.forward.selectionBefore }
     this.currentStateId = entry.beforeStateId
+    this.currentEditedStructures = [...entry.beforeEditedStructures]
     return {
       package: this.currentPackage,
       selection: { ...this.currentSelection },
@@ -296,6 +320,7 @@ export class HwpxEditHistory {
     this.currentPackage = result.package
     this.currentSelection = { ...entry.forward.selectionAfter }
     this.currentStateId = entry.afterStateId
+    this.currentEditedStructures = [...entry.afterEditedStructures]
     return {
       package: this.currentPackage,
       selection: { ...this.currentSelection },

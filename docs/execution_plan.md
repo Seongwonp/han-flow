@@ -345,6 +345,21 @@ macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부
 현재 projection을 다시 받고 selection을 유지, UTF-16 경계 보정, 남은 endpoint로 collapse 또는
 안전한 해제 중 하나로 복구하며 상태바에 결과를 남긴다.
 
+## 완료한 milestone: Sprint 2 구조별 저장 loss policy
+
+1. [x] 편집 command를 본문 텍스트, 글자 모양, 문단 모양, 문단 구조로 분류한다.
+2. [x] 분류를 history state에 저장해 grouping·undo·redo·새 branch에서 함께 복원한다.
+3. [x] 변경 구조별 targeted source edit와 문단 구조 재열기 권고를 저장 전 확인창에 표시한다.
+4. [x] 손대지 않은 XML·이미지·package entry 보존 정책과 Preview current/stale/omitted를 구분한다.
+5. [x] 검증 저장 결과 IPC와 renderer 완료 상태에 구조 목록과 Preview 판정을 전달한다.
+6. [x] core policy, history 복원, 사용자 안내와 Save As 결과를 공개 fixture 회귀로 검증한다.
+
+`HwpxSaveLossPolicy`는 경로나 본문을 포함하지 않고 구조 kind, 보존 방식, 호환성 검토 수준과
+안정적인 notice code만 전달한다. 현재 문단 split·merge는 targeted fragment 교체를 사용하지만
+구조 변화가 크므로 `review`로 표시하고 Han-Flow·한/글 재열기를 권장한다. 텍스트·글자 모양·문단
+모양은 `low`로 구분한다. 모든 경우 손대지 않은 package 내용은 보존하며 Preview entry가 있으면
+편집 상태에서 `stale`, 원문 상태까지 undo하면 `current`, 원래 없으면 `omitted`로 판정한다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.
