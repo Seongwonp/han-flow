@@ -429,6 +429,18 @@ dirty를 함께 전달해 이 차이를 숨기지 않는다.
 - reducer와 transient state 단위 테스트가 동시 pending update, reset, 고유 transaction ID와 최신
   session mirror를 검증한다.
 
+2026-09-01 renderer 화면 책임 분할 결과:
+
+- toolbar/search/zoom/PDF와 편집 ribbon은 `ViewerToolbar`, loading/error/empty 영역은 `ViewerStage`,
+  HWP/HWPX 공통 page metadata와 virtualization spacer는 `ViewerPageStack`으로 옮겼다.
+- revision, dirty 안내, progressive loading, font 대체, overflow와 성능 표시는 `ViewerStatusBar`가
+  typed props로 조합한다.
+- 새 표시 컴포넌트는 preload API와 source package에 접근하지 않으며 callback과 계산된 값만 받는다.
+- `App`은 IPC·비동기 편집 orchestration과 실제 page content 조합만 맡는다. 기존 문단·표 재귀
+  renderer와 `ParagraphInputSurface`의 selection·IME lifecycle은 그대로 유지한다.
+- React 정적 markup 테스트로 ribbon disabled/pressed 경계, empty/page stage, virtual spacer와 상태
+  표시를 검증하고 기존 measurement·composition 회귀를 함께 실행한다.
+
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
 adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
 하나만 commit한다.

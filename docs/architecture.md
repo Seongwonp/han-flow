@@ -136,6 +136,13 @@ IME 조합 여부는 keydown과 문서 교체 요청에서 React render보다 �
 mirror와 session-local transaction sequence만 있고 문서 model이나 source text는 없다. 새 문서를
 열 때 즉시 reset하며 reducer state와의 독립성, pending 함수 전이와 reset을 단위 테스트한다.
 
+화면 조합도 같은 날짜에 `ViewerToolbar`, `ViewerStage`, `ViewerPageStack`, `ViewerStatusBar`로
+분할했다. toolbar와 ribbon은 편집 command callback을 props로만 받고 IPC를 호출하지 않는다.
+stage는 loading/error/empty 경계, page stack은 HWP/HWPX format metadata·zoom·virtual spacer,
+status bar는 revision·진행률·진단 표시만 소유한다. `App`은 문서 열기와 편집 command의 비동기
+orchestration 및 page content 조합에 집중한다. IME DOM lifecycle은 이미 분리된
+`ParagraphInputSurface`에 남아 shell 재렌더가 composition buffer를 소유하지 않게 한다.
+
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
 `close` handler는 renderer가 응답할 수 없는 `⌘Q`와 창 닫기를 직접 보호한다. 선택지는

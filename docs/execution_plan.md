@@ -374,6 +374,20 @@ macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부
 0 아래로 내려가지 않는다. IME composing은 key handler와 문서 교체 보호가 render 완료를 기다리지
 않도록 ref 기반 `EditingImeTransientState`에서 즉시 읽되 문서 bytes나 selection은 저장하지 않는다.
 
+## 완료한 milestone: Sprint 2 renderer 화면 책임 분할
+
+1. [x] title·검색·zoom·PDF·열기 action과 편집 ribbon을 `ViewerToolbar`로 추출한다.
+2. [x] loading·error·empty·document 영역을 `ViewerStage` shell로 추출한다.
+3. [x] HWP/HWPX 공통 metadata·zoom·virtual spacer를 `ViewerPageStack`으로 추출한다.
+4. [x] revision·progress·font 대체·overflow·성능·PDF 안내를 `ViewerStatusBar`로 추출한다.
+5. [x] 기존 `ParagraphInputSurface`의 composition lifecycle과 source selection 계약은 유지한다.
+6. [x] toolbar, stage, page stack과 status bar를 React 정적 렌더 회귀로 검증한다.
+
+`App`은 IPC·비동기 command orchestration과 page content 조합을 맡고, 추출된 컴포넌트는 source
+package나 main API를 직접 읽지 않는다. toolbar callback과 page stack metadata는 typed props로만
+전달한다. HWPX의 표·문단 재귀 renderer는 기존 measurement·selection 회귀를 유지하기 위해 이번
+단계에서 재작성하지 않고 독립 함수 컴포넌트 경계를 그대로 보존했다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

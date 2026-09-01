@@ -35,6 +35,8 @@ import {
 } from './paragraph_selection'
 import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
+import { ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
+import { ViewerToolbar } from './ViewerToolbar'
 
 const api = () => (window as any).api
 
@@ -1389,225 +1391,87 @@ export default function App() {
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {printing && fixedDocument && <style>{fixedPagePrintCss(fixedDocument.pages)}</style>}
     {effectiveDocument && <div ref={measurementRef} className="viewer-measurement" style={{ width: hwpUnitToCssPx(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right) }}>{effectiveDocument.sections.flatMap((section) => section.blocks).map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>}
-    <header className={`viewer-toolbar${editing ? ' viewer-toolbar-editing' : ''}`}>
-      <div className="viewer-toolbar-main">
-        <div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div>
-        <div className="viewer-actions">
-          {searchOpen && <div className="viewer-search" role="search">
-            <input
-              ref={searchInputRef}
-              aria-label="HWP 문서 검색"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  stepSearchResult(event.shiftKey ? -1 : 1)
-                }
-              }}
-              placeholder="문서 검색"
-            />
-            <span
-              aria-live="polite"
-              data-searching={searching}
-              data-search-pages={searchResults.length}
-              data-search-occurrences={totalSearchOccurrences}
-            >{searching ? '검색 중…' : searchQuery.trim() ? `${searchResults.length}쪽 · ${totalSearchOccurrences}건` : ''}</span>
-            <button aria-label="이전 검색 결과" onClick={() => stepSearchResult(-1)} disabled={!searchResults.length}>↑</button>
-            <button aria-label="다음 검색 결과" onClick={() => stepSearchResult(1)} disabled={!searchResults.length}>↓</button>
-            <button aria-label="검색 닫기" onClick={closeSearch}>×</button>
-          </div>}
-          {fixedDocument && !searchOpen && <button aria-label="검색" onClick={openSearch}>⌕</button>}
-          {document && !fixedDocument && !editing && <button onClick={() => void startEditing()} disabled={documentLoading || loading}>편집</button>}
-          {editing && <span className="viewer-editing-badge">HWPX 편집</span>}
-          <button aria-label="축소" onClick={() => changeZoomAt(stepZoom(zoom, -1))}>−</button>
-          <span>{Math.round(zoom * 100)}%</span>
-          <button aria-label="확대" onClick={() => changeZoomAt(stepZoom(zoom, 1))}>+</button>
-          <button onClick={() => void exportPdf()} disabled={!hasDocument || printing || documentLoading}>PDF</button>
-          <button className="viewer-open" onClick={chooseFile}>문서 열기</button>
-        </div>
-      </div>
-      {editing && <div className="viewer-edit-ribbon" aria-label="HWPX 편집 리본">
-        <div className="viewer-ribbon-tabs" role="tablist" aria-label="편집 메뉴">
-          <button role="tab" aria-selected="true">홈</button>
-        </div>
-        <div className="viewer-ribbon-groups" role="toolbar" aria-label="홈 편집 도구">
-          <div className="viewer-ribbon-group viewer-ribbon-file-group">
-            <div className="viewer-ribbon-controls">
-              <button
-                aria-label="HWPX 변경본 저장"
-                className="viewer-ribbon-save"
-                onClick={() => void saveEditingAs()}
-                disabled={!editing.isDirty || Boolean(editingPending)}
-              ><span className="viewer-ribbon-icon">⇩</span><span>다른 이름으로 저장</span></button>
-            </div>
-            <span className="viewer-ribbon-group-label">파일</span>
-          </div>
-          <div className="viewer-ribbon-group">
-            <div className="viewer-ribbon-controls">
-              <button aria-label="실행 취소" title="실행 취소 (⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={() => void undoEditing()} disabled={!editing.canUndo || Boolean(editingPending)}>↶</button>
-              <button aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={() => void redoEditing()} disabled={!editing.canRedo || Boolean(editingPending)}>↷</button>
-            </div>
-            <span className="viewer-ribbon-group-label">기록</span>
-          </div>
-          <div
-            className="viewer-ribbon-group viewer-ribbon-font-group"
-            title={editingCapabilityStatus('글자 모양', characterStyleState.reason)}
-          >
-            <div className="viewer-ribbon-controls">
-              <button
-                aria-label="현재 텍스트 블록 굵게"
-                title="굵게"
-                aria-pressed={activeStyle?.bold ?? false}
-                className="viewer-style-bold"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyCharacterStyle({ bold: !(activeStyle?.bold ?? false) })}
-                disabled={!characterStyleAvailable || Boolean(editingPending)}
-              >B</button>
-              <button
-                aria-label="현재 텍스트 블록 기울임"
-                title="기울임 (⌘I)"
-                aria-pressed={activeStyle?.italic ?? false}
-                className="viewer-style-italic"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyCharacterStyle({ italic: !(activeStyle?.italic ?? false) })}
-                disabled={!characterStyleAvailable || Boolean(editingPending)}
-              >I</button>
-              <button
-                aria-label="현재 텍스트 블록 밑줄"
-                title="밑줄 (⌘U)"
-                aria-pressed={activeStyle?.underline ?? false}
-                className="viewer-style-underline"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyCharacterStyle({ underline: !(activeStyle?.underline ?? false) })}
-                disabled={!characterStyleAvailable || Boolean(editingPending)}
-              >U</button>
-              <button
-                aria-label="현재 텍스트 블록 취소선"
-                title="취소선"
-                aria-pressed={activeStyle?.strikeout ?? false}
-                className="viewer-style-strikeout"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyCharacterStyle({ strikeout: !(activeStyle?.strikeout ?? false) })}
-                disabled={!characterStyleAvailable || Boolean(editingPending)}
-              >S</button>
-              <div className="viewer-style-size-control">
-                <button
-                  aria-label="글자 크기 줄이기"
-                  title="글자 크기 줄이기"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => activeStyle && void applyCharacterStyle({ height: Math.max(500, activeStyle.height - 100) })}
-                  disabled={!characterStyleAvailable || !activeStyle || activeStyle.height <= 500 || Boolean(editingPending)}
-                >A−</button>
-                <span className="viewer-style-size" aria-label="현재 글자 크기">{activeStyle ? `${activeStyle.height / 100}pt` : '—'}</span>
-                <button
-                  aria-label="글자 크기 늘리기"
-                  title="글자 크기 늘리기"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => activeStyle && void applyCharacterStyle({ height: Math.min(7200, activeStyle.height + 100) })}
-                  disabled={!characterStyleAvailable || !activeStyle || activeStyle.height >= 7200 || Boolean(editingPending)}
-                >A+</button>
-              </div>
-              <label className="viewer-style-color-label" title="글자 색상">
-                <input
-                  className="viewer-style-color"
-                  type="color"
-                  aria-label="글자 색상"
-                  value={activeStyle && /^#[0-9a-f]{6}$/i.test(activeStyle.color) ? activeStyle.color : '#000000'}
-                  onChange={(event) => void applyCharacterStyle({ color: event.target.value })}
-                  disabled={!characterStyleAvailable || Boolean(editingPending)}
-                />
-                <span>글자색</span>
-              </label>
-            </div>
-            <span className="viewer-ribbon-group-label">글자 모양</span>
-          </div>
-          <div
-            className="viewer-ribbon-group"
-            title={editingCapabilityStatus(
-              '문단 모양',
-              editingCapabilityState.paragraphStyle.reason
-            )}
-          >
-            <div className="viewer-ribbon-controls">
-              {([
-                ['LEFT', '왼쪽 정렬', '⇤'],
-                ['CENTER', '가운데 정렬', '↔'],
-                ['RIGHT', '오른쪽 정렬', '⇥'],
-                ['JUSTIFY', '양쪽 정렬', '☰']
-              ] as const).map(([align, label, icon]) => <button
-                key={align}
-                aria-label={label}
-                title={label}
-                aria-pressed={activeStyle?.align === align}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => void applyParagraphStyle({ align })}
-                disabled={!paragraphStyleAvailable || Boolean(editingPending)}
-              >{icon}</button>)}
-            </div>
-            <span className="viewer-ribbon-group-label">문단 정렬</span>
-          </div>
-          <div
-            className="viewer-ribbon-group viewer-ribbon-spacing-group"
-            title={editingCapabilityStatus(
-              '문단 모양',
-              editingCapabilityState.paragraphStyle.reason
-            )}
-          >
-            <div className="viewer-ribbon-controls viewer-ribbon-spacing-controls">
-              <div className="viewer-paragraph-metric">
-                <span>줄 간격</span>
-                <button aria-label="줄 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.max(100, activeStyle.lineSpacing - 10) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.lineSpacing <= 100 || Boolean(editingPending)}>−</button>
-                <output aria-label="현재 줄 간격">{activeStyle ? `${activeStyle.lineSpacing}%` : '—'}</output>
-                <button aria-label="줄 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.min(300, activeStyle.lineSpacing + 10) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.lineSpacing >= 300 || Boolean(editingPending)}>＋</button>
-              </div>
-              <div className="viewer-paragraph-metric">
-                <span>첫 줄</span>
-                <button aria-label="첫 줄 내어쓰기" title="첫 줄 내어쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.max(-7200, activeStyle.indent - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.indent <= -7200 || Boolean(editingPending)}>⇤</button>
-                <output aria-label="현재 첫 줄 들여쓰기">{activeStyle ? `${activeStyle.indent / 100}pt` : '—'}</output>
-                <button aria-label="첫 줄 들여쓰기" title="첫 줄 들여쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.min(7200, activeStyle.indent + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.indent >= 7200 || Boolean(editingPending)}>⇥</button>
-              </div>
-              <div className="viewer-paragraph-metric">
-                <span>문단 앞</span>
-                <button aria-label="문단 앞 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.max(0, activeStyle.marginBefore - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginBefore <= 0 || Boolean(editingPending)}>−</button>
-                <output aria-label="현재 문단 앞 간격">{activeStyle ? `${activeStyle.marginBefore / 100}pt` : '—'}</output>
-                <button aria-label="문단 앞 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.min(7200, activeStyle.marginBefore + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginBefore >= 7200 || Boolean(editingPending)}>＋</button>
-              </div>
-              <div className="viewer-paragraph-metric">
-                <span>문단 뒤</span>
-                <button aria-label="문단 뒤 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.max(0, activeStyle.marginAfter - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter <= 0 || Boolean(editingPending)}>−</button>
-                <output aria-label="현재 문단 뒤 간격">{activeStyle ? `${activeStyle.marginAfter / 100}pt` : '—'}</output>
-                <button aria-label="문단 뒤 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.min(7200, activeStyle.marginAfter + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter >= 7200 || Boolean(editingPending)}>＋</button>
-              </div>
-            </div>
-            <span className="viewer-ribbon-group-label">문단 간격</span>
-          </div>
-        </div>
-      </div>}
-    </header>
-    <section ref={stageRef} className="viewer-stage" onWheel={onStageWheel} onScroll={(event) => updateVisibleRange(event.currentTarget.scrollTop, event.currentTarget.clientHeight)}>
-      {loading && <div className="viewer-empty">문서를 해석하는 중…</div>}
-      {error && <div className="viewer-empty viewer-error" data-error-code={errorCode ?? undefined}>{error}<button onClick={chooseFile}>다른 파일 열기</button></div>}
-      {!loading && !error && !hasDocument && <div className="viewer-empty"><div className="viewer-drop-icon">한</div><h1>HWP 또는 HWPX를 여기에 놓으세요</h1><p>읽기 전용으로 안전하게 엽니다.</p><button onClick={chooseFile}>파일 선택</button></div>}
-      {effectiveDocument && !loading && <div ref={editingHostRef} className={`viewer-pages${editing ? ' viewer-editing-host' : ''}${virtualized ? ' viewer-pages-virtualized' : ''}`} data-document-format="hwpx" data-total-pages={pages.length} data-document-loading={documentLoading} data-layout-measured={Boolean(layoutMeasurements)} style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}>
-        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}
+    <ViewerToolbar
+      fileName={fileName}
+      editing={editing}
+      editingPending={editingPending}
+      documentLoading={documentLoading}
+      loading={loading}
+      hasDocument={hasDocument}
+      printing={printing}
+      fixedDocument={Boolean(fixedDocument)}
+      canStartEditing={Boolean(document && !fixedDocument)}
+      zoom={zoom}
+      searchOpen={searchOpen}
+      searchQuery={searchQuery}
+      searching={searching}
+      searchPageCount={searchResults.length}
+      searchOccurrences={totalSearchOccurrences}
+      searchInputRef={searchInputRef}
+      activeStyle={activeStyle}
+      characterStyleAvailable={characterStyleAvailable}
+      paragraphStyleAvailable={paragraphStyleAvailable}
+      characterStyleTitle={editingCapabilityStatus('글자 모양', characterStyleState.reason)}
+      paragraphStyleTitle={editingCapabilityStatus(
+        '문단 모양',
+        editingCapabilityState.paragraphStyle.reason
+      )}
+      onSearchQueryChange={setSearchQuery}
+      onSearchStep={stepSearchResult}
+      onSearchClose={closeSearch}
+      onSearchOpen={openSearch}
+      onStartEditing={() => void startEditing()}
+      onZoomStep={(direction) => changeZoomAt(stepZoom(zoom, direction))}
+      onExportPdf={() => void exportPdf()}
+      onChooseFile={() => void chooseFile()}
+      onSaveEditing={() => void saveEditingAs()}
+      onUndoEditing={() => void undoEditing()}
+      onRedoEditing={() => void redoEditing()}
+      onCharacterStyle={(style) => void applyCharacterStyle(style)}
+      onParagraphStyle={(style) => void applyParagraphStyle(style)}
+    />
+    <ViewerStage
+      stageRef={stageRef}
+      loading={loading}
+      error={error}
+      errorCode={errorCode}
+      hasDocument={hasDocument}
+      onChooseFile={() => void chooseFile()}
+      onWheel={onStageWheel}
+      onScroll={(event) => updateVisibleRange(
+        event.currentTarget.scrollTop,
+        event.currentTarget.clientHeight
+      )}
+    >
+      {effectiveDocument && !loading && <ViewerPageStack
+        stackRef={editingHostRef}
+        kind="hwpx"
+        totalPages={pages.length}
+        documentLoading={documentLoading}
+        layoutMeasured={Boolean(layoutMeasurements)}
+        zoom={zoom}
+        virtualized={virtualized}
+        editing={Boolean(editing)}
+        topSpacer={visibleRange.topSpacer}
+        bottomSpacer={visibleRange.bottomSpacer}
+      >
         {(virtualized ? pages.slice(visibleRange.start, visibleRange.end) : pages).map((page, localIndex) => {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
           return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
-        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
-      </div>}
-      {fixedDocument && !loading && !error && <div
-        className={`viewer-pages viewer-fixed-pages${virtualized ? ' viewer-pages-virtualized' : ''}`}
-        data-document-format="hwp"
-        data-total-pages={fixedDocument.pageCount}
-        data-document-loading="false"
-        data-layout-measured="true"
-        style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
+      </ViewerPageStack>}
+      {fixedDocument && !loading && !error && <ViewerPageStack
+        kind="hwp"
+        totalPages={fixedDocument.pageCount}
+        documentLoading={false}
+        layoutMeasured
+        zoom={zoom}
+        virtualized={virtualized}
+        topSpacer={visibleRange.topSpacer}
+        bottomSpacer={visibleRange.bottomSpacer}
       >
-        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.topSpacer }} />}
         {(virtualized
           ? fixedDocument.pages.slice(visibleRange.start, visibleRange.end)
           : fixedDocument.pages
@@ -1623,9 +1487,35 @@ export default function App() {
           }}
           onError={setError}
         />)}
-        {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
-      </div>}
-    </section>
-    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editing && <span title="현재 package mutation revision과 마지막 저장 revision">편집 r{editing.revision} · 저장 r{editing.savedRevision}</span>}{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{editingSelectionNotice && <span className="viewer-status-warn">{editingSelectionNotice}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+      </ViewerPageStack>}
+    </ViewerStage>
+    <ViewerStatusBar
+      hasDocument={hasDocument}
+      title={[...timingDetails, ...substitutions.map(
+        (font) => `${font.requested} → ${font.resolved}`
+      )].join('\n')}
+      pageCount={pageCount}
+      formatLabel={fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}
+      editing={editing}
+      editingStatusText={editingStatusText}
+      editingStatusClass={editingStatusClass}
+      editingSelectionNotice={editingSelectionNotice}
+      progress={sectionProgress}
+      backgroundError={backgroundError}
+      hasEffectiveDocument={Boolean(effectiveDocument)}
+      substitutionCount={substitutions.length}
+      overflowPages={overflowPages}
+      virtualized={virtualized}
+      openTiming={loadTiming
+        ? loadTiming.openToFirstPaintMs === undefined
+          ? '측정 중…'
+          : ms(loadTiming.openToFirstPaintMs)
+        : undefined}
+      openTimingSlow={Boolean(
+        loadTiming?.openToFirstPaintMs !== undefined &&
+        loadTiming.openToFirstPaintMs > 1000
+      )}
+      pdfStatus={pdfStatus}
+    />
   </main>
 }
