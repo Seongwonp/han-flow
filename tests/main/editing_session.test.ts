@@ -22,6 +22,7 @@ describe('main process HWPX editing session', () => {
       (candidate) => candidate.text === '공개 헤더'
     )!
     const started = await manager.start(7, fixture)
+    expect(started).toMatchObject({ revision: 0, savedRevision: 0, isDirty: false })
     const before = {
       sectionPath: anchor.sectionPath,
       anchorTextNodeId: anchor.textNodeId,
@@ -50,6 +51,7 @@ describe('main process HWPX editing session', () => {
 
     expect(committed).toMatchObject({
       revision: 1,
+      savedRevision: 0,
       canUndo: true,
       canRedo: false,
       isDirty: true,
@@ -700,6 +702,7 @@ describe('main process HWPX editing session', () => {
     expect(saved).toMatchObject({
       destinationPath: destination,
       revision: 1,
+      savedRevision: 1,
       canUndo: true,
       canRedo: false,
       isDirty: false,
@@ -715,8 +718,16 @@ describe('main process HWPX editing session', () => {
       ).find((candidate) => candidate.textNodeId === anchor.textNodeId)?.text
     ).toBe('공개 헤더 저장')
 
-    expect(await manager.undo(11, started.sessionId)).toMatchObject({ isDirty: true })
-    expect(await manager.redo(11, started.sessionId)).toMatchObject({ isDirty: false })
+    expect(await manager.undo(11, started.sessionId)).toMatchObject({
+      revision: 2,
+      savedRevision: 1,
+      isDirty: true
+    })
+    expect(await manager.redo(11, started.sessionId)).toMatchObject({
+      revision: 3,
+      savedRevision: 1,
+      isDirty: false
+    })
   })
 
   test('취소·충돌에 해당하는 저장 실패는 dirty와 목적지를 바꾸지 않는다', async () => {

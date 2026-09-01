@@ -38,6 +38,7 @@ function assertHwpxPath(filePath: string): void {
 function status(session: EditingSession) {
   return {
     revision: session.history.package.revision,
+    savedRevision: session.history.savedRevision,
     canUndo: session.history.canUndo,
     canRedo: session.history.canRedo,
     isDirty: session.history.isDirty
@@ -89,8 +90,7 @@ export class EditingSessionManager {
         compositionId: request.compositionId,
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: result.changed
           ? await projectEditTransaction(result)
@@ -118,8 +118,7 @@ export class EditingSessionManager {
         inputType: request.inputType,
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: result.changed
           ? await projectEditTransaction(result)
@@ -146,8 +145,7 @@ export class EditingSessionManager {
         inputType: 'insertParagraph',
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: await projectEditTransaction(result),
         selection: session.history.selection,
@@ -176,8 +174,7 @@ export class EditingSessionManager {
         inputType: request.inputType,
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: await projectEditTransaction(result),
         selection: session.history.selection,
@@ -255,8 +252,7 @@ export class EditingSessionManager {
               : 'formatFontColor',
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: result.changed
           ? await projectEditTransaction(result)
@@ -301,8 +297,7 @@ export class EditingSessionManager {
                 : 'formatParagraphAfter',
         timestamp: request.timestamp
       }
-      session.history.setSelection(transaction.selectionBefore)
-      const result = session.history.commit(transaction)
+      const result = session.history.commitSynchronized(transaction)
       return {
         document: result.changed
           ? await projectEditTransaction(result)

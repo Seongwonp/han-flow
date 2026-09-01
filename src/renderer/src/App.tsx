@@ -879,6 +879,7 @@ export default function App() {
     setEditing((current) => current ? {
       sessionId: current.sessionId,
       revision: result.revision,
+      savedRevision: result.savedRevision,
       canUndo: result.canUndo,
       canRedo: result.canRedo,
       isDirty: result.isDirty
@@ -1169,6 +1170,7 @@ export default function App() {
       setEditing({
         sessionId: result.sessionId,
         revision: result.revision,
+        savedRevision: result.savedRevision,
         canUndo: result.canUndo,
         canRedo: result.canRedo,
         isDirty: result.isDirty
@@ -1209,13 +1211,14 @@ export default function App() {
       setEditing((current) => current ? {
         sessionId: current.sessionId,
         revision: result.revision,
+        savedRevision: result.savedRevision,
         canUndo: result.canUndo,
         canRedo: result.canRedo,
         isDirty: result.isDirty
       } : current)
       const savedName = result.destinationPath.split('/').pop() ?? result.destinationPath
       setEditingStatus(
-        `저장 완료 · ${savedName} · Preview ${result.previewStatus === 'stale' ? '갱신 안 됨' : '없음'}`
+        `저장 완료 · r${result.savedRevision} · ${savedName} · Preview ${result.previewStatus === 'stale' ? '갱신 안 됨' : '없음'}`
       )
     } catch (reason) {
       setEditingStatus(editingErrorStatus('저장', reason) ?? '편집 중')
@@ -1596,6 +1599,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
     </section>
-    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{editingSelectionNotice && <span className="viewer-status-warn">{editingSelectionNotice}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editing && <span title="현재 package mutation revision과 마지막 저장 revision">편집 r{editing.revision} · 저장 r{editing.savedRevision}</span>}{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{editingSelectionNotice && <span className="viewer-status-warn">{editingSelectionNotice}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

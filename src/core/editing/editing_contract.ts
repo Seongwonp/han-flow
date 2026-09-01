@@ -4,6 +4,7 @@ import type { ParagraphAlignment } from './style_patch'
 
 export interface EditingHistoryStatus {
   revision: number
+  savedRevision: number
   canUndo: boolean
   canRedo: boolean
   isDirty: boolean

@@ -177,6 +177,9 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 새 HWPX 이름으로만 저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다.
 저장하지 않은 상태에서 다른 문서를 열거나 창·앱을 닫으면 저장, 버리기, 취소 중 하나를
 명시적으로 선택해야 합니다.
+편집 상태바는 현재 package mutation revision과 마지막으로 검증 저장된 revision을 함께 표시합니다.
+undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 일치가 아니라 savepoint와 dirty
+상태로 판정합니다.
 
 ## 알려진 제한
 

@@ -394,6 +394,16 @@ Chrome DevTools Protocol의 experimental `Input.imeSetComposition`을 보조 관
 - 공개 fixture와 저장소 밖 실사용 문서에서 transaction·undo·redo·projection·Save As와 원본 hash
   불변을 검증했다.
 
+2026-09-01 hardening은 renderer caret 동기화를 위해 main이 먼저 호출하던 `setSelection`을
+`commitSynchronized` 내부로 합쳤다. 중간 command conflict나 history byte limit이 발생하면
+package뿐 아니라 selection, undo/redo stack, 추정 bytes와 dirty/savepoint도 호출 전 상태를
+유지한다. 성공한 no-op은 selection만 이동하고 undo entry는 만들지 않는다.
+
+history는 현재 immutable package의 `revision`과 마지막 검증 저장 성공 시점의 `savedRevision`을
+별도로 보유한다. undo/redo는 package mutation revision을 계속 증가시키므로 두 숫자가 달라도
+logical state ID가 savepoint와 같으면 clean이다. main IPC와 renderer 상태바는 두 revision과
+dirty를 함께 전달해 이 차이를 숨기지 않는다.
+
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
 adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
 하나만 commit한다.

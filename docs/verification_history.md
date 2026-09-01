@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-01 — Sprint 2 atomic history와 저장 revision 추적
+
+main editing session의 selection 선반영을 제거하고 transaction selection 동기화와 command apply를
+`commitSynchronized` 한 연산으로 묶었다. 중간 command conflict와 history byte limit에서는
+package identity, selection, undo/redo stack, 추정 bytes와 dirty/savepoint가 모두 호출 전 상태를
+유지한다. undo 뒤 실패한 새 branch도 기존 redo를 보존하며 성공한 no-op은 selection만 동기화하고
+history entry를 만들지 않는다.
+
+history와 IPC에 현재 package mutation `revision`과 마지막 검증 저장의 `savedRevision`을 분리했다.
+저장 성공 뒤에만 saved revision이 이동하며 undo/redo로 저장 logical state를 다시 방문하면 현재
+revision이 달라도 dirty가 해제된다. renderer 상태바와 저장 완료 안내는 두 revision을 노출한다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 30 suite·176 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다.
+
 ## 2026-09-01 — Sprint 2 구조 capability와 stale selection 복구
 
 ViewerDocument의 editable anchor를 최상위 일반 텍스트와 단순 표 body cell로 분류하고 text,

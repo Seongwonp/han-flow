@@ -145,9 +145,17 @@ entry와 미지원 XML을 잃고 잘못된 mimetype을 기록하므로 실문서
 7. [x] `inputType`·selection·anchor·시간·composition 경계를 모두 사용해 typing을 묶는다.
 8. [x] undo/redo selection, branch, savepoint·dirty와 undo/redo 후 Save As를 검증한다.
 9. [x] 실제 DOM selection과 IME event는 V3-4 input surface에서 연결한다.
+10. [x] main의 selection 동기화와 command apply를 단일 atomic history commit으로 묶는다.
+11. [x] 중간 command·history limit 실패에서 package, selection, undo/redo stack과 dirty를 보존한다.
+12. [x] 현재 package revision과 마지막 검증 저장 revision을 분리해 IPC·renderer에 전달한다.
 
 공개 fixture와 저장소 밖 실사용 문서에서 transaction → undo → redo → Save As와 원본 hash 불변을
 통과했다.
+
+2026-09-01 hardening에서는 main이 transaction 전에 selection을 먼저 바꾸던 순서를 제거했다.
+`commitSynchronized`는 검증과 command 적용, history 용량 확인이 모두 성공한 뒤에만 package,
+selection과 stack을 함께 전환한다. 성공한 no-op은 selection만 동기화하고 history entry는 만들지
+않는다. `savedRevision`은 저장 성공 뒤에만 이동하며 dirty는 logical savepoint로 계속 판정한다.
 
 ## 완료한 자동 코드 관문: V3-4 한국어 IME와 selection
 

@@ -127,6 +127,18 @@ describe('HWPX edit transaction과 bounded history', () => {
     history.commit(noOp)
     expect(history.stats().undoEntries).toBe(0)
     expect(history.isDirty).toBe(false)
+
+    const movedSelection = selection(anchor.textNodeId, anchor.text.length)
+    history.commitSynchronized(transaction(
+      history.package,
+      'no-op-selection-sync',
+      [command(anchor.textNodeId, 0, anchor.text.length, anchor.text)],
+      selection(anchor.textNodeId, 0),
+      movedSelection
+    ))
+    expect(history.selection).toEqual(movedSelection)
+    expect(history.stats().undoEntries).toBe(0)
+    expect(history.isDirty).toBe(false)
   })
 
   test('중간 command가 실패하면 호출자 package에 부분 결과가 남지 않는다', async () => {
@@ -144,6 +156,68 @@ describe('HWPX edit transaction과 bounded history', () => {
     expect(() => applyEditTransaction(source, invalid)).toThrow(HwpxEditConflictError)
     expect(source.revision).toBe(0)
     expect(source.readEntry(sectionPath)).toEqual(originalSection)
+  })
+
+  test('동기화 commit 실패는 package·selection·history stack을 모두 원자적으로 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const first = textAnchor(source, '공개 헤더')
+    const second = textAnchor(source, '긴 설명')
+    const history = new HwpxEditHistory(source)
+    const originalSelection = selection(second.textNodeId, 1)
+    history.setSelection(originalSelection)
+    const before = history.stats()
+
+    expect(() => history.commitSynchronized(transaction(
+      history.package,
+      'synchronized-atomic-failure',
+      [
+        command(first.textNodeId, 0, first.text.length, '임시 변경'),
+        command('missing-anchor', 0, 0, '실패')
+      ],
+      selection(first.textNodeId, 0),
+      selection(first.textNodeId, 5)
+    ))).toThrow(HwpxEditConflictError)
+
+    expect(history.package).toBe(source)
+    expect(history.selection).toEqual(originalSelection)
+    expect(history.stats()).toEqual(before)
+    expect(history.canUndo).toBe(false)
+    expect(history.canRedo).toBe(false)
+    expect(history.isDirty).toBe(false)
+  })
+
+  test('undo 뒤 실패한 새 branch는 기존 redo stack과 selection을 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = textAnchor(source, '공개 헤더')
+    const end = anchor.text.length
+    const history = new HwpxEditHistory(source)
+    history.commitSynchronized(transaction(
+      history.package,
+      'redo-preserve-a',
+      [command(anchor.textNodeId, end, end, 'A')],
+      selection(anchor.textNodeId, end),
+      selection(anchor.textNodeId, end + 1)
+    ))
+    history.undo()
+    const beforePackage = history.package
+    const beforeSelection = history.selection
+    const before = history.stats()
+
+    expect(() => history.commitSynchronized(transaction(
+      history.package,
+      'redo-preserve-failure',
+      [
+        command(anchor.textNodeId, 0, 0, '임시'),
+        command('missing-anchor', 0, 0, '실패')
+      ],
+      selection(anchor.textNodeId, 0),
+      selection(anchor.textNodeId, 2)
+    ))).toThrow(HwpxEditConflictError)
+
+    expect(history.package).toBe(beforePackage)
+    expect(history.selection).toEqual(beforeSelection)
+    expect(history.stats()).toEqual(before)
+    expect(history.canRedo).toBe(true)
   })
 
   test('연속 타이핑을 한 undo 단위로 묶고 undo/redo selection을 복원한다', async () => {
@@ -206,8 +280,10 @@ describe('HWPX edit transaction과 bounded history', () => {
         { inputType: 'insertText', timestamp: 100 }
       )
     )
+    expect(history.stats()).toMatchObject({ revision: 1, savedRevision: 0, isDirty: true })
     history.markSaved()
     expect(history.isDirty).toBe(false)
+    expect(history.stats()).toMatchObject({ revision: 1, savedRevision: 1, isDirty: false })
 
     history.commit(
       transaction(
@@ -220,12 +296,15 @@ describe('HWPX edit transaction과 bounded history', () => {
       )
     )
     expect(history.stats().undoEntries).toBe(2)
+    expect(history.stats()).toMatchObject({ revision: 2, savedRevision: 1, isDirty: true })
     expect(history.isDirty).toBe(true)
     history.undo()
     expect(textAnchor(history.package, '공개 헤더A')).toBeDefined()
     expect(history.isDirty).toBe(false)
+    expect(history.stats()).toMatchObject({ revision: 3, savedRevision: 1, isDirty: false })
     history.redo()
     expect(history.isDirty).toBe(true)
+    expect(history.stats()).toMatchObject({ revision: 4, savedRevision: 1, isDirty: true })
   })
 
   test('undo 뒤 새 branch는 redo를 지우고 entry 수·byte 제한을 지킨다', async () => {
@@ -266,7 +345,7 @@ describe('HWPX edit transaction과 bounded history', () => {
 
     const limited = new HwpxEditHistory(source, { maxBytes: 600 })
     expect(() =>
-      limited.commit(
+      limited.commitSynchronized(
         transaction(
           limited.package,
           'too-large',
@@ -277,6 +356,14 @@ describe('HWPX edit transaction과 bounded history', () => {
       )
     ).toThrow(HwpxHistoryLimitError)
     expect(limited.package).toBe(source)
+    expect(limited.selection).toBeUndefined()
+    expect(limited.stats()).toMatchObject({
+      undoEntries: 0,
+      redoEntries: 0,
+      revision: 0,
+      savedRevision: 0,
+      isDirty: false
+    })
   })
 
   test('composition·불연속 selection·stale revision은 grouping 또는 commit을 허용하지 않는다', async () => {

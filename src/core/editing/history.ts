@@ -28,6 +28,9 @@ export interface EditHistoryStats {
   estimatedBytes: number
   maxEntries: number
   maxBytes: number
+  revision: number
+  savedRevision: number
+  isDirty: boolean
 }
 
 interface HistoryEntry {
@@ -128,6 +131,7 @@ export class HwpxEditHistory {
   private readonly redoStack: HistoryEntry[] = []
   private currentStateId = 0
   private savedStateId = 0
+  private savedPackageRevision: number
   private nextStateId = 1
   private estimatedBytes = 0
   private readonly maxEntries: number
@@ -136,6 +140,7 @@ export class HwpxEditHistory {
 
   constructor(sourcePackage: HwpxSourcePackage, options: EditHistoryOptions = {}) {
     this.currentPackage = sourcePackage
+    this.savedPackageRevision = sourcePackage.revision
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES
     this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES
     this.groupWindowMs = options.groupWindowMs ?? DEFAULT_GROUP_WINDOW_MS
@@ -170,6 +175,10 @@ export class HwpxEditHistory {
     return this.currentStateId !== this.savedStateId
   }
 
+  get savedRevision(): number {
+    return this.savedPackageRevision
+  }
+
   setSelection(selection: EditorSelection): void {
     validateEditorSelection(this.currentPackage, selection)
     this.currentSelection = { ...selection }
@@ -181,12 +190,26 @@ export class HwpxEditHistory {
       redoEntries: this.redoStack.length,
       estimatedBytes: this.estimatedBytes,
       maxEntries: this.maxEntries,
-      maxBytes: this.maxBytes
+      maxBytes: this.maxBytes,
+      revision: this.currentPackage.revision,
+      savedRevision: this.savedPackageRevision,
+      isDirty: this.isDirty
     }
   }
 
   commit(transaction: EditTransaction): EditTransactionResult {
-    if (this.currentSelection) {
+    return this.commitInternal(transaction, false)
+  }
+
+  commitSynchronized(transaction: EditTransaction): EditTransactionResult {
+    return this.commitInternal(transaction, true)
+  }
+
+  private commitInternal(
+    transaction: EditTransaction,
+    synchronizeSelection: boolean
+  ): EditTransactionResult {
+    if (this.currentSelection && !synchronizeSelection) {
       const before = transaction.selectionBefore
       if (!equalEditorSelections(before, this.currentSelection)) {
         throw new Error('transaction selectionBefore가 현재 selection과 다릅니다.')
@@ -194,7 +217,12 @@ export class HwpxEditHistory {
     }
 
     const result = applyEditTransaction(this.currentPackage, transaction)
-    if (!result.changed) return result
+    if (!result.changed) {
+      if (synchronizeSelection) {
+        this.currentSelection = { ...transaction.selectionAfter }
+      }
+      return result
+    }
     if (!result.inverse) throw new Error('변경된 transaction에 inverse가 없습니다.')
 
     const previousEntry = this.undoStack[this.undoStack.length - 1]
@@ -277,6 +305,7 @@ export class HwpxEditHistory {
 
   markSaved(): void {
     this.savedStateId = this.currentStateId
+    this.savedPackageRevision = this.currentPackage.revision
   }
 
   private assertEntryFits(estimatedBytes: number): void {
