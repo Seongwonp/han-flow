@@ -4,7 +4,10 @@ import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, Vie
 import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { EditingActionResult, EditingHistoryStatus, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
-import { characterStyleCapability } from '../../core/editing/editing_capability'
+import {
+  editingCapabilities,
+  reconcileEditingSelection
+} from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
@@ -16,7 +19,13 @@ import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
 import { ParagraphInputSurface } from './ParagraphInputSurface'
-import { editingErrorStatus, editingStatusTone } from './editing_error_status'
+import {
+  editingCapabilityStatus,
+  editingErrorCode,
+  editingErrorStatus,
+  editingSelectionProjectionStatus,
+  editingStatusTone
+} from './editing_error_status'
 import {
   moveParagraphEditorSelection,
   paragraphEditorRangeScope,
@@ -112,6 +121,7 @@ interface ParagraphEditingProps {
   surfaceLabel?: string
   allowMultipleRuns?: boolean
   allowParagraphRange?: boolean
+  allowParagraphStructure?: boolean
   editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
@@ -134,6 +144,7 @@ interface ParagraphEditingProps {
     inputType: 'deleteContentBackward' | 'deleteContentForward',
     timestamp: number
   ) => void
+  onParagraphStructureUnavailable: () => void
 }
 
 export function isEditableTextParagraph(
@@ -246,6 +257,8 @@ export function ParagraphView({
       onMergeParagraph={activeEditing.onMergeParagraph}
       allowMergePrevious={index === 0}
       allowMergeNext={index === editableTexts.length - 1}
+      allowParagraphStructure={activeEditing.allowParagraphStructure}
+      onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
       onBoundaryNavigate={(direction, selection) => {
         const host = editorHost()
         const currentAnchor = editableText.sourceAnchor
@@ -348,7 +361,8 @@ function TableView({
               ...editing,
               surfaceLabel: 'HWPX 표 셀 편집',
               allowMultipleRuns: false,
-              allowParagraphRange: false
+              allowParagraphRange: false,
+              allowParagraphStructure: false
             }
           : undefined
       }
@@ -517,6 +531,7 @@ export default function App() {
   const [editingSelection, setEditingSelection] = useState<EditorSelection | undefined>()
   const [editingPending, setEditingPending] = useState(0)
   const [editingStatus, setEditingStatus] = useState<string | null>(null)
+  const [editingSelectionNotice, setEditingSelectionNotice] = useState<string | null>(null)
   const measurementRef = useRef<HTMLDivElement>(null)
   const editingHostRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -642,6 +657,7 @@ export default function App() {
     void api().stopEditing()
     setEditing(null)
     setEditingSelection(undefined)
+    setEditingSelectionNotice(null)
     setEditingPending(0)
     setEditingStatus(null)
     setOpenedPath(null)
@@ -867,12 +883,31 @@ export default function App() {
       canRedo: result.canRedo,
       isDirty: result.isDirty
     } : current)
-    setEditingSelection(result.selection)
+    const projection = reconcileEditingSelection(result.document, result.selection)
+    setEditingSelection(projection.selection)
+    setEditingSelectionNotice(editingSelectionProjectionStatus(projection.status))
   }, [])
+  const recoverEditingFailure = useCallback(async (action: string, reason: unknown) => {
+    const status = editingErrorStatus(action, reason) ?? '편집 중'
+    const current = editingStateRef.current
+    if (editingErrorCode(reason) !== 'EDITING_CONFLICT' || !current) {
+      setEditingStatus(status)
+      return
+    }
+    try {
+      applyEditingResult(await api().refreshEditing(current.sessionId) as EditingActionResult)
+      setEditingStatus(`${status} · 최신 문서 상태로 복구했습니다.`)
+    } catch (refreshReason) {
+      setEditingStatus(
+        `${status} · ${editingErrorStatus('편집 상태 복구', refreshReason) ?? '복구하지 못했습니다.'}`
+      )
+    }
+  }, [applyEditingResult])
   const updateEditingSelection = useCallback((
     anchor: ViewerSourceAnchor,
     selection: { anchorOffset: number; focusOffset: number }
   ) => {
+    setEditingSelectionNotice(null)
     setEditingSelection({
       sectionPath: anchor.sectionPath,
       anchorTextNodeId: anchor.textNodeId,
@@ -881,6 +916,7 @@ export default function App() {
     })
   }, [])
   const updateEditorSelection = useCallback((selection: EditorSelection) => {
+    setEditingSelectionNotice(null)
     setEditingSelection(selection)
   }, [])
   const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
@@ -916,11 +952,11 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(editingErrorStatus('편집', reason) ?? '편집 중')
+      return recoverEditingFailure('편집', reason)
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
-  }, [editing?.sessionId, applyEditingResult])
+  }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const commitRangeParagraph = useCallback((
     selection: EditorSelection,
     insert: string,
@@ -941,11 +977,11 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(editingErrorStatus('범위 편집', reason) ?? '편집 중')
+      return recoverEditingFailure('범위 편집', reason)
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
-  }, [editing?.sessionId, applyEditingResult])
+  }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const splitEditingParagraph = useCallback((selection: EditorSelection, timestamp: number) => {
     if (!editing || editingComposing.current) return
     setEditingPending((current) => current + 1)
@@ -959,11 +995,11 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(editingErrorStatus('문단 나눔', reason) ?? '편집 중')
+      return recoverEditingFailure('문단 나눔', reason)
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
-  }, [editing?.sessionId, applyEditingResult])
+  }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const mergeEditingParagraph = useCallback((
     selection: EditorSelection,
     direction: 'previous' | 'next',
@@ -984,50 +1020,47 @@ export default function App() {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
-      setEditingStatus(editingErrorStatus('문단 병합', reason) ?? '편집 중')
+      return recoverEditingFailure('문단 병합', reason)
     }).finally(() => {
       setEditingPending((current) => Math.max(0, current - 1))
     })
-  }, [editing?.sessionId, applyEditingResult])
+  }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const onComposingChange = useCallback((composing: boolean) => {
     editingComposing.current = composing
   }, [])
-  const activeStyle = useMemo(() => {
-    if (!document || !editingSelection) return undefined
-    for (const section of document.sections) {
-      for (const paragraph of section.blocks) {
-        const text = paragraph.content.find(
-          (item) =>
-            item.type === 'text' &&
-            item.sourceAnchor?.sectionPath === editingSelection.sectionPath &&
-            item.sourceAnchor.textNodeId === editingSelection.focusTextNodeId
-        )
-        if (!text || text.type !== 'text') continue
-        return {
-          bold: document.charStyles[text.charStyleId]?.bold ?? false,
-          italic: document.charStyles[text.charStyleId]?.italic ?? false,
-          underline: document.charStyles[text.charStyleId]?.underline ?? false,
-          strikeout: document.charStyles[text.charStyleId]?.strikeout ?? false,
-          height: document.charStyles[text.charStyleId]?.height ?? 1000,
-          color: document.charStyles[text.charStyleId]?.color ?? '#000000',
-          align: (document.paraStyles[paragraph.paraStyleId]?.align ?? 'LEFT') as ParagraphAlignment,
-          lineSpacing: document.paraStyles[paragraph.paraStyleId]?.lineSpacing || 160,
-          indent: document.paraStyles[paragraph.paraStyleId]?.indent ?? 0,
-          marginBefore: document.paraStyles[paragraph.paraStyleId]?.margin.top ?? 0,
-          marginAfter: document.paraStyles[paragraph.paraStyleId]?.margin.bottom ?? 0
-        }
-      }
-    }
-    return undefined
-  }, [document, editingSelection?.sectionPath, editingSelection?.focusTextNodeId])
-  const characterStyleState = useMemo(
-    () => characterStyleCapability(editingSelection),
-    [
-      editingSelection?.anchorTextNodeId,
-      editingSelection?.focusTextNodeId
-    ]
+  const paragraphStructureUnavailable = useCallback(() => {
+    setEditingStatus(
+      editingCapabilityStatus('문단 나눔·병합', 'TABLE_CELL_STRUCTURE') ?? '편집 중'
+    )
+  }, [])
+  const editingCapabilityState = useMemo(
+    () => editingCapabilities(document, editingSelection),
+    [document, editingSelection]
   )
+  const activeStyle = useMemo(() => {
+    const focus = editingCapabilityState.focus
+    if (!document || !focus) return undefined
+    const charStyle = document.charStyles[focus.charStyleId]
+    const paraStyle = document.paraStyles[focus.paraStyleId]
+    return {
+      bold: charStyle?.bold ?? false,
+      italic: charStyle?.italic ?? false,
+      underline: charStyle?.underline ?? false,
+      strikeout: charStyle?.strikeout ?? false,
+      height: charStyle?.height ?? 1000,
+      color: charStyle?.color ?? '#000000',
+      align: (paraStyle?.align ?? 'LEFT') as ParagraphAlignment,
+      lineSpacing: paraStyle?.lineSpacing || 160,
+      indent: paraStyle?.indent ?? 0,
+      marginBefore: paraStyle?.margin.top ?? 0,
+      marginAfter: paraStyle?.margin.bottom ?? 0
+    }
+  }, [document, editingCapabilityState.focus])
+  const characterStyleState = editingCapabilityState.characterStyle
   const characterStyleAvailable = Boolean(activeStyle && characterStyleState.available)
+  const paragraphStyleAvailable = Boolean(
+    activeStyle && editingCapabilityState.paragraphStyle.available
+  )
   const applyCharacterStyle = useCallback(async (
     style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string }
   ) => {
@@ -1064,7 +1097,7 @@ export default function App() {
             : '글자 색상 적용'
       )
     } catch (reason) {
-      setEditingStatus(editingErrorStatus('글자 모양', reason) ?? '편집 중')
+      await recoverEditingFailure('글자 모양', reason)
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
@@ -1073,7 +1106,8 @@ export default function App() {
     editingSelection,
     characterStyleState.available,
     editingPending,
-    applyEditingResult
+    applyEditingResult,
+    recoverEditingFailure
   ])
   const applyParagraphStyle = useCallback(async (style: {
     align?: ParagraphAlignment
@@ -1082,7 +1116,13 @@ export default function App() {
     marginBefore?: number
     marginAfter?: number
   }) => {
-    if (!editing || !editingSelection || editingPending || editingComposing.current) return
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.paragraphStyle.available ||
+      editingPending ||
+      editingComposing.current
+    ) return
     setEditingPending((current) => current + 1)
     setEditingStatus('문단 모양 반영 중…')
     try {
@@ -1107,17 +1147,25 @@ export default function App() {
                 : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
       )
     } catch (reason) {
-      setEditingStatus(editingErrorStatus('문단 모양', reason) ?? '편집 중')
+      await recoverEditingFailure('문단 모양', reason)
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
-  }, [editing?.sessionId, editingSelection, editingPending, applyEditingResult])
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.paragraphStyle.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
     try {
       const result = await api().startEditing({ filePath: openedPath }) as EditingStartResult
       setDocument(result.document)
+      setEditingSelectionNotice(null)
       setEditing({
         sessionId: result.sessionId,
         revision: result.revision,
@@ -1136,18 +1184,18 @@ export default function App() {
       applyEditingResult(await api().undoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('실행 취소')
     } catch (reason) {
-      setEditingStatus(editingErrorStatus('실행 취소', reason) ?? '편집 중')
+      await recoverEditingFailure('실행 취소', reason)
     }
-  }, [editing?.sessionId, editingPending, applyEditingResult])
+  }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
   const redoEditing = useCallback(async () => {
     if (!editing || editingPending || editingComposing.current) return
     try {
       applyEditingResult(await api().redoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('다시 실행')
     } catch (reason) {
-      setEditingStatus(editingErrorStatus('다시 실행', reason) ?? '편집 중')
+      await recoverEditingFailure('다시 실행', reason)
     }
-  }, [editing?.sessionId, editingPending, applyEditingResult])
+  }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
   const saveEditingAs = useCallback(async () => {
     if (!editing?.isDirty || editingPending || editingComposing.current) return
     setEditingPending((current) => current + 1)
@@ -1374,9 +1422,7 @@ export default function App() {
           </div>
           <div
             className="viewer-ribbon-group viewer-ribbon-font-group"
-            title={characterStyleState.reason === 'MULTI_RUN_SELECTION'
-              ? '여러 글자 run에 걸친 글자 모양은 아직 지원하지 않습니다.'
-              : undefined}
+            title={editingCapabilityStatus('글자 모양', characterStyleState.reason)}
           >
             <div className="viewer-ribbon-controls">
               <button
@@ -1446,7 +1492,13 @@ export default function App() {
             </div>
             <span className="viewer-ribbon-group-label">글자 모양</span>
           </div>
-          <div className="viewer-ribbon-group">
+          <div
+            className="viewer-ribbon-group"
+            title={editingCapabilityStatus(
+              '문단 모양',
+              editingCapabilityState.paragraphStyle.reason
+            )}
+          >
             <div className="viewer-ribbon-controls">
               {([
                 ['LEFT', '왼쪽 정렬', '⇤'],
@@ -1460,36 +1512,42 @@ export default function App() {
                 aria-pressed={activeStyle?.align === align}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => void applyParagraphStyle({ align })}
-                disabled={!activeStyle || Boolean(editingPending)}
+                disabled={!paragraphStyleAvailable || Boolean(editingPending)}
               >{icon}</button>)}
             </div>
             <span className="viewer-ribbon-group-label">문단 정렬</span>
           </div>
-          <div className="viewer-ribbon-group viewer-ribbon-spacing-group">
+          <div
+            className="viewer-ribbon-group viewer-ribbon-spacing-group"
+            title={editingCapabilityStatus(
+              '문단 모양',
+              editingCapabilityState.paragraphStyle.reason
+            )}
+          >
             <div className="viewer-ribbon-controls viewer-ribbon-spacing-controls">
               <div className="viewer-paragraph-metric">
                 <span>줄 간격</span>
-                <button aria-label="줄 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.max(100, activeStyle.lineSpacing - 10) })} disabled={!activeStyle || activeStyle.lineSpacing <= 100 || Boolean(editingPending)}>−</button>
+                <button aria-label="줄 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.max(100, activeStyle.lineSpacing - 10) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.lineSpacing <= 100 || Boolean(editingPending)}>−</button>
                 <output aria-label="현재 줄 간격">{activeStyle ? `${activeStyle.lineSpacing}%` : '—'}</output>
-                <button aria-label="줄 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.min(300, activeStyle.lineSpacing + 10) })} disabled={!activeStyle || activeStyle.lineSpacing >= 300 || Boolean(editingPending)}>＋</button>
+                <button aria-label="줄 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ lineSpacing: Math.min(300, activeStyle.lineSpacing + 10) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.lineSpacing >= 300 || Boolean(editingPending)}>＋</button>
               </div>
               <div className="viewer-paragraph-metric">
                 <span>첫 줄</span>
-                <button aria-label="첫 줄 내어쓰기" title="첫 줄 내어쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.max(-7200, activeStyle.indent - 100) })} disabled={!activeStyle || activeStyle.indent <= -7200 || Boolean(editingPending)}>⇤</button>
+                <button aria-label="첫 줄 내어쓰기" title="첫 줄 내어쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.max(-7200, activeStyle.indent - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.indent <= -7200 || Boolean(editingPending)}>⇤</button>
                 <output aria-label="현재 첫 줄 들여쓰기">{activeStyle ? `${activeStyle.indent / 100}pt` : '—'}</output>
-                <button aria-label="첫 줄 들여쓰기" title="첫 줄 들여쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.min(7200, activeStyle.indent + 100) })} disabled={!activeStyle || activeStyle.indent >= 7200 || Boolean(editingPending)}>⇥</button>
+                <button aria-label="첫 줄 들여쓰기" title="첫 줄 들여쓰기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ indent: Math.min(7200, activeStyle.indent + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.indent >= 7200 || Boolean(editingPending)}>⇥</button>
               </div>
               <div className="viewer-paragraph-metric">
                 <span>문단 앞</span>
-                <button aria-label="문단 앞 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.max(0, activeStyle.marginBefore - 100) })} disabled={!activeStyle || activeStyle.marginBefore <= 0 || Boolean(editingPending)}>−</button>
+                <button aria-label="문단 앞 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.max(0, activeStyle.marginBefore - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginBefore <= 0 || Boolean(editingPending)}>−</button>
                 <output aria-label="현재 문단 앞 간격">{activeStyle ? `${activeStyle.marginBefore / 100}pt` : '—'}</output>
-                <button aria-label="문단 앞 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.min(7200, activeStyle.marginBefore + 100) })} disabled={!activeStyle || activeStyle.marginBefore >= 7200 || Boolean(editingPending)}>＋</button>
+                <button aria-label="문단 앞 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginBefore: Math.min(7200, activeStyle.marginBefore + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginBefore >= 7200 || Boolean(editingPending)}>＋</button>
               </div>
               <div className="viewer-paragraph-metric">
                 <span>문단 뒤</span>
-                <button aria-label="문단 뒤 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.max(0, activeStyle.marginAfter - 100) })} disabled={!activeStyle || activeStyle.marginAfter <= 0 || Boolean(editingPending)}>−</button>
+                <button aria-label="문단 뒤 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.max(0, activeStyle.marginAfter - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter <= 0 || Boolean(editingPending)}>−</button>
                 <output aria-label="현재 문단 뒤 간격">{activeStyle ? `${activeStyle.marginAfter / 100}pt` : '—'}</output>
-                <button aria-label="문단 뒤 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.min(7200, activeStyle.marginAfter + 100) })} disabled={!activeStyle || activeStyle.marginAfter >= 7200 || Boolean(editingPending)}>＋</button>
+                <button aria-label="문단 뒤 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && void applyParagraphStyle({ marginAfter: Math.min(7200, activeStyle.marginAfter + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter >= 7200 || Boolean(editingPending)}>＋</button>
               </div>
             </div>
             <span className="viewer-ribbon-group-label">문단 간격</span>
@@ -1507,7 +1565,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
@@ -1538,6 +1596,6 @@ export default function App() {
         {virtualized && <div className="viewer-page-spacer" style={{ height: visibleRange.bottomSpacer }} />}
       </div>}
     </section>
-    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
+    {hasDocument && <footer className="viewer-status" title={[...timingDetails, ...substitutions.map((font) => `${font.requested} → ${font.resolved}`)].join('\n')}><span>{pageCount}페이지</span><span>{fixedDocument ? `HWP · ${fixedDocument.sectionCount}구역` : 'HWPX'}</span>{editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}{editingSelectionNotice && <span className="viewer-status-warn">{editingSelectionNotice}</span>}{sectionProgress && sectionProgress.loaded < sectionProgress.total && !backgroundError && <span>불러오는 중 {sectionProgress.loaded}/{sectionProgress.total}</span>}{backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}{effectiveDocument && <span className={substitutions.length ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutions.length}</span>}<span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>{loadTiming && <span className={loadTiming.openToFirstPaintMs !== undefined && loadTiming.openToFirstPaintMs > 1000 ? 'viewer-status-error' : ''}>열기 {loadTiming.openToFirstPaintMs === undefined ? '측정 중…' : ms(loadTiming.openToFirstPaintMs)}</span>}{pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}</footer>}
   </main>
 }

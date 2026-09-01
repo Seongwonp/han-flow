@@ -38,6 +38,8 @@ interface ParagraphInputSurfaceProps {
   ) => void
   allowMergePrevious?: boolean
   allowMergeNext?: boolean
+  allowParagraphStructure?: boolean
+  onParagraphStructureUnavailable?: () => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -116,7 +118,9 @@ export function ParagraphInputSurface({
   onSplitParagraph,
   onMergeParagraph,
   allowMergePrevious = false,
-  allowMergeNext = false
+  allowMergeNext = false,
+  allowParagraphStructure = true,
+  onParagraphStructureUnavailable
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -133,6 +137,7 @@ export function ParagraphInputSurface({
   const onRangeCommitRef = useRef(onRangeCommit)
   const onSplitParagraphRef = useRef(onSplitParagraph)
   const onMergeParagraphRef = useRef(onMergeParagraph)
+  const onParagraphStructureUnavailableRef = useRef(onParagraphStructureUnavailable)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
@@ -145,6 +150,7 @@ export function ParagraphInputSurface({
   onRangeCommitRef.current = onRangeCommit
   onSplitParagraphRef.current = onSplitParagraph
   onMergeParagraphRef.current = onMergeParagraph
+  onParagraphStructureUnavailableRef.current = onParagraphStructureUnavailable
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -271,6 +277,10 @@ export function ParagraphInputSurface({
       ) return false
       const boundary = direction === 'previous' ? 0 : element.textContent?.length ?? 0
       if (modeledSelection.focusOffset !== boundary) return false
+      if (!allowParagraphStructure) {
+        onParagraphStructureUnavailableRef.current?.()
+        return true
+      }
       onMergeParagraphRef.current?.(
         modeledSelection,
         direction,
@@ -287,6 +297,10 @@ export function ParagraphInputSurface({
       if (event.inputType === 'insertParagraph') {
         event.preventDefault()
         if (event.isComposing || controller.isComposing) return
+        if (!allowParagraphStructure) {
+          onParagraphStructureUnavailableRef.current?.()
+          return
+        }
         const modeledSelection = getRangeSelectionRef.current?.()
         const selection = textSelection(element)
         onSplitParagraphRef.current?.(
@@ -543,7 +557,7 @@ export function ParagraphInputSurface({
       rangeCompositionRef.current = undefined
       onComposingChangeRef.current(false)
     }
-  }, [sourceAnchor.sectionPath, sourceAnchor.textNodeId])
+  }, [sourceAnchor.sectionPath, sourceAnchor.textNodeId, allowParagraphStructure])
 
   return (
     <span

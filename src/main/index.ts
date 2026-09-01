@@ -1087,6 +1087,16 @@ app.whenReady().then(() => {
     return editingSessions.redo(event.sender.id, sessionId)
   }))
 
+  ipcMain.handle('editing:refresh', editingIpcHandler((event, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 편집 projection 갱신 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.refresh(event.sender.id, sessionId)
+  }))
+
   ipcMain.handle('editing:saveAsDialog', editingIpcHandler(async (event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError(

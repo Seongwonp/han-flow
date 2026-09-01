@@ -329,8 +329,13 @@ macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부
 3. [x] renderer에서 지원 제한·충돌·세션 종료·저장 실패를 서로 다른 안내로 표시한다.
 4. [x] 인접 문단이 없는 경계 merge는 문자열 비교 없이 not-applicable no-op로 처리한다.
 5. [x] 여러 run selection의 글자 모양 control과 단축키를 요청 전에 비활성화한다.
-6. [ ] 문단 split/merge, 글자·문단 style의 세부 구조 capability를 selection마다 계산한다.
-7. [ ] stale selection conflict에서 최신 projection과 안전한 caret 복구 동작을 연결한다.
+6. [x] 문단 split/merge, 글자·문단 style의 세부 구조 capability를 selection마다 계산한다.
+7. [x] stale selection conflict에서 최신 projection과 안전한 caret 복구 동작을 연결한다.
+
+최상위 텍스트, 단순 표 셀, 여러 run·문단과 cross-scope selection을 별도 capability로 계산한다.
+표 셀 Enter·경계 병합과 style 요청은 renderer에서 사전 차단한다. conflict에서는 main session의
+현재 projection을 다시 받고 selection을 유지, UTF-16 경계 보정, 남은 endpoint로 collapse 또는
+안전한 해제 중 하나로 복구하며 상태바에 결과를 남긴다.
 
 ## 다음 milestone: V3 외부 승인
 

@@ -65,6 +65,7 @@ const api = {
     invokeEditing('editing:applyParagraphStyle', request),
   undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
   redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
+  refreshEditing: (sessionId: string) => invokeEditing('editing:refresh', sessionId),
   saveEditingAs: (sessionId: string) => invokeEditing('editing:saveAsDialog', sessionId),
   resolveDirtyEditing: (sessionId: string) => invokeEditing('editing:resolveDirty', sessionId),
   stopEditing: () => invokeEditing('editing:stop'),

@@ -188,6 +188,12 @@ savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 sessio
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
 - 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
   단축키를 비활성화합니다.
+- 편집 capability는 최상위 문단, 단순 표 셀, 여러 run·문단과 서로 다른 구조의 selection을
+  구분합니다. 표 셀에서는 텍스트와 내부 줄바꿈만 허용하고 Enter 분할·경계 병합 및 글자·문단
+  모양 control은 요청 전에 차단합니다.
+- 편집 결과의 selection anchor가 문서 갱신으로 달라지면 최신 main projection을 다시 받아
+  offset을 안전한 UTF-16 경계로 조정합니다. 한 endpoint만 남으면 그 위치로 접고 둘 다
+  사라지면 선택을 해제한 뒤 다시 선택하도록 안내합니다.
 - Shift+Enter와 plain-text 붙여넣기의 줄바꿈은 `hp:t` 내부 `hp:lineBreak`로 저장합니다. 최상위
   일반 텍스트 문단은 Enter 분할과 문단 경계 Backspace/Delete 병합을 지원합니다. 표 셀 구조
   편집과 복합 문단 병합은 아직 지원하지 않습니다. 여러 문단 범위는 같은 section의 최상위

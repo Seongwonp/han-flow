@@ -57,6 +57,16 @@ describe('main process HWPX editing session', () => {
     })
     expect(JSON.stringify(committed.document)).toContain('공개 헤더 수정')
 
+    const refreshed = await manager.refresh(7, started.sessionId)
+    expect(refreshed).toMatchObject({
+      revision: 1,
+      canUndo: true,
+      canRedo: false,
+      isDirty: true,
+      selection: after
+    })
+    expect(JSON.stringify(refreshed.document)).toContain('공개 헤더 수정')
+
     const undone = await manager.undo(7, started.sessionId)
     expect(undone).toMatchObject({ canUndo: false, canRedo: true, isDirty: false })
     expect(JSON.stringify(undone.document)).not.toContain('공개 헤더 수정')

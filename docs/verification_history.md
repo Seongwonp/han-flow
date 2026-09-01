@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-01 — Sprint 2 구조 capability와 stale selection 복구
+
+ViewerDocument의 editable anchor를 최상위 일반 텍스트와 단순 표 body cell로 분류하고 text,
+글자 모양, 문단 모양과 문단 구조 capability를 selection마다 계산한다. 같은 문단의 여러 run은
+text와 문단 모양, 여러 문단은 text 범위 치환만 허용한다. 표 셀은 text·내부 줄바꿈만 허용하며
+Enter split, 경계 merge와 style control을 요청 전에 차단하고 구체적인 제한 이유를 표시한다.
+
+편집 결과 selection은 새 projection에서 anchor·scope·text 길이를 다시 검증한다. 범위를 벗어난
+offset은 surrogate pair를 가르지 않는 UTF-16 경계로 보정하고 한 endpoint만 남으면 collapse,
+둘 다 사라지면 안전하게 해제한다. conflict 뒤에는 main session의 현재 document·revision과
+selection을 `editing:refresh`로 다시 받아 renderer 상태를 복구한다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 30 suite·174 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다.
+
 ## 2026-09-01 — Sprint 2 capability와 편집 오류 contract 1차
 
 main 편집 IPC의 성공·실패를 명시적인 envelope로 통일하고 conflict, unsupported, invalid request,

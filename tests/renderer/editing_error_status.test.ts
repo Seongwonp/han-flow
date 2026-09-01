@@ -4,7 +4,10 @@ import {
   unwrapEditingIpcResult
 } from '../../src/core/editing/editing_error'
 import {
+  editingCapabilityStatus,
+  editingErrorCode,
   editingErrorStatus,
+  editingSelectionProjectionStatus,
   editingStatusTone
 } from '../../src/renderer/src/editing_error_status'
 
@@ -28,12 +31,16 @@ describe('renderer 편집 오류 안내', () => {
   })
 
   test('conflict는 변경하지 않았음을 알리고 재시도를 안내할 근거를 보존한다', () => {
-    expect(editingErrorStatus('범위 편집', transported({
+    const reason = transported({
       code: 'EDITING_CONFLICT',
       message: 'selection 기준 위치가 변경되었습니다.',
       recoverable: true,
       recovery: 'retry'
-    }))).toBe('범위 편집 충돌 · 변경하지 않았습니다. selection 기준 위치가 변경되었습니다.')
+    })
+    expect(editingErrorStatus('범위 편집', reason)).toBe(
+      '범위 편집 충돌 · 변경하지 않았습니다. selection 기준 위치가 변경되었습니다.'
+    )
+    expect(editingErrorCode(reason)).toBe('EDITING_CONFLICT')
   })
 
   test('적용 대상이 없는 경계 동작은 사용자 오류를 표시하지 않는다', () => {
@@ -68,5 +75,14 @@ describe('renderer 편집 오류 안내', () => {
     expect(editingStatusTone('글자 모양 제한 · 여러 run 선택')).toBe('warning')
     expect(editingStatusTone('저장 실패 · 변경 내용은 유지했습니다.')).toBe('error')
     expect(editingStatusTone('편집 준비 완료')).toBe('normal')
+  })
+
+  test('표 셀 구조 제한과 stale selection 복구를 구체적으로 안내한다', () => {
+    expect(editingCapabilityStatus('문단 나눔·병합', 'TABLE_CELL_STRUCTURE')).toBe(
+      '표 셀에서는 텍스트 입력만 지원하며 문단 나눔·병합은 아직 지원하지 않습니다.'
+    )
+    expect(editingSelectionProjectionStatus('COLLAPSED')).toContain('남아 있는 위치로 이동')
+    expect(editingSelectionProjectionStatus('CLEARED')).toContain('다시 선택')
+    expect(editingSelectionProjectionStatus('CURRENT')).toBeNull()
   })
 })

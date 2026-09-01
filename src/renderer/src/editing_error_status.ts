@@ -1,6 +1,14 @@
 import { readEditingError } from '../../core/editing/editing_error'
+import type {
+  EditingCapabilityReason,
+  EditingSelectionProjectionStatus
+} from '../../core/editing/editing_capability'
 
 export type EditingStatusTone = 'normal' | 'warning' | 'error'
+
+export function editingErrorCode(reason: unknown) {
+  return readEditingError(reason)?.code
+}
 
 export function editingErrorStatus(action: string, reason: unknown): string | null {
   const error = readEditingError(reason)
@@ -36,4 +44,41 @@ export function editingStatusTone(status: string | null): EditingStatusTone {
     return 'warning'
   }
   return 'normal'
+}
+
+export function editingCapabilityStatus(
+  action: string,
+  reason: EditingCapabilityReason | undefined
+): string | undefined {
+  switch (reason) {
+    case 'NO_SELECTION':
+      return `${action}을 적용할 텍스트를 먼저 선택해 주세요.`
+    case 'STALE_SELECTION':
+      return `문서가 갱신되어 ${action} 기준 위치를 다시 선택해야 합니다.`
+    case 'CROSS_STRUCTURE_SELECTION':
+      return `본문과 표 셀처럼 서로 다른 구조를 함께 선택해 ${action}을 적용할 수 없습니다.`
+    case 'MULTI_RUN_SELECTION':
+      return `여러 글자 run에 걸친 ${action}은 아직 지원하지 않습니다.`
+    case 'MULTI_PARAGRAPH_SELECTION':
+      return `여러 문단에 걸친 ${action}은 아직 지원하지 않습니다.`
+    case 'TABLE_CELL_STRUCTURE':
+      return `표 셀에서는 텍스트 입력만 지원하며 ${action}은 아직 지원하지 않습니다.`
+    default:
+      return undefined
+  }
+}
+
+export function editingSelectionProjectionStatus(
+  status: EditingSelectionProjectionStatus
+): string | null {
+  switch (status) {
+    case 'CURRENT':
+      return null
+    case 'CLAMPED':
+      return '문서 갱신으로 선택 범위를 현재 텍스트 길이에 맞게 조정했습니다.'
+    case 'COLLAPSED':
+      return '문서 갱신으로 선택 기준 일부가 사라져 남아 있는 위치로 이동했습니다.'
+    case 'CLEARED':
+      return '문서 갱신으로 선택 위치가 사라져 선택을 해제했습니다. 편집할 위치를 다시 선택해 주세요.'
+  }
 }

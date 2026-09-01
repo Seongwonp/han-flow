@@ -337,6 +337,17 @@ export class EditingSessionManager {
     })
   }
 
+  async refresh(senderId: number, sessionId: string): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, sessionId)
+      return {
+        document: await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
   suggestedSaveAsPath(senderId: number, sessionId: string): string {
     const session = this.requireSession(senderId, sessionId)
     const sourcePath = session.history.package.sourcePath

@@ -584,8 +584,18 @@ scope를 사용해 최상위 구조 치환에 섞이지 않는다. 선택은 nat
 renderer는 conflict에서 변경이 적용되지 않았음을, save failure에서 dirty 변경이 유지됐음을
 알린다. session expired와 history limit도 별도 상태로 표시하며 인접 문단이 없는 merge는
 `EDITING_NOT_APPLICABLE` no-op로 처리한다. 첫 capability slice는 여러 source run selection에서
-글자 모양 control과 단축키를 비활성화한다. 복합 문단별 세부 capability와 stale projection 자동
-복구는 다음 slice다.
+글자 모양 control과 단축키를 비활성화한다.
+
+2026-09-01 후속 slice는 ViewerDocument의 editable anchor를 최상위 텍스트와 단순 표 셀로
+분류하고 같은 문단·여러 run·여러 문단·cross-scope selection별로 text, character style,
+paragraph style과 paragraph structure capability를 계산한다. 표 셀은 text와 내부 line break만
+허용하고 Enter split, 경계 merge와 style control을 IPC 전에 차단한다.
+
+모든 편집 결과 selection은 새 projection의 anchor와 text 길이에 다시 대조한다. offset은
+surrogate pair를 가르지 않는 UTF-16 경계로 제한하고, 한 endpoint가 사라지면 남은 endpoint로
+collapse하며 둘 다 사라지면 선택을 해제한다. conflict가 반환되면 `editing:refresh`로 main
+session의 현재 document·revision·selection을 다시 받아 같은 복구를 적용하고 결과를 상태바에
+남긴다. 구조별 loss policy는 다음 별도 slice로 유지한다.
 
 구조 근거는 [한컴 HWP/OWPML 공개 자료](https://www.hancom.com/support/downloadCenter/hwpOwpml)와
 [한컴 공식 OWPML 모델](https://github.com/hancom-io/hwpx-owpml-model)을 우선한다.
