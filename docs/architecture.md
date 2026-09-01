@@ -125,6 +125,17 @@ queue에 저장을 넣어 진행 중 edit와 경쟁하지 않게 하며 `saveHwp
 경우 `current`, 원래 entry가 없으면 `omitted`다. 검증 저장 결과도 같은 policy snapshot을 반환해
 renderer 완료 상태가 확인창과 다른 설명을 만들지 않게 한다.
 
+2026-09-01 renderer 상태는 `useRendererState` 아래 세 reducer로 분리했다. document slice는
+`ViewerDocument`·fixed-page document·열기 진행과 진단·font projection을, viewer slice는 zoom·
+virtual range·검색·PDF·layout 측정을, editing slice는 session history 표시·selection·pending·
+사용자 안내를 소유한다. `App`은 typed setter adapter만 사용하므로 한 slice의 field update가 다른
+slice를 암묵적으로 초기화하지 않는다.
+
+IME 조합 여부는 keydown과 문서 교체 요청에서 React render보다 먼저 확인해야 하므로 별도의
+`EditingImeTransientState`가 소유한다. 이 객체에는 composing flag, 최신 session/pending의 read-only
+mirror와 session-local transaction sequence만 있고 문서 model이나 source text는 없다. 새 문서를
+열 때 즉시 reset하며 reducer state와의 독립성, pending 함수 전이와 reset을 단위 테스트한다.
+
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
 `close` handler는 renderer가 응답할 수 없는 `⌘Q`와 창 닫기를 직접 보호한다. 선택지는

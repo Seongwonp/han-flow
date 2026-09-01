@@ -417,6 +417,18 @@ dirty를 함께 전달해 이 차이를 숨기지 않는다.
 - `EditingSavedResult`는 확인에 사용한 동일한 `HwpxSaveLossPolicy`를 snapshot으로 반환하고 renderer는
   저장 revision, 파일명, 구조 목록과 Preview 결과를 함께 알린다.
 
+2026-09-01 renderer 상태 소유권 분리 결과:
+
+- `renderer_state.ts`가 document, viewer, editing의 초기 상태와 독립 reducer 계약을 정의한다.
+- `use_renderer_state.ts`가 기존 화면 callback에 typed setter를 제공하고 `App.tsx`에서 수십 개의
+  개별 `useState`와 편집 mirror ref 소유권을 제거한다.
+- document는 projection·열기 lifecycle, viewer는 zoom·검색·PDF·layout, editing은 session·selection·
+  pending·안내만 소유한다. 각 reducer update는 다른 slice를 초기화하지 않는다.
+- IME composing과 transaction sequence는 동기 `EditingImeTransientState`로 격리해 shortcut·문서 교체
+  보호가 비동기 render를 기다리지 않게 한다. 새 문서에서는 session과 함께 reset한다.
+- reducer와 transient state 단위 테스트가 동시 pending update, reset, 고유 transaction ID와 최신
+  session mirror를 검증한다.
+
 V3-3까지는 DOM event와 한국어 IME를 연결하지 않았다. 이 경계를 유지한 V3-4 input
 adapter가 composition 중간값을 history에 넣지 않고 `compositionend`에서 완성 transaction
 하나만 commit한다.

@@ -360,6 +360,20 @@ macOS 두벌식 물리 키보드의 여러 문단 조합 치환은 아래 외부
 모양은 `low`로 구분한다. 모든 경우 손대지 않은 package 내용은 보존하며 Preview entry가 있으면
 편집 상태에서 `stale`, 원문 상태까지 undo하면 `current`, 원래 없으면 `omitted`로 판정한다.
 
+## 완료한 milestone: Sprint 2 renderer 상태 소유권 분리
+
+1. [x] HWPX projection·HWP fixed document·열기 진단을 document state로 묶는다.
+2. [x] zoom·virtual range·검색·PDF·측정 상태를 viewer state로 분리한다.
+3. [x] session history·selection·pending·상태 안내를 editing state로 분리한다.
+4. [x] IME composing, 최신 session/pending mirror와 transaction sequence를 transient state로 격리한다.
+5. [x] 기존 `App` 호출부는 typed setter adapter를 사용해 동작을 바꾸지 않고 reducer로 이전한다.
+6. [x] slice 독립성, 함수형 pending 전이, reset과 동기 IME 차단 상태를 단위 테스트한다.
+
+세 React reducer는 서로의 필드를 소유하지 않는다. document projection 반영은 viewer의 zoom·검색
+상태를 암묵적으로 초기화하지 않고, editing pending 전이는 동시에 끝나는 요청에서도 함수형 update로
+0 아래로 내려가지 않는다. IME composing은 key handler와 문서 교체 보호가 render 완료를 기다리지
+않도록 ref 기반 `EditingImeTransientState`에서 즉시 읽되 문서 bytes나 selection은 저장하지 않는다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

@@ -1,8 +1,8 @@
 import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
-import { FixedPageDescriptor, FixedPageDocument, FixedPageTextLayout } from '../../core/document/fixed_page_document'
-import { EditingActionResult, EditingHistoryStatus, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
+import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
+import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import {
   editingCapabilities,
@@ -12,8 +12,8 @@ import { EditorSelection } from '../../core/editing/transaction'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
-import { FontResolution, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { LayoutMeasurements, paginateViewerDocument } from '../../core/layout/pagination'
+import { resolveDocumentFonts } from '../../core/fonts/font_resolver'
+import { paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
@@ -33,23 +33,10 @@ import {
   readParagraphEditorSelection,
   restoreParagraphEditorSelection
 } from './paragraph_selection'
+import { EditingImeTransientState } from './renderer_state'
+import { useRendererState } from './use_renderer_state'
 
 const api = () => (window as any).api
-
-interface ViewerLoadTiming {
-  format: 'hwp' | 'hwpx'
-  requestStartedAt: number
-  openReceivedAt: number
-  requestToModelMs: number
-  packageOpenMs: number
-  packageIndexMs: number
-  decodeMs: number
-  mainTotalMs: number
-  wasmInitMs?: number
-  pageInfoMs?: number
-  firstPaintMs?: number
-  openToFirstPaintMs?: number
-}
 
 type RhwpAdapter = typeof import('./rhwp_fixed_page_adapter')
 let rhwpAdapter: Promise<RhwpAdapter> | null = null
@@ -501,37 +488,70 @@ export function fixedPagePrintCss(pages: FixedPageDescriptor[]): string {
 }
 
 export default function App() {
-  const [document, setDocument] = useState<ViewerDocument | null>(null)
-  const [fixedDocument, setFixedDocument] = useState<FixedPageDocument | null>(null)
-  const [fileName, setFileName] = useState('문서를 열어 주세요')
-  const [error, setError] = useState<string | null>(null)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [zoom, setZoom] = useState(1)
-  const [fontResolutions, setFontResolutions] = useState<Record<string, FontResolution>>({})
-  const [overflowPages, setOverflowPages] = useState<number[]>([])
-  const [loadTiming, setLoadTiming] = useState<ViewerLoadTiming | null>(null)
+  const {
+    document,
+    fixedDocument,
+    fileName,
+    openedPath,
+    error,
+    errorCode,
+    loading,
+    fontResolutions,
+    loadTiming,
+    sectionProgress,
+    backgroundError,
+    zoom,
+    overflowPages,
+    printing,
+    pdfStatus,
+    visibleRange,
+    fixedPrintPages,
+    fixedFirstPageReady,
+    fixedFollowingPagesEnabled,
+    searchOpen,
+    searchQuery,
+    searchResults,
+    activeSearchResult,
+    searching,
+    layoutMeasurements,
+    editing,
+    editingSelection,
+    editingPending,
+    editingStatus,
+    editingSelectionNotice,
+    setDocument,
+    setFixedDocument,
+    setFileName,
+    setOpenedPath,
+    setError,
+    setErrorCode,
+    setLoading,
+    setFontResolutions,
+    setLoadTiming,
+    setSectionProgress,
+    setBackgroundError,
+    setZoom,
+    setOverflowPages,
+    setPrinting,
+    setPdfStatus,
+    setVisibleRange,
+    setFixedPrintPages,
+    setFixedFirstPageReady,
+    setFixedFollowingPagesEnabled,
+    setSearchOpen,
+    setSearchQuery,
+    setSearchResults,
+    setActiveSearchResult,
+    setSearching,
+    setLayoutMeasurements,
+    setEditing,
+    setEditingSelection,
+    setEditingPending,
+    setEditingStatus,
+    setEditingSelectionNotice,
+    resetEditing
+  } = useRendererState()
   const reportedBenchmark = useRef<number | null>(null)
-  const [sectionProgress, setSectionProgress] = useState<{ loaded: number; total: number } | null>(null)
-  const [backgroundError, setBackgroundError] = useState<string | null>(null)
-  const [printing, setPrinting] = useState(false)
-  const [pdfStatus, setPdfStatus] = useState<string | null>(null)
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 12, topSpacer: 0, bottomSpacer: 0 })
-  const [fixedPrintPages, setFixedPrintPages] = useState<Awaited<ReturnType<RhwpAdapter['renderRhwpFixedPage']>>[] | null>(null)
-  const [fixedFirstPageReady, setFixedFirstPageReady] = useState(false)
-  const [fixedFollowingPagesEnabled, setFixedFollowingPagesEnabled] = useState(false)
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Array<{ pageIndex: number; occurrences: number }>>([])
-  const [activeSearchResult, setActiveSearchResult] = useState(0)
-  const [searching, setSearching] = useState(false)
-  const [layoutMeasurements, setLayoutMeasurements] = useState<LayoutMeasurements | undefined>()
-  const [openedPath, setOpenedPath] = useState<string | null>(null)
-  const [editing, setEditing] = useState<(EditingHistoryStatus & { sessionId: string }) | null>(null)
-  const [editingSelection, setEditingSelection] = useState<EditorSelection | undefined>()
-  const [editingPending, setEditingPending] = useState(0)
-  const [editingStatus, setEditingStatus] = useState<string | null>(null)
-  const [editingSelectionNotice, setEditingSelectionNotice] = useState<string | null>(null)
   const measurementRef = useRef<HTMLDivElement>(null)
   const editingHostRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -539,13 +559,9 @@ export default function App() {
   const activeLoadId = useRef('')
   const loadSequence = useRef(0)
   const automaticPdfStarted = useRef(false)
-  const editSequence = useRef(0)
-  const editingComposing = useRef(false)
-  const editingStateRef = useRef<typeof editing>(null)
-  const editingPendingRef = useRef(0)
+  const editingTransient = useRef(new EditingImeTransientState())
   const stageRef = useRef<HTMLElement>(null)
-  editingStateRef.current = editing
-  editingPendingRef.current = editingPending
+  editingTransient.current.synchronize(editing, editingPending)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
     charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
@@ -620,9 +636,9 @@ export default function App() {
   const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
 
   const openPath = async (path: string, openReceivedAt = Date.now()) => {
-    const currentEditing = editingStateRef.current
+    const currentEditing = editingTransient.current.currentSession
     if (currentEditing?.isDirty) {
-      if (editingPendingRef.current || editingComposing.current) {
+      if (editingTransient.current.pendingCount || editingTransient.current.isComposing) {
         setEditingStatus('입력 반영이 끝난 뒤 다시 문서를 열어 주세요.')
         return
       }
@@ -655,11 +671,8 @@ export default function App() {
     setSearchQuery('')
     setSearchResults([])
     void api().stopEditing()
-    setEditing(null)
-    setEditingSelection(undefined)
-    setEditingSelectionNotice(null)
-    setEditingPending(0)
-    setEditingStatus(null)
+    editingTransient.current.reset()
+    resetEditing()
     setOpenedPath(null)
     setDocument(null)
     setFixedDocument(null)
@@ -890,7 +903,7 @@ export default function App() {
   }, [])
   const recoverEditingFailure = useCallback(async (action: string, reason: unknown) => {
     const status = editingErrorStatus(action, reason) ?? '편집 중'
-    const current = editingStateRef.current
+    const current = editingTransient.current.currentSession
     if (editingErrorCode(reason) !== 'EDITING_CONFLICT' || !current) {
       setEditingStatus(status)
       return
@@ -923,7 +936,7 @@ export default function App() {
   const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
     if (!editing) return
     const sessionId = editing.sessionId
-    const transactionId = `ui-${++editSequence.current}`
+    const transactionId = editingTransient.current.nextTransactionId('ui')
     setEditingPending((current) => current + 1)
     setEditingStatus('변경 반영 중…')
     void api().commitEditing({
@@ -964,12 +977,12 @@ export default function App() {
     inputType: string,
     timestamp: number
   ) => {
-    if (!editing || editingComposing.current) return
+    if (!editing || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
     setEditingStatus('여러 글자 범위 반영 중…')
     void api().commitRangeEditing({
       sessionId: editing.sessionId,
-      transactionId: `ui-range-${++editSequence.current}`,
+      transactionId: editingTransient.current.nextTransactionId('ui-range'),
       selectionBefore: selection,
       insert,
       inputType,
@@ -984,12 +997,12 @@ export default function App() {
     })
   }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const splitEditingParagraph = useCallback((selection: EditorSelection, timestamp: number) => {
-    if (!editing || editingComposing.current) return
+    if (!editing || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
     setEditingStatus('문단 나누는 중…')
     void api().splitParagraphEditing({
       sessionId: editing.sessionId,
-      transactionId: `ui-split-${++editSequence.current}`,
+      transactionId: editingTransient.current.nextTransactionId('ui-split'),
       selectionBefore: selection,
       timestamp
     }).then((result: EditingActionResult) => {
@@ -1007,12 +1020,12 @@ export default function App() {
     inputType: 'deleteContentBackward' | 'deleteContentForward',
     timestamp: number
   ) => {
-    if (!editing || editingComposing.current) return
+    if (!editing || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
     setEditingStatus('문단 합치는 중…')
     void api().mergeParagraphEditing({
       sessionId: editing.sessionId,
-      transactionId: `ui-merge-${++editSequence.current}`,
+      transactionId: editingTransient.current.nextTransactionId('ui-merge'),
       selectionBefore: selection,
       direction,
       inputType,
@@ -1027,7 +1040,7 @@ export default function App() {
     })
   }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const onComposingChange = useCallback((composing: boolean) => {
-    editingComposing.current = composing
+    editingTransient.current.setComposing(composing)
   }, [])
   const paragraphStructureUnavailable = useCallback(() => {
     setEditingStatus(
@@ -1070,14 +1083,14 @@ export default function App() {
       !editingSelection ||
       !characterStyleState.available ||
       editingPending ||
-      editingComposing.current
+      editingTransient.current.isComposing
     ) return
     setEditingPending((current) => current + 1)
     setEditingStatus('글자 모양 반영 중…')
     try {
       applyEditingResult(await api().applyCharacterStyle({
         sessionId: editing.sessionId,
-        transactionId: `ui-style-${++editSequence.current}`,
+        transactionId: editingTransient.current.nextTransactionId('ui-style'),
         sectionPath: editingSelection.sectionPath,
         textNodeId: editingSelection.focusTextNodeId,
         selection: editingSelection,
@@ -1122,14 +1135,14 @@ export default function App() {
       !editingSelection ||
       !editingCapabilityState.paragraphStyle.available ||
       editingPending ||
-      editingComposing.current
+      editingTransient.current.isComposing
     ) return
     setEditingPending((current) => current + 1)
     setEditingStatus('문단 모양 반영 중…')
     try {
       applyEditingResult(await api().applyParagraphStyle({
         sessionId: editing.sessionId,
-        transactionId: `ui-style-${++editSequence.current}`,
+        transactionId: editingTransient.current.nextTransactionId('ui-style'),
         sectionPath: editingSelection.sectionPath,
         textNodeId: editingSelection.focusTextNodeId,
         selection: editingSelection,
@@ -1181,7 +1194,7 @@ export default function App() {
     }
   }
   const undoEditing = useCallback(async () => {
-    if (!editing || editingPending || editingComposing.current) return
+    if (!editing || editingPending || editingTransient.current.isComposing) return
     try {
       applyEditingResult(await api().undoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('실행 취소')
@@ -1190,7 +1203,7 @@ export default function App() {
     }
   }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
   const redoEditing = useCallback(async () => {
-    if (!editing || editingPending || editingComposing.current) return
+    if (!editing || editingPending || editingTransient.current.isComposing) return
     try {
       applyEditingResult(await api().redoEditing(editing.sessionId) as EditingActionResult)
       setEditingStatus('다시 실행')
@@ -1199,7 +1212,7 @@ export default function App() {
     }
   }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
   const saveEditingAs = useCallback(async () => {
-    if (!editing?.isDirty || editingPending || editingComposing.current) return
+    if (!editing?.isDirty || editingPending || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
     setEditingStatus('HWPX 변경본 검증 중…')
     try {
@@ -1268,7 +1281,7 @@ export default function App() {
         void saveEditingAs()
         return
       }
-      if (event.key.toLocaleLowerCase() === 'z' && editing && !editingComposing.current) {
+      if (event.key.toLocaleLowerCase() === 'z' && editing && !editingTransient.current.isComposing) {
         event.preventDefault()
         if (event.shiftKey) void redoEditing()
         else void undoEditing()
