@@ -391,6 +391,59 @@ describe('HWPX 문단·글자 style patch', () => {
     })).toThrow('-72pt')
   })
 
+  test('문단 모양 변경과 저장 projection이 탭 정의·목록 heading·인라인 탭을 보존한다', async () => {
+    const counted = await sourceWithCounts()
+    const headerPath = 'Contents/header.xml'
+    const structuredHeader = counted.readEntry(headerPath).toString('utf8')
+      .replace('<hh:paraPr id="0">', '<hh:paraPr id="0" tabPrIDRef="7">')
+      .replace(
+        '<hh:heading type="NONE" idRef="0" level="0"/>',
+        '<hh:heading type="BULLET" idRef="1" level="0"/>'
+      )
+    const structuredSection = counted.readEntry(sectionPath).toString('utf8')
+      .replace('<hp:t></hp:t>', '<hp:t>앞<hp:tab/>뒤</hp:t>')
+    const source = counted
+      .withEntry(headerPath, Buffer.from(structuredHeader))
+      .withEntry(sectionPath, Buffer.from(structuredSection))
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '앞\t뒤'
+    )!
+    const result = applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      align: 'RIGHT',
+      lineSpacing: 190,
+      indent: 300
+    })
+
+    const header = result.package.readEntry(headerPath).toString('utf8')
+    const definition = header.match(/<hh:paraPr id="4"[\s\S]*?<\/hh:paraPr>/)?.[0]
+    expect(definition).toContain('tabPrIDRef="7"')
+    expect(definition).toContain('<hh:heading type="BULLET" idRef="1" level="0"/>')
+    expect(definition?.indexOf('<hh:align')).toBeLessThan(definition?.indexOf('<hh:heading') ?? 0)
+    expect(result.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '<hp:t>앞<hp:tab/>뒤</hp:t>'
+    )
+    const projected = await decodeViewerDocument(result.package)
+    expect(projected.paraStyles['4']).toMatchObject({
+      align: 'RIGHT',
+      lineSpacing: 190,
+      indent: 300,
+      tabPrId: '7',
+      heading: { type: 'BULLET', idRef: '1', level: 0, bullet: '-' }
+    })
+    expect(projected.sections[0].blocks.at(-1)).toMatchObject({ marker: '-' })
+    expect(listHwpxTextAnchors(result.package, sectionPath).find(
+      (candidate) => candidate.textNodeId === anchor.textNodeId
+    )?.text).toBe('앞\t뒤')
+
+    if (result.inverse?.type !== 'restore-style') throw new Error('문단 style inverse가 없습니다.')
+    const restored = applyRestoreStyleCommand(result.package, result.inverse)
+    expect(restored.package.readEntry(headerPath)).toEqual(source.readEntry(headerPath))
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+  })
+
   test('이미 같은 문단 정렬은 no-op이고 표 셀처럼 제한 밖 anchor는 거부한다', async () => {
     const source = await sourceWithCounts()
     const anchor = editableAnchor(source)

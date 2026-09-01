@@ -165,6 +165,12 @@ renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현
 문단 margin과 line spacing은 직접 자식뿐 아니라 `hp:switch`의 지원 가능한 `hp:case`와
 fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규화한다.
 
+문단 모양 command는 run 내부가 아니라 `paraPrIDRef`만 교체하므로 `hp:t` 안의 `hp:tab`을
+수정하지 않는다. 원본 paraPr를 복제할 때 `tabPrIDRef`와 `hh:heading`의 raw 구조를 불변식으로
+비교하고 하나라도 달라지면 적용을 중단한다. decoder는 `tabPrIDRef`를 `ViewerParaStyle.tabPrId`로
+투영해 저장 후 검증할 수 있게 하며, 목록 marker projection은 복제된 heading을 그대로 사용한다.
+이 계약은 기존 탭·목록의 보존만 뜻하며 탭 정의나 bullet·numbering definition 편집을 허용하지 않는다.
+
 ## 프로세스 책임
 
 ### Electron main

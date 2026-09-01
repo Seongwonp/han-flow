@@ -402,6 +402,20 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 `hangul` 참조를 바꾼 charPr를 생성 또는 재사용한다. 따라서 설치 여부와 재배포 라이선스 판단은
 보기의 대체 글꼴 안내에 남고 package mutation 범위로 확대되지 않는다.
 
+## 완료한 milestone: Sprint 3 문단 모양과 기존 탭·목록 유지
+
+1. [x] 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄 들여쓰기·내어쓰기 command를 유지한다.
+2. [x] `hp:tab`이 포함된 복합 run에도 문단 모양 command를 허용하고 글자 모양 제한은 분리한다.
+3. [x] paraPr 복제 전후의 `tabPrIDRef`와 `hh:heading` raw 구조를 불변식으로 검증한다.
+4. [x] 정렬 element가 없을 때 공식 paraPr 자식 순서에 맞춰 삽입한다.
+5. [x] `ViewerParaStyle.tabPrId`와 기존 bullet·number marker projection으로 저장 결과를 검증한다.
+6. [x] save loss 안내에 기존 탭 정의와 글머리표·번호 매기기 구조 보존 범위를 표시한다.
+7. [x] 인라인 탭·목록 heading·tabPr 참조·inverse byte 복원을 공개 fixture로 자동 검증한다.
+
+이 단계는 기존 구조 보존 기반이다. 사용자 정의 tab stop을 만들거나 `hh:tabProperties`,
+`hh:bullets`, `hh:numberings`를 변경하지 않으며 목록 수준·모양 편집 UI도 열지 않는다. 실제 한/글
+왕복 판정 전에는 자동 검증 완료와 외부 호환성 승인을 구분한다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

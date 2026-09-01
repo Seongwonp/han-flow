@@ -26,4 +26,24 @@ describe('editing loss policy user guidance', () => {
     expect(detail).toContain('Preview 미리보기는 갱신되지 않아')
     expect(detail).toContain('한/글에서 재열기')
   })
+
+  test('문단 모양 저장은 탭과 목록 구조 보존 범위를 함께 알린다', () => {
+    const detail = editingLossPolicyDetail({
+      structures: [
+        {
+          structure: 'paragraph-style',
+          preservation: 'targeted-source-edit',
+          compatibilityRisk: 'low'
+        }
+      ],
+      untouchedContent: 'preserved',
+      previewStatus: 'omitted',
+      notices: ['PREVIEW_OMITTED'],
+      reviewRecommended: false
+    })
+
+    expect(detail).toContain('문단 모양')
+    expect(detail).toContain('기존 탭 정의 참조')
+    expect(detail).toContain('글머리표·번호 매기기 구조를 유지')
+  })
 })

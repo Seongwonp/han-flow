@@ -144,6 +144,12 @@ transaction으로 적용하며 빈 `hp:t`와 각 run의 style 구조는 보존�
 순방향·역방향 selection을 함께 복원하고, 저장은 선택되지 않은 XML 구조를 재작성하지 않는다.
 cross-run IME composition은 OS별 실제 입력 검증 전까지 차단한다.
 
+문단 모양 command는 글자 run의 단순성에 의존하지 않는다. source anchor가 최상위 일반 문단에
+속하면 `hp:tab`이 포함된 run에서도 정렬·간격·첫 줄 들여쓰기를 적용할 수 있고, section에서는
+문단의 `paraPrIDRef`만 교체한다. 새 paraPr는 원본의 `tabPrIDRef`와 `hh:heading`을 그대로
+보존해야 하며 이 불변식이 깨지면 transaction을 거부한다. 탭 위치와 목록 definition 자체를
+편집하는 command는 별도 호환성 관문 전까지 추가하지 않는다.
+
 첫 command는 source text 범위를 바꾸는 형태다.
 
 ```ts

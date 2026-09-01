@@ -266,7 +266,8 @@ function nearestAncestor(span: XmlElementSpan, name: string): XmlElementSpan | u
 function locateTextStyleContext(
   sourcePackage: HwpxSourcePackage,
   sectionPath: string,
-  textNodeId: string
+  textNodeId: string,
+  target: 'character' | 'paragraph'
 ): TextStyleContext {
   if (!listHwpxTextAnchors(sourcePackage, sectionPath).some((anchor) => anchor.textNodeId === textNodeId)) {
     throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
@@ -285,10 +286,10 @@ function locateTextStyleContext(
   const runDescendants = scanXmlElements(xml).filter(
     (span) => span.start >= run.openEnd && span.end <= run.closeStart
   )
-  if (
+  if (target === 'character' && (
     runDescendants.filter((span) => span.name === 'hp:t').length !== 1 ||
     runDescendants.some((span) => span.name !== 'hp:t')
-  ) {
+  )) {
     throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
   }
   return { textNode, run, paragraph }
@@ -436,7 +437,7 @@ function setAlignment(xml: string, align: ParagraphAlignment): string {
   const alignPattern = /<hh:align(?:\s[^>]*)?\s*\/>/
   const existing = xml.match(alignPattern)?.[0]
   if (existing) return xml.replace(existing, setAttribute(existing, 'horizontal', align))
-  return xml.replace(/<\/hh:paraPr>\s*$/, `<hh:align horizontal="${align}"/></hh:paraPr>`)
+  return insertParagraphChild(xml, 'align', `<hh:align horizontal="${align}"/>`)
 }
 
 const paragraphChildOrder = ['align', 'heading', 'breakSetting', 'margin', 'lineSpacing', 'border', 'autoSpacing']
@@ -494,6 +495,16 @@ function setParagraphMetrics(
   return mutated
 }
 
+function assertParagraphStructurePreserved(before: string, after: string): void {
+  const tabPrBefore = attribute(before.slice(0, findTagEnd(before, 0)), 'tabPrIDRef')
+  const tabPrAfter = attribute(after.slice(0, findTagEnd(after, 0)), 'tabPrIDRef')
+  const headingBefore = before.match(paragraphChildPattern('heading'))?.[0]
+  const headingAfter = after.match(paragraphChildPattern('heading'))?.[0]
+  if (tabPrBefore !== tabPrAfter || headingBefore !== headingAfter) {
+    throw new HwpxEditConflictError('문단 모양 변경 중 탭 또는 목록 구조가 달라져 적용을 중단했습니다.')
+  }
+}
+
 function insertionGap(headerXml: string, collection: StyleCollection): string {
   const last = collection.definitions[collection.definitions.length - 1]
   const gap = headerXml.slice(last.span.end, collection.span.closeStart)
@@ -535,7 +546,12 @@ function applyStyleDefinition(
     mutate: (definitionXml: string) => string
   }
 ): StylePatchResult {
-  const context = locateTextStyleContext(sourcePackage, options.sectionPath, options.textNodeId)
+  const context = locateTextStyleContext(
+    sourcePackage,
+    options.sectionPath,
+    options.textNodeId,
+    options.target
+  )
   const sectionXml = sourcePackage.readEntry(options.sectionPath).toString('utf8')
   const referenceSpan = options.target === 'character' ? context.run : context.paragraph
   const referenceTag = sectionXml.slice(referenceSpan.start, referenceSpan.openEnd)
@@ -702,7 +718,12 @@ export function applyCharacterStyleCommand(
   if (!styled.changed || from === to || (from === 0 && to === anchor.text.length)) return styled
 
   const originalSectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
-  const originalContext = locateTextStyleContext(sourcePackage, command.sectionPath, command.textNodeId)
+  const originalContext = locateTextStyleContext(
+    sourcePackage,
+    command.sectionPath,
+    command.textNodeId,
+    'character'
+  )
   const originalRun = originalSectionXml.slice(originalContext.run.start, originalContext.run.end)
   const contentStart = originalContext.textNode.openEnd - originalContext.run.start
   const contentEnd = originalContext.textNode.closeStart - originalContext.run.start
@@ -713,7 +734,12 @@ export function applyCharacterStyleCommand(
   }
 
   const styledSectionXml = styled.package.readEntry(command.sectionPath).toString('utf8')
-  const styledContext = locateTextStyleContext(styled.package, command.sectionPath, command.textNodeId)
+  const styledContext = locateTextStyleContext(
+    styled.package,
+    command.sectionPath,
+    command.textNodeId,
+    'character'
+  )
   const styledOpenTag = styledSectionXml.slice(styledContext.run.start, styledContext.run.openEnd)
   const fragments: string[] = []
   if (from > 0) fragments.push(withText(anchor.text.slice(0, from)))
@@ -786,7 +812,9 @@ export function applyParagraphStyleCommand(
     referenceAttribute: 'paraPrIDRef',
     mutate: (definition) => {
       const aligned = command.align === undefined ? definition : setAlignment(definition, command.align)
-      return setParagraphMetrics(aligned, command)
+      const mutated = setParagraphMetrics(aligned, command)
+      assertParagraphStructurePreserved(definition, mutated)
+      return mutated
     }
   })
 }
@@ -848,7 +876,12 @@ export function applyRestoreStyleCommand(
   command: RestoreStyleCommand
 ): StylePatchResult {
   if (command.type !== 'restore-style') throw new Error('지원하지 않는 style 복원 command입니다.')
-  const context = locateTextStyleContext(sourcePackage, command.sectionPath, command.textNodeId)
+  const context = locateTextStyleContext(
+    sourcePackage,
+    command.sectionPath,
+    command.textNodeId,
+    command.target
+  )
   const sectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
   const referenceSpan = command.target === 'character' ? context.run : context.paragraph
   const currentReferenceTag = sectionXml.slice(referenceSpan.start, referenceSpan.openEnd)
@@ -888,7 +921,12 @@ export function applyRestoreCharacterRunCommand(
   if (command.type !== 'restore-character-run') {
     throw new Error('지원하지 않는 글자 run 복원 command입니다.')
   }
-  const context = locateTextStyleContext(sourcePackage, command.sectionPath, command.textNodeId)
+  const context = locateTextStyleContext(
+    sourcePackage,
+    command.sectionPath,
+    command.textNodeId,
+    'character'
+  )
   const sectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
   const actualFragment = sectionXml.slice(
     context.run.start,

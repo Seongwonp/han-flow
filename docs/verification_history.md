@@ -8,6 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-01 — Sprint 3 문단 모양과 탭·목록 구조 보존
+
+정렬·줄 간격·문단 앞뒤 간격·첫 줄 들여쓰기 command가 기존 paraPr를 복제할 때
+`tabPrIDRef`와 `hh:heading`을 byte 의미 그대로 유지하는 불변식을 추가했다. 글자 모양에 필요한
+단순 run 제한을 문단 모양에서 분리해 `hp:tab`이 포함된 최상위 일반 문단도 모양을 바꿀 수 있다.
+decoder는 탭 정의 ID를 projection하고 저장 안내는 기존 탭·글머리표·번호 구조 보존 범위를 알린다.
+새 탭 위치나 목록 definition을 만드는 기능은 이번 검증 범위가 아니다.
+
+검증 결과는 TypeScript typecheck 통과, Jest 34 suite·189 test 통과(2 suite·11 test skip),
+privacy-safe probe 8개 통과, Electron production build 통과다. 공개 fixture에서 인라인 탭,
+bullet heading, tabPr 참조, 정렬 자식 순서와 undo inverse의 header·section byte 복원을 확인했다.
+
 ## 2026-09-01 — Sprint 2 atomic history와 저장 revision 추적
 
 main editing session의 selection 선반영을 제거하고 transaction selection 동기화와 command apply를
