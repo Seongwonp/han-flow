@@ -130,6 +130,45 @@ describe('main process HWPX editing session', () => {
     }))
   })
 
+  test('현재 셀 아래 행 추가를 undo/redo하고 Save As 재개봉한다', async () => {
+    const manager = new EditingSessionManager(() => 'table-row-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '긴 설명'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(33, fixture)
+    const inserted = await manager.insertTableRowAfter(33, {
+      sessionId: started.sessionId,
+      transactionId: 'insert-row-1',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(inserted).toMatchObject({ isDirty: true, canUndo: true, selection })
+    expect(JSON.stringify(inserted.document)).toContain('"rowCount":5')
+    expect(await manager.lossPolicy(33, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-structure', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_STALE', 'TABLE_STRUCTURE_CHANGED']),
+      reviewRecommended: true
+    })
+    expect(JSON.stringify((await manager.undo(33, started.sessionId)).document)).toContain('"rowCount":4')
+    expect(JSON.stringify((await manager.redo(33, started.sessionId)).document)).toContain('"rowCount":5')
+
+    const destination = join(directory, 'table-row-save.hwpx')
+    const saved = await manager.saveAs(33, started.sessionId, destination)
+    expect(saved.lossPolicy.structures.map(({ structure }) => structure)).toEqual(['table-structure'])
+    const reopened = await manager.start(34, destination)
+    expect(JSON.stringify(reopened.document)).toContain('"rowCount":5')
+  })
+
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)

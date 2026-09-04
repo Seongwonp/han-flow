@@ -61,6 +61,13 @@ export interface EditingMergeParagraphRequest {
   timestamp: number
 }
 
+export interface EditingInsertTableRowRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

@@ -76,6 +76,11 @@ function commandBytes(transaction: EditTransaction): number {
           Buffer.byteLength(command.replacementFragment, 'utf8')
         )
       }
+      if (command.type === 'replace-table-fragment') {
+        return sum + common +
+          Buffer.byteLength(command.expectedFragment, 'utf8') +
+          Buffer.byteLength(command.replacementFragment, 'utf8')
+      }
       if (command.type === 'apply-cell-style') return sum + common + 48
       if (command.type === 'restore-cell-style') {
         const headerBytes = command.headerMutation

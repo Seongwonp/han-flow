@@ -7,6 +7,7 @@ export type HwpxEditedStructure =
   | 'paragraph-style'
   | 'paragraph-structure'
   | 'table-cell-style'
+  | 'table-structure'
 
 export type HwpxPreviewStatus = 'current' | 'stale' | 'omitted'
 
@@ -15,6 +16,7 @@ export type HwpxLossPolicyNotice =
   | 'PREVIEW_OMITTED'
   | 'PARAGRAPH_STRUCTURE_CHANGED'
   | 'TABLE_CELL_STYLE_CHANGED'
+  | 'TABLE_STRUCTURE_CHANGED'
 
 export interface HwpxStructureLossPolicy {
   structure: HwpxEditedStructure
@@ -35,7 +37,8 @@ const STRUCTURE_ORDER: HwpxEditedStructure[] = [
   'character-style',
   'paragraph-style',
   'paragraph-structure',
-  'table-cell-style'
+  'table-cell-style',
+  'table-structure'
 ]
 
 function commandStructure(command: EditCommand): HwpxEditedStructure {
@@ -47,6 +50,7 @@ function commandStructure(command: EditCommand): HwpxEditedStructure {
   if (command.type === 'apply-cell-style' || command.type === 'restore-cell-style') {
     return 'table-cell-style'
   }
+  if (command.type === 'replace-table-fragment') return 'table-structure'
   if (command.type === 'restore-style') {
     return command.target === 'character' ? 'character-style' : 'paragraph-style'
   }
@@ -86,19 +90,23 @@ export function createSaveLossPolicy(
     notices.push('PARAGRAPH_STRUCTURE_CHANGED')
   }
   if (structures.includes('table-cell-style')) notices.push('TABLE_CELL_STYLE_CHANGED')
+  if (structures.includes('table-structure')) notices.push('TABLE_STRUCTURE_CHANGED')
 
   return {
     structures: structures.map((structure) => ({
       structure,
       preservation: 'targeted-source-edit',
       compatibilityRisk:
-        structure === 'paragraph-structure' || structure === 'table-cell-style' ? 'review' : 'low'
+        structure === 'paragraph-structure' ||
+        structure === 'table-cell-style' ||
+        structure === 'table-structure' ? 'review' : 'low'
     })),
     untouchedContent: 'preserved',
     previewStatus,
     notices,
     reviewRecommended: notices.includes('PREVIEW_STALE') ||
       notices.includes('PARAGRAPH_STRUCTURE_CHANGED') ||
-      notices.includes('TABLE_CELL_STYLE_CHANGED')
+      notices.includes('TABLE_CELL_STYLE_CHANGED') ||
+      notices.includes('TABLE_STRUCTURE_CHANGED')
   }
 }

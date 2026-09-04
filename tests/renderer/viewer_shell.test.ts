@@ -53,7 +53,8 @@ describe('viewer shell components', () => {
       onRedoEditing: noop,
       onCharacterStyle: noop,
       onParagraphStyle: noop,
-      onCellStyle: noop
+      onCellStyle: noop,
+      onInsertTableRowAfter: noop
     }))
 
     expect(markup).toContain('sample.hwpx')
@@ -65,6 +66,7 @@ describe('viewer shell components', () => {
     expect(markup).toContain('aria-label="다시 실행"')
     expect(markup).toContain('aria-label="셀 배경색"')
     expect(markup).toContain('aria-label="셀 테두리 두께"')
+    expect(markup).toContain('aria-label="아래에 표 행 추가"')
   })
 
   test('stage는 빈 화면·오류·문서 children 경계를 소유한다', () => {

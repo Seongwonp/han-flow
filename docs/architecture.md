@@ -185,6 +185,14 @@ paragraph만 범위 치환·분할·병합 대상으로 사용한다. 다른 cel
 두 entry의 원래 tag·fragment를 보관한다. 동일한 결과 style이 이미 있으면 새 정의를 만들지 않고
 재사용한다. 불완전한 fill/border, 머리글·병합 셀은 renderer capability와 core 검사에서 차단한다.
 
+첫 표 구조 command는 현재 body 행 아래에 빈 행을 추가한다. core는 표의 `rowCnt`·`colCnt`, direct
+row/cell 수, 모든 `cellAddr`, `cellSpan=1`, 단순 text-only 셀을 서로 대조해 직사각형 표만 허용한다.
+선택 행의 cell 크기·margin·borderFill과 문단·글자 모양을 복제하되 `hp:t` 내용과 stale
+`linesegarray`는 제거한다. 새 행 이후의 `rowAddr`, table `rowCnt`와 `hp:sz` 전체 높이는 같은
+table fragment transaction에서 갱신한다. decoder는 table 높이를 host 문단 layout의 하한으로
+사용해 stale line segment가 새 행을 가리지 않게 한다. 고유 ID를 가진 row/cell, 중첩 표·이미지·제어 문자가 있는 표는 복제하지
+않는다. inverse는 원래 table XML 전체를 보관해 section의 다른 콘텐츠는 건드리지 않고 되돌린다.
+
 ## 프로세스 책임
 
 ### Electron main

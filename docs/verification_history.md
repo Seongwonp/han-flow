@@ -8,6 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-04 — Sprint 3 안전한 표 행 추가 기반
+
+병합·중첩·복합 콘텐츠가 없는 직사각형 표에서 현재 body 셀 아래에 같은 모양의 빈 행을 추가하는
+table fragment command를 구현했다. source topology의 row/column count, cell 주소와 span을 모두
+검증하고, 새 행 이후 `rowAddr`, `rowCnt`와 표 전체 높이를 함께 갱신한다. 반복 머리글은 유지하며 머리글 기준
+추가, row/cell 고유 ID, 이미지·제어 문자 등 복합 셀이 있는 표는 fail-closed한다.
+
+공개 fixture에서 빈 text projection, 뒤쪽 행 보존, exact inverse와 redo를 검증했다. main session은
+selection 유지, `table-structure` loss policy, undo/redo, Save As와 재개봉까지 확인했다.
+TypeScript typecheck와 Jest 36 suites·204 tests 통과(2 suites·11 tests skip)를 확인했다.
+Electron production build와 privacy-safe probe 8개도 모두 통과했다.
+
 ## 2026-09-04 — Sprint 3 표 셀 테두리·배경 편집 기반
 
 병합되지 않은 일반 body cell에서 기존 borderFill 정의를 새 ID로 복제하고 선택한 셀의

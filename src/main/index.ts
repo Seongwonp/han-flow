@@ -11,6 +11,7 @@ import type {
   EditingCellStyleRequest,
   EditingCommitRequest,
   EditingMergeParagraphRequest,
+  EditingInsertTableRowRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest
@@ -1102,6 +1103,27 @@ app.whenReady().then(() => {
     return editingSessions.applyCellStyle(
       event.sender.id,
       request as unknown as EditingCellStyleRequest
+    )
+  }))
+
+  ipcMain.handle('editing:insertTableRowAfter', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 표 행 추가 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.insertTableRowAfter(
+      event.sender.id,
+      request as EditingInsertTableRowRequest
     )
   }))
 

@@ -608,6 +608,14 @@ subList는 core에서 다시 거부한다.
 `table-cell-style`과 review 대상으로 분류해 Han-Flow·한/글 재열기를 권고한다. 행·열과
 병합·분할은 주소·span·layout mutation이 필요하므로 다음 관문으로 남긴다.
 
+표 구조의 첫 slice는 병합·중첩·복합 콘텐츠가 없는 직사각형 표의 현재 body 행 아래에 빈 행을
+추가한다. `rowCnt`, direct row/cell 수, `cellAddr`와 `cellSpan`을 source에서 교차 검증한 다음 선택
+행의 geometry·margin·borderFill과 text style을 복제한다. 새 셀의 text는 비우고 stale
+`linesegarray`는 제거하며, 뒤쪽 행 주소와 table count·전체 높이를 table fragment transaction 하나로
+바꾼다. selection anchor보다 뒤에 삽입하므로 기존 caret ordinal을 유지할 수 있다. exact inverse는
+원본 table bytes를 보관한다. 행 삭제와 열 삽입은 selection anchor가 사라지거나 이동하므로 다음
+slice에서 명시적인 selection projection 계획과 함께 구현한다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

@@ -439,8 +439,18 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 6. [x] `table-cell-style` loss policy와 저장 확인·완료 안내에 외부 재열기 권고를 연결한다.
 7. [x] main session undo/redo, Save As와 재개봉 projection을 공개 fixture로 검증한다.
 
-다음 관문은 행·열 추가/삭제와 cell 병합·분할이다. 이들은 주소·span·row/column count와 layout을
-동시에 바꾸므로 현재의 단일 셀 style mutation과 분리해 진행한다.
+## 완료한 milestone: Sprint 3 안전한 표 행 추가 기반
+
+1. [x] 병합·중첩·복합 콘텐츠가 없는 직사각형 표 topology를 source에서 검증한다.
+2. [x] 현재 body 행의 cell geometry·margin·style을 복제하고 text·linesegarray를 비운다.
+3. [x] `rowCnt`, `hp:sz` 전체 높이와 뒤쪽 모든 `rowAddr`를 원자적으로 갱신한다.
+4. [x] table fragment exact inverse와 selection 유지로 undo/redo를 연결한다.
+5. [x] 반복 머리글은 보존하되 머리글 셀을 기준으로 한 추가는 차단한다.
+6. [x] 리본의 `아래 행＋`, main IPC, `table-structure` loss policy와 저장 안내를 연결한다.
+7. [x] 공개 fixture에서 projection, undo/redo, Save As·재개봉을 검증한다.
+
+다음 관문은 현재 행 삭제와 열 추가·삭제다. 삭제 selection 재배치와 열 삽입 전후 text anchor
+ordinal 이동을 먼저 설계한 뒤 cell 병합·분할로 넘어간다.
 
 ## 다음 milestone: V3 외부 승인
 

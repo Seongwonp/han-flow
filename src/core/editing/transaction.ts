@@ -24,6 +24,10 @@ import {
   ApplyCellStyleCommand,
   RestoreCellStyleCommand
 } from './cell_style_patch'
+import {
+  applyReplaceTableFragmentCommand,
+  ReplaceTableFragmentCommand
+} from './table_patch'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
@@ -44,6 +48,7 @@ export type EditCommand =
   | ReplaceParagraphFragmentCommand
   | ApplyCellStyleCommand
   | RestoreCellStyleCommand
+  | ReplaceTableFragmentCommand
 
 export interface EditTransaction {
   id: string
@@ -118,13 +123,15 @@ export function applyEditTransaction(
             ? applyParagraphStyleCommand(currentPackage, command)
             : command.type === 'restore-style'
               ? applyRestoreStyleCommand(currentPackage, command)
-            : command.type === 'restore-character-run'
-              ? applyRestoreCharacterRunCommand(currentPackage, command)
-              : command.type === 'apply-cell-style'
-                ? applyCellStyleCommand(currentPackage, command)
-                : command.type === 'restore-cell-style'
-                  ? applyRestoreCellStyleCommand(currentPackage, command)
-                  : applyReplaceParagraphFragmentCommand(currentPackage, command)
+              : command.type === 'restore-character-run'
+                ? applyRestoreCharacterRunCommand(currentPackage, command)
+                : command.type === 'apply-cell-style'
+                  ? applyCellStyleCommand(currentPackage, command)
+                  : command.type === 'restore-cell-style'
+                    ? applyRestoreCellStyleCommand(currentPackage, command)
+                    : command.type === 'replace-table-fragment'
+                      ? applyReplaceTableFragmentCommand(currentPackage, command)
+                      : applyReplaceParagraphFragmentCommand(currentPackage, command)
     if (result.package !== currentPackage) {
       const inverse =
         command.type === 'replace-text'

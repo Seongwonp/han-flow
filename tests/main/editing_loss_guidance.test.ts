@@ -64,4 +64,21 @@ describe('editing loss policy user guidance', () => {
     expect(detail).toContain('새 borderFill 정의로 격리')
     expect(detail).toContain('한/글에서 재열기')
   })
+
+  test('표 구조 저장은 표 전체 재열기 확인을 안내한다', () => {
+    const detail = editingLossPolicyDetail({
+      structures: [{
+        structure: 'table-structure',
+        preservation: 'targeted-source-edit',
+        compatibilityRisk: 'review'
+      }],
+      untouchedContent: 'preserved',
+      previewStatus: 'stale',
+      notices: ['PREVIEW_STALE', 'TABLE_STRUCTURE_CHANGED'],
+      reviewRecommended: true
+    })
+
+    expect(detail).toContain('표 행·열 구조')
+    expect(detail).toContain('표 전체를 확인')
+  })
 })
