@@ -6,7 +6,7 @@ import {
 } from '../document/viewer_document'
 import { EditorSelection } from './selection'
 
-export type EditingStructure = 'TOP_LEVEL_TEXT' | 'SIMPLE_TABLE_CELL'
+export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT'
 export type EditingCapabilityReason =
   | 'NO_SELECTION'
   | 'STALE_SELECTION'
@@ -65,7 +65,7 @@ function paragraphContexts(
   rangeScope: string
 ): EditingAnchorContext[] {
   const texts = editableTexts(paragraph)
-  if (!texts || (structure === 'SIMPLE_TABLE_CELL' && texts.length !== 1)) return []
+  if (!texts || (structure === 'TABLE_CELL_TEXT' && texts.length !== 1)) return []
   return texts.map((text) => ({
     sectionPath: text.sourceAnchor!.sectionPath,
     textNodeId: text.sourceAnchor!.textNodeId,
@@ -80,20 +80,22 @@ function paragraphContexts(
 
 function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorContext[] {
   return table.rows.flatMap((row) => row.cells.flatMap((cell) => {
-    const simpleCell =
+    const safeCell =
       !cell.splitTop &&
       !cell.splitBottom &&
       !cell.header &&
       cell.rowSpan === 1 &&
       cell.columnSpan === 1 &&
-      cell.paragraphs.length === 1
-    if (!simpleCell) return []
-    const paragraph = cell.paragraphs[0]
-    return paragraphContexts(
+      cell.paragraphs.length > 0
+    if (!safeCell) return []
+    const contexts = cell.paragraphs.map((paragraph) => paragraphContexts(
       paragraph,
-      'SIMPLE_TABLE_CELL',
+      'TABLE_CELL_TEXT',
       `${sectionPath}:paragraph:${paragraph.id}`
-    )
+    ))
+    return contexts.every((paragraph) => paragraph.length === 1)
+      ? contexts.flat()
+      : []
   }))
 }
 

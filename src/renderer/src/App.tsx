@@ -78,7 +78,8 @@ export function isEditableTableCell(cell: ViewerTableCell, measurable = false): 
     !cell.header &&
     cell.rowSpan === 1 &&
     cell.columnSpan === 1 &&
-    cell.paragraphs.length === 1
+    cell.paragraphs.length > 0 &&
+    cell.paragraphs.every((paragraph) => isEditableTextParagraph(paragraph))
   )
 }
 
@@ -339,7 +340,7 @@ function TableView({
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
       borderTop: cell.splitTop ? 'none' : style ? borderCss(style.top) : undefined,
       borderBottom: cell.splitBottom ? 'none' : style ? borderCss(style.bottom) : undefined
-    }}>{cell.paragraphs.map((paragraph) => <ParagraphView
+    }}>{cell.paragraphs.map((paragraph, paragraphIndex) => <ParagraphView
       key={paragraph.id}
       paragraph={paragraph}
       document={document}
@@ -348,7 +349,9 @@ function TableView({
         isEditableTableCell(cell, measurable) && editing
           ? {
               ...editing,
-              surfaceLabel: 'HWPX 표 셀 편집',
+              surfaceLabel: cell.paragraphs.length > 1
+                ? `HWPX 표 셀 ${paragraphIndex + 1}/${cell.paragraphs.length} 문단 편집`
+                : 'HWPX 표 셀 편집',
               allowMultipleRuns: false,
               allowParagraphRange: false,
               allowParagraphStructure: false

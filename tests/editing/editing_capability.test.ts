@@ -46,7 +46,7 @@ const document: ViewerDocument = {
         type: 'table',
         id: 'table0',
         rowCount: 1,
-        columnCount: 2,
+        columnCount: 4,
         repeatHeader: false,
         rows: [{ cells: [
           {
@@ -64,12 +64,26 @@ const document: ViewerDocument = {
             row: 0,
             column: 1,
             rowSpan: 1,
+            columnSpan: 1,
+            width: 100,
+            height: 100,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            header: false,
+            paragraphs: [
+              paragraph('multi-cell-p0', [text(4, '첫 문단')]),
+              paragraph('multi-cell-p1', [text(5, '둘째 문단')])
+            ]
+          },
+          {
+            row: 0,
+            column: 2,
+            rowSpan: 1,
             columnSpan: 2,
             width: 100,
             height: 100,
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
             header: false,
-            paragraphs: [paragraph('merged-cell', [text(4, '병합')])]
+            paragraphs: [paragraph('merged-cell', [text(6, '병합')])]
           }
         ] }]
       }])
@@ -116,7 +130,7 @@ describe('편집 capability', () => {
     })
   })
 
-  test('최상위 문단과 단순 표 셀을 분리하고 병합 셀은 편집 대상에서 제외한다', () => {
+  test('최상위 문단과 안전한 표 셀 text를 분리하고 병합 셀은 편집 대상에서 제외한다', () => {
     expect(listEditingAnchorContexts(document).map((context) => [
       context.textNodeId,
       context.structure
@@ -124,7 +138,9 @@ describe('편집 capability', () => {
       [`${sectionPath}#hp:t:0`, 'TOP_LEVEL_TEXT'],
       [`${sectionPath}#hp:t:1`, 'TOP_LEVEL_TEXT'],
       [`${sectionPath}#hp:t:2`, 'TOP_LEVEL_TEXT'],
-      [`${sectionPath}#hp:t:3`, 'SIMPLE_TABLE_CELL']
+      [`${sectionPath}#hp:t:3`, 'TABLE_CELL_TEXT'],
+      [`${sectionPath}#hp:t:4`, 'TABLE_CELL_TEXT'],
+      [`${sectionPath}#hp:t:5`, 'TABLE_CELL_TEXT']
     ])
   })
 
@@ -148,12 +164,24 @@ describe('편집 capability', () => {
     })
   })
 
-  test('단순 표 셀은 텍스트만 허용하고 style·문단 구조 편집은 제한한다', () => {
+  test('안전한 표 셀은 텍스트만 허용하고 style·문단 구조 편집은 제한한다', () => {
     const capability = editingCapabilities(document, selection(3, 1))
     expect(capability.text.available).toBe(true)
     expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
     expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
     expect(capability.paragraphStructure.reason).toBe('TABLE_CELL_STRUCTURE')
+  })
+
+  test('안전한 여러 문단 표 셀은 각 문단을 독립 text scope로 허용한다', () => {
+    const first = editingCapabilities(document, selection(4, 2))
+    const second = editingCapabilities(document, selection(5, 3))
+    expect(first.text.available).toBe(true)
+    expect(second.text.available).toBe(true)
+    expect(first.focus?.rangeScope).not.toBe(second.focus?.rangeScope)
+    expect(editingCapabilities(document, selection(4, 0, 5, 1)).selection).toEqual({
+      available: false,
+      reason: 'CROSS_STRUCTURE_SELECTION'
+    })
   })
 
   test('길어진 offset은 surrogate pair를 가르지 않는 경계로 보정한다', () => {

@@ -171,6 +171,13 @@ fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규�
 투영해 저장 후 검증할 수 있게 하며, 목록 marker projection은 복제된 heading을 그대로 사용한다.
 이 계약은 기존 탭·목록의 보존만 뜻하며 탭 정의나 bullet·numbering definition 편집을 허용하지 않는다.
 
+표 편집 capability는 병합·rowSpan·columnSpan·반복 머리글·pagination fragment를 제외한 body
+cell에서만 열린다. cell에 여러 문단이 있어도 각 문단이 source anchor 하나를 가진 단일 text
+run이면 `TABLE_CELL_TEXT` context를 만들고, 문단마다 고유 range scope를 부여한다. 따라서 각
+문단의 text transaction과 Save As는 가능하지만 native selection과 command가 인접 문단이나 다른
+cell로 넘어갈 수 없다. cell 내부 문단 분할·병합은 nested `hp:subList` mutation 관문을 따로
+통과하기 전까지 비활성화한다.
+
 ## 프로세스 책임
 
 ### Electron main

@@ -12,7 +12,15 @@ import {
 
 const nestedParagraph: ViewerParagraph = {
   id: 'table:r0c0:p0', paraStyleId: '0', pageBreak: false, layoutHeight: 1000,
-  content: [{ type: 'text', text: '측정', charStyleId: '0' }]
+  content: [{
+    type: 'text',
+    text: '측정',
+    charStyleId: '0',
+    sourceAnchor: {
+      sectionPath: 'Contents/section0.xml',
+      textNodeId: 'Contents/section0.xml#hp:t:0'
+    }
+  }]
 }
 
 const topParagraph: ViewerParagraph = {
@@ -69,6 +77,32 @@ describe('DOM 측정 마커', () => {
     ]) {
       expect(isEditableTableCell({ ...cell, ...blocked })).toBe(false)
     }
+    const editableParagraph = {
+      ...nestedParagraph,
+      content: [{
+        type: 'text' as const,
+        text: '편집',
+        charStyleId: '0',
+        sourceAnchor: {
+          sectionPath: 'Contents/section0.xml',
+          textNodeId: 'Contents/section0.xml#hp:t:10'
+        }
+      }]
+    }
+    expect(isEditableTableCell({
+      ...cell,
+      paragraphs: [editableParagraph, {
+        ...editableParagraph,
+        id: 'table:r0c0:p1',
+        content: [{
+          ...editableParagraph.content[0],
+          sourceAnchor: {
+            sectionPath: 'Contents/section0.xml',
+            textNodeId: 'Contents/section0.xml#hp:t:11'
+          }
+        }]
+      }]
+    })).toBe(true)
   })
 
   test('source anchor가 있는 여러 text run은 일반 문단에서만 다시 편집할 수 있다', () => {

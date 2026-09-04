@@ -606,6 +606,68 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('긴 설명 셀검증')
   })
 
+  test('일반 body cell의 여러 문단을 각각 편집해 저장하고 재개봉한다', async () => {
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(fixture)
+    const firstParagraph =
+      '<hp:t>긴 설명</hp:t></hp:run><hp:linesegarray>' +
+      '<hp:lineseg vertpos="0" vertsize="3000"/></hp:linesegarray></hp:p>'
+    const secondParagraph =
+      '<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>셀 둘째 문단</hp:t></hp:run>' +
+      '<hp:linesegarray><hp:lineseg vertpos="3000" vertsize="1000"/></hp:linesegarray></hp:p>'
+    const sectionXml = source.readEntry(sectionPath).toString('utf8')
+    expect(sectionXml).toContain(firstParagraph)
+    const multiParagraphSource = source.withEntry(
+      sectionPath,
+      Buffer.from(sectionXml.replace(firstParagraph, firstParagraph + secondParagraph))
+    )
+    const sourcePath = join(directory, 'multi-paragraph-cell-source.hwpx')
+    await saveHwpxAs(multiParagraphSource, sourcePath)
+
+    const manager = new EditingSessionManager(() => 'multi-paragraph-cell-session')
+    const started = await manager.start(30, sourcePath)
+    const anchor = listHwpxTextAnchors(multiParagraphSource, sectionPath).find(
+      (candidate) => candidate.text === '셀 둘째 문단'
+    )!
+    const before = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: anchor.text.length,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: anchor.text.length
+    }
+    const committed = await manager.commit(30, {
+      sessionId: started.sessionId,
+      transactionId: 'multi-paragraph-cell-text',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: anchor.text.length,
+      to: anchor.text.length,
+      insert: ' 수정',
+      selectionBefore: before,
+      selectionAfter: {
+        ...before,
+        anchorOffset: anchor.text.length + 3,
+        focusOffset: anchor.text.length + 3
+      },
+      inputType: 'insertText',
+      timestamp: 1
+    })
+    expect(JSON.stringify(committed.document)).toContain('셀 둘째 문단 수정')
+    expect(JSON.stringify(committed.document)).toContain('긴 설명')
+
+    const destination = join(directory, 'multi-paragraph-cell-saved.hwpx')
+    await manager.saveAs(30, started.sessionId, destination)
+    const reopened = await HwpxSourcePackage.open(destination)
+    const texts = listHwpxTextAnchors(reopened, sectionPath).map((candidate) => candidate.text)
+    expect(texts).toContain('긴 설명')
+    expect(texts).toContain('셀 둘째 문단 수정')
+    expect(reopened.readEntry(sectionPath).toString('utf8')).toContain(secondParagraph.replace(
+      '<hp:t>셀 둘째 문단</hp:t>',
+      '<hp:t>셀 둘째 문단 수정</hp:t>'
+    ))
+  })
+
   test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {
     const manager = new EditingSessionManager(() => 'caret-session')
     const source = await HwpxSourcePackage.open(fixture)

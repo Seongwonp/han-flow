@@ -186,15 +186,16 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 
 - HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 문단을 지원합니다. 부분 style로
   나뉜 여러 run과 여러 최상위 문단은 키보드·pointer 범위 선택과 치환을 지원합니다.
-- 반복 머리글, 병합·`rowSpan`, continuation fragment, 여러 문단 cell과 머리말·꼬리말은 읽기 전용입니다.
+- 반복 머리글, 병합·`rowSpan`, continuation fragment와 머리말·꼬리말은 읽기 전용입니다.
+  병합되지 않은 일반 body cell은 여러 문단도 각 문단의 단일 text run을 독립적으로 편집할 수 있습니다.
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다.
   글꼴은 문서 `HANGUL` font-face에 이미 선언된 family만 ID로 재사용하며 새 글꼴 추가·포함은 지원하지 않습니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
 - 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
   단축키를 비활성화합니다.
-- 편집 capability는 최상위 문단, 단순 표 셀, 여러 run·문단과 서로 다른 구조의 selection을
-  구분합니다. 표 셀에서는 텍스트와 내부 줄바꿈만 허용하고 Enter 분할·경계 병합 및 글자·문단
-  모양 control은 요청 전에 차단합니다.
+- 편집 capability는 최상위 문단, 안전한 표 셀 text, 여러 run·문단과 서로 다른 구조의 selection을
+  구분합니다. 여러 문단 표 셀은 문단별 scope를 분리하며, 표 셀에서는 텍스트와 내부 줄바꿈만
+  허용하고 문단 간 선택·Enter 분할·경계 병합 및 글자·문단 모양 control은 요청 전에 차단합니다.
 - 편집 결과의 selection anchor가 문서 갱신으로 달라지면 최신 main projection을 다시 받아
   offset을 안전한 UTF-16 경계로 조정합니다. 한 endpoint만 남으면 그 위치로 접고 둘 다
   사라지면 선택을 해제한 뒤 다시 선택하도록 안내합니다.

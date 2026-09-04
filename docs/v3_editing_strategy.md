@@ -593,6 +593,13 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
   12개, 9,767쪽 progressive 문서도 overflow 0을 유지했다.
 행·열 추가, 병합·분할, 표 cell style 편집은 계속 별도 범위로 둔다.
 
+2026-09-04 후속 slice에서는 병합·span·반복 머리글·continuation이 없는 body cell에 여러 문단이
+있어도, 모든 문단이 source anchor 하나를 가진 단일 text run이면 각각 편집할 수 있게 확장했다.
+capability 이름은 `TABLE_CELL_TEXT`로 바꾸고 문단별 고유 range scope를 유지한다. 이 때문에
+두 번째 이후 문단도 text transaction·undo/redo·Save As를 사용하지만 selection은 문단 경계를
+넘지 않으며 Enter와 Backspace/Delete 경계 병합도 계속 차단된다. nested `hp:subList` 구조 변경은
+별도 source mutation 설계 이후에만 연다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는
