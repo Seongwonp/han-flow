@@ -78,6 +78,58 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('공개 헤더 수정')
   })
 
+  test('표 셀 모양을 undo/redo하고 loss policy와 Save As 재개봉에 연결한다', async () => {
+    const manager = new EditingSessionManager(() => 'cell-style-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '긴 설명'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(31, fixture)
+    const styled = await manager.applyCellStyle(31, {
+      sessionId: started.sessionId,
+      transactionId: 'cell-style-1',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection,
+      backgroundColor: '#FFF2CC',
+      borderColor: '#4472C4',
+      borderWidth: 0.6,
+      borderType: 'SOLID',
+      timestamp: 1
+    })
+
+    expect(styled).toMatchObject({ isDirty: true, canUndo: true, selection })
+    expect(Object.values(styled.document.cellStyles)).toContainEqual(expect.objectContaining({
+      backgroundColor: '#FFF2CC',
+      left: expect.objectContaining({ color: '#4472C4', widthMm: 0.6 })
+    }))
+    expect(await manager.lossPolicy(31, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-cell-style', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_STALE', 'TABLE_CELL_STYLE_CHANGED']),
+      reviewRecommended: true
+    })
+    expect((await manager.undo(31, started.sessionId)).isDirty).toBe(false)
+    expect((await manager.redo(31, started.sessionId)).isDirty).toBe(true)
+
+    const destination = join(directory, 'cell-style-save.hwpx')
+    const saved = await manager.saveAs(31, started.sessionId, destination)
+    expect(saved.lossPolicy.structures.map(({ structure }) => structure)).toEqual(['table-cell-style'])
+    const reopened = await HwpxSourcePackage.open(destination)
+    const reopenedDocument = await manager.start(32, destination)
+    expect(reopened.listEntries()).toHaveLength(source.listEntries().length)
+    expect(Object.values(reopenedDocument.document.cellStyles)).toContainEqual(expect.objectContaining({
+      backgroundColor: '#FFF2CC'
+    }))
+  })
+
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)

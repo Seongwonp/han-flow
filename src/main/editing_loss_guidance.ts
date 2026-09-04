@@ -4,7 +4,8 @@ const editedStructureLabels = {
   text: '본문 텍스트',
   'character-style': '글자 모양',
   'paragraph-style': '문단 모양',
-  'paragraph-structure': '문단 나누기·병합'
+  'paragraph-structure': '문단 나누기·병합',
+  'table-cell-style': '표 셀 모양'
 } as const
 
 export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
@@ -24,10 +25,13 @@ export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
   )
     ? ' 문단 모양 변경은 기존 탭 정의 참조와 글머리표·번호 매기기 구조를 유지합니다.'
     : ''
+  const cellStyleReview = policy.notices.includes('TABLE_CELL_STYLE_CHANGED')
+    ? ' 표 셀 모양은 새 borderFill 정의로 격리했으며 저장 후 Han-Flow와 한/글에서 재열기를 권장합니다.'
+    : ''
 
   return (
     `현재 변경 구조: ${structures || '없음'}. ` +
     '선택한 구조만 원본 XML에서 수정하며, 손대지 않은 XML·이미지·package 항목은 보존합니다. ' +
-    preview + paragraphStylePreservation + structureReview
+    preview + paragraphStylePreservation + structureReview + cellStyleReview
   )
 }

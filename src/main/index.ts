@@ -8,6 +8,7 @@ import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
 import type {
   EditingCharacterStyleRequest,
+  EditingCellStyleRequest,
   EditingCommitRequest,
   EditingMergeParagraphRequest,
   EditingParagraphStyleRequest,
@@ -1076,6 +1077,31 @@ app.whenReady().then(() => {
     return editingSessions.applyParagraphStyle(
       event.sender.id,
       request as unknown as EditingParagraphStyleRequest
+    )
+  }))
+
+  ipcMain.handle('editing:applyCellStyle', editingIpcHandler(async (event, request: unknown) => {
+    const style = request as Record<string, unknown>
+    const hasBackground = typeof style?.['backgroundColor'] === 'string'
+    const hasBorderColor = typeof style?.['borderColor'] === 'string'
+    const hasBorderWidth = Number.isFinite(style?.['borderWidth'])
+    const hasBorderType = ['NONE', 'SOLID'].includes(String(style?.['borderType']))
+    if (
+      !isStyleRequestBase(request) ||
+      (!hasBackground && !hasBorderColor && !hasBorderWidth && !hasBorderType) ||
+      ('backgroundColor' in style && !hasBackground) ||
+      ('borderColor' in style && !hasBorderColor) ||
+      ('borderWidth' in style && !hasBorderWidth) ||
+      ('borderType' in style && !hasBorderType)
+    ) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 표 셀 모양 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.applyCellStyle(
+      event.sender.id,
+      request as unknown as EditingCellStyleRequest
     )
   }))
 

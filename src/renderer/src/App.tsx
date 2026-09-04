@@ -1097,10 +1097,25 @@ export default function App() {
       marginAfter: paraStyle?.margin.bottom ?? 0
     }
   }, [document, editingCapabilityState.focus])
+  const activeCellStyle = useMemo(() => {
+    const styleId = editingCapabilityState.focus?.cellStyleId
+    const style = document && styleId ? document.cellStyles[styleId] : undefined
+    if (!style) return undefined
+    return {
+      backgroundColor: /^#[0-9a-f]{6}$/i.test(style.backgroundColor ?? '')
+        ? style.backgroundColor!
+        : '#FFFFFF',
+      borderColor: /^#[0-9a-f]{6}$/i.test(style.left.color) ? style.left.color : '#000000',
+      borderWidth: style.left.widthMm || 0.12
+    }
+  }, [document, editingCapabilityState.focus])
   const characterStyleState = editingCapabilityState.characterStyle
   const characterStyleAvailable = Boolean(activeStyle && characterStyleState.available)
   const paragraphStyleAvailable = Boolean(
     activeStyle && editingCapabilityState.paragraphStyle.available
+  )
+  const cellStyleAvailable = Boolean(
+    activeCellStyle && editingCapabilityState.cellStyle.available
   )
   const applyCharacterStyle = useCallback(async (
     style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string; fontId?: string }
@@ -1202,6 +1217,53 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const applyCellStyle = useCallback(async (style: {
+    backgroundColor?: string
+    borderColor?: string
+    borderWidth?: number
+    borderType?: 'NONE' | 'SOLID'
+  }) => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.cellStyle.available ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('표 셀 모양 반영 중…')
+    try {
+      applyEditingResult(await api().applyCellStyle({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-cell-style'),
+        sectionPath: editingSelection.sectionPath,
+        textNodeId: editingSelection.focusTextNodeId,
+        selection: editingSelection,
+        ...style,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus(
+        style.backgroundColor !== undefined
+          ? '표 셀 배경색 적용'
+          : style.borderType === 'NONE'
+            ? '표 셀 테두리 해제'
+            : style.borderWidth !== undefined
+              ? `표 셀 테두리 ${style.borderWidth}mm`
+              : '표 셀 테두리색 적용'
+      )
+    } catch (reason) {
+      await recoverEditingFailure('표 셀 모양', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.cellStyle.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -1263,7 +1325,8 @@ export default function App() {
         text: '본문',
         'character-style': '글자 모양',
         'paragraph-style': '문단 모양',
-        'paragraph-structure': '문단 구조'
+        'paragraph-structure': '문단 구조',
+        'table-cell-style': '표 셀 모양'
       } as const
       const savedStructures = result.lossPolicy.structures
         .map(({ structure }) => structureLabels[structure])
@@ -1438,6 +1501,9 @@ export default function App() {
       activeStyle={activeStyle}
       characterStyleAvailable={characterStyleAvailable}
       paragraphStyleAvailable={paragraphStyleAvailable}
+      activeCellStyle={activeCellStyle}
+      cellStyleAvailable={cellStyleAvailable}
+      cellStyleTitle={editingCapabilityStatus('표 셀 모양', editingCapabilityState.cellStyle.reason)}
       characterStyleTitle={editingCapabilityStatus('글자 모양', characterStyleState.reason)}
       paragraphStyleTitle={editingCapabilityStatus(
         '문단 모양',
@@ -1457,6 +1523,7 @@ export default function App() {
       onRedoEditing={() => void redoEditing()}
       onCharacterStyle={(style) => void applyCharacterStyle(style)}
       onParagraphStyle={(style) => void applyParagraphStyle(style)}
+      onCellStyle={(style) => void applyCellStyle(style)}
     />
     <ViewerStage
       stageRef={stageRef}

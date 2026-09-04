@@ -29,6 +29,7 @@ export interface EditingAnchorContext {
   paragraphId: string
   rangeScope: string
   structure: EditingStructure
+  cellStyleId?: string
 }
 
 export interface EditingCapabilities {
@@ -37,6 +38,7 @@ export interface EditingCapabilities {
   characterStyle: EditingCapabilityState
   paragraphStyle: EditingCapabilityState
   paragraphStructure: EditingCapabilityState
+  cellStyle: EditingCapabilityState
   focus?: EditingAnchorContext
 }
 
@@ -62,7 +64,8 @@ function editableTexts(paragraph: ViewerParagraph): ViewerText[] | undefined {
 function paragraphContexts(
   paragraph: ViewerParagraph,
   structure: EditingStructure,
-  rangeScope: string
+  rangeScope: string,
+  cellStyleId?: string
 ): EditingAnchorContext[] {
   const texts = editableTexts(paragraph)
   if (!texts || (structure === 'TABLE_CELL_TEXT' && texts.length !== 1)) return []
@@ -74,7 +77,8 @@ function paragraphContexts(
     paraStyleId: paragraph.paraStyleId,
     paragraphId: paragraph.id,
     rangeScope,
-    structure
+    structure,
+    cellStyleId
   }))
 }
 
@@ -92,7 +96,8 @@ function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorCo
     const contexts = cell.paragraphs.map((paragraph) => paragraphContexts(
       paragraph,
       'TABLE_CELL_TEXT',
-      cellScope
+      cellScope,
+      cell.borderFillId
     ))
     return contexts.every((paragraph) => paragraph.length === 1)
       ? contexts.flat()
@@ -202,7 +207,8 @@ export function editingCapabilities(
       text: state,
       characterStyle: state,
       paragraphStyle: state,
-      paragraphStructure: state
+      paragraphStructure: state,
+      cellStyle: state
     }
   }
   const contexts = listEditingAnchorContexts(document)
@@ -215,7 +221,8 @@ export function editingCapabilities(
       text: state,
       characterStyle: state,
       paragraphStyle: state,
-      paragraphStructure: state
+      paragraphStructure: state,
+      cellStyle: state
     }
   }
   if (anchor.rangeScope !== focus.rangeScope) {
@@ -226,6 +233,7 @@ export function editingCapabilities(
       characterStyle: state,
       paragraphStyle: state,
       paragraphStructure: state,
+      cellStyle: state,
       focus
     }
   }
@@ -238,6 +246,7 @@ export function editingCapabilities(
       characterStyle: state,
       paragraphStyle: state,
       paragraphStructure: state,
+      cellStyle: state,
       focus
     }
   }
@@ -263,6 +272,9 @@ export function editingCapabilities(
       : !sameRun
         ? unavailable('MULTI_RUN_SELECTION')
         : { available: true },
+    cellStyle: !tableCell || !focus.cellStyleId
+      ? unavailable('TABLE_CELL_STRUCTURE')
+      : { available: true },
     focus
   }
 }

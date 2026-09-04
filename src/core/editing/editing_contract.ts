@@ -1,6 +1,7 @@
 import { ViewerDocument } from '../document/viewer_document'
 import { EditorSelection } from './transaction'
 import type { ParagraphAlignment } from './style_patch'
+import type { CellBorderType } from './cell_style_patch'
 import type { HwpxSaveLossPolicy } from './loss_policy'
 
 export interface EditingHistoryStatus {
@@ -97,6 +98,13 @@ export interface EditingSavedResult extends EditingHistoryStatus {
   entryCount: number
   previewStatus: 'current' | 'stale' | 'omitted'
   lossPolicy: HwpxSaveLossPolicy
+}
+
+export interface EditingCellStyleRequest extends EditingStyleRequestBase {
+  backgroundColor?: string
+  borderColor?: string
+  borderWidth?: number
+  borderType?: CellBorderType
 }
 
 export type EditingSaveAsDialogResult =

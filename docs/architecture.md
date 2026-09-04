@@ -178,6 +178,13 @@ run이면 `TABLE_CELL_TEXT` context를 만들고 cell별 range scope를 공유�
 paragraph만 범위 치환·분할·병합 대상으로 사용한다. 다른 cell이나 머리말·꼬리말 subList를
 가로지르는 요청은 renderer scope와 core source 검사 양쪽에서 차단한다.
 
+표 셀 모양 command는 선택 anchor에서 `hp:tc` ancestry를 다시 찾고 header·cellSpan을 검증한다.
+선택 셀이 참조하는 `hh:borderFill`을 새 ID로 복제한 뒤 단색 `hc:winBrush`와 사방 border 속성만
+수정하고, 해당 `hp:tc`의 `borderFillIDRef`만 교체한다. 공유 원본 style과 다른 셀은 그대로
+유지한다. header collection 삽입과 section reference 교체는 하나의 transaction이며 inverse가
+두 entry의 원래 tag·fragment를 보관한다. 동일한 결과 style이 이미 있으면 새 정의를 만들지 않고
+재사용한다. 불완전한 fill/border, 머리글·병합 셀은 renderer capability와 core 검사에서 차단한다.
+
 ## 프로세스 책임
 
 ### Electron main

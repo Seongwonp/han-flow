@@ -76,6 +76,17 @@ function commandBytes(transaction: EditTransaction): number {
           Buffer.byteLength(command.replacementFragment, 'utf8')
         )
       }
+      if (command.type === 'apply-cell-style') return sum + common + 48
+      if (command.type === 'restore-cell-style') {
+        const headerBytes = command.headerMutation
+          ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
+            Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
+            Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
+          : 0
+        return sum + common + headerBytes +
+          Buffer.byteLength(command.expectedCellOpenTag, 'utf8') +
+          Buffer.byteLength(command.replacementCellOpenTag, 'utf8')
+      }
       if (command.type === 'apply-character-style' || command.type === 'apply-paragraph-style') {
         return sum + common + 32
       }

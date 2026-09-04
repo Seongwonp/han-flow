@@ -62,7 +62,7 @@ export function editingCapabilityStatus(
     case 'MULTI_PARAGRAPH_SELECTION':
       return `여러 문단에 걸친 ${action}은 아직 지원하지 않습니다.`
     case 'TABLE_CELL_STRUCTURE':
-      return `표 셀에서는 텍스트 입력만 지원하며 ${action}은 아직 지원하지 않습니다.`
+      return `현재 선택한 본문·표 셀 구조에는 ${action}을 적용할 수 없습니다.`
     default:
       return undefined
   }

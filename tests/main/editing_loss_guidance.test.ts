@@ -46,4 +46,22 @@ describe('editing loss policy user guidance', () => {
     expect(detail).toContain('기존 탭 정의 참조')
     expect(detail).toContain('글머리표·번호 매기기 구조를 유지')
   })
+
+  test('표 셀 모양 저장은 격리 복제와 재열기 검토를 안내한다', () => {
+    const detail = editingLossPolicyDetail({
+      structures: [{
+        structure: 'table-cell-style',
+        preservation: 'targeted-source-edit',
+        compatibilityRisk: 'review'
+      }],
+      untouchedContent: 'preserved',
+      previewStatus: 'stale',
+      notices: ['PREVIEW_STALE', 'TABLE_CELL_STYLE_CHANGED'],
+      reviewRecommended: true
+    })
+
+    expect(detail).toContain('표 셀 모양')
+    expect(detail).toContain('새 borderFill 정의로 격리')
+    expect(detail).toContain('한/글에서 재열기')
+  })
 })

@@ -57,6 +57,7 @@ const document: ViewerDocument = {
             width: 100,
             height: 100,
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            borderFillId: '1',
             header: false,
             paragraphs: [paragraph('cell-p0', [text(3, '셀')])]
           },
@@ -68,6 +69,7 @@ const document: ViewerDocument = {
             width: 100,
             height: 100,
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            borderFillId: '1',
             header: false,
             paragraphs: [
               paragraph('multi-cell-p0', [text(4, '첫 문단')]),
@@ -170,6 +172,12 @@ describe('편집 capability', () => {
     expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
     expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
     expect(capability.paragraphStructure.available).toBe(true)
+    expect(capability.cellStyle.available).toBe(true)
+    expect(capability.focus?.cellStyleId).toBe('1')
+    expect(editingCapabilities(document, selection(3, 0, 4, 0)).cellStyle).toEqual({
+      available: false,
+      reason: 'CROSS_STRUCTURE_SELECTION'
+    })
   })
 
   test('안전한 여러 문단 표 셀은 cell scope를 공유하고 횡단 text 치환을 허용한다', () => {

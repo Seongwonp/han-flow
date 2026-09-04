@@ -6,6 +6,7 @@ export type HwpxEditedStructure =
   | 'character-style'
   | 'paragraph-style'
   | 'paragraph-structure'
+  | 'table-cell-style'
 
 export type HwpxPreviewStatus = 'current' | 'stale' | 'omitted'
 
@@ -13,6 +14,7 @@ export type HwpxLossPolicyNotice =
   | 'PREVIEW_STALE'
   | 'PREVIEW_OMITTED'
   | 'PARAGRAPH_STRUCTURE_CHANGED'
+  | 'TABLE_CELL_STYLE_CHANGED'
 
 export interface HwpxStructureLossPolicy {
   structure: HwpxEditedStructure
@@ -32,7 +34,8 @@ const STRUCTURE_ORDER: HwpxEditedStructure[] = [
   'text',
   'character-style',
   'paragraph-style',
-  'paragraph-structure'
+  'paragraph-structure',
+  'table-cell-style'
 ]
 
 function commandStructure(command: EditCommand): HwpxEditedStructure {
@@ -41,6 +44,9 @@ function commandStructure(command: EditCommand): HwpxEditedStructure {
     return 'character-style'
   }
   if (command.type === 'apply-paragraph-style') return 'paragraph-style'
+  if (command.type === 'apply-cell-style' || command.type === 'restore-cell-style') {
+    return 'table-cell-style'
+  }
   if (command.type === 'restore-style') {
     return command.target === 'character' ? 'character-style' : 'paragraph-style'
   }
@@ -79,17 +85,20 @@ export function createSaveLossPolicy(
   if (structures.includes('paragraph-structure')) {
     notices.push('PARAGRAPH_STRUCTURE_CHANGED')
   }
+  if (structures.includes('table-cell-style')) notices.push('TABLE_CELL_STYLE_CHANGED')
 
   return {
     structures: structures.map((structure) => ({
       structure,
       preservation: 'targeted-source-edit',
-      compatibilityRisk: structure === 'paragraph-structure' ? 'review' : 'low'
+      compatibilityRisk:
+        structure === 'paragraph-structure' || structure === 'table-cell-style' ? 'review' : 'low'
     })),
     untouchedContent: 'preserved',
     previewStatus,
     notices,
     reviewRecommended: notices.includes('PREVIEW_STALE') ||
-      notices.includes('PARAGRAPH_STRUCTURE_CHANGED')
+      notices.includes('PARAGRAPH_STRUCTURE_CHANGED') ||
+      notices.includes('TABLE_CELL_STYLE_CHANGED')
   }
 }

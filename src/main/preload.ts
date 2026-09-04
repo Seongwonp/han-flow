@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   EditingCharacterStyleRequest,
+  EditingCellStyleRequest,
   EditingCommitRequest,
   EditingMergeParagraphRequest,
   EditingParagraphStyleRequest,
@@ -63,6 +64,8 @@ const api = {
     invokeEditing('editing:applyCharacterStyle', request),
   applyParagraphStyle: (request: EditingParagraphStyleRequest) =>
     invokeEditing('editing:applyParagraphStyle', request),
+  applyCellStyle: (request: EditingCellStyleRequest) =>
+    invokeEditing('editing:applyCellStyle', request),
   undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
   redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
   refreshEditing: (sessionId: string) => invokeEditing('editing:refresh', sessionId),

@@ -47,6 +47,9 @@ button { font: inherit; }
 .viewer-style-color { width: 34px; height: 29px; padding: 2px; border: 0; border-radius: 5px; background: transparent; }
 .viewer-style-color::-webkit-color-swatch-wrapper { padding: 1px; }
 .viewer-style-color::-webkit-color-swatch { border: 1px solid #9aa1aa; border-radius: 4px; }
+.viewer-ribbon-cell-controls { align-items: center; }
+.viewer-ribbon-cell-controls select { width: 78px; }
+.viewer-ribbon-cell-controls button { min-width: 58px; font-size: 11px; }
 .viewer-ribbon-spacing-controls { gap: 9px; }
 .viewer-paragraph-metric { display: grid; grid-template-columns: 42px 40px 48px 40px; align-items: center; gap: 2px; color: #4c535d; font-size: 10px; }
 .viewer-paragraph-metric button { min-width: 40px; width: 40px; height: 40px; padding: 0; }

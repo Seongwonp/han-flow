@@ -427,8 +427,20 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 7. [x] 양 끝 run style과 원본 XML inverse, selection·undo/redo를 유지한다.
 8. [x] main session에서 범위 치환·Save As·재개봉을 공개 fixture로 검증한다.
 
-이번 단계는 병합되지 않은 일반 body cell의 기존 `hp:subList` 문단 구조만 수정한다. 행·열,
-cell 병합·분할, 반복 머리글, continuation fragment와 테두리·배경 편집은 다음 관문으로 남긴다.
+이번 단계는 병합되지 않은 일반 body cell의 기존 `hp:subList` 문단 구조만 수정한다.
+
+## 완료한 milestone: Sprint 3 표 셀 테두리·배경 편집 기반
+
+1. [x] 안전한 일반 body cell의 source anchor에서 실제 `hp:tc`와 `borderFillIDRef`를 찾는다.
+2. [x] 기존 `hh:borderFill`을 복제하고 선택 셀 reference만 교체해 공유 style 전파를 막는다.
+3. [x] 단색 배경과 사방 테두리 색·두께·없음 control을 편집 리본에 연결한다.
+4. [x] header·section exact inverse로 undo/redo와 원본 바이트 복원을 보장한다.
+5. [x] 머리글·병합·span·continuation 및 불완전 border/fill 정의를 fail-closed한다.
+6. [x] `table-cell-style` loss policy와 저장 확인·완료 안내에 외부 재열기 권고를 연결한다.
+7. [x] main session undo/redo, Save As와 재개봉 projection을 공개 fixture로 검증한다.
+
+다음 관문은 행·열 추가/삭제와 cell 병합·분할이다. 이들은 주소·span·row/column count와 layout을
+동시에 바꾸므로 현재의 단일 셀 style mutation과 분리해 진행한다.
 
 ## 다음 milestone: V3 외부 승인
 

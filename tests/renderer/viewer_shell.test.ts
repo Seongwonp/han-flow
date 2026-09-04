@@ -37,6 +37,8 @@ describe('viewer shell components', () => {
       searchInputRef: createRef<HTMLInputElement>(),
       characterStyleAvailable: false,
       paragraphStyleAvailable: false,
+      cellStyleAvailable: true,
+      activeCellStyle: { backgroundColor: '#EEEEEE', borderColor: '#000000', borderWidth: 0.12 },
       documentFonts: [{ id: '0', family: 'HanFlow Test Sans' }],
       onSearchQueryChange: noop,
       onSearchStep: noop,
@@ -50,7 +52,8 @@ describe('viewer shell components', () => {
       onUndoEditing: noop,
       onRedoEditing: noop,
       onCharacterStyle: noop,
-      onParagraphStyle: noop
+      onParagraphStyle: noop,
+      onCellStyle: noop
     }))
 
     expect(markup).toContain('sample.hwpx')
@@ -60,6 +63,8 @@ describe('viewer shell components', () => {
     expect(markup).toContain('aria-label="문서 글꼴"')
     expect(markup).toContain('HanFlow Test Sans')
     expect(markup).toContain('aria-label="다시 실행"')
+    expect(markup).toContain('aria-label="셀 배경색"')
+    expect(markup).toContain('aria-label="셀 테두리 두께"')
   })
 
   test('stage는 빈 화면·오류·문서 children 경계를 소유한다', () => {

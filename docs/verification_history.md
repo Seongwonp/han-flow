@@ -8,6 +8,19 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-04 — Sprint 3 표 셀 테두리·배경 편집 기반
+
+병합되지 않은 일반 body cell에서 기존 borderFill 정의를 새 ID로 복제하고 선택한 셀의
+`borderFillIDRef`만 교체하도록 구현했다. 배경색과 사방 테두리 색·두께·없음을 리본에서 적용하며,
+공유 원본 style과 다른 셀은 수정하지 않는다. 머리글·rowSpan·columnSpan·continuation과 단색
+winBrush 또는 사방 border가 불완전한 source는 fail-closed한다.
+
+전용 테스트는 header·section 동시 변경, unknown XML sentinel 보존, projection, exact inverse,
+redo, 제한 구조 차단을 검증한다. main session에서는 selection capability, undo/redo,
+`table-cell-style` loss policy, Save As와 재개봉까지 확인했다. TypeScript typecheck와
+Jest 35 suites·200 tests 통과(2 suites·11 tests skip)를 확인했다. Electron production build와
+privacy-safe probe 8개도 모두 통과했다.
+
 ## 2026-09-04 — Sprint 3 여러 문단 표 cell 구조 편집
 
 병합·span·반복 머리글·continuation이 없는 일반 body cell에서, 모든 문단이 단일 source text

@@ -5,21 +5,23 @@ import {
 import type { EditCommand } from '../../src/core/editing/transaction'
 
 describe('HWPX structure loss policy', () => {
-  test('command를 사용자에게 노출할 네 구조로 안정적인 순서에 분류한다', () => {
+  test('command를 사용자에게 노출할 다섯 구조로 안정적인 순서에 분류한다', () => {
     const common = { sectionPath: 'Contents/section0.xml', textNodeId: 'text-0' }
     const commands = [
       { type: 'replace-paragraph-fragment' },
       { type: 'apply-paragraph-style' },
       { type: 'restore-style', target: 'character' },
       { type: 'replace-text' },
-      { type: 'restore-character-run' }
+      { type: 'restore-character-run' },
+      { type: 'apply-cell-style' }
     ].map((command) => ({ ...common, ...command })) as EditCommand[]
 
     expect(editedStructuresForCommands(commands)).toEqual([
       'text',
       'character-style',
       'paragraph-style',
-      'paragraph-structure'
+      'paragraph-structure',
+      'table-cell-style'
     ])
   })
 

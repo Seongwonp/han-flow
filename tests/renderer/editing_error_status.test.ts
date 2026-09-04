@@ -79,7 +79,7 @@ describe('renderer 편집 오류 안내', () => {
 
   test('표 셀 구조 제한과 stale selection 복구를 구체적으로 안내한다', () => {
     expect(editingCapabilityStatus('문단 나눔·병합', 'TABLE_CELL_STRUCTURE')).toBe(
-      '표 셀에서는 텍스트 입력만 지원하며 문단 나눔·병합은 아직 지원하지 않습니다.'
+      '현재 선택한 본문·표 셀 구조에는 문단 나눔·병합을 적용할 수 없습니다.'
     )
     expect(editingSelectionProjectionStatus('COLLAPSED')).toContain('남아 있는 위치로 이동')
     expect(editingSelectionProjectionStatus('CLEARED')).toContain('다시 선택')

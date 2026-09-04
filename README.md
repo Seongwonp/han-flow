@@ -173,7 +173,7 @@ round-trip하고 source anchor로 여러 `hp:t` 범위를 수정한 뒤 검증�
 구현됐습니다. 여러 command의 원자적 transaction, selection 복원, bounded undo/redo와
 savepoint·dirty 상태도 검증했습니다. main-process 소유 편집 session과 제한된 IPC를 통해
 최상위 텍스트 문단과 안전한 일반 표 body cell을 편집 UI에 연결했고, 패키지
-앱에서 composition commit·undo·redo를 검증했습니다. 변경본은 본문·글자 모양·문단 모양·문단 구조 중
+앱에서 composition commit·undo·redo를 검증했습니다. 변경본은 본문·글자 모양·문단 모양·문단 구조·표 셀 모양 중
 실제로 바뀐 범위, 손대지 않은 package 보존 정책과 Preview 상태를 확인한 뒤 새 HWPX 이름으로만
 저장하며, 원본과 기존 목적지는 덮어쓰지 않습니다. 저장 완료 상태에도 같은 구조별 결과를 표시합니다.
 저장하지 않은 상태에서 다른 문서를 열거나 창·앱을 닫으면 저장, 버리기, 취소 중 하나를
@@ -184,7 +184,7 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 
 ## 알려진 제한
 
-- HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 문단을 지원합니다. 부분 style로
+- HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 text run 문단을 지원합니다. 부분 style로
   나뉜 여러 run과 여러 최상위 문단은 키보드·pointer 범위 선택과 치환을 지원합니다.
 - 반복 머리글, 병합·`rowSpan`, continuation fragment와 머리말·꼬리말은 읽기 전용입니다.
   병합되지 않은 일반 body cell은 여러 문단의 단일 text run을 편집하고, 같은 cell 안에서 문단을
@@ -195,8 +195,9 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 - 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
   단축키를 비활성화합니다.
 - 편집 capability는 최상위 문단, 안전한 표 셀 text, 여러 run·문단과 서로 다른 구조의 selection을
-  구분합니다. 여러 문단 표 셀은 cell별 scope를 공유하되 다른 cell과 격리합니다. 표 셀의 글자·문단
-  모양 control, 병합·span·반복 머리글·continuation 구조 편집은 요청 전에 차단합니다.
+  구분합니다. 여러 문단 표 셀은 cell별 scope를 공유하되 다른 cell과 격리합니다. 표 셀의
+  글자·문단 모양 control은 차단하고, 안전한 단일 셀에서는 배경색과 사방 테두리 색·두께를 편집합니다.
+  병합·span·반복 머리글·continuation 구조 편집은 요청 전에 차단합니다.
 - 편집 결과의 selection anchor가 문서 갱신으로 달라지면 최신 main projection을 다시 받아
   offset을 안전한 UTF-16 경계로 조정합니다. 한 endpoint만 남으면 그 위치로 접고 둘 다
   사라지면 선택을 해제한 뒤 다시 선택하도록 안내합니다.
@@ -207,7 +208,10 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 - 문단 모양은 최상위 일반 문단의 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄
   들여쓰기·내어쓰기를 지원합니다. 인라인 탭이 있는 문단도 같은 문단 모양을 바꿀 수 있으며,
   기존 `tabPrIDRef`와 글머리표·번호 매기기 `heading`은 복제·저장·undo/redo에서 유지합니다.
-  사용자 정의 탭 위치와 목록 모양 자체를 새로 만들거나 바꾸는 기능, 표 cell style 편집은 아직 지원하지 않습니다.
+  사용자 정의 탭 위치와 목록 모양 자체를 새로 만들거나 바꾸는 기능은 아직 지원하지 않습니다.
+- 일반 body cell의 기존 `borderFill`을 복제해 셀 배경색과 사방 테두리의 색·두께·없음을 적용합니다.
+  공유 style 원본은 유지하므로 다른 셀에 변경이 번지지 않습니다. 단색 `winBrush`와 사방 border 정의가
+  없는 셀, 머리글·병합·continuation 셀은 안전하게 거부합니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않습니다. 구조 편집이 남아 있으면 `stale`, 원문 상태로
   undo했으면 `current`, 원래 없으면 `omitted`로 저장 확인창과 완료 상태에 표시합니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.

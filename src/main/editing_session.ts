@@ -3,6 +3,7 @@ import { basename, dirname, extname, join } from 'path'
 import {
   EditingActionResult,
   EditingCharacterStyleRequest,
+  EditingCellStyleRequest,
   EditingCommitRequest,
   EditingMergeParagraphRequest,
   EditingParagraphStyleRequest,
@@ -12,6 +13,7 @@ import {
   EditingStartResult
 } from '../core/editing/editing_contract'
 import { EditingOperationError } from '../core/editing/editing_error'
+import { editingCapabilities } from '../core/editing/editing_capability'
 import { HwpxEditHistory } from '../core/editing/history'
 import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
@@ -331,6 +333,50 @@ export class EditingSessionManager {
       return {
         document: await decodeViewerDocument(session.history.package),
         selection: action?.selection ?? session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async applyCellStyle(
+    senderId: number,
+    request: EditingCellStyleRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const capabilities = editingCapabilities(
+        await decodeViewerDocument(session.history.package),
+        request.selection
+      )
+      if (!capabilities.cellStyle.available || capabilities.focus?.textNodeId !== request.textNodeId) {
+        throw new EditingOperationError(
+          'EDITING_UNSUPPORTED',
+          '표 셀 모양은 하나의 안전한 일반 body 셀을 선택했을 때만 바꿀 수 있습니다.'
+        )
+      }
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [{
+          type: 'apply-cell-style',
+          sectionPath: request.sectionPath,
+          textNodeId: request.textNodeId,
+          backgroundColor: request.backgroundColor,
+          borderColor: request.borderColor,
+          borderWidth: request.borderWidth,
+          borderType: request.borderType
+        }],
+        selectionBefore: { ...request.selection },
+        selectionAfter: { ...request.selection },
+        inputType: 'formatTableCell',
+        timestamp: request.timestamp
+      }
+      const result = session.history.commitSynchronized(transaction)
+      return {
+        document: result.changed
+          ? await projectEditTransaction(result)
+          : await decodeViewerDocument(session.history.package),
+        selection: session.history.selection,
         ...status(session)
       }
     })

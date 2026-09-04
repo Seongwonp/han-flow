@@ -18,6 +18,12 @@ export interface RibbonStyleState {
   marginAfter: number
 }
 
+export interface RibbonCellStyleState {
+  backgroundColor: string
+  borderColor: string
+  borderWidth: number
+}
+
 interface ViewerToolbarProps {
   fileName: string
   editing: RendererEditingSession | null
@@ -38,6 +44,9 @@ interface ViewerToolbarProps {
   activeStyle?: RibbonStyleState
   characterStyleAvailable: boolean
   paragraphStyleAvailable: boolean
+  activeCellStyle?: RibbonCellStyleState
+  cellStyleAvailable: boolean
+  cellStyleTitle?: string
   characterStyleTitle?: string
   paragraphStyleTitle?: string
   documentFonts: Array<{ id: string; family: string }>
@@ -68,6 +77,12 @@ interface ViewerToolbarProps {
     marginBefore?: number
     marginAfter?: number
   }) => void
+  onCellStyle: (style: {
+    backgroundColor?: string
+    borderColor?: string
+    borderWidth?: number
+    borderType?: 'NONE' | 'SOLID'
+  }) => void
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -91,6 +106,9 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     activeStyle,
     characterStyleAvailable,
     paragraphStyleAvailable,
+    activeCellStyle,
+    cellStyleAvailable,
+    cellStyleTitle,
     characterStyleTitle,
     paragraphStyleTitle,
     documentFonts,
@@ -106,7 +124,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     onUndoEditing,
     onRedoEditing,
     onCharacterStyle,
-    onParagraphStyle
+    onParagraphStyle,
+    onCellStyle
   } = props
   const pending = Boolean(editingPending)
 
@@ -208,6 +227,23 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
             <div className="viewer-paragraph-metric"><span>문단 뒤</span><button aria-label="문단 뒤 간격 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && onParagraphStyle({ marginAfter: Math.max(0, activeStyle.marginAfter - 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter <= 0 || pending}>−</button><output aria-label="현재 문단 뒤 간격">{activeStyle ? `${activeStyle.marginAfter / 100}pt` : '—'}</output><button aria-label="문단 뒤 간격 늘리기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && onParagraphStyle({ marginAfter: Math.min(7200, activeStyle.marginAfter + 100) })} disabled={!paragraphStyleAvailable || !activeStyle || activeStyle.marginAfter >= 7200 || pending}>＋</button></div>
           </div>
           <span className="viewer-ribbon-group-label">문단 간격</span>
+        </div>
+        <div className="viewer-ribbon-group viewer-ribbon-cell-group" title={cellStyleTitle}>
+          <div className="viewer-ribbon-controls viewer-ribbon-cell-controls">
+            <label className="viewer-style-color-label" title="셀 배경색">
+              <input className="viewer-style-color" type="color" aria-label="셀 배경색" value={activeCellStyle?.backgroundColor ?? '#FFFFFF'} onChange={(event) => onCellStyle({ backgroundColor: event.target.value })} disabled={!cellStyleAvailable || pending} />
+              <span>배경</span>
+            </label>
+            <label className="viewer-style-color-label" title="셀 테두리색">
+              <input className="viewer-style-color" type="color" aria-label="셀 테두리색" value={activeCellStyle?.borderColor ?? '#000000'} onChange={(event) => onCellStyle({ borderColor: event.target.value, borderType: 'SOLID' })} disabled={!cellStyleAvailable || pending} />
+              <span>선색</span>
+            </label>
+            <select aria-label="셀 테두리 두께" value={activeCellStyle?.borderWidth ?? 0.12} onChange={(event) => onCellStyle({ borderWidth: Number(event.target.value), borderType: 'SOLID' })} disabled={!cellStyleAvailable || pending}>
+              {[0.12, 0.2, 0.4, 0.6, 1].map((width) => <option key={width} value={width}>{width}mm</option>)}
+            </select>
+            <button aria-label="셀 테두리 없음" title="사방 테두리 없음" onMouseDown={(event) => event.preventDefault()} onClick={() => onCellStyle({ borderType: 'NONE' })} disabled={!cellStyleAvailable || pending}>선 없음</button>
+          </div>
+          <span className="viewer-ribbon-group-label">표 셀 모양</span>
         </div>
       </div>
     </div>}

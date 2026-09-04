@@ -598,7 +598,15 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 `TABLE_CELL_TEXT` context는 cell별 range scope를 공유한다. source paragraph locator는
 `hp:tc > hp:subList > hp:p` ancestry와 header·cellSpan을 검증하고 같은 subList의 direct paragraph만
 선택하므로 문단 횡단 치환·Enter·경계 병합을 안전하게 재사용한다. 다른 cell과 header/footer
-subList는 core에서 다시 거부하며 행·열·cell style mutation은 별도 범위로 남긴다.
+subList는 core에서 다시 거부한다.
+
+같은 날 다음 slice는 안전한 일반 body cell의 `borderFillIDRef` 편집을 열었다. 기존
+`hh:borderFill`을 직접 바꾸지 않고 새 ID로 복제해 선택 셀에만 연결하므로 같은 style을 공유하는
+다른 셀은 유지된다. UI는 단색 배경과 사방 테두리 색·두께·없음을 제공하고, core는 기존
+`hc:winBrush`와 네 border가 모두 있는 경우에만 적용한다. header collection과 section reference는
+단일 history transaction 및 exact inverse로 undo/redo한다. 저장 loss policy는 이 변경을
+`table-cell-style`과 review 대상으로 분류해 Han-Flow·한/글 재열기를 권고한다. 행·열과
+병합·분할은 주소·span·layout mutation이 필요하므로 다음 관문으로 남긴다.
 
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
