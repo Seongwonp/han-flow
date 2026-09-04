@@ -164,24 +164,25 @@ describe('편집 capability', () => {
     })
   })
 
-  test('안전한 표 셀은 텍스트만 허용하고 style·문단 구조 편집은 제한한다', () => {
+  test('안전한 표 셀은 text와 문단 구조를 허용하고 style은 제한한다', () => {
     const capability = editingCapabilities(document, selection(3, 1))
     expect(capability.text.available).toBe(true)
     expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
     expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
-    expect(capability.paragraphStructure.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(capability.paragraphStructure.available).toBe(true)
   })
 
-  test('안전한 여러 문단 표 셀은 각 문단을 독립 text scope로 허용한다', () => {
+  test('안전한 여러 문단 표 셀은 cell scope를 공유하고 횡단 text 치환을 허용한다', () => {
     const first = editingCapabilities(document, selection(4, 2))
     const second = editingCapabilities(document, selection(5, 3))
     expect(first.text.available).toBe(true)
     expect(second.text.available).toBe(true)
-    expect(first.focus?.rangeScope).not.toBe(second.focus?.rangeScope)
-    expect(editingCapabilities(document, selection(4, 0, 5, 1)).selection).toEqual({
-      available: false,
-      reason: 'CROSS_STRUCTURE_SELECTION'
-    })
+    expect(first.focus?.rangeScope).toBe(second.focus?.rangeScope)
+    const across = editingCapabilities(document, selection(4, 0, 5, 1))
+    expect(across.selection.available).toBe(true)
+    expect(across.text.available).toBe(true)
+    expect(across.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(across.paragraphStructure.reason).toBe('MULTI_RUN_SELECTION')
   })
 
   test('길어진 offset은 surrogate pair를 가르지 않는 경계로 보정한다', () => {

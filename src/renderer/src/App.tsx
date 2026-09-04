@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell } from '../../core/document/viewer_document'
+import { ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
@@ -83,6 +83,20 @@ export function isEditableTableCell(cell: ViewerTableCell, measurable = false): 
   )
 }
 
+export function tableCellRangeScope(tableId: string, cell: ViewerTableCell): string | undefined {
+  const text = cell.paragraphs.flatMap((paragraph) => paragraph.content)
+    .find((item): item is ViewerText => item.type === 'text' && Boolean(item.sourceAnchor))
+  return text?.sourceAnchor
+    ? `${text.sourceAnchor.sectionPath}:table-cell:${cell.sourceCellId ?? `${tableId}:r${cell.row}c${cell.column}`}`
+    : undefined
+}
+
+export function tableCellParagraphLabel(index: number, count: number): string {
+  return count > 1
+    ? `HWPX 표 셀 ${index + 1}/${count} 문단 편집`
+    : 'HWPX 표 셀 편집'
+}
+
 function Content({
   item,
   document,
@@ -112,6 +126,9 @@ interface ParagraphEditingProps {
   allowMultipleRuns?: boolean
   allowParagraphRange?: boolean
   allowParagraphStructure?: boolean
+  rangeScope?: string
+  allowParagraphMergePrevious?: boolean
+  allowParagraphMergeNext?: boolean
   editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
@@ -182,7 +199,8 @@ export function ParagraphView({
   const paragraphRef = useRef<HTMLDivElement>(null)
   const sectionPath = editableTexts?.[0]?.sourceAnchor?.sectionPath
   const rangeScope = sectionPath && activeEditing
-    ? paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange))
+    ? activeEditing.rangeScope ??
+      paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange))
     : undefined
   const editorHost = () => activeEditing?.editorHostRef?.current ?? paragraphRef.current
   const readEditorSelection = () => {
@@ -245,8 +263,8 @@ export function ParagraphView({
       onRangeCommit={activeEditing.onRangeCommit}
       onSplitParagraph={activeEditing.onSplitParagraph}
       onMergeParagraph={activeEditing.onMergeParagraph}
-      allowMergePrevious={index === 0}
-      allowMergeNext={index === editableTexts.length - 1}
+      allowMergePrevious={index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
+      allowMergeNext={index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
       allowParagraphStructure={activeEditing.allowParagraphStructure}
       onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
       onBoundaryNavigate={(direction, selection) => {
@@ -329,6 +347,7 @@ function TableView({
   return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     const fragmented = cell.splitTop || cell.splitBottom
+    const cellRangeScope = tableCellRangeScope(table.id, cell)
     return <td key={cellFragmentKey(table.id, cell)} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
       minHeight: fragmented ? undefined : hwpUnitToCssPx(cell.height), verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
       padding: fragmented ? undefined : `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
@@ -349,12 +368,13 @@ function TableView({
         isEditableTableCell(cell, measurable) && editing
           ? {
               ...editing,
-              surfaceLabel: cell.paragraphs.length > 1
-                ? `HWPX 표 셀 ${paragraphIndex + 1}/${cell.paragraphs.length} 문단 편집`
-                : 'HWPX 표 셀 편집',
+              surfaceLabel: tableCellParagraphLabel(paragraphIndex, cell.paragraphs.length),
               allowMultipleRuns: false,
-              allowParagraphRange: false,
-              allowParagraphStructure: false
+              allowParagraphRange: cell.paragraphs.length > 1,
+              allowParagraphStructure: true,
+              rangeScope: cellRangeScope,
+              allowParagraphMergePrevious: paragraphIndex > 0,
+              allowParagraphMergeNext: paragraphIndex < cell.paragraphs.length - 1
             }
           : undefined
       }

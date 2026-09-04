@@ -7,7 +7,9 @@ import {
   FixedPageTextLayer,
   isEditableTableCell,
   isEditableTextParagraph,
-  ParagraphView
+  ParagraphView,
+  tableCellParagraphLabel,
+  tableCellRangeScope
 } from '../../src/renderer/src/App'
 
 const nestedParagraph: ViewerParagraph = {
@@ -124,6 +126,32 @@ describe('DOM 측정 마커', () => {
       ...multiRun,
       content: [{ ...multiRun.content[0], sourceAnchor: undefined }]
     }, true)).toBe(false)
+  })
+
+  test('여러 문단 표 cell은 하나의 range scope와 문단별 label을 계산한다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const first = nestedParagraph
+    const second: ViewerParagraph = {
+      ...nestedParagraph,
+      id: 'table:r0c0:p1',
+      content: [{
+        type: 'text',
+        text: '둘째',
+        charStyleId: '0',
+        sourceAnchor: {
+          sectionPath: 'Contents/section0.xml',
+          textNodeId: 'Contents/section0.xml#hp:t:1'
+        }
+      }]
+    }
+    const cell = { ...table.rows[0].cells[0], paragraphs: [first, second] }
+
+    expect(tableCellRangeScope(table.id, cell)).toBe(
+      'Contents/section0.xml:table-cell:table:r0c0'
+    )
+    expect(tableCellParagraphLabel(0, 2)).toBe('HWPX 표 셀 1/2 문단 편집')
+    expect(tableCellParagraphLabel(1, 2)).toBe('HWPX 표 셀 2/2 문단 편집')
   })
 
   test('이어지는 셀 조각은 잘린 경계와 padding, 최소 높이를 제거한다', () => {

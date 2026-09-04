@@ -63,6 +63,7 @@ interface ParagraphContext {
   textNode: XmlElementSpan
   run: XmlElementSpan
   paragraph: XmlElementSpan
+  scope: XmlElementSpan
 }
 
 function findTagEnd(xml: string, start: number): number {
@@ -199,15 +200,30 @@ function locateParagraph(
   if (!textNode) throw new HwpxEditConflictError(`문단 anchor ordinal을 찾을 수 없습니다: ${textNodeId}`)
   const run = nearestAncestor(textNode, 'hp:run')
   const paragraph = nearestAncestor(textNode, 'hp:p')
-  if (
-    !run ||
-    !paragraph ||
-    run.parent?.start !== paragraph.start ||
-    paragraph.parent?.name !== 'hs:sec'
-  ) {
-    throw new HwpxEditConflictError('최상위 일반 텍스트 문단만 나눌 수 있습니다.')
+  if (!run || !paragraph || run.parent?.start !== paragraph.start || !paragraph.parent) {
+    throw new HwpxEditConflictError('지원하는 일반 텍스트 문단 구조를 찾을 수 없습니다.')
   }
-  return { xml, spans, textNode, run, paragraph }
+  const scope = paragraph.parent
+  if (scope.name === 'hp:subList') {
+    const cell = nearestAncestor(paragraph, 'hp:tc')
+    const cellSpan = cell && spans.find(
+      (span) => span.name === 'hp:cellSpan' && span.parent?.start === cell.start
+    )
+    const cellTag = cell ? xml.slice(cell.start, cell.openEnd) : ''
+    const spanTag = cellSpan ? xml.slice(cellSpan.start, cellSpan.openEnd) : ''
+    if (
+      !cell ||
+      scope.parent?.start !== cell.start ||
+      attribute(cellTag, 'header') === '1' ||
+      Number(attribute(spanTag, 'rowSpan') ?? '1') !== 1 ||
+      Number(attribute(spanTag, 'colSpan') ?? '1') !== 1
+    ) {
+      throw new HwpxEditConflictError('병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
+    }
+  } else if (scope.name !== 'hs:sec') {
+    throw new HwpxEditConflictError('최상위 문단 또는 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
+  }
+  return { xml, spans, textNode, run, paragraph, scope }
 }
 
 function assertSimpleParagraph(context: ParagraphContext): XmlElementSpan[] {
@@ -385,14 +401,14 @@ export function planMergeParagraph(
     throw new HwpxEditConflictError('다음 문단 병합은 문단 맨 끝에서만 지원합니다.')
   }
 
-  const topLevelParagraphs = current.spans.filter(
-    (span) => span.name === 'hp:p' && span.parent?.name === 'hs:sec'
+  const scopedParagraphs = current.spans.filter(
+    (span) => span.name === 'hp:p' && span.parent?.start === current.scope.start
   )
-  const currentIndex = topLevelParagraphs.findIndex(
+  const currentIndex = scopedParagraphs.findIndex(
     (paragraph) => paragraph.start === current.paragraph.start
   )
   const neighborIndex = currentIndex + (direction === 'previous' ? -1 : 1)
-  const neighborParagraph = topLevelParagraphs[neighborIndex]
+  const neighborParagraph = scopedParagraphs[neighborIndex]
   if (currentIndex < 0 || !neighborParagraph) {
     throw new EditingOperationError(
       'EDITING_NOT_APPLICABLE',
@@ -449,14 +465,9 @@ export function selectionSpansParagraphs(
 ): boolean {
   const normalized = normalizeEditorSelection(sourcePackage, selection)
   if (normalized.start.textNodeId === normalized.end.textNodeId) return false
-  try {
-    const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
-    const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
-    return start.paragraph.start !== end.paragraph.start
-  } catch (reason) {
-    if (reason instanceof HwpxEditConflictError) return false
-    throw reason
-  }
+  const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  return start.paragraph.start !== end.paragraph.start
 }
 
 export function planReplaceParagraphSelection(
@@ -473,19 +484,22 @@ export function planReplaceParagraphSelection(
   if (start.paragraph.start > end.paragraph.start) {
     throw new HwpxEditConflictError('정규화된 문단 선택 순서가 올바르지 않습니다.')
   }
-  const topLevelParagraphs = start.spans.filter(
-    (span) => span.name === 'hp:p' && span.parent?.name === 'hs:sec'
+  if (start.scope.start !== end.scope.start) {
+    throw new HwpxEditConflictError('서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.')
+  }
+  const scopedParagraphs = start.spans.filter(
+    (span) => span.name === 'hp:p' && span.parent?.start === start.scope.start
   )
-  const startParagraphIndex = topLevelParagraphs.findIndex(
+  const startParagraphIndex = scopedParagraphs.findIndex(
     (paragraph) => paragraph.start === start.paragraph.start
   )
-  const endParagraphIndex = topLevelParagraphs.findIndex(
+  const endParagraphIndex = scopedParagraphs.findIndex(
     (paragraph) => paragraph.start === end.paragraph.start
   )
   if (startParagraphIndex < 0 || endParagraphIndex <= startParagraphIndex) {
     throw new HwpxEditConflictError('여러 문단 selection 범위를 찾을 수 없습니다.')
   }
-  const selectedParagraphs = topLevelParagraphs.slice(startParagraphIndex, endParagraphIndex + 1)
+  const selectedParagraphs = scopedParagraphs.slice(startParagraphIndex, endParagraphIndex + 1)
   const contexts = selectedParagraphs.map((paragraph) => {
     const text = start.spans.find(
       (span) =>

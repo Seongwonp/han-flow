@@ -88,10 +88,11 @@ function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorCo
       cell.columnSpan === 1 &&
       cell.paragraphs.length > 0
     if (!safeCell) return []
+    const cellScope = `${sectionPath}:table-cell:${cell.sourceCellId ?? `${table.id}:r${cell.row}c${cell.column}`}`
     const contexts = cell.paragraphs.map((paragraph) => paragraphContexts(
       paragraph,
       'TABLE_CELL_TEXT',
-      `${sectionPath}:paragraph:${paragraph.id}`
+      cellScope
     ))
     return contexts.every((paragraph) => paragraph.length === 1)
       ? contexts.flat()
@@ -241,6 +242,7 @@ export function editingCapabilities(
     }
   }
   const topLevel = anchor.structure === 'TOP_LEVEL_TEXT' && focus.structure === 'TOP_LEVEL_TEXT'
+  const tableCell = anchor.structure === 'TABLE_CELL_TEXT' && focus.structure === 'TABLE_CELL_TEXT'
   const sameRun = anchor.textNodeId === focus.textNodeId
   const sameParagraph = anchor.paragraphId === focus.paragraphId
   return {
@@ -256,7 +258,7 @@ export function editingCapabilities(
       : !sameParagraph
         ? unavailable('MULTI_PARAGRAPH_SELECTION')
         : { available: true },
-    paragraphStructure: !topLevel
+    paragraphStructure: !topLevel && !tableCell
       ? unavailable('TABLE_CELL_STRUCTURE')
       : !sameRun
         ? unavailable('MULTI_RUN_SELECTION')

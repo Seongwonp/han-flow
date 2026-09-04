@@ -8,15 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
-## 2026-09-04 — Sprint 3 여러 문단 표 cell 독립 편집
+## 2026-09-04 — Sprint 3 여러 문단 표 cell 구조 편집
 
 병합·span·반복 머리글·continuation이 없는 일반 body cell에서, 모든 문단이 단일 source text
-run이면 각 문단을 독립적으로 편집하도록 capability와 renderer surface를 확장했다. 문단마다
-고유 range scope를 유지해 cell 내부 문단 횡단 selection과 구조 편집은 계속 차단한다.
+run이면 cell별 range scope를 공유하도록 capability와 renderer surface를 확장했다. core는 실제
+`hp:tc > hp:subList` 경계와 header·cellSpan을 검증해 같은 cell 안에서만 문단 횡단 selection,
+Enter 분할과 경계 병합을 허용한다.
 
-공개 synthetic HWPX의 일반 cell에 두 번째 문단을 추가하고 그 문단만 수정한 뒤 첫 문단 보존,
-history 반영, Save As와 package 재개봉을 검증했다. 전체 검증은 TypeScript typecheck,
-Jest 34 suites·191 tests 통과(2 suites·11 tests skip), Electron production build와
+공개 synthetic HWPX의 일반 cell에 여러 문단을 추가해 범위 치환, 양 끝 run style 보존,
+Enter 분할, 양방향 경계 병합, 다른 cell 차단과 inverse byte 복원을 검증했다. main session에서는
+문단 횡단 transaction의 undo/redo, Save As와 package 재개봉까지 확인했다. 반복 머리글이 섞인
+요청이 일반 run fallback으로 우회되지 않는 회귀도 추가했다. 전체 검증은 TypeScript typecheck,
+Jest 34 suites·196 tests 통과(2 suites·11 tests skip), Electron production build와
 privacy-safe probe 8개를 통과했다.
 
 ## 2026-09-01 — Sprint 3 문단 모양과 탭·목록 구조 보존

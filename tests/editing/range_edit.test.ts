@@ -18,11 +18,22 @@ describe('multi-run range replacement', () => {
     rmSync(directory, { recursive: true, force: true })
   })
 
-  test('여러 run 선택을 첫·중간·마지막 text command로 계획한다', async () => {
+  async function sourceWithTopLevelRuns(): Promise<HwpxSourcePackage> {
     const source = await HwpxSourcePackage.open(fixture)
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '<hp:t></hp:t>',
+      '<hp:t>첫 run</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="0"><hp:t>둘째 run</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="0"><hp:t>셋째 run</hp:t>'
+    )
+    return source.withEntry(sectionPath, Buffer.from(xml))
+  }
+
+  test('여러 run 선택을 첫·중간·마지막 text command로 계획한다', async () => {
+    const source = await sourceWithTopLevelRuns()
     const anchors = listHwpxTextAnchors(source, sectionPath)
-    const start = anchors.findIndex((anchor) => anchor.text.length >= 2)
-    const end = start + 2
+    const start = anchors.findIndex((anchor) => anchor.text === '첫 run')
+    const end = anchors.findIndex((anchor) => anchor.text === '셋째 run')
     const selection: EditorSelection = {
       sectionPath,
       anchorTextNodeId: anchors[start].textNodeId,
@@ -60,10 +71,10 @@ describe('multi-run range replacement', () => {
   })
 
   test('역방향 여러 run에 여러 줄 plain text를 붙이고 undo 선택을 복원한다', async () => {
-    const source = await HwpxSourcePackage.open(fixture)
-    const anchors = listHwpxTextAnchors(source, sectionPath).filter((anchor) => anchor.text.length >= 2)
-    const first = anchors[0]
-    const last = anchors[1]
+    const source = await sourceWithTopLevelRuns()
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const first = anchors.find((anchor) => anchor.text === '첫 run')!
+    const last = anchors.find((anchor) => anchor.text === '둘째 run')!
     const backward: EditorSelection = {
       sectionPath,
       anchorTextNodeId: last.textNodeId,
@@ -91,5 +102,20 @@ describe('multi-run range replacement', () => {
     )
     expect(history.undo()?.selection).toEqual(backward)
     expect(history.redo()?.selection).toEqual(plan.selectionAfter)
+  })
+
+  test('반복 머리글 cell이 섞인 range 요청은 일반 run fallback 없이 거부한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const header = anchors.find((anchor) => anchor.text === '공개 헤더')!
+    const body = anchors.find((anchor) => anchor.text === '긴 설명')!
+
+    expect(() => planReplaceSelection(source, {
+      sectionPath,
+      anchorTextNodeId: header.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: body.textNodeId,
+      focusOffset: 1
+    }, '차단')).toThrow('병합되지 않은 일반 표 body cell')
   })
 })

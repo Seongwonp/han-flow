@@ -416,18 +416,19 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 `hh:bullets`, `hh:numberings`를 변경하지 않으며 목록 수준·모양 편집 UI도 열지 않는다. 실제 한/글
 왕복 판정 전에는 자동 검증 완료와 외부 호환성 승인을 구분한다.
 
-## 완료한 milestone: Sprint 3 여러 문단 표 cell 독립 편집 기반
+## 완료한 milestone: Sprint 3 여러 문단 표 cell 구조 편집 기반
 
 1. [x] 병합·span·반복 머리글·continuation이 없는 일반 body cell만 허용한다.
 2. [x] cell의 모든 문단이 source anchor 하나를 가진 단일 text run일 때만 편집 surface를 연다.
-3. [x] `SIMPLE_TABLE_CELL`을 실제 역할에 맞는 `TABLE_CELL_TEXT` capability로 명명한다.
-4. [x] 여러 문단 cell의 각 문단에 독립 range scope와 `현재/전체` 접근성 label을 부여한다.
-5. [x] 문단 사이 selection, Enter 분할, 경계 병합과 style command는 계속 차단한다.
-6. [x] 두 번째 문단 수정, 첫 문단 불변, undo history, Save As와 재개봉을 공개 fixture로 검증한다.
+3. [x] `TABLE_CELL_TEXT` context가 같은 cell의 문단끼리 range scope를 공유하도록 연결한다.
+4. [x] core가 `hp:tc > hp:subList > hp:p` ancestry와 header·rowSpan·colSpan을 재검증한다.
+5. [x] 같은 cell의 문단 횡단 치환, Enter 분할과 경계 Backspace/Delete 병합을 연다.
+6. [x] 서로 다른 cell·머리말·꼬리말과 보존 XML 경계는 fail-closed한다.
+7. [x] 양 끝 run style과 원본 XML inverse, selection·undo/redo를 유지한다.
+8. [x] main session에서 범위 치환·Save As·재개봉을 공개 fixture로 검증한다.
 
-이번 단계는 cell 안에 이미 존재하는 여러 문단의 text만 독립적으로 수정한다. `hp:subList` 아래
-문단을 가로지르는 selection과 구조 mutation은 아직 구현하지 않았으며, 행·열·병합·테두리·배경
-편집도 다음 관문으로 남긴다.
+이번 단계는 병합되지 않은 일반 body cell의 기존 `hp:subList` 문단 구조만 수정한다. 행·열,
+cell 병합·분할, 반복 머리글, continuation fragment와 테두리·배경 편집은 다음 관문으로 남긴다.
 
 ## 다음 milestone: V3 외부 승인
 

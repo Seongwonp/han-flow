@@ -48,6 +48,24 @@ describe('HWPX paragraph split', () => {
     return source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
   }
 
+  async function sourceWithTableCellParagraphs(): Promise<HwpxSourcePackage> {
+    const source = await HwpxSourcePackage.open(fixture)
+    const firstParagraph =
+      '<hp:t>긴 설명</hp:t></hp:run><hp:linesegarray>' +
+      '<hp:lineseg vertpos="0" vertsize="3000"/></hp:linesegarray></hp:p>'
+    const extraParagraphs =
+      '<hp:p id="40" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>셀 둘째</hp:t></hp:run>' +
+      '<hp:linesegarray><hp:lineseg vertpos="3000" vertsize="1000"/></hp:linesegarray></hp:p>' +
+      '<hp:p id="41" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>셀 셋째</hp:t></hp:run>' +
+      '<hp:linesegarray><hp:lineseg vertpos="4000" vertsize="1000"/></hp:linesegarray></hp:p>'
+    const xml = source.readEntry(sectionPath).toString('utf8')
+    expect(xml).toContain(firstParagraph)
+    return source.withEntry(
+      sectionPath,
+      Buffer.from(xml.replace(firstParagraph, firstParagraph + extraParagraphs))
+    )
+  }
+
   test('선택 범위를 제거하며 여러 run 문단을 둘로 나누고 layout cache를 버린다', async () => {
     const source = await sourceWithEditableParagraph()
     const anchor = listHwpxTextAnchors(source, sectionPath).find(
@@ -264,5 +282,75 @@ describe('HWPX paragraph split', () => {
     expect(history.undo()?.selection).toEqual(backward)
     expect(history.package.readEntry(sectionPath)).toEqual(original)
     expect(history.redo()?.selection).toEqual(plan.selectionAfter)
+  })
+
+  test('같은 일반 표 cell 안에서 문단 범위 치환과 inverse를 수행한다', async () => {
+    const source = await sourceWithTableCellParagraphs()
+    const original = source.readEntry(sectionPath)
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const start = anchors.find((candidate) => candidate.text === '긴 설명')!
+    const end = anchors.find((candidate) => candidate.text === '셀 셋째')!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: start.textNodeId,
+      anchorOffset: 2,
+      focusTextNodeId: end.textNodeId,
+      focusOffset: 2
+    }
+    const plan = planReplaceParagraphSelection(source, selection, '셀 범위')
+    const result = applyReplaceParagraphFragmentCommand(source, plan.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+
+    expect(xml).toContain(
+      '<hp:run charPrIDRef="0"><hp:t>긴 셀 범위</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="0"><hp:t>셋째</hp:t></hp:run>'
+    )
+    expect(xml).not.toContain('<hp:p id="40"')
+    expect(xml).not.toContain('<hp:p id="41"')
+    expect(xml).toContain('<hp:t>공개 헤더</hp:t>')
+    const restored = applyReplaceParagraphFragmentCommand(result.package, result.inverse)
+    expect(restored.package.readEntry(sectionPath)).toEqual(original)
+  })
+
+  test('일반 표 cell 문단을 Enter로 나누고 경계에서 다시 병합한다', async () => {
+    const source = await sourceWithTableCellParagraphs()
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '셀 둘째'
+    )!
+    const split = planSplitParagraph(
+      source,
+      createEditorSelection(sectionPath, anchor.textNodeId, 2)
+    )
+    const splitResult = applyReplaceParagraphFragmentCommand(source, split.command)
+    const splitTexts = listHwpxTextAnchors(splitResult.package, sectionPath)
+    expect(splitTexts.map((candidate) => candidate.text)).toEqual(
+      expect.arrayContaining(['셀 ', '둘째', '셀 셋째'])
+    )
+    const right = splitTexts.find((candidate) => candidate.text === '둘째')!
+    const merge = planMergeParagraph(
+      splitResult.package,
+      createEditorSelection(sectionPath, right.textNodeId, 0),
+      'previous'
+    )
+    const merged = applyReplaceParagraphFragmentCommand(splitResult.package, merge.command)
+    expect(listHwpxTextAnchors(merged.package, sectionPath).map((candidate) => candidate.text))
+      .toEqual(expect.arrayContaining(['셀 ', '둘째', '셀 셋째']))
+    expect(merged.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '<hp:t>셀 </hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>둘째</hp:t>'
+    )
+  })
+
+  test('서로 다른 표 cell을 가로지르는 문단 구조 편집은 거부한다', async () => {
+    const source = await sourceWithTableCellParagraphs()
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const start = anchors.find((candidate) => candidate.text === '셀 둘째')!
+    const otherCell = anchors.find((candidate) => candidate.text === '다음 제목')!
+    expect(() => planReplaceParagraphSelection(source, {
+      sectionPath,
+      anchorTextNodeId: start.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: otherCell.textNodeId,
+      focusOffset: 1
+    }, '차단')).toThrow('서로 다른 문단 구조나 표 cell')
   })
 })

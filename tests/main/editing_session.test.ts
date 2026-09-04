@@ -81,12 +81,19 @@ describe('main process HWPX editing session', () => {
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)
-    const anchors = listHwpxTextAnchors(source, 'Contents/section0.xml').filter(
-      (candidate) => candidate.text.length >= 2
+    const sectionPath = 'Contents/section0.xml'
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '<hp:t></hp:t>',
+      '<hp:t>첫 run</hp:t></hp:run>' +
+      '<hp:run charPrIDRef="0"><hp:t>둘째 run</hp:t>'
     )
-    const first = anchors[0]
-    const last = anchors[1]
-    const started = await manager.start(28, fixture)
+    const rangeSource = source.withEntry(sectionPath, Buffer.from(xml))
+    const rangeFixture = join(directory, 'multi-run-range-input.hwpx')
+    await saveHwpxAs(rangeSource, rangeFixture)
+    const anchors = listHwpxTextAnchors(rangeSource, sectionPath)
+    const first = anchors.find((candidate) => candidate.text === '첫 run')!
+    const last = anchors.find((candidate) => candidate.text === '둘째 run')!
+    const started = await manager.start(28, rangeFixture)
     const backward = {
       sectionPath: first.sectionPath,
       anchorTextNodeId: last.textNodeId,
@@ -606,7 +613,7 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('긴 설명 셀검증')
   })
 
-  test('일반 body cell의 여러 문단을 각각 편집해 저장하고 재개봉한다', async () => {
+  test('일반 body cell의 여러 문단 범위를 치환해 undo·redo하고 저장·재개봉한다', async () => {
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(fixture)
     const firstParagraph =
@@ -626,46 +633,47 @@ describe('main process HWPX editing session', () => {
 
     const manager = new EditingSessionManager(() => 'multi-paragraph-cell-session')
     const started = await manager.start(30, sourcePath)
-    const anchor = listHwpxTextAnchors(multiParagraphSource, sectionPath).find(
+    const sourceAnchors = listHwpxTextAnchors(multiParagraphSource, sectionPath)
+    const first = sourceAnchors.find((candidate) => candidate.text === '긴 설명')!
+    const second = sourceAnchors.find(
       (candidate) => candidate.text === '셀 둘째 문단'
     )!
     const before = {
       sectionPath,
-      anchorTextNodeId: anchor.textNodeId,
-      anchorOffset: anchor.text.length,
-      focusTextNodeId: anchor.textNodeId,
-      focusOffset: anchor.text.length
+      anchorTextNodeId: first.textNodeId,
+      anchorOffset: 2,
+      focusTextNodeId: second.textNodeId,
+      focusOffset: 2
     }
-    const committed = await manager.commit(30, {
+    const committed = await manager.commitRange(30, {
       sessionId: started.sessionId,
-      transactionId: 'multi-paragraph-cell-text',
-      sectionPath,
-      textNodeId: anchor.textNodeId,
-      from: anchor.text.length,
-      to: anchor.text.length,
-      insert: ' 수정',
+      transactionId: 'multi-paragraph-cell-range',
       selectionBefore: before,
-      selectionAfter: {
-        ...before,
-        anchorOffset: anchor.text.length + 3,
-        focusOffset: anchor.text.length + 3
-      },
+      insert: '셀 범위',
       inputType: 'insertText',
       timestamp: 1
     })
-    expect(JSON.stringify(committed.document)).toContain('셀 둘째 문단 수정')
-    expect(JSON.stringify(committed.document)).toContain('긴 설명')
+    expect(JSON.stringify(committed.document)).toContain('긴 셀 범위')
+    expect(JSON.stringify(committed.document)).toContain('둘째 문단')
+    expect(committed.selection).toMatchObject({
+      anchorTextNodeId: first.textNodeId,
+      anchorOffset: 6,
+      focusTextNodeId: first.textNodeId,
+      focusOffset: 6
+    })
+    const undone = await manager.undo(30, started.sessionId)
+    expect(JSON.stringify(undone.document)).toContain('긴 설명')
+    expect(JSON.stringify(undone.document)).toContain('셀 둘째 문단')
+    const redone = await manager.redo(30, started.sessionId)
+    expect(JSON.stringify(redone.document)).toContain('긴 셀 범위')
 
     const destination = join(directory, 'multi-paragraph-cell-saved.hwpx')
     await manager.saveAs(30, started.sessionId, destination)
     const reopened = await HwpxSourcePackage.open(destination)
     const texts = listHwpxTextAnchors(reopened, sectionPath).map((candidate) => candidate.text)
-    expect(texts).toContain('긴 설명')
-    expect(texts).toContain('셀 둘째 문단 수정')
-    expect(reopened.readEntry(sectionPath).toString('utf8')).toContain(secondParagraph.replace(
-      '<hp:t>셀 둘째 문단</hp:t>',
-      '<hp:t>셀 둘째 문단 수정</hp:t>'
-    ))
+    expect(texts).toContain('긴 셀 범위')
+    expect(texts).toContain('둘째 문단')
+    expect(reopened.readEntry(sectionPath).toString('utf8')).not.toContain(secondParagraph)
   })
 
   test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {

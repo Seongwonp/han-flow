@@ -594,11 +594,11 @@ header list/reference의 원자적 변경으로 구현한다. 세 저장소의 �
 행·열 추가, 병합·분할, 표 cell style 편집은 계속 별도 범위로 둔다.
 
 2026-09-04 후속 slice에서는 병합·span·반복 머리글·continuation이 없는 body cell에 여러 문단이
-있어도, 모든 문단이 source anchor 하나를 가진 단일 text run이면 각각 편집할 수 있게 확장했다.
-capability 이름은 `TABLE_CELL_TEXT`로 바꾸고 문단별 고유 range scope를 유지한다. 이 때문에
-두 번째 이후 문단도 text transaction·undo/redo·Save As를 사용하지만 selection은 문단 경계를
-넘지 않으며 Enter와 Backspace/Delete 경계 병합도 계속 차단된다. nested `hp:subList` 구조 변경은
-별도 source mutation 설계 이후에만 연다.
+있어도, 모든 문단이 source anchor 하나를 가진 단일 text run이면 편집할 수 있게 확장했다.
+`TABLE_CELL_TEXT` context는 cell별 range scope를 공유한다. source paragraph locator는
+`hp:tc > hp:subList > hp:p` ancestry와 header·cellSpan을 검증하고 같은 subList의 direct paragraph만
+선택하므로 문단 횡단 치환·Enter·경계 병합을 안전하게 재사용한다. 다른 cell과 header/footer
+subList는 core에서 다시 거부하며 행·열·cell style mutation은 별도 범위로 남긴다.
 
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
