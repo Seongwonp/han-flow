@@ -193,6 +193,12 @@ table fragment transaction에서 갱신한다. decoder는 table 높이를 host �
 사용해 stale line segment가 새 행을 가리지 않게 한다. 고유 ID를 가진 row/cell, 중첩 표·이미지·제어 문자가 있는 표는 복제하지
 않는다. inverse는 원래 table XML 전체를 보관해 section의 다른 콘텐츠는 건드리지 않고 되돌린다.
 
+행 삭제도 같은 topology 검사와 table fragment command를 사용한다. 삭제할 row의 높이를
+`hp:sz`에서 빼고 뒤쪽 주소를 당긴다. 삭제된 anchor로는 inverse가 표를 다시 찾을 수 없으므로,
+다음 body 행 첫 text(마지막 행이면 이전 body 행)의 변경 후 ordinal을 미리 계산해 selection과 inverse
+locator로 함께 전달한다. undo는 원래 table과 selection을 복구하고 redo는 다시 살아남은 anchor를
+사용한다. 반복 머리글과 마지막 하나뿐인 body 행은 삭제하지 않는다.
+
 ## 프로세스 책임
 
 ### Electron main

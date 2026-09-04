@@ -449,8 +449,20 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 6. [x] 리본의 `아래 행＋`, main IPC, `table-structure` loss policy와 저장 안내를 연결한다.
 7. [x] 공개 fixture에서 projection, undo/redo, Save As·재개봉을 검증한다.
 
-다음 관문은 현재 행 삭제와 열 추가·삭제다. 삭제 selection 재배치와 열 삽입 전후 text anchor
-ordinal 이동을 먼저 설계한 뒤 cell 병합·분할로 넘어간다.
+행 추가는 선택 anchor 뒤에 새 XML을 넣어 기존 caret ordinal을 유지한다. 행 삭제처럼 anchor가
+사라지는 구조 변경은 다음 milestone의 명시적 selection 재배치로 분리한다.
+
+## 완료한 milestone: Sprint 3 표 행 삭제와 selection 재배치
+
+1. [x] 현재 body 행 fragment를 제거하고 `rowCnt`, 표 높이와 뒤쪽 `rowAddr`를 함께 줄인다.
+2. [x] 다음 body 행, 마지막이면 이전 body 행의 첫 text로 caret을 재배치한다.
+3. [x] 변경 후 살아남은 anchor를 inverse locator로 사용해 undo가 삭제된 anchor에 의존하지 않게 한다.
+4. [x] undo에서 원래 selection, redo에서 재배치 selection을 각각 복구한다.
+5. [x] 반복 머리글과 마지막 body 행 삭제를 fail-closed한다.
+6. [x] 리본의 `현재 행−`, main IPC, Save As·재개봉을 연결한다.
+
+다음 관문은 열 추가·삭제다. 각 행에서 삽입 위치 앞뒤 anchor ordinal이 달라지므로 행 단위 text
+개수를 이용한 명시적 selection projection과 표 전체 너비 갱신을 함께 구현한다.
 
 ## 다음 milestone: V3 외부 승인
 

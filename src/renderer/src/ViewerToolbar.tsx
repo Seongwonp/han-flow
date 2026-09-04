@@ -84,6 +84,7 @@ interface ViewerToolbarProps {
     borderType?: 'NONE' | 'SOLID'
   }) => void
   onInsertTableRowAfter: () => void
+  onDeleteTableRow: () => void
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -127,7 +128,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     onCharacterStyle,
     onParagraphStyle,
     onCellStyle,
-    onInsertTableRowAfter
+    onInsertTableRowAfter,
+    onDeleteTableRow
   } = props
   const pending = Boolean(editingPending)
 
@@ -245,6 +247,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
             </select>
             <button aria-label="셀 테두리 없음" title="사방 테두리 없음" onMouseDown={(event) => event.preventDefault()} onClick={() => onCellStyle({ borderType: 'NONE' })} disabled={!cellStyleAvailable || pending}>선 없음</button>
             <button aria-label="아래에 표 행 추가" title="현재 셀 아래에 빈 행 추가" onMouseDown={(event) => event.preventDefault()} onClick={onInsertTableRowAfter} disabled={!cellStyleAvailable || pending}>아래 행＋</button>
+            <button aria-label="현재 표 행 삭제" title="현재 셀이 있는 body 행 삭제" onMouseDown={(event) => event.preventDefault()} onClick={onDeleteTableRow} disabled={!cellStyleAvailable || pending}>현재 행−</button>
           </div>
           <span className="viewer-ribbon-group-label">표 셀 모양</span>
         </div>

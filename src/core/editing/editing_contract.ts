@@ -68,6 +68,13 @@ export interface EditingInsertTableRowRequest {
   timestamp: number
 }
 
+export interface EditingDeleteTableRowRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

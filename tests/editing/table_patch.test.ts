@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   applyReplaceTableFragmentCommand,
+  planDeleteTableRow,
   planInsertTableRowAfter
 } from '../../src/core/editing/table_patch'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
@@ -73,5 +74,59 @@ describe('HWPX 표 행 patch', () => {
       focusTextNodeId: header.textNodeId,
       focusOffset: 0
     })).toThrow('반복 머리글 행')
+  })
+
+  test('현재 body 행을 삭제하고 다음 행으로 selection을 옮기며 마지막 body 행은 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === '긴 설명')!
+    const next = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === '다음 제목')!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 2,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 2
+    }
+    const plan = planDeleteTableRow(source, selection)
+    expect(plan.selectionAfter).toEqual({
+      sectionPath,
+      anchorTextNodeId: `${sectionPath}#hp:t:${next.ordinal - 1}`,
+      anchorOffset: 0,
+      focusTextNodeId: `${sectionPath}#hp:t:${next.ordinal - 1}`,
+      focusOffset: 0
+    })
+    const result = applyReplaceTableFragmentCommand(source, plan.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+    expect(xml).toContain('<hp:tbl id="public-table" rowCnt="3" colCnt="1"')
+    expect(xml).toContain('<hp:sz width="6000" height="5500"')
+    expect(xml).not.toContain('긴 설명')
+    const document = await decodeViewerDocument(result.package)
+    const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+    expect(table).toMatchObject({ type: 'table', rowCount: 3, height: 5500 })
+    if (!table || table.type !== 'table') throw new Error('삭제한 표 projection이 없습니다.')
+    expect(table.rows[1].cells[0].paragraphs[0].content[0]).toMatchObject({ text: '다음 제목' })
+
+    const restored = applyReplaceTableFragmentCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+    const redone = applyReplaceTableFragmentCommand(restored.package, restored.inverse!)
+    expect(redone.package.readEntry(sectionPath)).toEqual(result.package.readEntry(sectionPath))
+
+    const nextAnchor = listHwpxTextAnchors(result.package, sectionPath).find((item) => item.text === '다음 제목')!
+    const secondPlan = planDeleteTableRow(result.package, {
+      sectionPath,
+      anchorTextNodeId: nextAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: nextAnchor.textNodeId,
+      focusOffset: 0
+    })
+    const second = applyReplaceTableFragmentCommand(result.package, secondPlan.command)
+    const lastBody = listHwpxTextAnchors(second.package, sectionPath).find((item) => item.text === '다음 본문')!
+    expect(() => planDeleteTableRow(second.package, {
+      sectionPath,
+      anchorTextNodeId: lastBody.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: lastBody.textNodeId,
+      focusOffset: 0
+    })).toThrow('하나 이상의 body 행')
   })
 })

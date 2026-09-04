@@ -616,6 +616,12 @@ subList는 core에서 다시 거부한다.
 원본 table bytes를 보관한다. 행 삭제와 열 삽입은 selection anchor가 사라지거나 이동하므로 다음
 slice에서 명시적인 selection projection 계획과 함께 구현한다.
 
+후속 행 삭제 slice는 다음 body 행의 첫 text를 변경 후 selection으로 사용하고, 마지막 body 행을
+삭제할 때는 이전 body 행으로 이동한다. 삭제된 text 수만큼 다음 anchor ordinal을 당겨 계산하며 이
+살아남은 anchor를 inverse command의 locator로도 사용한다. 따라서 undo가 이미 사라진 선택 셀을
+찾으려다 실패하지 않고 원래 table bytes와 selection을 함께 복구한다. 표 높이와 뒤쪽 row 주소도
+같은 transaction에서 감소한다. 반복 머리글 및 마지막 하나뿐인 body 행 삭제는 차단한다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

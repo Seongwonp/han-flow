@@ -3,6 +3,7 @@ import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
   EditingCommitRequest,
+  EditingDeleteTableRowRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
   EditingParagraphStyleRequest,
@@ -69,6 +70,8 @@ const api = {
     invokeEditing('editing:applyCellStyle', request),
   insertTableRowAfter: (request: EditingInsertTableRowRequest) =>
     invokeEditing('editing:insertTableRowAfter', request),
+  deleteTableRow: (request: EditingDeleteTableRowRequest) =>
+    invokeEditing('editing:deleteTableRow', request),
   undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
   redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
   refreshEditing: (sessionId: string) => invokeEditing('editing:refresh', sessionId),

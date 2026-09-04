@@ -8,9 +8,15 @@ export interface ReplaceTableFragmentCommand {
   textNodeId: string
   expectedFragment: string
   replacementFragment: string
+  replacementTextNodeId?: string
 }
 
 export interface InsertTableRowPlan {
+  command: ReplaceTableFragmentCommand
+  selectionAfter: EditorSelection
+}
+
+export interface DeleteTableRowPlan {
   command: ReplaceTableFragmentCommand
   selectionAfter: EditorSelection
 }
@@ -220,6 +226,9 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
   })
   const selectedRowIndex = rows.findIndex((row) => row.start === selectedRow.start)
   if (selectedRowIndex < 0) throw new HwpxEditConflictError('선택한 표 행을 찾을 수 없습니다.')
+  if (tableHeight < selectedRowHeight) {
+    throw new HwpxEditConflictError('표 전체 높이가 선택 행 높이보다 작습니다.')
+  }
   return { rows, columnCount, selectedRowIndex, selectedRowHeight }
 }
 
@@ -257,6 +266,12 @@ function cloneEmptyRow(context: ReturnType<typeof locateTable>, newRowIndex: num
     result = replaceRange(result, replacement.start, replacement.end, replacement.value)
   }
   return result
+}
+
+function firstTextInRow(spans: XmlElementSpan[], row: XmlElementSpan): XmlElementSpan | undefined {
+  return spans.find(
+    (span) => span.name === 'hp:t' && span.start >= row.openEnd && span.end <= row.closeStart
+  )
 }
 
 export function planInsertTableRowAfter(sourcePackage: HwpxSourcePackage, selection: EditorSelection): InsertTableRowPlan {
@@ -311,6 +326,91 @@ export function planInsertTableRowAfter(sourcePackage: HwpxSourcePackage, select
   }
 }
 
+export function planDeleteTableRow(sourcePackage: HwpxSourcePackage, selection: EditorSelection): DeleteTableRowPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start
+  ) throw new HwpxEditConflictError('행 삭제는 하나의 표 행에서만 실행할 수 있습니다.')
+  const { rows, selectedRowIndex, selectedRowHeight } = assertSimpleRectangularTable(context)
+  const bodyRows = rows.filter((row) => directChildren(context.spans, row, 'hp:tc').every(
+    (cell) => attribute(context.xml.slice(cell.start, cell.openEnd), 'header') !== '1'
+  ))
+  if (!bodyRows.includes(context.row)) {
+    throw new HwpxEditConflictError('반복 머리글 행은 삭제할 수 없습니다.')
+  }
+  if (bodyRows.length <= 1) {
+    throw new HwpxEditConflictError('표에는 하나 이상의 body 행이 남아 있어야 합니다.')
+  }
+  const selectedBodyIndex = bodyRows.indexOf(context.row)
+  const targetRow = bodyRows[selectedBodyIndex + 1] ?? bodyRows[selectedBodyIndex - 1]
+  const targetText = targetRow && firstTextInRow(context.spans, targetRow)
+  if (!targetText) throw new HwpxEditConflictError('삭제 뒤 selection을 옮길 표 셀을 찾을 수 없습니다.')
+  const deletedTextCount = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start >= context.row.openEnd && span.end <= context.row.closeStart
+  ).length
+  const targetOriginalOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < targetText.start
+  ).length
+  const targetOrdinal = targetText.start > context.row.end
+    ? targetOriginalOrdinal - deletedTextCount
+    : targetOriginalOrdinal
+  const targetTextNodeId = `${selection.sectionPath}#hp:t:${targetOrdinal}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({ start: 0, end: context.table.openEnd - tableStart, value: setAttribute(tableTag, 'rowCnt', String(rows.length - 1)) })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableHeight = Number(attribute(tableSizeTag, 'height'))
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'height', String(tableHeight - selectedRowHeight))
+  })
+  for (let index = selectedRowIndex + 1; index < rows.length; index += 1) {
+    for (const cell of directChildren(context.spans, rows[index], 'hp:tc')) {
+      const address = directChildren(context.spans, cell, 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'rowAddr', String(index - 1))
+      })
+    }
+  }
+  edits.push({
+    start: context.row.start - tableStart,
+    end: context.row.end - tableStart,
+    value: ''
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: targetTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: targetTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: targetTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
 function report(sourcePackage: HwpxSourcePackage, sectionPath: string): HwpxLossReport {
   const entries = sourcePackage.listEntries().map((entry) => entry.path)
   return {
@@ -335,6 +435,8 @@ export function applyReplaceTableFragmentCommand(sourcePackage: HwpxSourcePackag
     package: sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml)),
     inverse: {
       ...command,
+      textNodeId: command.replacementTextNodeId ?? command.textNodeId,
+      replacementTextNodeId: command.textNodeId,
       expectedFragment: command.replacementFragment,
       replacementFragment: command.expectedFragment
     },

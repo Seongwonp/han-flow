@@ -169,6 +169,50 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(reopened.document)).toContain('"rowCount":5')
   })
 
+  test('현재 표 행 삭제 뒤 selection을 재배치하고 undo/redo·Save As한다', async () => {
+    const manager = new EditingSessionManager(() => 'delete-table-row-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const current = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '긴 설명'
+    )!
+    const next = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '다음 제목'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(35, fixture)
+    const deleted = await manager.deleteTableRow(35, {
+      sessionId: started.sessionId,
+      transactionId: 'delete-row-1',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(deleted).toMatchObject({ isDirty: true, canUndo: true })
+    expect(deleted.selection).toEqual({
+      sectionPath,
+      anchorTextNodeId: `${sectionPath}#hp:t:${next.ordinal - 1}`,
+      anchorOffset: 0,
+      focusTextNodeId: `${sectionPath}#hp:t:${next.ordinal - 1}`,
+      focusOffset: 0
+    })
+    expect(JSON.stringify(deleted.document)).toContain('"rowCount":3')
+    expect((await manager.undo(35, started.sessionId)).selection).toEqual(selection)
+    expect((await manager.redo(35, started.sessionId)).selection).toEqual(deleted.selection)
+
+    const destination = join(directory, 'delete-table-row-save.hwpx')
+    await manager.saveAs(35, started.sessionId, destination)
+    const reopened = await manager.start(36, destination)
+    expect(JSON.stringify(reopened.document)).toContain('"rowCount":3')
+    expect(JSON.stringify(reopened.document)).not.toContain('긴 설명')
+  })
+
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)

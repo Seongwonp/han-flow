@@ -8,6 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-04 — Sprint 3 표 행 삭제와 selection 재배치
+
+단순 직사각형 표의 현재 body 행을 삭제하고 table count·높이·뒤쪽 cell 주소를 원자적으로 줄이는
+command를 추가했다. 삭제된 anchor 대신 다음 body 행, 마지막 행이면 이전 body 행의 첫 text로
+selection을 옮기며 같은 anchor를 inverse locator로 사용한다. 반복 머리글과 마지막 body 행 삭제는
+fail-closed한다.
+
+공개 fixture에서 중간 행 삭제, 뒤쪽 행 주소와 높이, 마지막 body 행 보호, exact inverse와 redo를
+검증했다. main session은 selection 이동·복원, undo/redo, Save As와 재개봉까지 확인했다.
+TypeScript typecheck와 Jest 36 suites·206 tests 통과(2 suites·11 tests skip)를 확인했다.
+Electron production build와 privacy-safe probe 8개도 모두 통과했다.
+
 ## 2026-09-04 — Sprint 3 안전한 표 행 추가 기반
 
 병합·중첩·복합 콘텐츠가 없는 직사각형 표에서 현재 body 셀 아래에 같은 모양의 빈 행을 추가하는

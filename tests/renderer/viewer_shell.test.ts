@@ -54,7 +54,8 @@ describe('viewer shell components', () => {
       onCharacterStyle: noop,
       onParagraphStyle: noop,
       onCellStyle: noop,
-      onInsertTableRowAfter: noop
+      onInsertTableRowAfter: noop,
+      onDeleteTableRow: noop
     }))
 
     expect(markup).toContain('sample.hwpx')
@@ -67,6 +68,7 @@ describe('viewer shell components', () => {
     expect(markup).toContain('aria-label="셀 배경색"')
     expect(markup).toContain('aria-label="셀 테두리 두께"')
     expect(markup).toContain('aria-label="아래에 표 행 추가"')
+    expect(markup).toContain('aria-label="현재 표 행 삭제"')
   })
 
   test('stage는 빈 화면·오류·문서 children 경계를 소유한다', () => {
