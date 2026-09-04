@@ -464,6 +464,53 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 다음 관문은 열 추가·삭제다. 각 행에서 삽입 위치 앞뒤 anchor ordinal이 달라지므로 행 단위 text
 개수를 이용한 명시적 selection projection과 표 전체 너비 갱신을 함께 구현한다.
 
+## 다음 작업 계획: Sprint 3 표 열 추가·삭제
+
+행 편집에서 검증한 table fragment transaction을 재사용하되, 열 편집은 모든 direct row를 동시에
+바꾸므로 별도 slice로 진행한다. 아래 항목을 모두 만족하기 전에는 UI capability를 열지 않는다.
+
+### 1. 공통 topology와 안전 조건
+
+1. [ ] `rowCnt`·`colCnt`, direct row/cell 수, 모든 `cellAddr`·`cellSpan`이 일치하는 단순
+   직사각형 표만 허용한다.
+2. [ ] 선택 셀은 source anchor가 하나인 안전한 direct body cell이어야 한다.
+3. [ ] 병합·span·중첩 표·복합 control·행별 cell 수 불일치·중복/누락 주소는 fail-closed한다.
+4. [ ] 반복 머리글은 선택 대상으로 삼지 않되 열 구조 변경에는 같은 열의 머리글 cell도 포함한다.
+5. [ ] 각 행과 선택 열의 text anchor 수를 mutation 전에 기록해 source ordinal projection에 쓴다.
+
+### 2. 오른쪽 열 추가
+
+1. [ ] 각 direct row에서 선택 열 cell의 geometry·margin·borderFill·text style을 복제한다.
+2. [ ] 복제 cell의 text를 비우고 `linesegarray`를 제거하며 숫자 paragraph ID를 충돌 없이 다시 만든다.
+3. [ ] `colCnt`와 뒤쪽 모든 `colAddr`를 원자적으로 증가시킨다.
+4. [ ] 선택 열 너비를 새 열 너비로 사용하고 표 `hp:sz` 전체 너비도 같은 값만큼 증가시킨다.
+5. [ ] 선택 body 행보다 앞선 행에 추가된 text 수를 합산해 기존 selection anchor ordinal을
+   명시적으로 이동한다.
+
+### 3. 현재 열 삭제
+
+1. [ ] 모든 direct row에서 선택 열 cell을 함께 제거하고 `colCnt`, 뒤쪽 `colAddr`와 표 전체
+   너비를 같은 transaction에서 감소시킨다.
+2. [ ] 행마다 선택 열 너비가 다르거나 전체 열이 하나뿐이면 삭제를 차단한다.
+3. [ ] 삭제 후 같은 행의 다음 cell, 마지막 열이면 이전 cell의 첫 text로 caret을 이동한다.
+4. [ ] 변경 후 살아남은 anchor를 inverse locator로 사용하고 undo에는 원래 selection, redo에는
+   재배치 selection을 복구한다.
+5. [ ] table fragment exact inverse로 원본 XML bytes와 width·주소를 함께 복원한다.
+
+### 4. 앱 연결과 검증 관문
+
+1. [ ] core command와 session, main IPC, preload contract를 연결한다.
+2. [ ] 리본에 `오른쪽 열＋`, `현재 열−`를 추가하고 capability가 없으면 비활성화한다.
+3. [ ] 기존 `table-structure` loss policy, 저장 확인과 완료 후 한/글 재열기 안내를 재사용한다.
+4. [ ] 여러 열 공개 synthetic fixture로 중간/마지막 열의 추가·삭제, 반복 머리글 복제, 빈 cell,
+   ID·주소·너비와 selection projection을 검증한다.
+5. [ ] 마지막 열, 병합·중첩·복합 콘텐츠, 불균일 열 너비가 source를 바꾸지 않고 거부되는지 검증한다.
+6. [ ] exact undo/redo, Save As·재개봉, renderer toolbar와 packaged session 회귀를 통과한다.
+7. [ ] typecheck, 전체 Jest, production build와 parser probe 8종을 모두 통과한 뒤 완료로 표시한다.
+
+열 추가·삭제가 끝난 뒤에만 셀 병합·분할 topology를 별도 설계한다. 병합·분할은 이번 작업에
+묶지 않는다.
+
 ## 다음 milestone: V3 외부 승인
 
 1. [ ] [실제 macOS 두벌식 입력 matrix](v3_ime_manual_matrix.md)를 물리 키보드로 통과한다.

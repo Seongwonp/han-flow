@@ -26,7 +26,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 
 ### HWPX
 
-- OWPML XML 자식 순서를 보존하는 read-only 문서 모델
+- OWPML XML 자식 순서와 미지원 package 항목을 보존하는 문서 모델
 - 문단·글자 스타일, 표·병합 셀, 테두리·배경색과 이미지
 - 목록, 구역별 머리말·꼬리말과 쪽 번호 재시작
 - 실제 DOM 높이를 사용하는 2-pass pagination
@@ -45,7 +45,9 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - 최상위 일반 문단의 왼쪽·가운데·오른쪽·양쪽 정렬과 style 분할 뒤 여러 run 연속 입력
 - 최상위 일반 문단의 100–300% 줄 간격과 0–72pt 문단 앞·뒤 간격
 - 최상위 일반 문단의 −72–72pt 첫 줄 내어쓰기·들여쓰기
-- 40px 편집 control과 파일·기록·글자 모양·문단 정렬·문단 간격 그룹을 가진 `홈` 리본
+- 일반 body 표 셀의 여러 문단 편집과 격리된 테두리·배경 편집
+- 단순 직사각형 표의 안전한 행 추가·삭제와 삭제 후 selection 재배치
+- 40px 편집 control과 파일·기록·글자 모양·문단·표 셀·표 구조 그룹을 가진 `홈` 리본
 
 ### HWP 5.0
 
@@ -78,7 +80,7 @@ Finder / dialog / drop
     └─ HWP preflight → rhwp Worker → FixedPageDocument
           │
           ▼
- read-only page boundary
+ HWP read-only / HWPX guarded edit boundary
           │
           ▼
  React viewer → virtualization → PDF
@@ -98,7 +100,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 23 suites, 133 passed, 2 suites skipped |
+| Jest | 36 suites, 206 passed, 2 suites·11 tests skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -328,6 +330,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [글꼴 전략과 라이선스 판단](docs/font_strategy.md)
 - [Release Candidate 체크리스트](docs/release_checklist.md)
 - [날짜별 검증 이력과 포트폴리오 근거](docs/verification_history.md)
+- [개발 일지](docs/dev_log.md)
 - [변경 기록](CHANGELOG.md)
 
 ## HWP 5.0 규격 고지

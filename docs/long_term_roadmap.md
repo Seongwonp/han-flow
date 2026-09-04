@@ -124,7 +124,11 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
    - [x] cell 내부 문단 횡단 선택·분할·병합
    - [x] 일반 body cell의 격리된 테두리·배경 편집 기반
    - [x] 단순 직사각형 표의 행 추가·삭제와 selection 재배치
-   - [ ] 열 추가·삭제
+   - [ ] 단순 직사각형 표의 열 추가·삭제
+     - [ ] 모든 direct row와 반복 머리글의 대응 cell을 같은 transaction에서 변경
+     - [ ] `colCnt`·`colAddr`·표 전체 너비와 source anchor ordinal 재계산
+     - [ ] 중간/마지막 열 selection 재배치와 exact undo/redo·Save As 검증
+     - [ ] 병합·중첩·불균일 열 geometry를 fail-closed
 5. 병합·분할·반복 머리글은 마지막에 별도 관문으로 진행
 
 각 기능은 `Han-Flow 편집 → Han-Flow 재개봉 → 한/글 재개봉 → 한/글 저장 → Han-Flow

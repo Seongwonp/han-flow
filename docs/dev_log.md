@@ -266,3 +266,26 @@
 -   **개체(Image) 처리**: 이미지 드래그 앤 드롭 삽입 및 위치 제어 기능.
 -   **고급 편집 기능**: 다단 설정, 구역 나누기, 머리말/꼬리말 지원.
 -   **내일의 목표**: 이미지 삽입 기능과 정밀한 표 편집 UI 구현 시작.
+
+## [2026-09-04] 표 셀·행 편집 기반 완성과 다음 관문 확정
+
+### 완료된 작업
+
+1. 병합되지 않은 일반 body cell의 여러 문단 선택·치환·분할·병합을 transaction history에 연결했습니다.
+2. 공유 style을 직접 바꾸지 않는 셀 테두리·배경 편집과 `table-cell-style` 저장 안내를 구현했습니다.
+3. 단순 직사각형 표의 안전한 행 추가·삭제, `rowCnt`·주소·전체 높이 갱신과 exact undo/redo를 구현했습니다.
+4. 행 삭제 후 다음 body 행, 마지막 행이면 이전 body 행으로 selection을 재배치하도록 안정화했습니다.
+5. typecheck, Jest 36 suites·206 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 결정 사항
+
+- 표 구조 편집은 원본 table fragment를 보존하는 원자적 command와 fail-closed 정책을 유지합니다.
+- 열 편집은 모든 행의 anchor ordinal과 표 너비를 바꾸므로 행 편집과 분리해 검증합니다.
+- 셀 병합·분할은 열 추가·삭제가 완료된 뒤 별도 topology 관문으로 진행합니다.
+
+### 다음 시작점
+
+1. 여러 열 공개 fixture와 열 topology preflight를 먼저 추가합니다.
+2. 오른쪽 열 추가에서 행별 cell 복제, `colCnt`·`colAddr`·표 너비와 selection projection을 구현합니다.
+3. 현재 열 삭제에서 다음/이전 cell selection 재배치와 살아남은 inverse locator를 구현합니다.
+4. main session, 리본, loss policy, Save As·재개봉과 전체 자동 회귀를 연결합니다.

@@ -622,6 +622,19 @@ slice에서 명시적인 selection projection 계획과 함께 구현한다.
 찾으려다 실패하지 않고 원래 table bytes와 selection을 함께 복구한다. 표 높이와 뒤쪽 row 주소도
 같은 transaction에서 감소한다. 반복 머리글 및 마지막 하나뿐인 body 행 삭제는 차단한다.
 
+다음 열 편집 slice는 선택 열의 대응 cell을 모든 direct row에서 동시에 추가하거나 삭제한다.
+오른쪽 열 추가는 선택 열의 geometry·margin·style을 행별로 복제하되 text와 `linesegarray`를
+비우고 paragraph ID를 다시 만든다. 삭제는 최소 두 열을 요구하며 같은 행의 다음 cell, 마지막
+열이면 이전 cell로 selection을 옮긴다. 두 동작 모두 `colCnt`, 뒤쪽 `colAddr`와 표 `hp:sz`
+너비를 같은 table fragment transaction에서 갱신한다.
+
+열 mutation은 선택 body 행보다 앞선 모든 행에도 text node를 추가하거나 제거하므로 현재 anchor
+ordinal이 행 편집과 달리 그대로 유지되지 않는다. mutation 전 행별 text 수와 선택 열 prefix를
+기록하고 변경 후 살아남은 anchor를 inverse locator로 삼아 selection을 투영한다. 행마다 선택 열
+너비가 다르거나 병합·span·중첩 표·복합 control·주소 불일치가 있으면 source를 바꾸지 않고
+fail-closed한다. 반복 머리글은 선택 대상으로 열지 않지만 열 구조가 바뀔 때 대응 header cell은
+같이 복제하거나 제거한다. 셀 병합·분할은 열 편집 검증 뒤의 별도 topology 관문으로 남긴다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는
