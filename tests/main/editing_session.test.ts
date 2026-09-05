@@ -5,11 +5,15 @@ import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { EditingSessionManager } from '../../src/main/editing_session'
-import { createRoundTripHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import {
+  createRoundTripHwpx,
+  createTableColumnHwpx
+} from '../fixtures/public/create_synthetic_hwpx'
 
 describe('main process HWPX editing session', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-editing-session-'))
   const fixture = createRoundTripHwpx(directory)
+  const columnFixture = createTableColumnHwpx(directory)
 
   afterAll(() => {
     rmSync(directory, { recursive: true, force: true })
@@ -211,6 +215,50 @@ describe('main process HWPX editing session', () => {
     const reopened = await manager.start(36, destination)
     expect(JSON.stringify(reopened.document)).toContain('"rowCount":3')
     expect(JSON.stringify(reopened.document)).not.toContain('긴 설명')
+  })
+
+  test('현재 열 오른쪽에 빈 열을 추가하고 selection·undo/redo·Save As를 보존한다', async () => {
+    const manager = new EditingSessionManager(() => 'insert-table-column-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(columnFixture)
+    const anchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === 'A2'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(37, columnFixture)
+    const inserted = await manager.insertTableColumnAfter(37, {
+      sessionId: started.sessionId,
+      transactionId: 'insert-column-1',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(inserted).toMatchObject({ isDirty: true, canUndo: true })
+    expect(inserted.selection).toEqual({
+      ...selection,
+      anchorTextNodeId: `${sectionPath}#hp:t:${anchor.ordinal + 1}`,
+      focusTextNodeId: `${sectionPath}#hp:t:${anchor.ordinal + 1}`
+    })
+    expect(JSON.stringify(inserted.document)).toContain('"columnCount":4')
+    expect(await manager.lossPolicy(37, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-structure', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_OMITTED', 'TABLE_STRUCTURE_CHANGED']),
+      reviewRecommended: true
+    })
+    expect((await manager.undo(37, started.sessionId)).selection).toEqual(selection)
+    expect(JSON.stringify((await manager.redo(37, started.sessionId)).document)).toContain('"columnCount":4')
+
+    const destination = join(directory, 'insert-table-column-save.hwpx')
+    await manager.saveAs(37, started.sessionId, destination)
+    const reopened = await manager.start(38, destination)
+    expect(JSON.stringify(reopened.document)).toContain('"columnCount":4')
+    expect(JSON.stringify(reopened.document)).toContain('"width":8000')
   })
 
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {

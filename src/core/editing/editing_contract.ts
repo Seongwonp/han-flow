@@ -75,6 +75,13 @@ export interface EditingDeleteTableRowRequest {
   timestamp: number
 }
 
+export interface EditingInsertTableColumnRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

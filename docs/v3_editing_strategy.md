@@ -635,6 +635,13 @@ ordinal이 행 편집과 달리 그대로 유지되지 않는다. mutation 전 �
 fail-closed한다. 반복 머리글은 선택 대상으로 열지 않지만 열 구조가 바뀔 때 대응 header cell은
 같이 복제하거나 제거한다. 셀 병합·분할은 열 편집 검증 뒤의 별도 topology 관문으로 남긴다.
 
+2026-09-05 오른쪽 열 추가 slice는 위 계약 중 insertion 경로를 구현했다. 선택 열 너비가 모든
+direct row에서 같은지 확인한 뒤 대응 cell을 비워 복제하고, 선택 body 행보다 앞선 행에서
+추가된 text 수만큼 source ordinal을 이동한다. 이 이동된 anchor가 inverse locator가 되므로
+undo/redo에서도 원래 selection과 변경 후 selection을 각각 검증할 수 있다. 다중 열 공개 fixture,
+main session, 리본과 Save As·재개봉을 통과했다. 현재 열 삭제와 삭제 후 이웃 cell 재배치는 다음
+slice로 남긴다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

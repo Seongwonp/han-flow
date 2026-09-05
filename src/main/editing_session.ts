@@ -6,6 +6,7 @@ import {
   EditingCellStyleRequest,
   EditingCommitRequest,
   EditingDeleteTableRowRequest,
+  EditingInsertTableColumnRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
   EditingParagraphStyleRequest,
@@ -21,7 +22,11 @@ import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
-import { planDeleteTableRow, planInsertTableRowAfter } from '../core/editing/table_patch'
+import {
+  planDeleteTableRow,
+  planInsertTableColumnAfter,
+  planInsertTableRowAfter
+} from '../core/editing/table_patch'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
 import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
 import { HwpxSourcePackage } from '../core/parser/source_package'
@@ -444,6 +449,41 @@ export class EditingSessionManager {
         selectionBefore: { ...request.selectionBefore },
         selectionAfter: plan.selectionAfter,
         inputType: 'deleteTableRow',
+        timestamp: request.timestamp
+      }
+      const result = session.history.commitSynchronized(transaction)
+      return {
+        document: await projectEditTransaction(result),
+        selection: session.history.selection,
+        ...status(session)
+      }
+    })
+  }
+
+  async insertTableColumnAfter(
+    senderId: number,
+    request: EditingInsertTableColumnRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const capabilities = editingCapabilities(
+        await decodeViewerDocument(session.history.package),
+        request.selectionBefore
+      )
+      if (!capabilities.cellStyle.available) {
+        throw new EditingOperationError(
+          'EDITING_UNSUPPORTED',
+          '열 추가는 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
+        )
+      }
+      const plan = planInsertTableColumnAfter(session.history.package, request.selectionBefore)
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [plan.command],
+        selectionBefore: { ...request.selectionBefore },
+        selectionAfter: plan.selectionAfter,
+        inputType: 'insertTableColumnAfter',
         timestamp: request.timestamp
       }
       const result = session.history.commitSynchronized(transaction)

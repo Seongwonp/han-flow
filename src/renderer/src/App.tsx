@@ -1326,6 +1326,37 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const insertTableColumnAfter = useCallback(async () => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.cellStyle.available ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('표 열 추가 중…')
+    try {
+      applyEditingResult(await api().insertTableColumnAfter({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
+        selectionBefore: editingSelection,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('현재 열 오른쪽에 빈 열 추가')
+    } catch (reason) {
+      await recoverEditingFailure('표 열 추가', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.cellStyle.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -1589,6 +1620,7 @@ export default function App() {
       onCellStyle={(style) => void applyCellStyle(style)}
       onInsertTableRowAfter={() => void insertTableRowAfter()}
       onDeleteTableRow={() => void deleteTableRow()}
+      onInsertTableColumnAfter={() => void insertTableColumnAfter()}
     />
     <ViewerStage
       stageRef={stageRef}

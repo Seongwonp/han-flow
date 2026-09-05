@@ -21,6 +21,11 @@ export interface DeleteTableRowPlan {
   selectionAfter: EditorSelection
 }
 
+export interface InsertTableColumnPlan {
+  command: ReplaceTableFragmentCommand
+  selectionAfter: EditorSelection
+}
+
 interface XmlElementSpan {
   name: string
   start: number
@@ -151,7 +156,9 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
   rows: XmlElementSpan[]
   columnCount: number
   selectedRowIndex: number
+  selectedColumnIndex: number
   selectedRowHeight: number
+  selectedColumnWidth: number
 } {
   const { xml, spans, table, row: selectedRow, cell: selectedCell } = context
   const tableTag = xml.slice(table.start, table.openEnd)
@@ -162,16 +169,24 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
   const tableHeight = tableSize
     ? Number(attribute(xml.slice(tableSize.start, tableSize.openEnd), 'height'))
     : Number.NaN
+  const tableWidth = tableSize
+    ? Number(attribute(xml.slice(tableSize.start, tableSize.openEnd), 'width'))
+    : Number.NaN
   if (!Number.isSafeInteger(rowCount) || rowCount !== rows.length || !Number.isSafeInteger(columnCount) || columnCount < 1) {
     throw new HwpxEditConflictError('표 행·열 개수와 실제 구조가 일치하지 않습니다.')
   }
   if (!Number.isFinite(tableHeight) || tableHeight < 0) {
     throw new HwpxEditConflictError('표 전체 높이가 올바르지 않습니다.')
   }
+  if (!Number.isFinite(tableWidth) || tableWidth < 0) {
+    throw new HwpxEditConflictError('표 전체 너비가 올바르지 않습니다.')
+  }
   if (spans.some((span) => span.name === 'hp:tbl' && span.start > table.start && span.end < table.end)) {
     throw new HwpxEditConflictError('중첩 표가 있는 표에는 아직 행을 추가할 수 없습니다.')
   }
   let selectedRowHeight = 0
+  let selectedColumnIndex = -1
+  let selectedColumnWidth = 0
   rows.forEach((row, rowIndex) => {
     if (attribute(xml.slice(row.start, row.openEnd), 'id') !== undefined) {
       throw new HwpxEditConflictError('고유 ID가 있는 행은 아직 복제할 수 없습니다.')
@@ -196,10 +211,18 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
         Number(attribute(spanTag, 'colSpan')) !== 1
       ) throw new HwpxEditConflictError('병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.')
       const cellHeight = Number(attribute(xml.slice(cellSize.start, cellSize.openEnd), 'height'))
+      const cellWidth = Number(attribute(xml.slice(cellSize.start, cellSize.openEnd), 'width'))
       if (!Number.isFinite(cellHeight) || cellHeight < 0) {
         throw new HwpxEditConflictError('표 셀 높이가 올바르지 않습니다.')
       }
+      if (!Number.isFinite(cellWidth) || cellWidth < 0) {
+        throw new HwpxEditConflictError('표 셀 너비가 올바르지 않습니다.')
+      }
       if (row.start === selectedRow.start) selectedRowHeight = Math.max(selectedRowHeight, cellHeight)
+      if (cell.start === selectedCell.start) {
+        selectedColumnIndex = columnIndex
+        selectedColumnWidth = cellWidth
+      }
       const subLists = directChildren(spans, cell, 'hp:subList')
       if (subLists.length !== 1) throw new HwpxEditConflictError('단순 텍스트 셀로 이루어진 표에만 행을 추가할 수 있습니다.')
       const paragraphs = directChildren(spans, subLists[0], 'hp:p')
@@ -226,10 +249,14 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
   })
   const selectedRowIndex = rows.findIndex((row) => row.start === selectedRow.start)
   if (selectedRowIndex < 0) throw new HwpxEditConflictError('선택한 표 행을 찾을 수 없습니다.')
+  if (selectedColumnIndex < 0) throw new HwpxEditConflictError('선택한 표 열을 찾을 수 없습니다.')
   if (tableHeight < selectedRowHeight) {
     throw new HwpxEditConflictError('표 전체 높이가 선택 행 높이보다 작습니다.')
   }
-  return { rows, columnCount, selectedRowIndex, selectedRowHeight }
+  if (tableWidth < selectedColumnWidth) {
+    throw new HwpxEditConflictError('표 전체 너비가 선택 열 너비보다 작습니다.')
+  }
+  return { rows, columnCount, selectedRowIndex, selectedColumnIndex, selectedRowHeight, selectedColumnWidth }
 }
 
 function cloneEmptyRow(context: ReturnType<typeof locateTable>, newRowIndex: number): string {
@@ -272,6 +299,154 @@ function firstTextInRow(spans: XmlElementSpan[], row: XmlElementSpan): XmlElemen
   return spans.find(
     (span) => span.name === 'hp:t' && span.start >= row.openEnd && span.end <= row.closeStart
   )
+}
+
+function numericParagraphIdCursor(xml: string, spans: XmlElementSpan[]): { next: number } {
+  const ids = spans.filter((span) => span.name === 'hp:p')
+    .map((paragraph) => attribute(xml.slice(paragraph.start, paragraph.openEnd), 'id'))
+    .filter((id): id is string => id !== undefined)
+  if (ids.some((id) => !/^\d+$/.test(id))) {
+    throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 표에는 열을 추가할 수 없습니다.')
+  }
+  return { next: ids.map(Number).reduce((maximum, id) => Math.max(maximum, id), -1) + 1 }
+}
+
+function cloneEmptyCell(
+  context: ReturnType<typeof locateTable>,
+  cell: XmlElementSpan,
+  newColumnIndex: number,
+  paragraphId: { next: number }
+): string {
+  const fragment = context.xml.slice(cell.start, cell.end)
+  const localSpans = scanXmlElements(fragment)
+  const replacements: Array<{ start: number; end: number; value: string }> = []
+  const address = localSpans.find((span) => span.name === 'hp:cellAddr')
+  if (!address) throw new HwpxEditConflictError('복제할 표 셀 주소가 없습니다.')
+  replacements.push({
+    start: address.start,
+    end: address.openEnd,
+    value: setAttribute(fragment.slice(address.start, address.openEnd), 'colAddr', String(newColumnIndex))
+  })
+  for (const text of localSpans.filter((span) => span.name === 'hp:t')) {
+    replacements.push({ start: text.openEnd, end: text.closeStart, value: '' })
+  }
+  for (const lines of localSpans.filter((span) => span.name === 'hp:linesegarray')) {
+    replacements.push({ start: lines.start, end: lines.end, value: '' })
+  }
+  for (const paragraph of localSpans.filter((span) => span.name === 'hp:p')) {
+    const tag = fragment.slice(paragraph.start, paragraph.openEnd)
+    if (attribute(tag, 'id') !== undefined) {
+      replacements.push({
+        start: paragraph.start,
+        end: paragraph.openEnd,
+        value: setAttribute(tag, 'id', String(paragraphId.next++))
+      })
+    }
+  }
+  let result = fragment
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    result = replaceRange(result, replacement.start, replacement.end, replacement.value)
+  }
+  return result
+}
+
+function shiftTextNodeId(sectionPath: string, textNodeId: string, delta: number): string {
+  return `${sectionPath}#hp:t:${targetOrdinal(sectionPath, textNodeId) + delta}`
+}
+
+export function planInsertTableColumnAfter(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): InsertTableColumnPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('열 추가는 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex,
+    selectedColumnWidth
+  } = assertSimpleRectangularTable(context)
+  const selectedCells = rows.map((row) => directChildren(context.spans, row, 'hp:tc')[selectedColumnIndex])
+  for (const cell of selectedCells) {
+    const size = directChildren(context.spans, cell, 'hp:cellSz')[0]
+    const width = Number(attribute(context.xml.slice(size.start, size.openEnd), 'width'))
+    if (width !== selectedColumnWidth) {
+      throw new HwpxEditConflictError('행마다 너비가 다른 열은 아직 추가할 수 없습니다.')
+    }
+  }
+  const insertedTextsBeforeSelection = selectedCells.slice(0, selectedRowIndex).reduce(
+    (count, cell) => count + context.spans.filter(
+      (span) => span.name === 'hp:t' && span.start >= cell.openEnd && span.end <= cell.closeStart
+    ).length,
+    0
+  )
+  const paragraphId = numericParagraphIdCursor(context.xml, context.spans)
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({
+    start: 0,
+    end: context.table.openEnd - tableStart,
+    value: setAttribute(tableTag, 'colCnt', String(columnCount + 1))
+  })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableWidth = Number(attribute(tableSizeTag, 'width'))
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'width', String(tableWidth + selectedColumnWidth))
+  })
+  rows.forEach((row) => {
+    const cells = directChildren(context.spans, row, 'hp:tc')
+    for (let columnIndex = selectedColumnIndex + 1; columnIndex < cells.length; columnIndex += 1) {
+      const address = directChildren(context.spans, cells[columnIndex], 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'colAddr', String(columnIndex + 1))
+      })
+    }
+    const selectedCell = cells[selectedColumnIndex]
+    edits.push({
+      start: selectedCell.end - tableStart,
+      end: selectedCell.end - tableStart,
+      value: cloneEmptyCell(context, selectedCell, selectedColumnIndex + 1, paragraphId)
+    })
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    ...selection,
+    anchorTextNodeId: shiftTextNodeId(selection.sectionPath, selection.anchorTextNodeId, insertedTextsBeforeSelection),
+    focusTextNodeId: shiftTextNodeId(selection.sectionPath, selection.focusTextNodeId, insertedTextsBeforeSelection)
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: shiftTextNodeId(
+        selection.sectionPath,
+        normalized.start.textNodeId,
+        insertedTextsBeforeSelection
+      ),
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
 }
 
 export function planInsertTableRowAfter(sourcePackage: HwpxSourcePackage, selection: EditorSelection): InsertTableRowPlan {

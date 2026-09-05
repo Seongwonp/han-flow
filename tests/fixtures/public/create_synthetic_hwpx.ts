@@ -23,6 +23,23 @@ const section1 = `<?xml version="1.0" encoding="UTF-8"?>
   <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:startNum page="5"/><hp:pageNum pos="BOTTOM_RIGHT" formatType="DIGIT" sideChar=""/></hp:secPr><hp:header id="3" applyPageType="BOTH"><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>둘째 구역 머리말</hp:t></hp:run></hp:p></hp:subList></hp:header><hp:pic><hp:curSz width="1000" height="1000"/><hc:img binaryItemIDRef="image1"/></hp:pic><hp:t>이미지 뒤 텍스트</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
 </hs:sec>`
 
+const columnCell = (
+  row: number,
+  column: number,
+  label: string,
+  paragraphId: number,
+  headerCell = false
+) => `<hp:tc borderFillIDRef="1" header="${headerCell ? 1 : 0}"><hp:cellAddr colAddr="${column}" rowAddr="${row}"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="2000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER"><hp:p id="${paragraphId}" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${label}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="2000"/></hp:linesegarray></hp:p></hp:subList></hp:tc>`
+
+const columnTableSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="12000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:tbl id="column-table" rowCnt="3" colCnt="3" pageBreak="CELL" repeatHeader="1"><hp:sz width="6000" height="6000"/>
+    <hp:tr>${columnCell(0, 0, 'H1', 100, true)}${columnCell(0, 1, 'H2', 101, true)}${columnCell(0, 2, 'H3', 102, true)}</hp:tr>
+    <hp:tr>${columnCell(1, 0, 'A1', 110)}${columnCell(1, 1, 'A2', 111)}${columnCell(1, 2, 'A3', 112)}</hp:tr>
+    <hp:tr>${columnCell(2, 0, 'B1', 120)}${columnCell(2, 1, 'B2', 121)}${columnCell(2, 2, 'B3', 122)}</hp:tr>
+  </hp:tbl></hp:run></hp:p>
+</hs:sec>`
+
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
 const HWPX_MIMETYPE = 'application/hwp+zip'
 
@@ -118,6 +135,16 @@ export function createCellFragmentHwpx(directory: string, fileName = 'han-flow-c
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(cellFragmentHeader))
   zip.addFile('Contents/section0.xml', Buffer.from(cellFragmentSection))
+  zip.writeZip(path)
+  return path
+}
+
+export function createTableColumnHwpx(directory: string, fileName = 'han-flow-table-column.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(columnTableSection))
   zip.writeZip(path)
   return path
 }

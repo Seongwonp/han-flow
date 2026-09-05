@@ -289,3 +289,18 @@
 2. 오른쪽 열 추가에서 행별 cell 복제, `colCnt`·`colAddr`·표 너비와 selection projection을 구현합니다.
 3. 현재 열 삭제에서 다음/이전 cell selection 재배치와 살아남은 inverse locator를 구현합니다.
 4. main session, 리본, loss policy, Save As·재개봉과 전체 자동 회귀를 연결합니다.
+
+## [2026-09-05] 안전한 오른쪽 열 추가 기반 구현
+
+### 완료된 작업
+
+1. 다중 열 공개 fixture와 단순 직사각형 topology 검증을 추가했습니다.
+2. 모든 direct row와 반복 머리글에서 선택 열 오른쪽에 같은 모양의 빈 cell을 복제했습니다.
+3. `colCnt`, 뒤쪽 `colAddr`, 표 전체 너비와 source selection ordinal을 원자적으로 갱신했습니다.
+4. exact undo/redo, main IPC, 리본, loss policy와 Save As·재개봉을 연결했습니다.
+5. typecheck, Jest 36 suites·210 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 다음 시작점
+
+- 현재 열 삭제와 다음 cell, 마지막 열이면 이전 cell로 selection을 재배치하는 경로를 구현합니다.
+- 마지막 하나뿐인 열과 불균일 geometry를 source 변경 없이 차단합니다.

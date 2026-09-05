@@ -8,6 +8,19 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-05 — Sprint 3 안전한 오른쪽 열 추가 기반
+
+단순 직사각형 표에서 현재 열 오른쪽에 빈 열을 추가하는 table fragment command를 구현했다.
+모든 direct row와 반복 머리글의 대응 cell을 행별 geometry·margin·style과 함께 복제하되 text와
+`linesegarray`는 비우고 paragraph ID를 다시 만든다. `colCnt`, 뒤쪽 `colAddr`와 표 전체 너비를
+원자적으로 갱신하며 불균일 열 너비, 병합·span·중첩·복합 콘텐츠는 fail-closed한다.
+
+다중 열 공개 fixture에서 머리글 포함 cell 복제, 빈 text projection, ID·주소·너비와 앞선 행의
+추가 text 수를 반영한 selection ordinal을 검증했다. main session과 리본, `table-structure` loss
+policy, exact undo/redo, Save As와 재개봉도 통과했다. TypeScript typecheck와 Jest 36 suites·210
+tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe 8개 통과를
+확인했다.
+
 ## 2026-09-04 — Sprint 3 표 행 삭제와 selection 재배치
 
 단순 직사각형 표의 현재 body 행을 삭제하고 table count·높이·뒤쪽 cell 주소를 원자적으로 줄이는
