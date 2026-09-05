@@ -46,6 +46,7 @@ interface ViewerToolbarProps {
   paragraphStyleAvailable: boolean
   activeCellStyle?: RibbonCellStyleState
   cellStyleAvailable: boolean
+  tableCellSelectionAvailable: boolean
   cellStyleTitle?: string
   characterStyleTitle?: string
   paragraphStyleTitle?: string
@@ -88,6 +89,7 @@ interface ViewerToolbarProps {
   onInsertTableColumnAfter: () => void
   onDeleteTableColumn: () => void
   onMergeTableCellRight: () => void
+  onSplitTableCell: () => void
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -113,6 +115,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     paragraphStyleAvailable,
     activeCellStyle,
     cellStyleAvailable,
+    tableCellSelectionAvailable,
     cellStyleTitle,
     characterStyleTitle,
     paragraphStyleTitle,
@@ -135,7 +138,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     onDeleteTableRow,
     onInsertTableColumnAfter,
     onDeleteTableColumn,
-    onMergeTableCellRight
+    onMergeTableCellRight,
+    onSplitTableCell
   } = props
   const pending = Boolean(editingPending)
 
@@ -257,6 +261,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
             <button aria-label="오른쪽에 표 열 추가" title="현재 열 오른쪽에 빈 열 추가" onMouseDown={(event) => event.preventDefault()} onClick={onInsertTableColumnAfter} disabled={!cellStyleAvailable || pending}>오른쪽 열＋</button>
             <button aria-label="현재 표 열 삭제" title="현재 셀이 있는 열 삭제" onMouseDown={(event) => event.preventDefault()} onClick={onDeleteTableColumn} disabled={!cellStyleAvailable || pending}>현재 열−</button>
             <button aria-label="오른쪽 표 셀과 병합" title="현재 셀을 바로 오른쪽 셀과 병합" onMouseDown={(event) => event.preventDefault()} onClick={onMergeTableCellRight} disabled={!cellStyleAvailable || pending}>오른쪽 병합</button>
+            <button aria-label="선택한 병합 표 셀 분할" title="선택한 1×2 병합 셀을 두 셀로 분할" onMouseDown={(event) => event.preventDefault()} onClick={onSplitTableCell} disabled={!tableCellSelectionAvailable || pending}>병합 셀 분할</button>
           </div>
           <span className="viewer-ribbon-group-label">표 셀 모양</span>
         </div>

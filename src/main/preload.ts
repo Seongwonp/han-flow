@@ -12,6 +12,7 @@ import type {
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
+  EditingSplitTableCellRequest,
   EditingStartRequest
 } from '../core/editing/editing_contract'
 import { EditingIpcResult, unwrapEditingIpcResult } from '../core/editing/editing_error'
@@ -81,6 +82,8 @@ const api = {
     invokeEditing('editing:deleteTableColumn', request),
   mergeTableCellRight: (request: EditingMergeTableCellRightRequest) =>
     invokeEditing('editing:mergeTableCellRight', request),
+  splitTableCell: (request: EditingSplitTableCellRequest) =>
+    invokeEditing('editing:splitTableCell', request),
   undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
   redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
   refreshEditing: (sessionId: string) => invokeEditing('editing:refresh', sessionId),

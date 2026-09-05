@@ -668,6 +668,14 @@ reconciliation이 문서 재투영·undo/redo·파일 교체에서 대상 병합
 selection과 outline을 제거한다. source 분할 요청은 좌표가 아니라 `textNodeId` ancestry를 기준으로
 검증한다.
 
+이어진 분할 slice는 `rowSpan=1`, `colSpan=2`인 읽기 전용 body cell만 허용한다. main에서
+`TableCellSelection`의 table·cell identity와 좌표를 현재 projection에 대조한 뒤, core가
+`textNodeId` ancestry의 실제 `hp:tc`, `rowAddr`·`colAddr`와 span을 재검증한다. 선택 행 외 모든
+direct row의 대응 두 열이 span 없이 존재하고 width가 각각 일치할 때만 그 geometry를 사용한다.
+기존 문단은 왼쪽에 모두 남기고 오른쪽에는 같은 style의 빈 문단과 충돌 없는 ID를 만든다.
+근거가 부족하면 균등 분할하지 않으며 exact table fragment inverse, 왼쪽 text selection,
+undo/redo, loss policy와 Save As·재개봉을 같은 transaction 경계에서 보존한다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

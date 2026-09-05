@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
+import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
 import { saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { EditingSessionManager } from '../../src/main/editing_session'
@@ -363,6 +364,68 @@ describe('main process HWPX editing session', () => {
     await manager.saveAs(41, started.sessionId, destination)
     const reopened = await manager.start(42, destination)
     expect(JSON.stringify(reopened.document)).toContain('"columnSpan":2')
+    expect(JSON.stringify(reopened.document)).toContain('A1')
+    expect(JSON.stringify(reopened.document)).toContain('A2')
+  })
+
+  test('선택한 1×2 병합 셀을 분할하고 undo/redo·Save As를 보존한다', async () => {
+    const manager = new EditingSessionManager(() => 'split-table-cell-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(columnFixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === 'A1'
+    )!
+    const started = await manager.start(43, columnFixture)
+    const merged = await manager.mergeTableCellRight(43, {
+      sessionId: started.sessionId,
+      transactionId: 'merge-before-split',
+      selectionBefore: {
+        sectionPath,
+        anchorTextNodeId: current.textNodeId,
+        anchorOffset: 0,
+        focusTextNodeId: current.textNodeId,
+        focusOffset: 0
+      },
+      timestamp: 1
+    })
+    const cellSelection = listSelectableMergedTableCells(merged.document)[0]
+    const split = await manager.splitTableCell(43, {
+      sessionId: started.sessionId,
+      transactionId: 'split-cell-1',
+      selection: cellSelection,
+      timestamp: 2
+    })
+
+    expect(split.selection).toEqual({
+      sectionPath,
+      anchorTextNodeId: cellSelection.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: cellSelection.textNodeId,
+      focusOffset: 0
+    })
+    const splitTable = split.document.sections[0].blocks[0].content.find(
+      (item) => item.type === 'table'
+    )
+    if (!splitTable || splitTable.type !== 'table') throw new Error('분할한 main projection이 없습니다.')
+    expect(splitTable.rows[1].cells).toHaveLength(3)
+    expect(splitTable.rows[1].cells[0]).toMatchObject({ columnSpan: 1, width: 2000 })
+    expect(splitTable.rows[1].cells[1]).toMatchObject({ columnSpan: 1, width: 2000 })
+    expect(splitTable.rows[1].cells[1].paragraphs[0].content[0]).toMatchObject({ text: '' })
+    expect(await manager.lossPolicy(43, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-structure', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_OMITTED', 'TABLE_STRUCTURE_CHANGED'])
+    })
+
+    const undone = await manager.undo(43, started.sessionId)
+    expect(JSON.stringify(undone.document)).toContain('"columnSpan":2')
+    const redone = await manager.redo(43, started.sessionId)
+    expect(JSON.stringify(redone.document)).not.toContain('"columnSpan":2')
+    expect(redone.selection).toEqual(split.selection)
+
+    const destination = join(directory, 'split-table-cell-save.hwpx')
+    await manager.saveAs(43, started.sessionId, destination)
+    const reopened = await manager.start(44, destination)
+    expect(JSON.stringify(reopened.document)).not.toContain('"columnSpan":2')
     expect(JSON.stringify(reopened.document)).toContain('A1')
     expect(JSON.stringify(reopened.document)).toContain('A2')
   })

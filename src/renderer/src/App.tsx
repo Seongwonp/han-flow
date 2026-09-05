@@ -1466,6 +1466,35 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const splitTableCell = useCallback(async () => {
+    if (
+      !editing ||
+      !tableCellSelection ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('병합 셀 분할 중…')
+    try {
+      applyEditingResult(await api().splitTableCell({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-table-cell-split'),
+        selection: tableCellSelection,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('병합 셀 분할 · 왼쪽 셀 편집 가능')
+    } catch (reason) {
+      await recoverEditingFailure('표 셀 분할', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    tableCellSelection,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -1706,6 +1735,7 @@ export default function App() {
       paragraphStyleAvailable={paragraphStyleAvailable}
       activeCellStyle={activeCellStyle}
       cellStyleAvailable={cellStyleAvailable}
+      tableCellSelectionAvailable={Boolean(tableCellSelection)}
       cellStyleTitle={editingCapabilityStatus('표 셀 모양', editingCapabilityState.cellStyle.reason)}
       characterStyleTitle={editingCapabilityStatus('글자 모양', characterStyleState.reason)}
       paragraphStyleTitle={editingCapabilityStatus(
@@ -1732,6 +1762,7 @@ export default function App() {
       onInsertTableColumnAfter={() => void insertTableColumnAfter()}
       onDeleteTableColumn={() => void deleteTableColumn()}
       onMergeTableCellRight={() => void mergeTableCellRight()}
+      onSplitTableCell={() => void splitTableCell()}
     />
     <ViewerStage
       stageRef={stageRef}

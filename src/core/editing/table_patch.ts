@@ -1,5 +1,6 @@
 import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
+import { TableCellSelection } from './table_cell_selection'
 import { HwpxEditConflictError, HwpxLossReport, listHwpxTextAnchors } from './text_patch'
 
 export interface ReplaceTableFragmentCommand {
@@ -32,6 +33,11 @@ export interface DeleteTableColumnPlan {
 }
 
 export interface MergeTableCellRightPlan {
+  command: ReplaceTableFragmentCommand
+  selectionAfter: EditorSelection
+}
+
+export interface SplitTableCellPlan {
   command: ReplaceTableFragmentCommand
   selectionAfter: EditorSelection
 }
@@ -316,7 +322,7 @@ function numericParagraphIdCursor(xml: string, spans: XmlElementSpan[]): { next:
     .map((paragraph) => attribute(xml.slice(paragraph.start, paragraph.openEnd), 'id'))
     .filter((id): id is string => id !== undefined)
   if (ids.some((id) => !/^\d+$/.test(id))) {
-    throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 표에는 열을 추가할 수 없습니다.')
+    throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 표의 구조는 편집할 수 없습니다.')
   }
   return { next: ids.map(Number).reduce((maximum, id) => Math.max(maximum, id), -1) + 1 }
 }
@@ -381,6 +387,238 @@ function withoutLineSegments(fragment: string): string {
     result = replaceRange(result, lines.start, lines.end, '')
   }
   return result
+}
+
+function cloneEmptySplitCell(
+  context: ReturnType<typeof locateTable>,
+  cell: XmlElementSpan,
+  column: number,
+  width: number
+): string {
+  const fragment = context.xml.slice(cell.start, cell.end)
+  const spans = scanXmlElements(fragment)
+  const address = spans.find((span) => span.name === 'hp:cellAddr')
+  const cellSpan = spans.find((span) => span.name === 'hp:cellSpan')
+  const cellSize = spans.find((span) => span.name === 'hp:cellSz')
+  const subList = spans.find((span) => span.name === 'hp:subList')
+  const paragraphs = subList ? directChildren(spans, subList, 'hp:p') : []
+  if (!address || !cellSpan || !cellSize || !subList || !paragraphs.length) {
+    throw new HwpxEditConflictError('분할할 표 셀의 기본 구조가 없습니다.')
+  }
+  const paragraphId = numericParagraphIdCursor(context.xml, context.spans)
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: address.start,
+      end: address.openEnd,
+      value: setAttribute(fragment.slice(address.start, address.openEnd), 'colAddr', String(column))
+    },
+    {
+      start: cellSpan.start,
+      end: cellSpan.openEnd,
+      value: setAttribute(fragment.slice(cellSpan.start, cellSpan.openEnd), 'colSpan', '1')
+    },
+    {
+      start: cellSize.start,
+      end: cellSize.openEnd,
+      value: setAttribute(fragment.slice(cellSize.start, cellSize.openEnd), 'width', String(width))
+    }
+  ]
+  for (const paragraph of paragraphs.slice(1)) {
+    edits.push({ start: paragraph.start, end: paragraph.end, value: '' })
+  }
+  const firstParagraph = paragraphs[0]
+  const firstParagraphTag = fragment.slice(firstParagraph.start, firstParagraph.openEnd)
+  if (attribute(firstParagraphTag, 'id') !== undefined) {
+    edits.push({
+      start: firstParagraph.start,
+      end: firstParagraph.openEnd,
+      value: setAttribute(firstParagraphTag, 'id', String(paragraphId.next))
+    })
+  }
+  for (const text of spans.filter(
+    (span) => span.name === 'hp:t' && span.start >= firstParagraph.openEnd && span.end <= firstParagraph.closeStart
+  )) {
+    edits.push({ start: text.openEnd, end: text.closeStart, value: '' })
+  }
+  for (const lines of spans.filter((span) => span.name === 'hp:linesegarray')) {
+    edits.push({ start: lines.start, end: lines.end, value: '' })
+  }
+  let result = fragment
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    result = replaceRange(result, edit.start, edit.end, edit.value)
+  }
+  return result
+}
+
+export function planSplitTableCell(
+  sourcePackage: HwpxSourcePackage,
+  selection: TableCellSelection
+): SplitTableCellPlan {
+  const context = locateTable(sourcePackage, selection.sectionPath, selection.textNodeId)
+  const { xml, spans, table, row: selectedRow, cell: selectedCell } = context
+  const tableTag = xml.slice(table.start, table.openEnd)
+  const rowCount = Number(attribute(tableTag, 'rowCnt'))
+  const columnCount = Number(attribute(tableTag, 'colCnt'))
+  const rows = directChildren(spans, table, 'hp:tr')
+  if (
+    !Number.isSafeInteger(rowCount) ||
+    rowCount !== rows.length ||
+    !Number.isSafeInteger(columnCount) ||
+    columnCount < 2
+  ) throw new HwpxEditConflictError('표 행·열 개수와 실제 구조가 일치하지 않습니다.')
+  if (spans.some((span) => span.name === 'hp:tbl' && span.start > table.start && span.end < table.end)) {
+    throw new HwpxEditConflictError('중첩 표가 있는 셀은 아직 분할할 수 없습니다.')
+  }
+  const selectedRowIndex = rows.findIndex((row) => row.start === selectedRow.start)
+  const selectedAddress = directChildren(spans, selectedCell, 'hp:cellAddr')[0]
+  const selectedSpan = directChildren(spans, selectedCell, 'hp:cellSpan')[0]
+  const selectedSize = directChildren(spans, selectedCell, 'hp:cellSz')[0]
+  const selectedSubList = directChildren(spans, selectedCell, 'hp:subList')[0]
+  if (!selectedAddress || !selectedSpan || !selectedSize || !selectedSubList || selectedRowIndex < 0) {
+    throw new HwpxEditConflictError('분할할 표 셀 구조를 찾을 수 없습니다.')
+  }
+  const selectedCellTag = xml.slice(selectedCell.start, selectedCell.openEnd)
+  const selectedAddressTag = xml.slice(selectedAddress.start, selectedAddress.openEnd)
+  const selectedSpanTag = xml.slice(selectedSpan.start, selectedSpan.openEnd)
+  const selectedColumn = Number(attribute(selectedAddressTag, 'colAddr'))
+  if (
+    selection.row !== selectedRowIndex ||
+    selection.column !== selectedColumn ||
+    Number(attribute(selectedAddressTag, 'rowAddr')) !== selectedRowIndex
+  ) throw new HwpxEditConflictError('선택한 표 셀 주소가 source와 일치하지 않습니다.')
+  if (
+    attribute(selectedCellTag, 'header') === '1' ||
+    Number(attribute(selectedSpanTag, 'rowSpan')) !== 1 ||
+    Number(attribute(selectedSpanTag, 'colSpan')) !== 2 ||
+    selectedColumn < 0 ||
+    selectedColumn + 1 >= columnCount
+  ) throw new HwpxEditConflictError('수평 1×2 body 병합 셀만 분할할 수 있습니다.')
+  if (attribute(selectedCellTag, 'id') !== undefined || attribute(xml.slice(selectedRow.start, selectedRow.openEnd), 'id') !== undefined) {
+    throw new HwpxEditConflictError('고유 ID가 있는 표 셀은 아직 분할할 수 없습니다.')
+  }
+  const selectedParagraphs = directChildren(spans, selectedSubList, 'hp:p')
+  if (!selectedParagraphs.length) throw new HwpxEditConflictError('문단이 없는 표 셀은 분할할 수 없습니다.')
+  const selectedContent = spans.filter(
+    (span) => span.start >= selectedSubList.openEnd && span.end <= selectedSubList.closeStart
+  )
+  if (selectedContent.some((span) => ![
+    'hp:p', 'hp:run', 'hp:t', 'hp:linesegarray', 'hp:lineseg'
+  ].includes(span.name))) {
+    throw new HwpxEditConflictError('복합 콘텐츠가 있는 표 셀은 아직 분할할 수 없습니다.')
+  }
+  selectedParagraphs.forEach((paragraph) => {
+    const runs = directChildren(spans, paragraph, 'hp:run')
+    const texts = runs.flatMap((run) => directChildren(spans, run, 'hp:t'))
+    if (runs.length !== 1 || texts.length !== 1) {
+      throw new HwpxEditConflictError('복합 콘텐츠가 있는 표 셀은 아직 분할할 수 없습니다.')
+    }
+  })
+  const evidence: Array<{ left: number; right: number }> = []
+  rows.forEach((row, rowIndex) => {
+    const cells = directChildren(spans, row, 'hp:tc')
+    let nextColumn = 0
+    for (const cell of cells) {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      const span = directChildren(spans, cell, 'hp:cellSpan')[0]
+      const size = directChildren(spans, cell, 'hp:cellSz')[0]
+      if (!address || !span || !size || attribute(xml.slice(cell.start, cell.openEnd), 'id') !== undefined) {
+        throw new HwpxEditConflictError('불완전하거나 고유 ID가 있는 표는 아직 분할할 수 없습니다.')
+      }
+      const addressTag = xml.slice(address.start, address.openEnd)
+      const spanTag = xml.slice(span.start, span.openEnd)
+      const cellColumn = Number(attribute(addressTag, 'colAddr'))
+      const rowSpan = Number(attribute(spanTag, 'rowSpan'))
+      const columnSpan = Number(attribute(spanTag, 'colSpan'))
+      const expectedSpan = cell.start === selectedCell.start ? 2 : 1
+      if (
+        Number(attribute(addressTag, 'rowAddr')) !== rowIndex ||
+        cellColumn !== nextColumn ||
+        rowSpan !== 1 ||
+        columnSpan !== expectedSpan
+      ) throw new HwpxEditConflictError('선택한 1×2 병합 외 span·불연속 주소가 있는 표는 분할할 수 없습니다.')
+      nextColumn += columnSpan
+    }
+    if (nextColumn !== columnCount) throw new HwpxEditConflictError('표의 logical 열 주소가 완전하지 않습니다.')
+    if (row.start === selectedRow.start) return
+    const left = cells.find((cell) => {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      return Number(attribute(xml.slice(address.start, address.openEnd), 'colAddr')) === selectedColumn
+    })
+    const right = cells.find((cell) => {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      return Number(attribute(xml.slice(address.start, address.openEnd), 'colAddr')) === selectedColumn + 1
+    })
+    if (!left || !right) throw new HwpxEditConflictError('분할 너비를 확인할 대응 열이 없습니다.')
+    const leftSize = directChildren(spans, left, 'hp:cellSz')[0]
+    const rightSize = directChildren(spans, right, 'hp:cellSz')[0]
+    evidence.push({
+      left: Number(attribute(xml.slice(leftSize.start, leftSize.openEnd), 'width')),
+      right: Number(attribute(xml.slice(rightSize.start, rightSize.openEnd), 'width'))
+    })
+  })
+  const widths = evidence[0]
+  if (
+    !widths ||
+    !Number.isFinite(widths.left) || widths.left <= 0 ||
+    !Number.isFinite(widths.right) || widths.right <= 0 ||
+    evidence.some((item) => item.left !== widths.left || item.right !== widths.right)
+  ) throw new HwpxEditConflictError('다른 행에서 일관된 분할 열 너비를 확인할 수 없습니다.')
+  const selectedWidth = Number(attribute(xml.slice(selectedSize.start, selectedSize.openEnd), 'width'))
+  if (selectedWidth !== widths.left + widths.right) {
+    throw new HwpxEditConflictError('병합 셀 너비와 대응 열 너비 합이 일치하지 않습니다.')
+  }
+  const firstText = spans.find(
+    (span) => span.name === 'hp:t' && span.start >= selectedCell.openEnd && span.end <= selectedCell.closeStart
+  )
+  if (!firstText) throw new HwpxEditConflictError('분할 뒤 selection을 보존할 text가 없습니다.')
+  const firstOrdinal = spans.filter((span) => span.name === 'hp:t' && span.start < firstText.start).length
+  const firstTextNodeId = `${selection.sectionPath}#hp:t:${firstOrdinal}`
+  const tableFragment = xml.slice(table.start, table.end)
+  let replacement = tableFragment
+  const tableStart = table.start
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: selectedSpan.start - tableStart,
+      end: selectedSpan.openEnd - tableStart,
+      value: setAttribute(selectedSpanTag, 'colSpan', '1')
+    },
+    {
+      start: selectedSize.start - tableStart,
+      end: selectedSize.openEnd - tableStart,
+      value: setAttribute(xml.slice(selectedSize.start, selectedSize.openEnd), 'width', String(widths.left))
+    },
+    {
+      start: selectedCell.end - tableStart,
+      end: selectedCell.end - tableStart,
+      value: cloneEmptySplitCell(context, selectedCell, selectedColumn + 1, widths.right)
+    }
+  ]
+  for (const lines of spans.filter(
+    (span) => span.name === 'hp:linesegarray' && span.start >= selectedCell.openEnd && span.end <= selectedCell.closeStart
+  )) {
+    edits.push({ start: lines.start - tableStart, end: lines.end - tableStart, value: '' })
+  }
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: firstTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: firstTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: selection.textNodeId,
+      replacementTextNodeId: firstTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
 }
 
 export function planMergeTableCellRight(

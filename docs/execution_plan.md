@@ -553,25 +553,29 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 6. [x] 병합 후 renderer selection을 해제하고 undo에서 원래 selection을 복원한다.
 7. [x] core·main·renderer, loss policy, Save As·재개봉과 전체 자동 관문을 통과한다.
 
-## 다음 구현 slice: 병합 cell 선택 기반
+## 완료한 구현 slice: 병합 cell 선택 기반
 
 1. [x] text caret과 상호 배타적인 `TableCellSelection` 상태를 renderer에 추가한다.
 2. [x] 읽기 전용 병합 cell의 `td` click으로 source cell을 식별하고 outline을 표시한다.
 3. [x] 문서 재투영·undo/redo·파일 교체 시 stale cell selection을 안전하게 해제한다.
-4. [ ] main 요청에서 renderer 좌표를 신뢰하지 않고 source ancestry·주소·span을 다시 검증한다.
-5. [ ] 이 기반을 통과한 뒤에만 history 안에서 생성한 1×2 cell의 제한된 분할을 구현한다.
+4. [x] main 요청에서 renderer 좌표를 신뢰하지 않고 source ancestry·주소·span을 다시 검증한다.
+5. [x] 이 기반을 통과한 뒤 history 안에서 생성한 1×2 cell의 제한된 분할을 구현한다.
 
 `TableCellSelection`은 section·table·cell identity와 좌표 외에 살아 있는 `textNodeId`를 보관한다.
 다음 source command는 이 anchor로 실제 `hp:tc`를 찾고 나머지 값은 교차 검증에만 사용한다.
 
-## 다음 구현 slice: 제한된 수평 1×2 cell 분할
+## 완료한 구현 slice: 제한된 수평 1×2 cell 분할
 
-1. [ ] `textNodeId` ancestry로 선택 병합 cell을 찾고 `rowAddr`·`colAddr`·`colSpan=2`를 재검증한다.
-2. [ ] 다른 unmerged 행의 대응 열 너비가 일관될 때만 왼쪽·오른쪽 width 근거로 사용한다.
-3. [ ] 기존 문단은 왼쪽에 모두 보존하고 오른쪽에는 같은 style의 빈 문단과 새 ID를 만든다.
-4. [ ] 왼쪽 `colSpan=1`·width를 복원하고 오른쪽 `hp:tc`를 다음 logical 주소에 삽입한다.
-5. [ ] exact inverse, 분할 후 왼쪽 text selection, undo/redo와 stale cell selection 정리를 연결한다.
-6. [ ] 저장·재개봉된 임의 병합에서 열 너비 근거가 없으면 fail-closed한다.
+1. [x] `textNodeId` ancestry로 선택 병합 cell을 찾고 `rowAddr`·`colAddr`·`colSpan=2`를 재검증한다.
+2. [x] 다른 unmerged 행의 대응 열 너비가 일관될 때만 왼쪽·오른쪽 width 근거로 사용한다.
+3. [x] 기존 문단은 왼쪽에 모두 보존하고 오른쪽에는 같은 style의 빈 문단과 새 ID를 만든다.
+4. [x] 왼쪽 `colSpan=1`·width를 복원하고 오른쪽 `hp:tc`를 다음 logical 주소에 삽입한다.
+5. [x] exact inverse, 분할 후 왼쪽 text selection, undo/redo와 stale cell selection 정리를 연결한다.
+6. [x] 저장·재개봉된 임의 병합에서 열 너비 근거가 없으면 fail-closed한다.
+
+분할 요청은 main에서 현재 projection의 table·cell identity까지 먼저 대조하고 core에서 살아 있는
+`textNodeId` ancestry와 실제 XML 주소·span을 다시 확인한다. 다음 우선순위는 Windows 한/글
+왕복 실기 전까지 새 표 topology 범위를 넓히지 않고 corpus와 수동 승인 관문을 닫는 것이다.
 
 ## 다음 milestone: V3 외부 승인
 

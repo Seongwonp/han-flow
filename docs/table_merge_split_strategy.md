@@ -87,15 +87,16 @@ text selection과 cell selection은 동시에 활성화하지 않는다.
 
 - 왼쪽 cell에 기존 문단을 모두 남기고 오른쪽에는 같은 style의 빈 문단 하나를 만든다.
 - 사용자의 text를 자동으로 절반 분배하지 않는다.
-- 두 열의 원래 너비를 알 수 없으면 균등 분할하지 않는다. Han-Flow history 안에서 방금 만든
-  병합은 inverse로 되돌리고, 저장·재개봉된 임의 병합 cell의 분할은 열 너비 근거를 확보할 때까지
-  차단한다.
+- 두 열의 원래 너비를 알 수 없으면 균등 분할하지 않는다. 선택 행을 제외한 모든 direct row가
+  두 논리 열을 span 없이 가지고 있고 각 열의 width가 행마다 일치할 때만 그 값을 복원 근거로 쓴다.
+  따라서 안전 조건을 유지한 저장·재개봉 문서도 분할할 수 있지만, 대응 행이 없거나 너비가
+  불일치하면 차단한다.
 - 새 오른쪽 cell은 주소, span, geometry, margin과 style을 명시적으로 생성하고 paragraph ID를
   충돌 없이 만든다.
 - 분할 후 selection은 새 오른쪽 빈 cell이 아니라 기존 text가 남은 왼쪽 cell의 첫 anchor로 둔다.
 
-저장·재개봉 뒤에도 일반 분할을 지원하려면 논리 열 너비를 신뢰할 수 있는 source 근거 또는 별도
-표 geometry 복원 규칙이 먼저 필요하다. 앱 내부 provenance metadata를 HWPX에 몰래 추가하지 않는다.
+앱 내부 provenance metadata는 HWPX에 추가하지 않는다. source 자체의 다른 행에서 얻은 열 너비만
+사용하므로 1행 표나 선택 병합 외의 span이 있는 표는 분할하지 않는다.
 
 ## 6. API와 UI 단계
 
@@ -104,6 +105,7 @@ text selection과 cell selection은 동시에 활성화하지 않는다.
 3. [x] 리본에는 안전한 일반 cell에서만 `오른쪽 셀과 병합`을 노출한다.
 4. [x] 병합 후 읽기 전용 cell에는 명확한 상태 문구를 표시하고 global undo는 계속 제공한다.
 5. [x] 별도 `TableCellSelection`과 cell outline을 구현한 뒤에만 `셀 분할` action을 추가한다.
+6. [x] main projection identity와 source ancestry를 이중 검증하는 제한된 분할 IPC를 연결한다.
 
 ## 7. 자동 검증 matrix
 
@@ -125,11 +127,13 @@ text selection과 cell selection은 동시에 활성화하지 않는다.
 - style·margin·height·vertical alignment 불일치
 - 비연속 주소, count 불일치와 고유 ID
 
-### 분할 전 관문
+### 분할 성공·차단 관문
 
 - 병합 cell click selection과 text selection의 상호 배타성
-- 앱 history 안의 병합을 undo하는 경로와 실제 분할 command의 구분
-- 저장·재개봉된 병합 cell에서 열 너비 근거가 없을 때 fail-closed
+- 실제 분할 command가 기존 문단을 왼쪽에 보존하고 오른쪽 빈 문단과 새 ID를 생성
+- 다른 행의 일관된 두 열 width 복원, `colSpan=1`과 논리 주소 검증
+- exact inverse·redo, 분할 후 왼쪽 text selection, main session과 Save As·재개봉
+- stale identity·주소, 대응 행 부재·불일치 너비와 다른 span은 source 변경 없이 fail-closed
 
 ## 8. 완료 정의
 
@@ -144,3 +148,8 @@ parser probe를 통과한 뒤 완료로 표시한다. Windows 한/글 재열기 
 선택할 수 있고 선택 outline을 표시한다. text selection과는 상호 배타적이며 문서 재투영에서
 `textNodeId`, table·cell identity, row·column 또는 span이 달라지면 자동 해제한다. 다음 분할
 command는 `textNodeId` ancestry를 source locator로 사용하고 다른 값은 교차 검증한다.
+
+같은 날 제한된 수평 1×2 분할도 구현했다. main은 현재 projection에서 selection identity가 살아
+있는지 확인하고 core는 source ancestry, 주소와 span을 다시 검증한다. 다른 모든 unmerged 행에서
+두 열의 width가 일관될 때만 왼쪽 width를 복원하고 같은 모양의 빈 오른쪽 cell을 만든다. 기존
+문단은 왼쪽에 순서대로 유지하며 exact inverse·redo, loss policy, Save As와 재개봉을 통과했다.

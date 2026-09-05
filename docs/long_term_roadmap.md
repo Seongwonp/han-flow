@@ -134,7 +134,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
    - [x] selection·text·geometry 보존 정책과 fail-closed 범위 설계
    - [x] 현재 body cell과 오른쪽 cell의 제한된 1×2 병합
    - [x] 병합 cell용 별도 cell selection과 stale projection 정리
-   - [ ] 다른 행의 열 너비 근거를 사용하는 제한된 수평 분할
+   - [x] 다른 행의 열 너비 근거를 사용하는 제한된 수평 분할
 
 각 기능은 `Han-Flow 편집 → Han-Flow 재개봉 → 한/글 재개봉 → 한/글 저장 → Han-Flow
 역재개봉`을 통과해야 완료다.

@@ -368,3 +368,19 @@
 
 - 선택의 `textNodeId`로 실제 merged `hp:tc` ancestry와 span을 core에서 다시 검증합니다.
 - 다른 unmerged 행의 대응 cell 너비를 근거로 제한된 수평 1×2 분할 command를 구현합니다.
+
+## [2026-09-05] 제한된 수평 1×2 셀 분할 구현
+
+### 완료된 작업
+
+1. 병합 cell selection의 projection identity와 source ancestry·주소·span을 이중 검증했습니다.
+2. 다른 모든 unmerged 행에서 일관된 두 열 너비가 확인될 때만 분할하도록 제한했습니다.
+3. 기존 문단은 왼쪽에 보존하고 같은 모양의 빈 오른쪽 cell과 새 paragraph ID를 만들었습니다.
+4. `colSpan`, width와 논리 주소를 복원하고 stale layout 정보를 제거했습니다.
+5. exact undo/redo, main IPC, 리본, loss policy와 Save As·재개봉을 연결했습니다.
+6. typecheck, Jest 37 suites·223 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 다음 시작점
+
+- Windows 한/글에서 병합·분할 저장본을 재열어 구조와 경고 여부를 수동 검증합니다.
+- 새 표 topology 기능을 넓히기 전 공개 corpus와 V3 외부 승인 관문을 우선 닫습니다.

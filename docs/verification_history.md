@@ -8,6 +8,20 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-05 — Sprint 3 제한된 수평 1×2 셀 분할
+
+`TableCellSelection`으로 고른 읽기 전용 병합 body cell을 두 논리 cell로 되돌리는 제한된 분할을
+구현했다. main은 현재 projection의 table·cell identity를 대조하고 core는 source `textNodeId`
+ancestry, 주소와 `rowSpan=1`·`colSpan=2`를 다시 검증한다. 선택 행 외 모든 행에서 대응하는 두 열의
+width가 일관될 때만 왼쪽 geometry를 복원하고, 같은 모양과 새 paragraph ID를 가진 빈 오른쪽
+cell을 만든다. 기존 문단은 왼쪽에 원래 순서대로 보존한다.
+
+공개 3×3 fixture에서 병합 후 분할, 문단·열 주소·너비, 빈 오른쪽 cell, exact inverse와 redo를
+검증했다. stale 좌표와 불일치 width는 source 변경 전에 차단한다. main session, 리본 action,
+`table-structure` loss policy, undo/redo, Save As와 재개봉도 통과했다. TypeScript typecheck와 Jest
+37 suites·223 tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe
+8개 통과를 확인했다.
+
 ## 2026-09-05 — Sprint 3 병합 cell 선택 기반
 
 읽기 전용 병합 body cell을 click 또는 Enter·Space로 선택하는 `TableCellSelection`과 outline을

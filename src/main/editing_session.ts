@@ -14,6 +14,7 @@ import {
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
+  EditingSplitTableCellRequest,
   EditingSavedResult,
   EditingStartResult
 } from '../core/editing/editing_contract'
@@ -29,8 +30,10 @@ import {
   planDeleteTableRow,
   planInsertTableColumnAfter,
   planInsertTableRowAfter,
-  planMergeTableCellRight
+  planMergeTableCellRight,
+  planSplitTableCell
 } from '../core/editing/table_patch'
+import { reconcileTableCellSelection } from '../core/editing/table_cell_selection'
 import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
 import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
 import { HwpxSourcePackage } from '../core/parser/source_package'
@@ -564,6 +567,46 @@ export class EditingSessionManager {
       return {
         document: await projectEditTransaction(result),
         selection: undefined,
+        ...status(session)
+      }
+    })
+  }
+
+  async splitTableCell(
+    senderId: number,
+    request: EditingSplitTableCellRequest
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () => {
+      const session = this.requireSession(senderId, request.sessionId)
+      const document = await decodeViewerDocument(session.history.package)
+      const projection = reconcileTableCellSelection(document, request.selection)
+      if (projection.status !== 'CURRENT' || !projection.selection) {
+        throw new EditingOperationError(
+          'EDITING_UNSUPPORTED',
+          '분할할 병합 표 셀 선택이 현재 문서와 일치하지 않습니다.'
+        )
+      }
+      const plan = planSplitTableCell(session.history.package, projection.selection)
+      const selectionBefore = {
+        sectionPath: projection.selection.sectionPath,
+        anchorTextNodeId: projection.selection.textNodeId,
+        anchorOffset: 0,
+        focusTextNodeId: projection.selection.textNodeId,
+        focusOffset: 0
+      }
+      const transaction: EditTransaction = {
+        id: request.transactionId,
+        baseRevision: session.history.package.revision,
+        commands: [plan.command],
+        selectionBefore,
+        selectionAfter: plan.selectionAfter,
+        inputType: 'splitTableCell',
+        timestamp: request.timestamp
+      }
+      const result = session.history.commitSynchronized(transaction)
+      return {
+        document: await projectEditTransaction(result),
+        selection: session.history.selection,
         ...status(session)
       }
     })

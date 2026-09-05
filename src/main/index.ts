@@ -18,7 +18,8 @@ import type {
   EditingInsertTableRowRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
-  EditingSplitParagraphRequest
+  EditingSplitParagraphRequest,
+  EditingSplitTableCellRequest
 } from '../core/editing/editing_contract'
 import {
   captureEditingIpcResult,
@@ -1212,6 +1213,32 @@ app.whenReady().then(() => {
     return editingSessions.mergeTableCellRight(
       event.sender.id,
       request as EditingMergeTableCellRightRequest
+    )
+  }))
+
+  ipcMain.handle('editing:splitTableCell', editingIpcHandler(async (event, request: unknown) => {
+    const record = request as Record<string, unknown> | null
+    const selection = record?.['selection'] as Record<string, unknown> | null
+    if (
+      !record ||
+      !['sessionId', 'transactionId'].every((key) => typeof record[key] === 'string') ||
+      !Number.isFinite(record['timestamp']) ||
+      !selection ||
+      !['sectionPath', 'textNodeId', 'tableId', 'sourceCellId'].every(
+        (key) => typeof selection[key] === 'string'
+      ) ||
+      !['row', 'column'].every(
+        (key) => Number.isSafeInteger(selection[key]) && Number(selection[key]) >= 0
+      )
+    ) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 표 셀 분할 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.splitTableCell(
+      event.sender.id,
+      request as EditingSplitTableCellRequest
     )
   }))
 

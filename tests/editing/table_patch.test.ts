@@ -7,8 +7,10 @@ import {
   planDeleteTableRow,
   planInsertTableColumnAfter,
   planMergeTableCellRight,
+  planSplitTableCell,
   planInsertTableRowAfter
 } from '../../src/core/editing/table_patch'
+import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
@@ -431,5 +433,74 @@ describe('HWPX 표 셀 병합 patch', () => {
       focusTextNodeId: mergedAnchor.textNodeId,
       focusOffset: 0
     })).toThrow('병합·span')
+  })
+
+  test('선택한 수평 1×2 병합 셀을 원래 열 너비로 분할하고 inverse bytes를 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === 'A1')!
+    const merged = applyReplaceTableFragmentCommand(source, planMergeTableCellRight(source, {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 0
+    }).command)
+    const mergedDocument = await decodeViewerDocument(merged.package)
+    const cellSelection = listSelectableMergedTableCells(mergedDocument)[0]
+    expect(cellSelection).toBeDefined()
+
+    const plan = planSplitTableCell(merged.package, cellSelection)
+    expect(plan.selectionAfter).toEqual({
+      sectionPath,
+      anchorTextNodeId: cellSelection.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: cellSelection.textNodeId,
+      focusOffset: 0
+    })
+    const split = applyReplaceTableFragmentCommand(merged.package, plan.command)
+    const document = await decodeViewerDocument(split.package)
+    const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+    if (!table || table.type !== 'table') throw new Error('분할한 표 projection이 없습니다.')
+    expect(table).toMatchObject({ columnCount: 3, width: 6000 })
+    expect(table.rows[1].cells).toHaveLength(3)
+    expect(table.rows[1].cells[0]).toMatchObject({ column: 0, columnSpan: 1, width: 2000 })
+    expect(table.rows[1].cells[0].paragraphs.map((paragraph) => paragraph.content[0])).toEqual([
+      expect.objectContaining({ text: 'A1' }),
+      expect.objectContaining({ text: 'A2' })
+    ])
+    expect(table.rows[1].cells[1]).toMatchObject({ column: 1, columnSpan: 1, width: 2000 })
+    expect(table.rows[1].cells[1].paragraphs).toHaveLength(1)
+    expect(table.rows[1].cells[1].paragraphs[0].content[0]).toMatchObject({ text: '' })
+    expect(table.rows[1].cells[2]).toMatchObject({ column: 2, columnSpan: 1, width: 2000 })
+    expect(table.rows[1].cells[2].paragraphs[0].content[0]).toMatchObject({ text: 'A3' })
+
+    const restored = applyReplaceTableFragmentCommand(split.package, split.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(merged.package.readEntry(sectionPath))
+    const redone = applyReplaceTableFragmentCommand(restored.package, restored.inverse!)
+    expect(redone.package.readEntry(sectionPath)).toEqual(split.package.readEntry(sectionPath))
+  })
+
+  test('stale 주소와 일관되지 않은 대응 열 너비는 분할을 fail-closed한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === 'A1')!
+    const merged = applyReplaceTableFragmentCommand(source, planMergeTableCellRight(source, {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 0
+    }).command)
+    const selection = listSelectableMergedTableCells(await decodeViewerDocument(merged.package))[0]
+    expect(() => planSplitTableCell(merged.package, { ...selection, column: 1 })).toThrow(
+      '주소가 source와 일치하지 않습니다'
+    )
+
+    const inconsistent = merged.package.withEntry(sectionPath, Buffer.from(
+      merged.package.readEntry(sectionPath).toString('utf8').replace(
+        '<hp:cellAddr colAddr="0" rowAddr="2"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="2000"',
+        '<hp:cellAddr colAddr="0" rowAddr="2"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="1900"'
+      )
+    ))
+    expect(() => planSplitTableCell(inconsistent, selection)).toThrow('일관된 분할 열 너비')
   })
 })

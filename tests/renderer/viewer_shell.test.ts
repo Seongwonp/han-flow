@@ -39,6 +39,7 @@ describe('viewer shell components', () => {
       characterStyleAvailable: false,
       paragraphStyleAvailable: false,
       cellStyleAvailable: true,
+      tableCellSelectionAvailable: true,
       activeCellStyle: { backgroundColor: '#EEEEEE', borderColor: '#000000', borderWidth: 0.12 },
       documentFonts: [{ id: '0', family: 'HanFlow Test Sans' }],
       onSearchQueryChange: noop,
@@ -59,7 +60,8 @@ describe('viewer shell components', () => {
       onDeleteTableRow: noop,
       onInsertTableColumnAfter: noop,
       onDeleteTableColumn: noop,
-      onMergeTableCellRight: noop
+      onMergeTableCellRight: noop,
+      onSplitTableCell: noop
     }))
 
     expect(markup).toContain('sample.hwpx')
@@ -76,6 +78,7 @@ describe('viewer shell components', () => {
     expect(markup).toContain('aria-label="오른쪽에 표 열 추가"')
     expect(markup).toContain('aria-label="현재 표 열 삭제"')
     expect(markup).toContain('aria-label="오른쪽 표 셀과 병합"')
+    expect(markup).toContain('aria-label="선택한 병합 표 셀 분할"')
   })
 
   test('stage는 빈 화면·오류·문서 children 경계를 소유한다', () => {

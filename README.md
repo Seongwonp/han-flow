@@ -50,6 +50,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - 단순 직사각형 표의 열 추가·삭제와 열 주소·표 너비·selection 갱신
 - 동일한 모양의 현재 body 셀과 오른쪽 셀을 합치는 제한된 수평 1×2 병합
 - 읽기 전용 병합 셀의 click·keyboard 선택, source anchor 추적과 선택 outline
+- 다른 행의 열 너비 근거로 선택한 수평 1×2 병합 셀을 되돌리는 제한된 분할
 - 40px 편집 control과 파일·기록·글자 모양·문단·표 셀·표 구조 그룹을 가진 `홈` 리본
 
 ### HWP 5.0
@@ -103,7 +104,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 37 suites, 220 passed, 2 suites·11 tests skipped |
+| Jest | 37 suites, 223 passed, 2 suites·11 tests skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -220,7 +221,11 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 - 병합·중첩·복합 콘텐츠가 없는 직사각형 표에서는 현재 body 셀 아래에 같은 모양의 빈 행을
   추가할 수 있습니다. `rowCnt`와 뒤쪽 `rowAddr`를 함께 갱신하며 기존 반복 머리글은 보존합니다.
   현재 body 행 삭제도 지원하고 다음 또는 이전 body 행으로 선택을 안전하게 옮깁니다. 마지막 body
-  행과 반복 머리글은 삭제하지 않으며 열 추가·삭제는 아직 지원하지 않습니다.
+  행과 반복 머리글은 삭제하지 않습니다. 같은 안전 범위에서 오른쪽 빈 열 추가와 현재 열 삭제도
+  지원하며 주소·표 너비와 선택을 함께 갱신합니다.
+- 제한된 수평 1×2 병합은 기존 문단을 왼쪽에 순서대로 보존합니다. 분할은 다른 모든 unmerged
+  행에서 두 논리 열의 너비가 일관된 경우에만 허용하며, 기존 문단은 왼쪽에 남기고 오른쪽에는
+  같은 모양의 빈 문단을 만듭니다. 너비 근거가 없거나 기존 span·복합 콘텐츠가 있으면 거부합니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않습니다. 구조 편집이 남아 있으면 `stale`, 원문 상태로
   undo했으면 `current`, 원래 없으면 `omitted`로 저장 확인창과 완료 상태에 표시합니다.
 - 현재 저장은 다른 이름으로 저장만 지원하며 원본 덮어쓰기와 기존 파일 교체는 지원하지 않습니다.

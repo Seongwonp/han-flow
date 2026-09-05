@@ -3,6 +3,7 @@ import { EditorSelection } from './transaction'
 import type { ParagraphAlignment } from './style_patch'
 import type { CellBorderType } from './cell_style_patch'
 import type { HwpxSaveLossPolicy } from './loss_policy'
+import type { TableCellSelection } from './table_cell_selection'
 
 export interface EditingHistoryStatus {
   revision: number
@@ -93,6 +94,13 @@ export interface EditingMergeTableCellRightRequest {
   sessionId: string
   transactionId: string
   selectionBefore: EditorSelection
+  timestamp: number
+}
+
+export interface EditingSplitTableCellRequest {
+  sessionId: string
+  transactionId: string
+  selection: TableCellSelection
   timestamp: number
 }
 
