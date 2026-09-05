@@ -31,6 +31,7 @@ export function useRendererState() {
     ...viewerState,
     editing: editingState.session,
     editingSelection: editingState.selection,
+    tableCellSelection: editingState.tableCellSelection,
     editingPending: editingState.pending,
     editingStatus: editingState.status,
     editingSelectionNotice: editingState.selectionNotice,
@@ -89,6 +90,8 @@ export function useRendererState() {
       setField(editingDispatch, 'session', update),
     setEditingSelection: (update: SliceUpdate<RendererEditingState['selection']>) =>
       setField(editingDispatch, 'selection', update),
+    setTableCellSelection: (update: SliceUpdate<RendererEditingState['tableCellSelection']>) =>
+      setField(editingDispatch, 'tableCellSelection', update),
     setEditingPending: (update: SliceUpdate<RendererEditingState['pending']>) =>
       setField(editingDispatch, 'pending', update),
     setEditingStatus: (update: SliceUpdate<RendererEditingState['status']>) =>

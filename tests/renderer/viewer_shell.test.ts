@@ -6,6 +6,7 @@ import {
   ViewerStatusBar
 } from '../../src/renderer/src/ViewerShell'
 import { ViewerToolbar } from '../../src/renderer/src/ViewerToolbar'
+import { TableView } from '../../src/renderer/src/App'
 
 const noop = () => undefined
 
@@ -102,6 +103,78 @@ describe('viewer shell components', () => {
     expect(empty).toContain('HWP 또는 HWPX를 여기에 놓으세요')
     expect(loaded).toContain('data-page-stack="true"')
     expect(loaded).not.toContain('viewer-empty')
+  })
+
+  test('읽기 전용 병합 cell은 click selection target과 선택 outline을 표시한다', () => {
+    const sectionPath = 'Contents/section0.xml'
+    const table = {
+      type: 'table' as const,
+      id: 'table-0',
+      rowCount: 1,
+      columnCount: 2,
+      width: 200,
+      repeatHeader: false,
+      rows: [{ cells: [{
+        row: 0,
+        column: 0,
+        rowSpan: 1,
+        columnSpan: 2,
+        width: 200,
+        height: 100,
+        margin: { top: 0, right: 0, bottom: 0, left: 0 },
+        sourceCellId: 'table-0:r0c0',
+        paragraphs: [{
+          id: 'merged-p0',
+          paraStyleId: '0',
+          pageBreak: false,
+          layoutHeight: 0,
+          content: [{
+            type: 'text' as const,
+            text: '병합',
+            charStyleId: '0',
+            sourceAnchor: { sectionPath, textNodeId: `${sectionPath}#hp:t:0` }
+          }]
+        }]
+      }] }]
+    }
+    const document = {
+      page: {
+        width: 1000,
+        height: 1000,
+        margin: { top: 0, right: 0, bottom: 0, left: 0 },
+        headerOffset: 0,
+        footerOffset: 0
+      },
+      fonts: {},
+      charStyles: {},
+      paraStyles: {},
+      cellStyles: {},
+      resources: {},
+      diagnostics: [],
+      sections: []
+    }
+    const selection = {
+      sectionPath,
+      textNodeId: `${sectionPath}#hp:t:0`,
+      tableId: 'table-0',
+      sourceCellId: 'table-0:r0c0',
+      row: 0,
+      column: 0
+    }
+    const markup = renderToStaticMarkup(createElement(TableView as any, {
+      table,
+      document,
+      editing: {
+        pending: false,
+        tableCellSelection: selection,
+        onTableCellSelectionChange: noop
+      }
+    }))
+
+    expect(markup).toContain('viewer-selectable-table-cell viewer-table-cell-selected')
+    expect(markup).toContain('aria-selected="true"')
+    expect(markup).toContain('aria-label="병합 표 셀 1행 1열"')
+    expect(markup).toContain('tabindex="0"')
   })
 
   test('status bar는 revision·경고·진행률을 독립적으로 조합한다', () => {

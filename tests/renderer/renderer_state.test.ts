@@ -52,7 +52,20 @@ describe('renderer state ownership', () => {
     })
 
     expect(settled).toMatchObject({ pending: 1, session: { sessionId: 'session-1' } })
-    expect(editingStateReducer(settled, { type: 'reset' })).toEqual(initialEditingState)
+    const selectedCell = editingStateReducer(settled, {
+      type: 'set',
+      key: 'tableCellSelection',
+      update: {
+        sectionPath: 'Contents/section0.xml',
+        textNodeId: 'Contents/section0.xml#hp:t:0',
+        tableId: 'table-0',
+        sourceCellId: 'table-0:r0c0',
+        row: 0,
+        column: 0
+      }
+    })
+    expect(selectedCell.tableCellSelection?.sourceCellId).toBe('table-0:r0c0')
+    expect(editingStateReducer(selectedCell, { type: 'reset' })).toEqual(initialEditingState)
   })
 
   test('IME transient 상태는 render를 기다리지 않고 composing과 최신 session을 제공한다', () => {

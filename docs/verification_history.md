@@ -8,6 +8,20 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-05 — Sprint 3 병합 cell 선택 기반
+
+읽기 전용 병합 body cell을 click 또는 Enter·Space로 선택하는 `TableCellSelection`과 outline을
+구현했다. selection은 source `textNodeId`, table·cell identity와 논리 row·column을 보관한다.
+text caret과 cell selection은 상호 배타적이며, 문서 재투영에서 anchor·identity·span이 달라지면
+pure reconciliation이 stale selection을 해제한다. 파일 교체와 편집 종료는 reducer reset으로
+selection을 함께 정리한다.
+
+전용 테스트에서 병합 body cell만 target이 되는 조건, header·rowSpan·continuation·anchor 없음
+차단, current/stale projection과 reducer reset을 검증했다. renderer 정적 회귀는 접근 가능한
+keyboard target, `aria-selected`와 선택 outline을 확인했다. TypeScript typecheck와 Jest 37
+suites·220 tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe
+8개 통과를 확인했다.
+
 ## 2026-09-05 — Sprint 3 제한된 오른쪽 1×2 셀 병합
 
 현재 안전한 body cell과 바로 오른쪽 cell의 모양·height·margin·vertical alignment가 같을 때

@@ -661,6 +661,13 @@ subList 정렬과 단순 text 구조가 모두 같을 때만 왼쪽 원점 cell�
 history는 살아남은 왼쪽 첫 text를 inverse locator로 보관해 undo에서 원래 selection을 복원한다.
 core·main·리본, exact undo/redo와 Save As·재개봉을 통과했다.
 
+후속 renderer slice는 읽기 전용 병합 body cell에 별도 `TableCellSelection`을 추가했다. `td`
+click과 keyboard 선택은 기존 text selection을 해제하고 source `textNodeId`, table·cell identity와
+논리 좌표를 보관한다. 반대로 text caret이 활성화되면 cell selection을 해제한다. pure
+reconciliation이 문서 재투영·undo/redo·파일 교체에서 대상 병합 cell을 다시 찾지 못하면 stale
+selection과 outline을 제거한다. source 분할 요청은 좌표가 아니라 `textNodeId` ancestry를 기준으로
+검증한다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

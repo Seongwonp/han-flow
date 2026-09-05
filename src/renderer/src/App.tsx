@@ -9,6 +9,12 @@ import {
   reconcileEditingSelection
 } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
+import {
+  equalTableCellSelections,
+  reconcileTableCellSelection,
+  selectableMergedTableCell,
+  TableCellSelection
+} from '../../core/editing/table_cell_selection'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
@@ -152,6 +158,8 @@ interface ParagraphEditingProps {
     timestamp: number
   ) => void
   onParagraphStructureUnavailable: () => void
+  tableCellSelection?: TableCellSelection
+  onTableCellSelectionChange: (selection: TableCellSelection) => void
 }
 
 export function isEditableTextParagraph(
@@ -322,7 +330,7 @@ function HeaderFooterView({ control, kind, document, offset }: { control?: Viewe
   </div>
 }
 
-function TableView({
+export function TableView({
   table,
   document,
   measurable = false,
@@ -348,7 +356,30 @@ function TableView({
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     const fragmented = cell.splitTop || cell.splitBottom
     const cellRangeScope = tableCellRangeScope(table.id, cell)
-    return <td key={cellFragmentKey(table.id, cell)} colSpan={cell.columnSpan} rowSpan={cell.rowSpan} style={{
+    const cellSelection = editing && !measurable
+      ? selectableMergedTableCell(table, cell)
+      : undefined
+    const selected = equalTableCellSelections(cellSelection, editing?.tableCellSelection)
+    const selectCell = () => {
+      if (!cellSelection || !editing) return
+      globalThis.getSelection()?.removeAllRanges()
+      editing.onTableCellSelectionChange(cellSelection)
+    }
+    return <td
+      key={cellFragmentKey(table.id, cell)}
+      className={cellSelection ? `viewer-selectable-table-cell${selected ? ' viewer-table-cell-selected' : ''}` : undefined}
+      colSpan={cell.columnSpan}
+      rowSpan={cell.rowSpan}
+      aria-selected={cellSelection ? selected : undefined}
+      aria-label={cellSelection ? `병합 표 셀 ${cell.row + 1}행 ${cell.column + 1}열` : undefined}
+      tabIndex={cellSelection ? 0 : undefined}
+      onClick={cellSelection ? selectCell : undefined}
+      onKeyDown={cellSelection ? (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        selectCell()
+      } : undefined}
+      style={{
       minHeight: fragmented ? undefined : hwpUnitToCssPx(cell.height), verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
       padding: fragmented ? undefined : `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
       paddingTop: fragmented ? hwpUnitToCssPx(cell.splitTop ? 0 : cell.margin.top) : undefined,
@@ -541,6 +572,7 @@ export default function App() {
     layoutMeasurements,
     editing,
     editingSelection,
+    tableCellSelection,
     editingPending,
     editingStatus,
     editingSelectionNotice,
@@ -571,6 +603,7 @@ export default function App() {
     setLayoutMeasurements,
     setEditing,
     setEditingSelection,
+    setTableCellSelection,
     setEditingPending,
     setEditingStatus,
     setEditingSelectionNotice,
@@ -624,6 +657,11 @@ export default function App() {
     visibleRange.start,
     visibleRange.end
   ])
+  useEffect(() => {
+    if (!tableCellSelection) return
+    const projection = reconcileTableCellSelection(effectiveDocument, tableCellSelection)
+    if (projection.status === 'CLEARED') setTableCellSelection(undefined)
+  }, [effectiveDocument, tableCellSelection, setTableCellSelection])
   const updateVisibleRange = (scrollTop: number, viewportHeight: number) => {
     if (!virtualized) return
     const next = fixedDocument
@@ -922,6 +960,7 @@ export default function App() {
       canRedo: result.canRedo,
       isDirty: result.isDirty
     } : current)
+    if (result.selection) setTableCellSelection(undefined)
     const projection = reconcileEditingSelection(result.document, result.selection)
     setEditingSelection(projection.selection)
     setEditingSelectionNotice(editingSelectionProjectionStatus(projection.status))
@@ -947,6 +986,7 @@ export default function App() {
     selection: { anchorOffset: number; focusOffset: number }
   ) => {
     setEditingSelectionNotice(null)
+    setTableCellSelection(undefined)
     setEditingSelection({
       sectionPath: anchor.sectionPath,
       anchorTextNodeId: anchor.textNodeId,
@@ -956,7 +996,14 @@ export default function App() {
   }, [])
   const updateEditorSelection = useCallback((selection: EditorSelection) => {
     setEditingSelectionNotice(null)
+    setTableCellSelection(undefined)
     setEditingSelection(selection)
+  }, [])
+  const updateTableCellSelection = useCallback((selection: TableCellSelection) => {
+    setEditingSelection(undefined)
+    setEditingSelectionNotice(null)
+    setTableCellSelection(selection)
+    setEditingStatus(`병합 셀 선택 · ${selection.row + 1}행 ${selection.column + 1}열`)
   }, [])
   const commitParagraph = useCallback((anchor: ViewerSourceAnchor, intent: TextCommitIntent) => {
     if (!editing) return
@@ -1715,7 +1762,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{page.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined} />)}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

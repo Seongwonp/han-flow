@@ -2,6 +2,7 @@ import type { FixedPageDocument } from '../../core/document/fixed_page_document'
 import type { ViewerDocument } from '../../core/document/viewer_document'
 import type { EditingHistoryStatus } from '../../core/editing/editing_contract'
 import type { EditorSelection } from '../../core/editing/transaction'
+import type { TableCellSelection } from '../../core/editing/table_cell_selection'
 import type { FontResolution } from '../../core/fonts/font_resolver'
 import type { LayoutMeasurements } from '../../core/layout/pagination'
 import type {
@@ -60,6 +61,7 @@ export type RendererEditingSession = EditingHistoryStatus & { sessionId: string 
 export interface RendererEditingState {
   session: RendererEditingSession | null
   selection: EditorSelection | undefined
+  tableCellSelection: TableCellSelection | undefined
   pending: number
   status: string | null
   selectionNotice: string | null
@@ -99,6 +101,7 @@ export const initialViewerState: RendererViewerState = {
 export const initialEditingState: RendererEditingState = {
   session: null,
   selection: undefined,
+  tableCellSelection: undefined,
   pending: 0,
   status: null,
   selectionNotice: null

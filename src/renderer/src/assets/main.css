@@ -79,6 +79,9 @@ button { font: inherit; }
 .viewer-editing-host .viewer-editable-text::selection { color: inherit; background: rgba(51,94,234,.32); }
 .viewer-table { max-width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
 .viewer-table td { vertical-align: middle; overflow-wrap: anywhere; }
+.viewer-selectable-table-cell { cursor: cell; outline: 1px dashed rgba(51,94,234,.38); outline-offset: -2px; }
+.viewer-selectable-table-cell:hover { background-image: linear-gradient(rgba(51,94,234,.06), rgba(51,94,234,.06)); }
+.viewer-table-cell-selected { position: relative; z-index: 1; outline: 3px solid #335eea; outline-offset: -3px; background-image: linear-gradient(rgba(51,94,234,.1), rgba(51,94,234,.1)); }
 .viewer-image { display: inline-block; object-fit: contain; max-width: 100%; vertical-align: middle; }
 .viewer-warning { color: #a23; border: 1px dashed #a23; padding: 2px; font-size: 10px; }
 .viewer-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #4d5560; }

@@ -41,6 +41,7 @@ cell을 `rowAddr`와 `colAddr + 1`로 다시 확인하므로 renderer가 전달�
 ```ts
 interface TableCellSelection {
   sectionPath: string
+  textNodeId: string
   tableId: string
   sourceCellId: string
   row: number
@@ -48,8 +49,9 @@ interface TableCellSelection {
 }
 ```
 
-renderer의 `td` click이 이 상태를 만들되 core는 `sourceCellId`와 좌표를 힌트로만 사용하고 source
-XML ancestry와 주소를 다시 검증한다. text selection과 cell selection은 동시에 활성화하지 않는다.
+renderer의 `td` click이 이 상태를 만들되 core는 `textNodeId`로 실제 `hp:tc` ancestry를 찾는다.
+`sourceCellId`와 좌표는 교차 검증용 힌트로만 사용하며 source XML의 주소·span을 다시 확인한다.
+text selection과 cell selection은 동시에 활성화하지 않는다.
 
 ## 3. 오른쪽 cell 병합 source 정책
 
@@ -101,7 +103,7 @@ XML ancestry와 주소를 다시 검증한다. text selection과 cell selection�
 2. [x] main session은 기존 `table-structure` loss policy와 transaction history를 재사용한다.
 3. [x] 리본에는 안전한 일반 cell에서만 `오른쪽 셀과 병합`을 노출한다.
 4. [x] 병합 후 읽기 전용 cell에는 명확한 상태 문구를 표시하고 global undo는 계속 제공한다.
-5. 별도 `TableCellSelection`과 cell outline을 구현한 뒤에만 `셀 분할` action을 추가한다.
+5. [x] 별도 `TableCellSelection`과 cell outline을 구현한 뒤에만 `셀 분할` action을 추가한다.
 
 ## 7. 자동 검증 matrix
 
@@ -137,3 +139,8 @@ parser probe를 통과한 뒤 완료로 표시한다. Windows 한/글 재열기 
 
 2026-09-05에 첫 오른쪽 1×2 병합 기능이 이 자동 완료 정의를 통과했다. 외부 한/글 재열기는
 아직 별도 승인 관문이며, 다음 구현은 병합 cell을 가리키는 `TableCellSelection` 기반이다.
+
+같은 날 `TableCellSelection` 기반도 구현했다. 읽기 전용 병합 body cell은 click과 Enter·Space로
+선택할 수 있고 선택 outline을 표시한다. text selection과는 상호 배타적이며 문서 재투영에서
+`textNodeId`, table·cell identity, row·column 또는 span이 달라지면 자동 해제한다. 다음 분할
+command는 `textNodeId` ancestry를 source locator로 사용하고 다른 값은 교차 검증한다.

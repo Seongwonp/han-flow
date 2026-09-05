@@ -352,3 +352,19 @@
 
 - 읽기 전용 병합 cell을 선택할 별도 `TableCellSelection`과 outline을 구현합니다.
 - stale cell selection 정리와 source 재검증을 통과한 뒤 제한된 수평 분할을 연결합니다.
+
+## [2026-09-05] 읽기 전용 병합 cell 선택 기반 구현
+
+### 완료된 작업
+
+1. source anchor와 table·cell identity를 가진 `TableCellSelection` 모델을 추가했습니다.
+2. 병합 body cell의 click·Enter·Space 선택과 명확한 outline을 구현했습니다.
+3. text caret과 cell selection이 동시에 활성화되지 않도록 상태 전이를 분리했습니다.
+4. 재투영·undo/redo·파일 교체에서 stale cell selection을 자동으로 정리했습니다.
+5. target 조건, reducer reset, 접근성 attribute와 renderer markup 회귀를 추가했습니다.
+6. typecheck, Jest 37 suites·220 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 다음 시작점
+
+- 선택의 `textNodeId`로 실제 merged `hp:tc` ancestry와 span을 core에서 다시 검증합니다.
+- 다른 unmerged 행의 대응 cell 너비를 근거로 제한된 수평 1×2 분할 command를 구현합니다.
