@@ -311,6 +311,62 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(reopened.document)).not.toContain('A2')
   })
 
+  test('오른쪽 표 셀을 병합하고 selection 해제·undo/redo·Save As를 보존한다', async () => {
+    const manager = new EditingSessionManager(() => 'merge-table-cell-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(columnFixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === 'A1'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(41, columnFixture)
+    const merged = await manager.mergeTableCellRight(41, {
+      sessionId: started.sessionId,
+      transactionId: 'merge-cell-1',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(merged).toMatchObject({ isDirty: true, canUndo: true })
+    expect(merged.selection).toBeUndefined()
+    const mergedTable = merged.document.sections[0].blocks[0].content.find(
+      (item) => item.type === 'table'
+    )
+    if (!mergedTable || mergedTable.type !== 'table') throw new Error('병합한 main projection이 없습니다.')
+    expect(mergedTable.rows[1].cells).toHaveLength(2)
+    expect(mergedTable.rows[1].cells[0]).toMatchObject({ columnSpan: 2, width: 4000 })
+    expect(mergedTable.rows[1].cells[0].paragraphs.map((paragraph) => paragraph.content[0])).toEqual([
+      expect.objectContaining({ text: 'A1' }),
+      expect.objectContaining({ text: 'A2' })
+    ])
+    expect(await manager.lossPolicy(41, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-structure', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_OMITTED', 'TABLE_STRUCTURE_CHANGED']),
+      reviewRecommended: true
+    })
+    expect((await manager.undo(41, started.sessionId)).selection).toEqual(selection)
+    const redone = await manager.redo(41, started.sessionId)
+    expect(redone.selection).toEqual({
+      ...selection,
+      anchorOffset: 0,
+      focusOffset: 0
+    })
+    expect(JSON.stringify(redone.document)).toContain('"columnSpan":2')
+
+    const destination = join(directory, 'merge-table-cell-save.hwpx')
+    await manager.saveAs(41, started.sessionId, destination)
+    const reopened = await manager.start(42, destination)
+    expect(JSON.stringify(reopened.document)).toContain('"columnSpan":2')
+    expect(JSON.stringify(reopened.document)).toContain('A1')
+    expect(JSON.stringify(reopened.document)).toContain('A2')
+  })
+
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)

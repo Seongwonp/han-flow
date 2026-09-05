@@ -132,7 +132,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
      - [x] 마지막 하나뿐인 열과 삭제의 병합·중첩·불균일 geometry를 fail-closed
 5. 병합·분할·반복 머리글은 마지막에 별도 관문으로 진행
    - [x] selection·text·geometry 보존 정책과 fail-closed 범위 설계
-   - [ ] 현재 body cell과 오른쪽 cell의 제한된 1×2 병합
+   - [x] 현재 body cell과 오른쪽 cell의 제한된 1×2 병합
    - [ ] 병합 cell용 별도 cell selection과 제한된 수평 분할
 
 각 기능은 `Han-Flow 편집 → Han-Flow 재개봉 → 한/글 재개봉 → 한/글 저장 → Han-Flow

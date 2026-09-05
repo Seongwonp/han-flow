@@ -87,6 +87,7 @@ interface ViewerToolbarProps {
   onDeleteTableRow: () => void
   onInsertTableColumnAfter: () => void
   onDeleteTableColumn: () => void
+  onMergeTableCellRight: () => void
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -133,7 +134,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     onInsertTableRowAfter,
     onDeleteTableRow,
     onInsertTableColumnAfter,
-    onDeleteTableColumn
+    onDeleteTableColumn,
+    onMergeTableCellRight
   } = props
   const pending = Boolean(editingPending)
 
@@ -254,6 +256,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
             <button aria-label="현재 표 행 삭제" title="현재 셀이 있는 body 행 삭제" onMouseDown={(event) => event.preventDefault()} onClick={onDeleteTableRow} disabled={!cellStyleAvailable || pending}>현재 행−</button>
             <button aria-label="오른쪽에 표 열 추가" title="현재 열 오른쪽에 빈 열 추가" onMouseDown={(event) => event.preventDefault()} onClick={onInsertTableColumnAfter} disabled={!cellStyleAvailable || pending}>오른쪽 열＋</button>
             <button aria-label="현재 표 열 삭제" title="현재 셀이 있는 열 삭제" onMouseDown={(event) => event.preventDefault()} onClick={onDeleteTableColumn} disabled={!cellStyleAvailable || pending}>현재 열−</button>
+            <button aria-label="오른쪽 표 셀과 병합" title="현재 셀을 바로 오른쪽 셀과 병합" onMouseDown={(event) => event.preventDefault()} onClick={onMergeTableCellRight} disabled={!cellStyleAvailable || pending}>오른쪽 병합</button>
           </div>
           <span className="viewer-ribbon-group-label">표 셀 모양</span>
         </div>

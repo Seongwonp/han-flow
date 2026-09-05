@@ -545,13 +545,21 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 
 ## 다음 구현 slice: 오른쪽 1×2 cell 병합
 
-1. [ ] 같은 body 행의 현재 cell과 바로 오른쪽 cell을 찾는 source preflight를 추가한다.
-2. [ ] 동일 style·margin·height·vertical alignment와 단순 text 구조만 허용한다.
-3. [ ] 왼쪽 cell의 `colSpan`·width를 늘리고 오른쪽 direct paragraph를 순서대로 이동한다.
-4. [ ] 오른쪽 cell을 제거하되 logical `colCnt`, table width와 다른 주소는 유지한다.
-5. [ ] 병합 cell의 stale `linesegarray`를 제거하고 exact table fragment inverse를 만든다.
-6. [ ] 병합 후 renderer selection을 해제하고 undo에서 원래 selection을 복원한다.
-7. [ ] core·main·renderer, loss policy, Save As·재개봉과 전체 자동 관문을 통과한다.
+1. [x] 같은 body 행의 현재 cell과 바로 오른쪽 cell을 찾는 source preflight를 추가한다.
+2. [x] 동일 style·margin·height·vertical alignment와 단순 text 구조만 허용한다.
+3. [x] 왼쪽 cell의 `colSpan`·width를 늘리고 오른쪽 direct paragraph를 순서대로 이동한다.
+4. [x] 오른쪽 cell을 제거하되 logical `colCnt`, table width와 다른 주소는 유지한다.
+5. [x] 병합 cell의 stale `linesegarray`를 제거하고 exact table fragment inverse를 만든다.
+6. [x] 병합 후 renderer selection을 해제하고 undo에서 원래 selection을 복원한다.
+7. [x] core·main·renderer, loss policy, Save As·재개봉과 전체 자동 관문을 통과한다.
+
+## 다음 구현 slice: 병합 cell 선택 기반
+
+1. [ ] text caret과 상호 배타적인 `TableCellSelection` 상태를 renderer에 추가한다.
+2. [ ] 읽기 전용 병합 cell의 `td` click으로 source cell을 식별하고 outline을 표시한다.
+3. [ ] 문서 재투영·undo/redo·파일 교체 시 stale cell selection을 안전하게 해제한다.
+4. [ ] main 요청에서 renderer 좌표를 신뢰하지 않고 source ancestry·주소·span을 다시 검증한다.
+5. [ ] 이 기반을 통과한 뒤에만 history 안에서 생성한 1×2 cell의 제한된 분할을 구현한다.
 
 ## 다음 milestone: V3 외부 승인
 

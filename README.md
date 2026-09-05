@@ -48,6 +48,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - 일반 body 표 셀의 여러 문단 편집과 격리된 테두리·배경 편집
 - 단순 직사각형 표의 안전한 행 추가·삭제와 삭제 후 selection 재배치
 - 단순 직사각형 표의 열 추가·삭제와 열 주소·표 너비·selection 갱신
+- 동일한 모양의 현재 body 셀과 오른쪽 셀을 합치는 제한된 수평 1×2 병합
 - 40px 편집 control과 파일·기록·글자 모양·문단·표 셀·표 구조 그룹을 가진 `홈` 리본
 
 ### HWP 5.0
@@ -101,7 +102,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 36 suites, 213 passed, 2 suites·11 tests skipped |
+| Jest | 36 suites, 216 passed, 2 suites·11 tests skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |

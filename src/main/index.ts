@@ -13,6 +13,7 @@ import type {
   EditingDeleteTableRowRequest,
   EditingDeleteTableColumnRequest,
   EditingInsertTableColumnRequest,
+  EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
   EditingParagraphStyleRequest,
@@ -1190,6 +1191,27 @@ app.whenReady().then(() => {
     return editingSessions.deleteTableColumn(
       event.sender.id,
       request as EditingDeleteTableColumnRequest
+    )
+  }))
+
+  ipcMain.handle('editing:mergeTableCellRight', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 표 셀 병합 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.mergeTableCellRight(
+      event.sender.id,
+      request as EditingMergeTableCellRightRequest
     )
   }))
 

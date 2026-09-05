@@ -336,3 +336,19 @@
 
 - `planMergeTableCellRight` source preflight와 exact table fragment command를 구현합니다.
 - 공개 3×3 fixture에서 text 순서, span·width, 다른 주소 불변과 undo/redo를 먼저 검증합니다.
+
+## [2026-09-05] 제한된 오른쪽 1×2 셀 병합 구현
+
+### 완료된 작업
+
+1. 현재 body cell과 바로 오른쪽 cell을 source에서 다시 찾는 preflight를 구현했습니다.
+2. 동일한 모양·높이·여백·세로 정렬의 단순 cell만 왼쪽 원점 cell로 병합했습니다.
+3. 오른쪽 문단 순서, logical 열 수와 다른 주소를 보존하고 span·width만 갱신했습니다.
+4. 병합 후 selection 해제, undo 시 원래 selection 복원과 exact inverse를 연결했습니다.
+5. main IPC, 리본, loss policy, Save As·재개봉과 전체 자동 회귀를 통과했습니다.
+6. typecheck, Jest 36 suites·216 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 다음 시작점
+
+- 읽기 전용 병합 cell을 선택할 별도 `TableCellSelection`과 outline을 구현합니다.
+- stale cell selection 정리와 source 재검증을 통과한 뒤 제한된 수평 분할을 연결합니다.

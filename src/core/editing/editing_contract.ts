@@ -89,6 +89,13 @@ export interface EditingDeleteTableColumnRequest {
   timestamp: number
 }
 
+export interface EditingMergeTableCellRightRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
 interface EditingStyleRequestBase {
   sessionId: string
   transactionId: string

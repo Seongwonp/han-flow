@@ -97,10 +97,10 @@ XML ancestry와 주소를 다시 검증한다. text selection과 cell selection�
 
 ## 6. API와 UI 단계
 
-1. core에 `planMergeTableCellRight`와 source topology preflight를 추가한다.
-2. main session은 기존 `table-structure` loss policy와 transaction history를 재사용한다.
-3. 리본에는 안전한 일반 cell에서만 `오른쪽 셀과 병합`을 노출한다.
-4. 병합 후 읽기 전용 cell에는 명확한 상태 문구를 표시하고 global undo는 계속 제공한다.
+1. [x] core에 `planMergeTableCellRight`와 source topology preflight를 추가한다.
+2. [x] main session은 기존 `table-structure` loss policy와 transaction history를 재사용한다.
+3. [x] 리본에는 안전한 일반 cell에서만 `오른쪽 셀과 병합`을 노출한다.
+4. [x] 병합 후 읽기 전용 cell에는 명확한 상태 문구를 표시하고 global undo는 계속 제공한다.
 5. 별도 `TableCellSelection`과 cell outline을 구현한 뒤에만 `셀 분할` action을 추가한다.
 
 ## 7. 자동 검증 matrix
@@ -134,3 +134,6 @@ XML ancestry와 주소를 다시 검증한다. text selection과 cell selection�
 첫 병합 기능은 공개 fixture의 core·main·renderer 회귀, 전체 typecheck와 Jest, production build,
 parser probe를 통과한 뒤 완료로 표시한다. Windows 한/글 재열기 전까지는 자동 구조 검증 완료와
 외부 호환성 승인을 구분하며, 기능 안내에 재열기 검토를 유지한다.
+
+2026-09-05에 첫 오른쪽 1×2 병합 기능이 이 자동 완료 정의를 통과했다. 외부 한/글 재열기는
+아직 별도 승인 관문이며, 다음 구현은 병합 cell을 가리키는 `TableCellSelection` 기반이다.

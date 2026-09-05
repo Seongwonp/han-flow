@@ -6,6 +6,7 @@ import {
   planDeleteTableColumn,
   planDeleteTableRow,
   planInsertTableColumnAfter,
+  planMergeTableCellRight,
   planInsertTableRowAfter
 } from '../../src/core/editing/table_patch'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
@@ -333,6 +334,97 @@ describe('HWPX 표 열 patch', () => {
     const merged = await HwpxSourcePackage.open(mergedPath)
     const mergedAnchor = listHwpxTextAnchors(merged, sectionPath).find((item) => item.text === 'A')!
     expect(() => planDeleteTableColumn(merged, {
+      sectionPath,
+      anchorTextNodeId: mergedAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: mergedAnchor.textNodeId,
+      focusOffset: 0
+    })).toThrow('병합·span')
+  })
+})
+
+describe('HWPX 표 셀 병합 patch', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-table-cell-merge-'))
+  const fixture = createTableColumnHwpx(directory, 'merge-table-cell.hwpx')
+
+  afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  test('현재 cell과 오른쪽 cell을 병합하고 문단·논리 열·inverse bytes를 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === 'A1')!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 1
+    }
+    const plan = planMergeTableCellRight(source, selection)
+    expect(plan.selectionAfter).toEqual({
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 0
+    })
+    const result = applyReplaceTableFragmentCommand(source, plan.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+    expect(xml).toContain('<hp:tbl id="column-table" rowCnt="3" colCnt="3"')
+    expect(xml).toContain('<hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="2" rowSpan="1"/><hp:cellSz width="4000" height="2000"/>')
+    expect(xml).toContain('<hp:t>A1</hp:t></hp:run></hp:p><hp:p id="111" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>A2</hp:t>')
+    const document = await decodeViewerDocument(result.package)
+    const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+    expect(table).toMatchObject({ type: 'table', columnCount: 3, width: 6000 })
+    if (!table || table.type !== 'table') throw new Error('병합한 표 projection이 없습니다.')
+    expect(table.rows[1].cells).toHaveLength(2)
+    expect(table.rows[1].cells[0]).toMatchObject({ column: 0, columnSpan: 2, width: 4000 })
+    expect(table.rows[1].cells[0].paragraphs.map((paragraph) => paragraph.content[0])).toEqual([
+      expect.objectContaining({ text: 'A1' }),
+      expect.objectContaining({ text: 'A2' })
+    ])
+    expect(table.rows[1].cells[0].paragraphs.every((paragraph) => paragraph.layoutHeight === 0)).toBe(true)
+    expect(table.rows[1].cells[1]).toMatchObject({ column: 2, columnSpan: 1, width: 2000 })
+
+    const restored = applyReplaceTableFragmentCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+    const redone = applyReplaceTableFragmentCommand(restored.package, restored.inverse!)
+    expect(redone.package.readEntry(sectionPath)).toEqual(result.package.readEntry(sectionPath))
+  })
+
+  test('마지막·머리글·다른 모양 cell과 기존 병합 표는 fail-closed한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const request = (text: string) => {
+      const anchor = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === text)!
+      return {
+        sectionPath,
+        anchorTextNodeId: anchor.textNodeId,
+        anchorOffset: 0,
+        focusTextNodeId: anchor.textNodeId,
+        focusOffset: 0
+      }
+    }
+    expect(() => planMergeTableCellRight(source, request('A3'))).toThrow('오른쪽에 병합할')
+    expect(() => planMergeTableCellRight(source, request('H1'))).toThrow('반복 머리글 행')
+
+    const differentStyle = source.withEntry(sectionPath, Buffer.from(
+      source.readEntry(sectionPath).toString('utf8').replace(
+        '<hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="1" rowAddr="1"',
+        '<hp:tc borderFillIDRef="2" header="0"><hp:cellAddr colAddr="1" rowAddr="1"'
+      )
+    ))
+    const differentAnchor = listHwpxTextAnchors(differentStyle, sectionPath).find((item) => item.text === 'A1')!
+    expect(() => planMergeTableCellRight(differentStyle, {
+      sectionPath,
+      anchorTextNodeId: differentAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: differentAnchor.textNodeId,
+      focusOffset: 0
+    })).toThrow('모양 속성이 다른')
+
+    const mergedPath = createCompatibilityHwpx(directory, 'already-merged-table.hwpx')
+    const merged = await HwpxSourcePackage.open(mergedPath)
+    const mergedAnchor = listHwpxTextAnchors(merged, sectionPath).find((item) => item.text === 'A')!
+    expect(() => planMergeTableCellRight(merged, {
       sectionPath,
       anchorTextNodeId: mergedAnchor.textNodeId,
       anchorOffset: 0,

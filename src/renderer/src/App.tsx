@@ -1388,6 +1388,37 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const mergeTableCellRight = useCallback(async () => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.cellStyle.available ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('표 셀 병합 중…')
+    try {
+      applyEditingResult(await api().mergeTableCellRight({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-table-cell-merge'),
+        selectionBefore: editingSelection,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('오른쪽 셀과 병합 · 병합 셀은 읽기 전용')
+    } catch (reason) {
+      await recoverEditingFailure('표 셀 병합', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.cellStyle.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -1653,6 +1684,7 @@ export default function App() {
       onDeleteTableRow={() => void deleteTableRow()}
       onInsertTableColumnAfter={() => void insertTableColumnAfter()}
       onDeleteTableColumn={() => void deleteTableColumn()}
+      onMergeTableCellRight={() => void mergeTableCellRight()}
     />
     <ViewerStage
       stageRef={stageRef}

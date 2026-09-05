@@ -8,6 +8,19 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-05 — Sprint 3 제한된 오른쪽 1×2 셀 병합
+
+현재 안전한 body cell과 바로 오른쪽 cell의 모양·height·margin·vertical alignment가 같을 때
+왼쪽 원점 cell로 병합하는 table fragment command를 구현했다. 오른쪽 direct paragraph는 원래
+순서대로 이동하고 `colSpan=2`와 두 width의 합을 적용한다. logical `colCnt`, table width와 다른
+cell 주소는 유지하며 geometry가 바뀐 병합 cell의 stale `linesegarray`는 제거한다.
+
+공개 3×3 fixture에서 text 순서, span·width, 다른 주소 불변, 병합 후 읽기 전용 projection,
+exact inverse와 redo를 검증했다. 마지막·머리글·서로 다른 모양 cell과 기존 병합 표는 fail-closed한다.
+main session과 리본, selection 해제·undo 복원, `table-structure` loss policy, Save As와 재개봉도
+통과했다. TypeScript typecheck와 Jest 36 suites·216 tests 통과(2 suites·11 tests skip), Electron
+production build와 privacy-safe probe 8개 통과를 확인했다.
+
 ## 2026-09-05 — Sprint 3 현재 열 삭제와 selection 재배치
 
 단순 직사각형 표의 선택 열을 모든 direct row와 반복 머리글에서 함께 제거하고 `colCnt`, 뒤쪽

@@ -654,6 +654,13 @@ exact undo/redo와 Save As·재개봉을 통과해 단순 직사각형 표의 �
 합치는 1×2 범위만 허용한다. 분할은 병합 cell도 가리킬 수 있는 별도 cell selection과 geometry
 복원 근거가 필요하므로 병합 command와 동시에 열지 않는다.
 
+2026-09-05 첫 병합 slice는 현재 body cell과 바로 오른쪽 cell의 `hp:tc` 속성, height·margin,
+subList 정렬과 단순 text 구조가 모두 같을 때만 왼쪽 원점 cell로 합친다. 오른쪽 direct paragraph를
+순서대로 이동하고 `colSpan=2`, width 합을 적용하며 stale `linesegarray`를 제거한다. logical
+`colCnt`, table width와 다른 cell 주소는 바꾸지 않는다. 병합 직후 renderer selection은 해제하고
+history는 살아남은 왼쪽 첫 text를 inverse locator로 보관해 undo에서 원래 selection을 복원한다.
+core·main·리본, exact undo/redo와 Save As·재개봉을 통과했다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

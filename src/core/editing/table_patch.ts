@@ -31,6 +31,11 @@ export interface DeleteTableColumnPlan {
   selectionAfter: EditorSelection
 }
 
+export interface MergeTableCellRightPlan {
+  command: ReplaceTableFragmentCommand
+  selectionAfter: EditorSelection
+}
+
 interface XmlElementSpan {
   name: string
   start: number
@@ -357,6 +362,151 @@ function cloneEmptyCell(
 
 function shiftTextNodeId(sectionPath: string, textNodeId: string, delta: number): string {
   return `${sectionPath}#hp:t:${targetOrdinal(sectionPath, textNodeId) + delta}`
+}
+
+function tagAttributes(tag: string, omitted: readonly string[] = []): string {
+  const attributes = [...tag.matchAll(/\s([^\s=/>]+)\s*=\s*(["'])(.*?)\2/g)]
+    .map((match) => [match[1], match[3]] as const)
+    .filter(([name]) => !omitted.includes(name))
+    .sort(([left], [right]) => left.localeCompare(right))
+  return JSON.stringify(attributes)
+}
+
+function withoutLineSegments(fragment: string): string {
+  let result = fragment
+  const spans = scanXmlElements(fragment)
+  for (const lines of spans.filter((span) => span.name === 'hp:linesegarray').sort(
+    (left, right) => right.start - left.start
+  )) {
+    result = replaceRange(result, lines.start, lines.end, '')
+  }
+  return result
+}
+
+export function planMergeTableCellRight(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): MergeTableCellRightPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('셀 병합은 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex
+  } = assertSimpleRectangularTable(context)
+  if (selectedColumnIndex >= columnCount - 1) {
+    throw new HwpxEditConflictError('오른쪽에 병합할 표 셀이 없습니다.')
+  }
+  const cells = directChildren(context.spans, rows[selectedRowIndex], 'hp:tc')
+  const leftCell = cells[selectedColumnIndex]
+  const rightCell = cells[selectedColumnIndex + 1]
+  const leftTag = context.xml.slice(leftCell.start, leftCell.openEnd)
+  const rightTag = context.xml.slice(rightCell.start, rightCell.openEnd)
+  if (
+    attribute(leftTag, 'header') === '1' ||
+    attribute(rightTag, 'header') === '1'
+  ) throw new HwpxEditConflictError('반복 머리글 셀은 병합할 수 없습니다.')
+  if (tagAttributes(leftTag) !== tagAttributes(rightTag)) {
+    throw new HwpxEditConflictError('모양 속성이 다른 표 셀은 아직 병합할 수 없습니다.')
+  }
+  const leftSize = directChildren(context.spans, leftCell, 'hp:cellSz')[0]
+  const rightSize = directChildren(context.spans, rightCell, 'hp:cellSz')[0]
+  const leftSizeTag = context.xml.slice(leftSize.start, leftSize.openEnd)
+  const rightSizeTag = context.xml.slice(rightSize.start, rightSize.openEnd)
+  if (tagAttributes(leftSizeTag, ['width']) !== tagAttributes(rightSizeTag, ['width'])) {
+    throw new HwpxEditConflictError('높이·geometry가 다른 표 셀은 아직 병합할 수 없습니다.')
+  }
+  const leftWidth = Number(attribute(leftSizeTag, 'width'))
+  const rightWidth = Number(attribute(rightSizeTag, 'width'))
+  if (!Number.isFinite(leftWidth) || leftWidth < 0 || !Number.isFinite(rightWidth) || rightWidth < 0) {
+    throw new HwpxEditConflictError('병합할 표 셀 너비가 올바르지 않습니다.')
+  }
+  const leftMargin = directChildren(context.spans, leftCell, 'hp:cellMargin')[0]
+  const rightMargin = directChildren(context.spans, rightCell, 'hp:cellMargin')[0]
+  if (
+    !leftMargin ||
+    !rightMargin ||
+    tagAttributes(context.xml.slice(leftMargin.start, leftMargin.openEnd)) !==
+      tagAttributes(context.xml.slice(rightMargin.start, rightMargin.openEnd))
+  ) throw new HwpxEditConflictError('여백이 다른 표 셀은 아직 병합할 수 없습니다.')
+  const leftSubList = directChildren(context.spans, leftCell, 'hp:subList')[0]
+  const rightSubList = directChildren(context.spans, rightCell, 'hp:subList')[0]
+  if (
+    tagAttributes(context.xml.slice(leftSubList.start, leftSubList.openEnd)) !==
+    tagAttributes(context.xml.slice(rightSubList.start, rightSubList.openEnd))
+  ) throw new HwpxEditConflictError('세로 정렬이 다른 표 셀은 아직 병합할 수 없습니다.')
+  const rightParagraphs = directChildren(context.spans, rightSubList, 'hp:p')
+  const movedParagraphs = rightParagraphs.map(
+    (paragraph) => withoutLineSegments(context.xml.slice(paragraph.start, paragraph.end))
+  ).join('')
+  const leftSpan = directChildren(context.spans, leftCell, 'hp:cellSpan')[0]
+  const leftSpanTag = context.xml.slice(leftSpan.start, leftSpan.openEnd)
+  const firstLeftText = context.spans.find(
+    (span) => span.name === 'hp:t' && span.start >= leftCell.openEnd && span.end <= leftCell.closeStart
+  )
+  if (!firstLeftText) throw new HwpxEditConflictError('병합 뒤 selection을 보존할 text가 없습니다.')
+  const firstLeftOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < firstLeftText.start
+  ).length
+  const firstLeftTextNodeId = `${selection.sectionPath}#hp:t:${firstLeftOrdinal}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: leftSpan.start - tableStart,
+      end: leftSpan.openEnd - tableStart,
+      value: setAttribute(leftSpanTag, 'colSpan', '2')
+    },
+    {
+      start: leftSize.start - tableStart,
+      end: leftSize.openEnd - tableStart,
+      value: setAttribute(leftSizeTag, 'width', String(leftWidth + rightWidth))
+    },
+    {
+      start: leftSubList.closeStart - tableStart,
+      end: leftSubList.closeStart - tableStart,
+      value: movedParagraphs
+    },
+    {
+      start: rightCell.start - tableStart,
+      end: rightCell.end - tableStart,
+      value: ''
+    }
+  ]
+  for (const lines of context.spans.filter(
+    (span) => span.name === 'hp:linesegarray' && span.start >= leftCell.openEnd && span.end <= leftCell.closeStart
+  )) {
+    edits.push({ start: lines.start - tableStart, end: lines.end - tableStart, value: '' })
+  }
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: firstLeftTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: firstLeftTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: firstLeftTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
 }
 
 export function planInsertTableColumnAfter(
@@ -717,7 +867,7 @@ function report(sourcePackage: HwpxSourcePackage, sectionPath: string): HwpxLoss
 export function applyReplaceTableFragmentCommand(sourcePackage: HwpxSourcePackage, command: ReplaceTableFragmentCommand) {
   const context = locateTable(sourcePackage, command.sectionPath, command.textNodeId)
   const current = context.xml.slice(context.table.start, context.table.end)
-  if (current !== command.expectedFragment) throw new HwpxEditConflictError('표 구조가 변경되어 행 추가를 적용할 수 없습니다.')
+  if (current !== command.expectedFragment) throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
   if (command.expectedFragment === command.replacementFragment) {
     return { package: sourcePackage, lossReport: report(sourcePackage, command.sectionPath), changed: false }
   }
