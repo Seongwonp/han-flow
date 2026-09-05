@@ -56,7 +56,8 @@ describe('viewer shell components', () => {
       onCellStyle: noop,
       onInsertTableRowAfter: noop,
       onDeleteTableRow: noop,
-      onInsertTableColumnAfter: noop
+      onInsertTableColumnAfter: noop,
+      onDeleteTableColumn: noop
     }))
 
     expect(markup).toContain('sample.hwpx')
@@ -71,6 +72,7 @@ describe('viewer shell components', () => {
     expect(markup).toContain('aria-label="아래에 표 행 추가"')
     expect(markup).toContain('aria-label="현재 표 행 삭제"')
     expect(markup).toContain('aria-label="오른쪽에 표 열 추가"')
+    expect(markup).toContain('aria-label="현재 표 열 삭제"')
   })
 
   test('stage는 빈 화면·오류·문서 children 경계를 소유한다', () => {

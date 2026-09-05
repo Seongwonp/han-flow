@@ -11,6 +11,7 @@ import type {
   EditingCellStyleRequest,
   EditingCommitRequest,
   EditingDeleteTableRowRequest,
+  EditingDeleteTableColumnRequest,
   EditingInsertTableColumnRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
@@ -1168,6 +1169,27 @@ app.whenReady().then(() => {
     return editingSessions.insertTableColumnAfter(
       event.sender.id,
       request as EditingInsertTableColumnRequest
+    )
+  }))
+
+  ipcMain.handle('editing:deleteTableColumn', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        'HWPX 표 열 삭제 요청 형식이 올바르지 않습니다.'
+      )
+    }
+    return editingSessions.deleteTableColumn(
+      event.sender.id,
+      request as EditingDeleteTableColumnRequest
     )
   }))
 

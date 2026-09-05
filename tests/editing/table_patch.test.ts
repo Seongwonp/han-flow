@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   applyReplaceTableFragmentCommand,
+  planDeleteTableColumn,
   planDeleteTableRow,
   planInsertTableColumnAfter,
   planInsertTableRowAfter
@@ -243,5 +244,100 @@ describe('HWPX 표 열 patch', () => {
       focusTextNodeId: header.textNodeId,
       focusOffset: 0
     })).toThrow('반복 머리글 행')
+  })
+
+  test('중간 열을 삭제하고 오른쪽 셀로 selection을 옮기며 inverse bytes를 보존한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === 'A2')!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 1
+    }
+    const plan = planDeleteTableColumn(source, selection)
+    expect(plan.selectionAfter).toEqual({
+      sectionPath,
+      anchorTextNodeId: `${sectionPath}#hp:t:3`,
+      anchorOffset: 0,
+      focusTextNodeId: `${sectionPath}#hp:t:3`,
+      focusOffset: 0
+    })
+    const result = applyReplaceTableFragmentCommand(source, plan.command)
+    const xml = result.package.readEntry(sectionPath).toString('utf8')
+    expect(xml).toContain('<hp:tbl id="column-table" rowCnt="3" colCnt="2"')
+    expect(xml).toContain('<hp:sz width="4000" height="6000"')
+    expect(xml.match(/colAddr="0"/g)).toHaveLength(3)
+    expect(xml.match(/colAddr="1"/g)).toHaveLength(3)
+    expect(xml).not.toContain('H2')
+    expect(xml).not.toContain('A2')
+    expect(xml).not.toContain('B2')
+    const document = await decodeViewerDocument(result.package)
+    const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+    expect(table).toMatchObject({ type: 'table', columnCount: 2, width: 4000 })
+    if (!table || table.type !== 'table') throw new Error('삭제한 표 projection이 없습니다.')
+    expect(table.rows.map((row) => row.cells.map((cell) => cell.paragraphs[0].content[0]))).toEqual([
+      [expect.objectContaining({ text: 'H1' }), expect.objectContaining({ text: 'H3' })],
+      [expect.objectContaining({ text: 'A1' }), expect.objectContaining({ text: 'A3' })],
+      [expect.objectContaining({ text: 'B1' }), expect.objectContaining({ text: 'B3' })]
+    ])
+
+    const restored = applyReplaceTableFragmentCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+    const redone = applyReplaceTableFragmentCommand(restored.package, restored.inverse!)
+    expect(redone.package.readEntry(sectionPath)).toEqual(result.package.readEntry(sectionPath))
+  })
+
+  test('마지막 열 삭제는 왼쪽 셀로 이동하고 하나뿐인 열과 불균일 너비는 차단한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const last = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === 'B3')!
+    const lastPlan = planDeleteTableColumn(source, {
+      sectionPath,
+      anchorTextNodeId: last.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: last.textNodeId,
+      focusOffset: 1
+    })
+    expect(lastPlan.selectionAfter.anchorTextNodeId).toBe(`${sectionPath}#hp:t:5`)
+    const lastResult = applyReplaceTableFragmentCommand(source, lastPlan.command)
+    expect(listHwpxTextAnchors(lastResult.package, sectionPath).find((item) => item.ordinal === 5)?.text).toBe('B2')
+
+    const singlePath = createRoundTripHwpx(directory, 'single-column.hwpx')
+    const single = await HwpxSourcePackage.open(singlePath)
+    const singleAnchor = listHwpxTextAnchors(single, sectionPath).find((item) => item.text === '긴 설명')!
+    expect(() => planDeleteTableColumn(single, {
+      sectionPath,
+      anchorTextNodeId: singleAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: singleAnchor.textNodeId,
+      focusOffset: 0
+    })).toThrow('하나 이상의 열')
+
+    const uneven = source.withEntry(sectionPath, Buffer.from(
+      source.readEntry(sectionPath).toString('utf8').replace(
+        '<hp:cellSz width="2000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER"><hp:p id="121"',
+        '<hp:cellSz width="1900" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER"><hp:p id="121"'
+      )
+    ))
+    const unevenAnchor = listHwpxTextAnchors(uneven, sectionPath).find((item) => item.text === 'A2')!
+    expect(() => planDeleteTableColumn(uneven, {
+      sectionPath,
+      anchorTextNodeId: unevenAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: unevenAnchor.textNodeId,
+      focusOffset: 0
+    })).toThrow('행마다 너비가 다른 열')
+
+    const mergedPath = createCompatibilityHwpx(directory, 'delete-merged-column.hwpx')
+    const merged = await HwpxSourcePackage.open(mergedPath)
+    const mergedAnchor = listHwpxTextAnchors(merged, sectionPath).find((item) => item.text === 'A')!
+    expect(() => planDeleteTableColumn(merged, {
+      sectionPath,
+      anchorTextNodeId: mergedAnchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: mergedAnchor.textNodeId,
+      focusOffset: 0
+    })).toThrow('병합·span')
   })
 })

@@ -642,6 +642,13 @@ undo/redo에서도 원래 selection과 변경 후 selection을 각각 검증할 
 main session, 리본과 Save As·재개봉을 통과했다. 현재 열 삭제와 삭제 후 이웃 cell 재배치는 다음
 slice로 남긴다.
 
+같은 날 현재 열 삭제 slice는 대응 cell을 모든 direct row에서 제거하고 뒤쪽 `colAddr`,
+`colCnt`와 표 너비를 함께 감소시켰다. 중간 열은 같은 행의 오른쪽 cell, 마지막 열은 왼쪽 cell의
+첫 text를 변경 후 selection과 inverse locator로 사용한다. target 앞에서 함께 삭제된 text 수를
+원본 ordinal에서 빼므로 반복 머리글과 앞선 body 행이 있어도 정확한 anchor를 찾는다. 하나뿐인
+열, 불균일 열 너비와 병합·span 구조는 source 변경 전에 차단한다. core, main session, 리본,
+exact undo/redo와 Save As·재개봉을 통과해 단순 직사각형 표의 행·열 편집 기반을 닫았다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

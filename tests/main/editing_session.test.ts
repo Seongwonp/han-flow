@@ -261,6 +261,56 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(reopened.document)).toContain('"width":8000')
   })
 
+  test('현재 표 열 삭제 뒤 selection을 재배치하고 undo/redo·Save As한다', async () => {
+    const manager = new EditingSessionManager(() => 'delete-table-column-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(columnFixture)
+    const current = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === 'A2'
+    )!
+    const selection = {
+      sectionPath,
+      anchorTextNodeId: current.textNodeId,
+      anchorOffset: 1,
+      focusTextNodeId: current.textNodeId,
+      focusOffset: 1
+    }
+    const started = await manager.start(39, columnFixture)
+    const deleted = await manager.deleteTableColumn(39, {
+      sessionId: started.sessionId,
+      transactionId: 'delete-column-1',
+      selectionBefore: selection,
+      timestamp: 1
+    })
+
+    expect(deleted).toMatchObject({ isDirty: true, canUndo: true })
+    expect(deleted.selection).toEqual({
+      sectionPath,
+      anchorTextNodeId: `${sectionPath}#hp:t:3`,
+      anchorOffset: 0,
+      focusTextNodeId: `${sectionPath}#hp:t:3`,
+      focusOffset: 0
+    })
+    expect(JSON.stringify(deleted.document)).toContain('"columnCount":2')
+    expect(JSON.stringify(deleted.document)).not.toContain('A2')
+    expect(await manager.lossPolicy(39, started.sessionId)).toMatchObject({
+      structures: [{ structure: 'table-structure', compatibilityRisk: 'review' }],
+      notices: expect.arrayContaining(['PREVIEW_OMITTED', 'TABLE_STRUCTURE_CHANGED']),
+      reviewRecommended: true
+    })
+    expect((await manager.undo(39, started.sessionId)).selection).toEqual(selection)
+    const redone = await manager.redo(39, started.sessionId)
+    expect(redone.selection).toEqual(deleted.selection)
+    expect(JSON.stringify(redone.document)).toContain('"columnCount":2')
+
+    const destination = join(directory, 'delete-table-column-save.hwpx')
+    await manager.saveAs(39, started.sessionId, destination)
+    const reopened = await manager.start(40, destination)
+    expect(JSON.stringify(reopened.document)).toContain('"columnCount":2')
+    expect(JSON.stringify(reopened.document)).toContain('"width":4000')
+    expect(JSON.stringify(reopened.document)).not.toContain('A2')
+  })
+
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
     const manager = new EditingSessionManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)

@@ -8,6 +8,18 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-05 — Sprint 3 현재 열 삭제와 selection 재배치
+
+단순 직사각형 표의 선택 열을 모든 direct row와 반복 머리글에서 함께 제거하고 `colCnt`, 뒤쪽
+`colAddr`와 표 전체 너비를 원자적으로 감소시키는 command를 추가했다. 중간 열은 오른쪽 cell,
+마지막 열은 왼쪽 cell의 첫 text로 selection을 옮기며, 삭제되는 text prefix 수를 반영한 살아남은
+anchor를 inverse locator로 사용한다. 마지막 하나뿐인 열, 불균일 너비와 병합·span은 fail-closed한다.
+
+다중 열 공개 fixture에서 중간·마지막 열 삭제, 주소·너비, selection projection, exact inverse와
+redo를 검증했다. main session과 리본, `table-structure` loss policy, undo/redo, Save As와 재개봉도
+통과했다. TypeScript typecheck와 Jest 36 suites·213 tests 통과(2 suites·11 tests skip), Electron
+production build와 privacy-safe probe 8개 통과를 확인했다.
+
 ## 2026-09-05 — Sprint 3 안전한 오른쪽 열 추가 기반
 
 단순 직사각형 표에서 현재 열 오른쪽에 빈 열을 추가하는 table fragment command를 구현했다.

@@ -26,6 +26,11 @@ export interface InsertTableColumnPlan {
   selectionAfter: EditorSelection
 }
 
+export interface DeleteTableColumnPlan {
+  command: ReplaceTableFragmentCommand
+  selectionAfter: EditorSelection
+}
+
 interface XmlElementSpan {
   name: string
   start: number
@@ -442,6 +447,117 @@ export function planInsertTableColumnAfter(
         normalized.start.textNodeId,
         insertedTextsBeforeSelection
       ),
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function planDeleteTableColumn(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): DeleteTableColumnPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('열 삭제는 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex,
+    selectedColumnWidth
+  } = assertSimpleRectangularTable(context)
+  if (columnCount <= 1) {
+    throw new HwpxEditConflictError('표에는 하나 이상의 열이 남아 있어야 합니다.')
+  }
+  const selectedCells = rows.map((row) => directChildren(context.spans, row, 'hp:tc')[selectedColumnIndex])
+  for (const cell of selectedCells) {
+    const size = directChildren(context.spans, cell, 'hp:cellSz')[0]
+    const width = Number(attribute(context.xml.slice(size.start, size.openEnd), 'width'))
+    if (width !== selectedColumnWidth) {
+      throw new HwpxEditConflictError('행마다 너비가 다른 열은 아직 삭제할 수 없습니다.')
+    }
+  }
+  const selectedRowCells = directChildren(context.spans, rows[selectedRowIndex], 'hp:tc')
+  const targetCell = selectedRowCells[selectedColumnIndex + 1] ?? selectedRowCells[selectedColumnIndex - 1]
+  const targetText = targetCell && context.spans.find(
+    (span) => span.name === 'hp:t' && span.start >= targetCell.openEnd && span.end <= targetCell.closeStart
+  )
+  if (!targetText) throw new HwpxEditConflictError('삭제 뒤 selection을 옮길 표 셀을 찾을 수 없습니다.')
+  const deletedTextsBeforeTarget = selectedCells.reduce(
+    (count, cell) => count + context.spans.filter(
+      (span) => span.name === 'hp:t' &&
+        span.start >= cell.openEnd &&
+        span.end <= cell.closeStart &&
+        span.start < targetText.start
+    ).length,
+    0
+  )
+  const targetOriginalOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < targetText.start
+  ).length
+  const targetTextNodeId = `${selection.sectionPath}#hp:t:${targetOriginalOrdinal - deletedTextsBeforeTarget}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({
+    start: 0,
+    end: context.table.openEnd - tableStart,
+    value: setAttribute(tableTag, 'colCnt', String(columnCount - 1))
+  })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableWidth = Number(attribute(tableSizeTag, 'width'))
+  if (tableWidth <= selectedColumnWidth) {
+    throw new HwpxEditConflictError('표 전체 너비가 삭제 후 남는 열 너비보다 작습니다.')
+  }
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'width', String(tableWidth - selectedColumnWidth))
+  })
+  rows.forEach((row) => {
+    const cells = directChildren(context.spans, row, 'hp:tc')
+    for (let columnIndex = selectedColumnIndex + 1; columnIndex < cells.length; columnIndex += 1) {
+      const address = directChildren(context.spans, cells[columnIndex], 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'colAddr', String(columnIndex - 1))
+      })
+    }
+    const selectedCell = cells[selectedColumnIndex]
+    edits.push({
+      start: selectedCell.start - tableStart,
+      end: selectedCell.end - tableStart,
+      value: ''
+    })
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: targetTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: targetTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: targetTextNodeId,
       expectedFragment: tableFragment,
       replacementFragment: replacement
     },

@@ -1357,6 +1357,37 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const deleteTableColumn = useCallback(async () => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.cellStyle.available ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('표 열 삭제 중…')
+    try {
+      applyEditingResult(await api().deleteTableColumn({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
+        selectionBefore: editingSelection,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('현재 표 열 삭제')
+    } catch (reason) {
+      await recoverEditingFailure('표 열 삭제', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.cellStyle.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -1621,6 +1652,7 @@ export default function App() {
       onInsertTableRowAfter={() => void insertTableRowAfter()}
       onDeleteTableRow={() => void deleteTableRow()}
       onInsertTableColumnAfter={() => void insertTableColumnAfter()}
+      onDeleteTableColumn={() => void deleteTableColumn()}
     />
     <ViewerStage
       stageRef={stageRef}

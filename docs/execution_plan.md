@@ -461,8 +461,8 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 5. [x] 반복 머리글과 마지막 body 행 삭제를 fail-closed한다.
 6. [x] 리본의 `현재 행−`, main IPC, Save As·재개봉을 연결한다.
 
-다음 관문은 열 추가·삭제다. 각 행에서 삽입 위치 앞뒤 anchor ordinal이 달라지므로 행 단위 text
-개수를 이용한 명시적 selection projection과 표 전체 너비 갱신을 함께 구현한다.
+후속 열 추가·삭제에서는 각 행의 삽입·삭제 위치마다 anchor ordinal이 달라지므로 행 단위 text
+개수를 이용한 명시적 selection projection과 표 전체 너비 갱신을 함께 구현했다.
 
 ## 완료한 milestone: Sprint 3 안전한 오른쪽 열 추가 기반
 
@@ -475,7 +475,16 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 7. [x] 다중 열 공개 fixture에서 반복 머리글 복제, 빈 cell, ID·주소·너비, exact undo/redo,
    Save As와 재개봉을 검증한다.
 
-## 다음 작업 계획: Sprint 3 표 열 추가·삭제
+## 완료한 milestone: Sprint 3 현재 열 삭제와 selection 재배치
+
+1. [x] 모든 direct row와 반복 머리글에서 선택 열 cell을 함께 제거한다.
+2. [x] `colCnt`, 뒤쪽 `colAddr`와 표 전체 너비를 같은 transaction에서 감소시킨다.
+3. [x] 다음 cell, 마지막 열이면 이전 cell의 첫 text로 caret을 재배치한다.
+4. [x] 삭제 전 text prefix 수로 변경 후 ordinal을 계산하고 살아남은 anchor를 inverse locator로 쓴다.
+5. [x] 마지막 하나뿐인 열, 불균일 열 너비와 병합·span 구조를 fail-closed한다.
+6. [x] 리본의 `현재 열−`, main IPC, loss policy, exact undo/redo와 Save As·재개봉을 연결한다.
+
+## 완료한 작업 계획: Sprint 3 표 열 추가·삭제
 
 행 편집에서 검증한 table fragment transaction을 재사용하되, 열 편집은 모든 direct row를 동시에
 바꾸므로 별도 slice로 진행한다. 아래 항목을 모두 만족하기 전에는 UI capability를 열지 않는다.
@@ -500,28 +509,39 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 
 ### 3. 현재 열 삭제
 
-1. [ ] 모든 direct row에서 선택 열 cell을 함께 제거하고 `colCnt`, 뒤쪽 `colAddr`와 표 전체
+1. [x] 모든 direct row에서 선택 열 cell을 함께 제거하고 `colCnt`, 뒤쪽 `colAddr`와 표 전체
    너비를 같은 transaction에서 감소시킨다.
-2. [ ] 행마다 선택 열 너비가 다르거나 전체 열이 하나뿐이면 삭제를 차단한다.
-3. [ ] 삭제 후 같은 행의 다음 cell, 마지막 열이면 이전 cell의 첫 text로 caret을 이동한다.
-4. [ ] 변경 후 살아남은 anchor를 inverse locator로 사용하고 undo에는 원래 selection, redo에는
+2. [x] 행마다 선택 열 너비가 다르거나 전체 열이 하나뿐이면 삭제를 차단한다.
+3. [x] 삭제 후 같은 행의 다음 cell, 마지막 열이면 이전 cell의 첫 text로 caret을 이동한다.
+4. [x] 변경 후 살아남은 anchor를 inverse locator로 사용하고 undo에는 원래 selection, redo에는
    재배치 selection을 복구한다.
-5. [ ] table fragment exact inverse로 원본 XML bytes와 width·주소를 함께 복원한다.
+5. [x] table fragment exact inverse로 원본 XML bytes와 width·주소를 함께 복원한다.
 
 ### 4. 앱 연결과 검증 관문
 
 1. [x] core command와 session, main IPC, preload contract를 연결한다.
-2. [ ] 리본의 `오른쪽 열＋`는 연결했다. `현재 열−`를 추가하고 capability가 없으면 비활성화한다.
+2. [x] 리본의 `오른쪽 열＋`, `현재 열−`를 연결하고 capability가 없으면 비활성화한다.
 3. [x] 기존 `table-structure` loss policy, 저장 확인과 완료 후 한/글 재열기 안내를 재사용한다.
 4. [x] 여러 열 공개 synthetic fixture로 오른쪽 열 추가, 반복 머리글 복제, 빈 cell,
    ID·주소·너비와 selection projection을 검증한다.
-5. [ ] 마지막 열 삭제 보호와 삭제의 병합·중첩·복합 콘텐츠·불균일 열 너비 거부를 검증한다.
-6. [ ] 열 추가의 exact undo/redo, Save As·재개봉과 renderer toolbar 회귀는 통과했다. 열 삭제를
-   같은 관문에 추가한다.
-7. [x] 현재 열 추가 slice의 typecheck, 전체 Jest, production build와 parser probe 8종을 통과했다.
+5. [x] 마지막 열 삭제 보호와 삭제의 병합·중첩·복합 콘텐츠·불균일 열 너비 거부를 검증한다.
+6. [x] 열 추가·삭제의 exact undo/redo, Save As·재개봉과 renderer toolbar 회귀를 통과한다.
+7. [x] typecheck, 전체 Jest, production build와 parser probe 8종을 통과했다.
 
 열 추가·삭제가 끝난 뒤에만 셀 병합·분할 topology를 별도 설계한다. 병합·분할은 이번 작업에
 묶지 않는다.
+
+## 다음 작업 계획: Sprint 3 표 셀 병합·분할 사전 설계
+
+1. [ ] 현재 cell 단위 selection과 병합 대상의 직사각형 범위 표현 방식을 먼저 결정한다.
+2. [ ] `cellAddr`·`cellSpan`과 원점 cell만 남기는 source topology 불변식을 정리한다.
+3. [ ] 병합 시 제거되는 cell text의 보존·결합 순서와 selection 이동 정책을 정의한다.
+4. [ ] 분할 시 geometry·margin·borderFill 복제, 새 paragraph ID와 빈 cell 생성 정책을 정의한다.
+5. [ ] 반복 머리글, 기존 span, 중첩 표와 복합 콘텐츠를 단계별로 허용하거나 fail-closed한다.
+6. [ ] 한/글 재열기 검증 없이 병합·분할 capability를 일반 UI에 노출하지 않는다.
+
+첫 구현은 기존 병합이 없는 단순 직사각형 표의 제한된 범위에서 시작한다. selection UX와 text
+보존 정책이 확정되기 전에는 source command를 만들지 않는다.
 
 ## 다음 milestone: V3 외부 승인
 

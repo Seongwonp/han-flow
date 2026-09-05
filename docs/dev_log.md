@@ -304,3 +304,19 @@
 
 - 현재 열 삭제와 다음 cell, 마지막 열이면 이전 cell로 selection을 재배치하는 경로를 구현합니다.
 - 마지막 하나뿐인 열과 불균일 geometry를 source 변경 없이 차단합니다.
+
+## [2026-09-05] 현재 열 삭제와 selection 재배치 구현
+
+### 완료된 작업
+
+1. 모든 direct row와 반복 머리글에서 선택 열의 대응 cell을 함께 제거했습니다.
+2. `colCnt`, 뒤쪽 `colAddr`, 표 너비와 삭제 뒤 source ordinal을 원자적으로 갱신했습니다.
+3. 중간 열은 오른쪽 cell, 마지막 열은 왼쪽 cell로 selection을 이동했습니다.
+4. 마지막 하나뿐인 열, 불균일 너비와 병합·span 구조를 fail-closed했습니다.
+5. exact undo/redo, main IPC, 리본, loss policy와 Save As·재개봉을 연결했습니다.
+6. typecheck, Jest 36 suites·213 tests, production build와 parser probe 8종을 통과했습니다.
+
+### 다음 시작점
+
+- 셀 병합·분할의 selection 범위와 text 보존 정책을 먼저 설계합니다.
+- 기존 병합이 없는 단순 직사각형 표에서만 첫 구현 범위를 엽니다.
