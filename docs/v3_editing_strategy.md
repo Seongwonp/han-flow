@@ -649,6 +649,11 @@ slice로 남긴다.
 열, 불균일 열 너비와 병합·span 구조는 source 변경 전에 차단한다. core, main session, 리본,
 exact undo/redo와 Save As·재개봉을 통과해 단순 직사각형 표의 행·열 편집 기반을 닫았다.
 
+셀 병합·분할의 후속 계약은 [표 셀 병합·분할 구현 전략](table_merge_split_strategy.md)에 분리했다.
+첫 병합은 cell 간 native text selection을 열지 않고 현재 body cell과 바로 오른쪽 cell을 명령형으로
+합치는 1×2 범위만 허용한다. 분할은 병합 cell도 가리킬 수 있는 별도 cell selection과 geometry
+복원 근거가 필요하므로 병합 command와 동시에 열지 않는다.
+
 ### Sprint 2 inline 줄 나눔과 문단 구조 입력
 
 OWPML의 줄 나눔은 새 문단이 아니라 `hp:t` 혼합 콘텐츠 내부의 `hp:lineBreak`다. source anchor는

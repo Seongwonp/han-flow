@@ -320,3 +320,19 @@
 
 - 셀 병합·분할의 selection 범위와 text 보존 정책을 먼저 설계합니다.
 - 기존 병합이 없는 단순 직사각형 표에서만 첫 구현 범위를 엽니다.
+
+## [2026-09-05] 표 셀 병합·분할 안전 계약 확정
+
+### 결정 사항
+
+1. 첫 병합은 현재 body cell과 바로 오른쪽 cell의 수평 1×2 action으로 제한합니다.
+2. cell 간 native text selection은 열지 않고 기존 cell별 range scope를 유지합니다.
+3. 오른쪽 cell 문단은 왼쪽 뒤에 원래 순서로 보존하며 자동 결합이나 공백을 만들지 않습니다.
+4. style·margin·height·vertical alignment가 같은 단순 cell만 병합합니다.
+5. 병합 후 cell은 읽기 전용이므로 renderer selection을 해제하고 undo에서 원래 selection을 복원합니다.
+6. 분할은 별도 cell selection과 열 너비 복원 근거를 마련한 뒤 구현합니다.
+
+### 다음 시작점
+
+- `planMergeTableCellRight` source preflight와 exact table fragment command를 구현합니다.
+- 공개 3×3 fixture에서 text 순서, span·width, 다른 주소 불변과 undo/redo를 먼저 검증합니다.

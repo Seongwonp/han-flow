@@ -533,15 +533,25 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 
 ## 다음 작업 계획: Sprint 3 표 셀 병합·분할 사전 설계
 
-1. [ ] 현재 cell 단위 selection과 병합 대상의 직사각형 범위 표현 방식을 먼저 결정한다.
-2. [ ] `cellAddr`·`cellSpan`과 원점 cell만 남기는 source topology 불변식을 정리한다.
-3. [ ] 병합 시 제거되는 cell text의 보존·결합 순서와 selection 이동 정책을 정의한다.
-4. [ ] 분할 시 geometry·margin·borderFill 복제, 새 paragraph ID와 빈 cell 생성 정책을 정의한다.
-5. [ ] 반복 머리글, 기존 span, 중첩 표와 복합 콘텐츠를 단계별로 허용하거나 fail-closed한다.
-6. [ ] 한/글 재열기 검증 없이 병합·분할 capability를 일반 UI에 노출하지 않는다.
+1. [x] 현재 cell 단위 selection과 병합 대상의 직사각형 범위 표현 방식을 먼저 결정한다.
+2. [x] `cellAddr`·`cellSpan`과 원점 cell만 남기는 source topology 불변식을 정리한다.
+3. [x] 병합 시 제거되는 cell text의 보존·결합 순서와 selection 이동 정책을 정의한다.
+4. [x] 분할 시 geometry·margin·borderFill 복제, 새 paragraph ID와 빈 cell 생성 정책을 정의한다.
+5. [x] 반복 머리글, 기존 span, 중첩 표와 복합 콘텐츠를 단계별로 허용하거나 fail-closed한다.
+6. [x] 한/글 재열기 검증 없이 병합·분할 capability를 일반 UI에 노출하지 않는다.
 
 첫 구현은 기존 병합이 없는 단순 직사각형 표의 제한된 범위에서 시작한다. selection UX와 text
-보존 정책이 확정되기 전에는 source command를 만들지 않는다.
+보존 정책은 [표 셀 병합·분할 구현 전략](table_merge_split_strategy.md)을 따른다.
+
+## 다음 구현 slice: 오른쪽 1×2 cell 병합
+
+1. [ ] 같은 body 행의 현재 cell과 바로 오른쪽 cell을 찾는 source preflight를 추가한다.
+2. [ ] 동일 style·margin·height·vertical alignment와 단순 text 구조만 허용한다.
+3. [ ] 왼쪽 cell의 `colSpan`·width를 늘리고 오른쪽 direct paragraph를 순서대로 이동한다.
+4. [ ] 오른쪽 cell을 제거하되 logical `colCnt`, table width와 다른 주소는 유지한다.
+5. [ ] 병합 cell의 stale `linesegarray`를 제거하고 exact table fragment inverse를 만든다.
+6. [ ] 병합 후 renderer selection을 해제하고 undo에서 원래 selection을 복원한다.
+7. [ ] core·main·renderer, loss policy, Save As·재개봉과 전체 자동 관문을 통과한다.
 
 ## 다음 milestone: V3 외부 승인
 
