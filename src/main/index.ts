@@ -189,6 +189,7 @@ function captureVisualState(window: BrowserWindow): void {
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
+  const tableStructureProbeEnabled = testValue('HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE') === '1'
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
   if (!capturePath && !stateOutput) return
@@ -198,7 +199,7 @@ function captureVisualState(window: BrowserWindow): void {
   let previousSignature = ''
   let stableSamples = 0
   let searchTriggered = !searchQuery
-  let editTriggered = !editText
+  let editTriggered = !editText && !tableStructureProbeEnabled
   let editProbe: unknown = null
   let sampledPeakWorkingSetKb = 0
   const sampleMemory = () => {
@@ -240,6 +241,142 @@ function captureVisualState(window: BrowserWindow): void {
         input.dispatchEvent(new Event('input', { bubbles: true }))
         return true
       })()`)
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
+    if (!editTriggered && tableStructureProbeEnabled) {
+      editTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      editProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-button'
+        const setPhase = (value) => {
+          phase = value
+          console.error('HAN_FLOW_E2E_PHASE ' + value)
+        }
+        const waitFor = async (predicate, timeout = 30000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('표 구조 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        const button = (label) => document.querySelector('[aria-label="' + label + '"]')
+        const table = () => document.querySelector('.viewer-page .viewer-table')
+        const rowCount = () => table()?.querySelectorAll(':scope > tbody > tr').length ?? 0
+        const columnCount = () => table()?.querySelectorAll(':scope > colgroup > col').length ?? 0
+        const bodyRowCells = () => table()?.querySelectorAll(':scope > tbody > tr:nth-child(2) > td').length ?? 0
+        const bodyRowTexts = () => Array.from(
+          table()?.querySelectorAll(':scope > tbody > tr:nth-child(2) > td') ?? []
+        ).map((cell) => cell.textContent ?? '')
+        const waitButton = (label) => waitFor(() => {
+          const candidate = button(label)
+          return candidate && !candidate.disabled ? candidate : undefined
+        })
+        const clickButton = async (label, nextPhase, predicate) => {
+          setPhase(nextPhase)
+          ;(await waitButton(label)).click()
+          await waitFor(predicate)
+        }
+        const clickHistory = async (label, nextPhase, predicate) => {
+          setPhase(nextPhase)
+          ;(await waitButton(label)).click()
+          await waitFor(predicate)
+        }
+        const editButton = await waitFor(() =>
+          Array.from(document.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === '편집')
+        )
+        editButton.click()
+        setPhase('editable-cell')
+        const focusCell = async () => {
+          const surface = await waitFor(() => {
+            const candidate = document.querySelector('[aria-label="HWPX 표 셀 편집"]')
+            return candidate?.dataset.inputReady === 'true' ? candidate : undefined
+          })
+          surface.focus()
+          surface.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+          await waitFor(() => !button('아래에 표 행 추가')?.disabled)
+        }
+        await focusCell()
+        const original = { rows: rowCount(), columns: columnCount(), bodyCells: bodyRowCells(), texts: bodyRowTexts() }
+
+        await clickButton('아래에 표 행 추가', 'row-insert', () => rowCount() === original.rows + 1)
+        const rowInserted = rowCount() === original.rows + 1
+        await clickHistory('실행 취소', 'row-insert-undo', () => rowCount() === original.rows)
+        await clickHistory('다시 실행', 'row-insert-redo', () => rowCount() === original.rows + 1)
+        await clickHistory('실행 취소', 'row-insert-reset', () => rowCount() === original.rows)
+
+        await clickButton('현재 표 행 삭제', 'row-delete', () => rowCount() === original.rows - 1)
+        const rowDeleted = rowCount() === original.rows - 1
+        await clickHistory('실행 취소', 'row-delete-undo', () => rowCount() === original.rows)
+
+        await clickButton('오른쪽에 표 열 추가', 'column-insert', () => columnCount() === original.columns + 1)
+        const columnInserted = columnCount() === original.columns + 1
+        await clickHistory('실행 취소', 'column-insert-undo', () => columnCount() === original.columns)
+        await clickHistory('다시 실행', 'column-insert-redo', () => columnCount() === original.columns + 1)
+        await clickHistory('실행 취소', 'column-insert-reset', () => columnCount() === original.columns)
+
+        await clickButton('현재 표 열 삭제', 'column-delete', () => columnCount() === original.columns - 1)
+        const columnDeleted = columnCount() === original.columns - 1
+        await clickHistory('실행 취소', 'column-delete-undo', () => columnCount() === original.columns)
+
+        await clickButton('오른쪽 표 셀과 병합', 'cell-merge', () => bodyRowCells() === original.bodyCells - 1)
+        const mergedCell = await waitFor(() => table()?.querySelector('[aria-label="병합 표 셀 2행 1열"]'))
+        const cellMerged = mergedCell.getAttribute('colspan') === '2' &&
+          (mergedCell.textContent ?? '').includes(original.texts[0]) &&
+          (mergedCell.textContent ?? '').includes(original.texts[1])
+        mergedCell.click()
+        await clickButton('선택한 병합 표 셀 분할', 'cell-split', () => bodyRowCells() === original.bodyCells)
+        const splitTexts = bodyRowTexts()
+        const cellSplit = columnCount() === original.columns &&
+          bodyRowCells() === original.bodyCells &&
+          splitTexts[0] === original.texts[0] + original.texts[1] &&
+          splitTexts[1] === '' &&
+          splitTexts[2] === original.texts[2]
+        await clickHistory('실행 취소', 'cell-split-undo', () => bodyRowCells() === original.bodyCells - 1)
+        const splitUndoRestoredMerge = table()?.querySelector('[aria-label="병합 표 셀 2행 1열"]')?.getAttribute('colspan') === '2'
+        await clickHistory('다시 실행', 'cell-split-redo', () => bodyRowCells() === original.bodyCells)
+        const splitRedoRestored = bodyRowTexts()[1] === '' && bodyRowTexts()[2] === original.texts[2]
+
+        let saveStatusMatches
+        let dirtyCleared
+        if (${autoSaveEdit}) {
+          setPhase('save-button')
+          const saveButton = await waitButton('HWPX 변경본 저장')
+          saveButton.click()
+          setPhase('save-complete')
+          await waitFor(() => document.querySelector('.viewer-status')?.textContent?.includes('저장 완료'))
+          saveStatusMatches = document.querySelector('.viewer-status')?.textContent?.includes('표 구조') &&
+            /Preview (?:갱신 안 됨|없음)/.test(document.querySelector('.viewer-status')?.textContent ?? '')
+          dirtyCleared = !document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨') && saveButton.disabled
+        }
+        return {
+          mode: 'table-structure',
+          surface: 'table-cell',
+          original,
+          final: { rows: rowCount(), columns: columnCount(), bodyCells: bodyRowCells(), texts: bodyRowTexts() },
+          rowInserted,
+          rowDeleted,
+          columnInserted,
+          columnDeleted,
+          cellMerged,
+          cellSplit,
+          splitUndoRestoredMerge,
+          splitRedoRestored,
+          saveStatusMatches,
+          dirtyCleared
+        }
+      })()`).catch(async (reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason),
+        diagnostics: await window.webContents.executeJavaScript(`({
+          status: document.querySelector('.viewer-status')?.textContent,
+          rows: document.querySelector('.viewer-page .viewer-table')?.querySelectorAll(':scope > tbody > tr').length,
+          columns: document.querySelector('.viewer-page .viewer-table')?.querySelectorAll(':scope > colgroup > col').length,
+          enabledButtons: Array.from(document.querySelectorAll('.viewer-ribbon-controls button:not(:disabled)')).map((button) => button.getAttribute('aria-label'))
+        })`)
+      }))
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
@@ -578,6 +715,12 @@ function captureVisualState(window: BrowserWindow): void {
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
+      tableTopologies: Array.from(document.querySelectorAll('.viewer-page .viewer-table')).map((table) => ({
+        rows: table.querySelectorAll(':scope > tbody > tr').length,
+        columns: table.querySelectorAll(':scope > colgroup > col').length,
+        rowCellCounts: Array.from(table.querySelectorAll(':scope > tbody > tr')).map((row) => row.querySelectorAll(':scope > td').length),
+        columnSpans: Array.from(table.querySelectorAll(':scope > tbody > tr > td')).map((cell) => Number(cell.getAttribute('colspan') ?? 1))
+      })),
       errorVisible: Boolean(document.querySelector('.viewer-error')),
       errorCode: document.querySelector('.viewer-error')?.dataset.errorCode || null,
       errorMessageLength: document.querySelector('.viewer-error')?.textContent?.trim().length || 0,

@@ -8,6 +8,20 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-07 — Windows production 표 구조 승인 번들 확장
+
+Windows x64 production 앱에서 실제 리본을 사용해 3×3 공개 fixture의 행 추가·삭제, 열
+추가·삭제, 오른쪽 1×2 병합과 병합 cell 선택 기반 분할을 자동 실행하는 E2E probe를 추가했다.
+행·열 action의 undo/redo와 분할 undo/redo를 각각 확인한 뒤 결과를 다른 이름으로 저장하고 새
+앱 session에서 다시 열었다. probe는 UI 결과뿐 아니라 재개봉한 표의 행·열, 행별 cell 수와 모든
+`colSpan`도 원문 없이 기록한다.
+
+Windows 10.0.26200 x64의 `Han-Flow.exe`에서 모든 action과 원본 hash 불변, `table-structure`
+저장 안내, dirty 해제와 재개봉을 통과했다. 최종 결과는 3행 × 3열, 행별 cell 3·3·3, 모든
+`colSpan=1`, 1쪽과 overflow 0이었다. 승인 bundle에 구조 편집 전·후 HWPX 두 개와 WIN-09~10을
+추가했으며 PowerShell 무결성 검사에서 일곱 HWPX가 모두 통과했다. Windows 한/글의 복구 경고와
+역재개봉 판정은 설치 후 실행할 외부 수동 관문으로 남긴다.
+
 ## 2026-09-05 — Sprint 3 제한된 수평 1×2 셀 분할
 
 `TableCellSelection`으로 고른 읽기 전용 병합 body cell을 두 논리 cell로 되돌리는 제한된 분할을

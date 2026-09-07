@@ -12,6 +12,7 @@ const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
+const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
@@ -56,6 +57,7 @@ async function launch(output, userData, options = {}) {
         ...(interactive && editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {}),
         ...(interactive && editCell ? { HAN_FLOW_VISUAL_EDIT_CELL: '1' } : {}),
         ...(interactive && styleProbe ? { HAN_FLOW_VISUAL_STYLE_PROBE: '1' } : {}),
+        ...(interactive && tableStructureProbe ? { HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
         ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {})
       },
@@ -182,13 +184,28 @@ try {
     styleProbe && !state.editingProbe?.styleProbe?.marginAfterApplied ? '문단 뒤 간격 style 적용 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.outdentApplied ? '첫 줄 내어쓰기 style 적용 불일치' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.indentApplied ? '첫 줄 들여쓰기 style 적용 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe ? '표 구조 probe 결과가 없음' : undefined,
+    tableStructureProbe && state.editingProbe?.probeError ? `표 구조 probe 오류: ${state.editingProbe.probeError}` : undefined,
+    tableStructureProbe && state.editingProbe?.mode !== 'table-structure' ? '표 구조 probe mode 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.rowInserted ? '표 행 추가 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.rowDeleted ? '표 행 삭제 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.columnInserted ? '표 열 추가 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.columnDeleted ? '표 열 삭제 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.cellMerged ? '표 셀 병합 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.cellSplit ? '표 셀 분할 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.splitUndoRestoredMerge ? '표 셀 분할 undo 검증 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.splitRedoRestored ? '표 셀 분할 redo 검증 불일치' : undefined,
     editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
     editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
     verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
     verifiesSavedFile && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
-    verifiesSavedFile && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined
+    verifiesSavedFile && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined,
+    verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.rows !== 3 ? '표 구조 저장본 행 수 불일치' : undefined,
+    verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.columns !== 3 ? '표 구조 저장본 열 수 불일치' : undefined,
+    verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.rowCellCounts?.[1] !== 3 ? '표 구조 저장본 분할 cell 수 불일치' : undefined,
+    verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.columnSpans?.some((span) => span !== 1) ? '표 구조 저장본에 예상하지 않은 span이 남음' : undefined
   ]).filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -200,17 +217,18 @@ try {
     overflowPages: state.overflowPages,
     errorCode: expectedError ? state.errorCode : undefined,
     pageTextCounts: state.pageTextCounts,
-    editingUi: editText ? state.editingUi : undefined,
+    editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
     search: searchQuery ? state.search : undefined,
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,
     accessibility: searchQuery ? state.accessibility : undefined,
-    editingProbe: editText ? state.editingProbe : undefined,
+    editingProbe: editText || tableStructureProbe ? state.editingProbe : undefined,
     saveAs: editSave ? {
       sourceUnchanged,
       savedFileExists,
       reopenedPages: savedState?.totalPages,
       reopenedImages: savedState?.images?.length,
-      reopenedOverflowPages: savedState?.overflowPages
+      reopenedOverflowPages: savedState?.overflowPages,
+      reopenedTableTopologies: savedState?.tableTopologies
     } : undefined,
     dirtyClose: closeDirtyAction ? {
       action: closeDirtyAction,

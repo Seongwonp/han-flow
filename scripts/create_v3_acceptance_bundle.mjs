@@ -60,9 +60,12 @@ async function createEditedFixture(originalPath, editedPath, options = {}) {
         env: {
           ...process.env,
           HAN_FLOW_VERIFY_DELAY_MS: '500',
-          HAN_FLOW_VERIFY_EDIT_TEXT: options.editText ?? '공개편집검증',
-          HAN_FLOW_VERIFY_EDIT_MODE: options.editMode ?? 'range',
+          ...(options.tableStructure ? {} : {
+            HAN_FLOW_VERIFY_EDIT_TEXT: options.editText ?? '공개편집검증',
+            HAN_FLOW_VERIFY_EDIT_MODE: options.editMode ?? 'range'
+          }),
           ...(options.editCell ? { HAN_FLOW_VERIFY_EDIT_CELL: '1' } : {}),
+          ...(options.tableStructure ? { HAN_FLOW_VERIFY_TABLE_STRUCTURE: '1' } : {}),
           ...(options.styleProbe === false ? {} : { HAN_FLOW_VERIFY_STYLE: '1' }),
           HAN_FLOW_VERIFY_EDIT_SAVE: '1',
           HAN_FLOW_VERIFY_SAVE_DESTINATION: editedPath
@@ -111,9 +114,14 @@ const a4EditingPath = loadGenerator().createSyntheticHwpx(outputDirectory, {
   firstSectionMargin: 5669,
   firstSectionTableWidth: 48190
 })
+const tableStructureOriginalPath = loadGenerator().createTableColumnHwpx(
+  outputDirectory,
+  'han-flow-v3-table-structure-original.hwpx'
+)
 const editedPath = join(outputDirectory, 'han-flow-v3-edited.hwpx')
 const identityPath = join(outputDirectory, 'han-flow-v3-identity.hwpx')
 const cellEditedPath = join(outputDirectory, 'han-flow-v3-cell-edited.hwpx')
+const tableStructureEditedPath = join(outputDirectory, 'han-flow-v3-table-structure-edited.hwpx')
 const identity = await createIdentityFixture(originalPath, identityPath)
 const verification = await createEditedFixture(originalPath, editedPath)
 const cellVerification = await createEditedFixture(originalPath, cellEditedPath, {
@@ -122,6 +130,14 @@ const cellVerification = await createEditedFixture(originalPath, cellEditedPath,
   editCell: true,
   styleProbe: false
 })
+const tableStructureVerification = await createEditedFixture(
+  tableStructureOriginalPath,
+  tableStructureEditedPath,
+  {
+    tableStructure: true,
+    styleProbe: false
+  }
+)
 const originalSha256 = await sha256(originalPath)
 const identitySha256 = await sha256(identityPath)
 const manifest = {
@@ -153,6 +169,14 @@ const manifest = {
       name: 'han-flow-v3-cell-edited.hwpx',
       sha256: await sha256(cellEditedPath)
     },
+    tableStructureOriginal: {
+      name: 'han-flow-v3-table-structure-original.hwpx',
+      sha256: await sha256(tableStructureOriginalPath)
+    },
+    tableStructureEdited: {
+      name: 'han-flow-v3-table-structure-edited.hwpx',
+      sha256: await sha256(tableStructureEditedPath)
+    },
     a4Editing: {
       name: 'han-flow-v3-a4-editing.hwpx',
       sha256: await sha256(a4EditingPath),
@@ -177,6 +201,15 @@ const manifest = {
       reopenedPages: cellVerification.saveAs?.reopenedPages,
       reopenedImages: cellVerification.saveAs?.reopenedImages,
       reopenedOverflowPages: cellVerification.saveAs?.reopenedOverflowPages
+    },
+    tableStructure: {
+      passed: tableStructureVerification.passed,
+      originalUnchanged: tableStructureVerification.saveAs?.sourceUnchanged,
+      savedFileExists: tableStructureVerification.saveAs?.savedFileExists,
+      reopenedPages: tableStructureVerification.saveAs?.reopenedPages,
+      reopenedOverflowPages: tableStructureVerification.saveAs?.reopenedOverflowPages,
+      reopenedTableTopologies: tableStructureVerification.saveAs?.reopenedTableTopologies,
+      probe: tableStructureVerification.editingProbe
     }
   }
 }
@@ -193,8 +226,10 @@ await writeFile(
     '3. edited에서 가운데 정렬, 줄 간격 170%, 문단 앞뒤 1pt, 첫 줄 들여쓰기 1pt를 확인합니다.',
     '4. cell-edited에서 공개셀검증 문자열과 표 구조·병합·테두리 보존을 확인합니다.',
     '5. a4-editing에서 A4 세로 용지, 사방 20mm 여백과 본문 폭을 확인합니다.',
-    '6. 각 파일을 닫았다 다시 열어도 결과가 같고 복구 저장 요구가 없는지 확인합니다.',
-    '7. 결과를 docs/v3_windows_round_trip_matrix.md의 WIN-01~WIN-08에 기록합니다.',
+    '6. table-structure-original과 edited를 비교해 3×3 표, A1·A2가 왼쪽 셀 문단으로 보존되고 가운데 셀이 빈 상태인지 확인합니다.',
+    '7. table-structure-edited를 한/글에서 다른 이름으로 저장한 뒤 Han-Flow로 역재개봉합니다.',
+    '8. 각 파일을 닫았다 다시 열어도 결과가 같고 복구 저장 요구가 없는지 확인합니다.',
+    '9. 결과를 docs/v3_windows_round_trip_matrix.md의 WIN-01~WIN-10에 기록합니다.',
     ''
   ].join('\n')
 )
@@ -210,7 +245,7 @@ await writeFile(
     '',
     '| ID | 결과(통과/실패/해당 없음) | 비식별 메모 |',
     '| --- | --- | --- |',
-    ...Array.from({ length: 8 }, (_, index) => `| WIN-${String(index + 1).padStart(2, '0')} |  |  |`),
+    ...Array.from({ length: 10 }, (_, index) => `| WIN-${String(index + 1).padStart(2, '0')} |  |  |`),
     '',
     '실패 캡처에는 사용자 계정명·경로·개인 문서를 포함하지 않습니다.',
     ''

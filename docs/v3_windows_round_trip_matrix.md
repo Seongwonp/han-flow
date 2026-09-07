@@ -1,6 +1,6 @@
 # V3 Windows 한/글 재열기 matrix
 
-상태: **Windows production bundle 자동 검증 완료 — Windows 한/글 실기 실행 대기**
+상태: **표 구조 포함 Windows production bundle 자동 검증 완료 — Windows 한/글 실기 실행 대기**
 
 이 문서는 Han-Flow가 저장한 HWPX를 Windows 한/글에서 실제로 다시 열어 확인하는 V3 외부
 승인 체크리스트다. 개인정보 없는 결정적 synthetic fixture만 사용하며 결과에는 Windows와
@@ -35,18 +35,20 @@ npm run fixture:v3-windows
 | `han-flow-v3-identity.hwpx` | production source package의 무수정 Save As 결과 |
 | `han-flow-v3-edited.hwpx` | 일반 문단 text·글자 모양·문단 모양 편집 결과 |
 | `han-flow-v3-cell-edited.hwpx` | 일반 body cell 범위 편집 결과 |
+| `han-flow-v3-table-structure-original.hwpx` | 3×3 표 구조 편집 전 공개 기준 문서 |
+| `han-flow-v3-table-structure-edited.hwpx` | 행·열·병합·분할 production UI 검증 뒤 저장 결과 |
 | `han-flow-v3-a4-editing.hwpx` | A4 세로·20mm 여백 기준 문서 |
-| `manifest.json` | commit, SHA-256와 macOS 자동 검증 결과 |
-| `VERIFY_WINDOWS.ps1` | Windows 전송 후 다섯 HWPX의 SHA-256 검사 |
-| `WINDOWS_RESULT_TEMPLATE.md` | 실행 환경과 WIN-01~08 기록 양식 |
+| `manifest.json` | commit, SHA-256와 packaged 앱 자동 검증 결과 |
+| `VERIFY_WINDOWS.ps1` | Windows 전송 후 일곱 HWPX의 SHA-256 검사 |
+| `WINDOWS_RESULT_TEMPLATE.md` | 실행 환경과 WIN-01~10 기록 양식 |
 | `han-flow-v3-windows-bundle.zip` | Windows로 옮길 단일 압축 파일 |
 
 identity 생성은 `HwpxSourcePackage.open → saveHwpxAs` production 경로를 사용한다. entry 순서,
-압축 방식, CRC, 크기와 content bytes가 모두 일치한 뒤에만 파일이 만들어진다. edited와
-cell-edited는 해당 OS의 packaged 앱에서 UI command를 수행하고 Save As한 뒤 Han-Flow로 다시 연다.
+압축 방식, CRC, 크기와 content bytes가 모두 일치한 뒤에만 파일이 만들어진다.
 ZIP container timestamp 때문에 original과 identity의 파일 전체 SHA-256은 달라질 수 있다.
 `containerSha256Equal`은 이를 숨기지 않고 기록하며 identity 판정은 entry metadata와 content
-bytes 비교를 기준으로 한다.
+bytes 비교를 기준으로 한다. edited, cell-edited와 table-structure-edited는 해당 OS의 packaged
+앱에서 UI command를 수행하고 Save As한 뒤 Han-Flow로 다시 연다.
 
 ### 2026-08-21 Windows 자동 사전 관문
 
@@ -62,8 +64,25 @@ Windows 10.0.26200 x64에서 `Han-Flow.exe` 1.0.0-rc.1을 생성했다. 전체 u
 | dirty 종료 | 버리기 통과, 저장은 원본 불변·저장본 3쪽·overflow 0 |
 | bundle hash | PowerShell에서 다섯 HWPX 모두 `[PASS]` |
 
-이 PC에는 Windows 한/글이 설치돼 있지 않아 아래 WIN-01~08은 자동 관문과 구분해 계속
-`미실행`으로 둔다. 한/글 제품 설치 후 사람의 복구 경고·레이아웃·style 판정이 필요하다.
+이 PC에는 Windows 한/글이 설치돼 있지 않아 당시 정의된 WIN-01~08은 자동 관문과 구분해
+`미실행`으로 두었다. 한/글 제품 설치 후 사람의 복구 경고·레이아웃·style 판정이 필요하다.
+
+### 2026-09-07 표 구조 production 자동 관문
+
+현재 Windows x64 production 앱의 실제 리본 action으로 표 행 추가·삭제, 열 추가·삭제,
+오른쪽 1×2 병합과 병합 cell 선택 기반 분할을 순서대로 실행했다. 각 행·열 action의 undo와
+일부 redo, 분할 undo/redo도 함께 통과했다. 원본은 바뀌지 않았고 Save As 결과를 새 앱
+session으로 재개봉해 다음 구조를 확인했다.
+
+| 관문 | 결과 |
+| --- | --- |
+| 행·열 action | 추가·삭제와 undo/redo 통과 |
+| 병합·분할 | text 보존, 빈 오른쪽 cell, 분할 undo/redo 통과 |
+| 최종 topology | 3행 × 3열, 행별 cell 3·3·3, 모든 `colSpan=1` |
+| 최종 body text | 왼쪽 `A1A2`, 가운데 빈 cell, 오른쪽 `A3` |
+| 저장 | 원본 불변, `table-structure` 안내, dirty 해제 |
+| 재개봉 | 1쪽, overflow 0, topology 동일 |
+| bundle 무결성 | 일곱 HWPX SHA-256 모두 `[PASS]` |
 
 ## 2. Windows 전송 무결성
 
@@ -96,7 +115,9 @@ powershell -ExecutionPolicy Bypass -File .\VERIFY_WINDOWS.ps1
 | WIN-05 | `edited` 문단 모양 | 가운데 정렬, 줄 간격 170%, 앞뒤 1pt, 첫 줄 들여쓰기 1pt 표시 | 미실행 |
 | WIN-06 | `cell-edited` 표 cell | `공개셀검증`만 반영되고 행·열·병합·테두리·다른 cell 유지 | 미실행 |
 | WIN-07 | `a4-editing` 용지 | A4 세로, 사방 약 20mm 여백과 넓은 본문 표 유지 | 미실행 |
-| WIN-08 | 다섯 파일 닫기·재열기 | 복구 저장 요구 없이 결과가 유지되고 파일을 다시 열 수 있음 | 미실행 |
+| WIN-08 | 일곱 파일 닫기·재열기 | 복구 저장 요구 없이 결과가 유지되고 파일을 다시 열 수 있음 | 미실행 |
+| WIN-09 | `table-structure-original`과 `table-structure-edited` 비교 | 복구 경고 없이 3×3 표를 유지하고 `A1`·`A2`는 왼쪽 cell의 두 문단, 가운데 cell은 빈 문단, `A3`는 오른쪽 cell에 유지 | 미실행 |
+| WIN-10 | 한/글에서 `table-structure-edited`를 새 이름으로 저장한 뒤 Han-Flow로 열기 | 3×3·행별 cell 3개를 유지하고 누락 text·복구 경고·overflow 없이 열림 | 미실행 |
 
 ## 5. 판정 규칙
 

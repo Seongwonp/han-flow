@@ -590,6 +590,8 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 8. [x] manifest SHA-256, PowerShell 검사와 WIN-01~08 결과 양식을 제공한다.
 9. [x] Windows x64 production `dir` package를 만들고 같은 packaged 앱에서 일반 문단·표 cell,
    전체 제한 style, undo/redo, Save As·재열기와 dirty 종료의 저장·버리기를 자동 검증한다.
+10. [x] packaged 앱의 실제 리본으로 행·열 추가/삭제와 1×2 병합·분할, undo/redo, Save As와
+    재개봉 topology를 검증하고 Windows bundle을 WIN-01~10으로 확장한다.
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 

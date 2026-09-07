@@ -384,3 +384,19 @@
 
 - Windows 한/글에서 병합·분할 저장본을 재열어 구조와 경고 여부를 수동 검증합니다.
 - 새 표 topology 기능을 넓히기 전 공개 corpus와 V3 외부 승인 관문을 우선 닫습니다.
+
+## [2026-09-07] Windows 표 구조 승인 번들 확장
+
+### 완료된 작업
+
+1. Windows production 앱의 실제 리본을 조작하는 표 구조 E2E probe를 추가했습니다.
+2. 행·열 추가/삭제, 오른쪽 병합, 병합 cell 선택과 분할의 projection을 검증했습니다.
+3. 각 구조 action의 undo/redo와 최종 Save As·원본 불변·dirty 해제를 확인했습니다.
+4. 저장본을 새 앱 session으로 열어 3×3, 행별 cell 3개와 모든 `colSpan=1`을 검증했습니다.
+5. 승인 bundle에 표 구조 원본·편집본, manifest 결과와 WIN-09~10 양식을 추가했습니다.
+6. Windows package 실행과 일곱 HWPX의 PowerShell SHA-256 검사를 통과했습니다.
+
+### 다음 시작점
+
+- 한/글 설치 후 WIN-01~10을 실행하고 표 구조 편집본을 한/글에서 저장해 역재개봉합니다.
+- 한/글이 준비되기 전에는 Sprint 4 공개 호환성 corpus 자동화 기반을 설계합니다.

@@ -107,6 +107,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | Jest | 37 suites, 223 passed, 2 suites·11 tests skipped |
 | parser probe | 8 passed |
 | production build | main/preload/renderer 성공 |
+| Windows 표 구조 package E2E | 행·열 추가/삭제, 병합·분할, undo/redo·Save As·재개봉 통과 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
 | macOS 실제 두벌식 matrix | 문단·표 셀 연속 입력, Backspace·Escape·양방향 치환·undo/redo 통과 |
 | 배포 고지 | Apache-2.0, rhwp MIT, Third-Party Notices 일치 |
@@ -152,6 +153,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | 이미지·`rowSpan` | 이미지 12개, 1쪽, overflow 0 |
 | large progressive | 9,767쪽 중 DOM 12개 mount |
 | invalid package | crash 없는 사용자 오류 |
+| table structure acceptance | 3×3 행·열·병합·분할 production UI, 저장·재개봉 topology 통과 |
 
 자동 pagination 회귀에는 의도적으로 작은 용지 fixture를 유지한다. 편집 사용성 검증은 별도의
 A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며, 패키지 앱에서 리본
