@@ -33,14 +33,16 @@ export interface ViewerParseTimings {
 }
 
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
-export interface ViewerDiagnostic { source: string; message: string }
+export interface ViewerDiagnostic { source: string; message: string; code?: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; italic: boolean; underline: boolean; strikeout: boolean; fontId?: string; fontFamily?: string }
 export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; indent?: HwpUnit; margin: BoxSpacing; tabPrId?: string; heading?: ViewerHeadingStyle }
 export interface ViewerHeadingStyle { type: string; idRef: string; level: number; bullet?: string; numberPattern?: string; numberFormat?: string }
 export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
-export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
+export interface ViewerColumnDefinition { width: HwpUnit; gap: HwpUnit }
+export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[] }
+export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; columnLayout?: ViewerColumnLayout; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
 export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutTop?: HwpUnit; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerSourceAnchor { sectionPath: string; textNodeId: string }

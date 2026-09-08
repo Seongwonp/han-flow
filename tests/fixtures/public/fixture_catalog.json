@@ -33,6 +33,12 @@
       "pipelines": ["hwpx-core"]
     },
     {
+      "id": "multi-column-layout",
+      "format": "hwpx",
+      "category": "multi-column-layout",
+      "pipelines": ["hwpx-core"]
+    },
+    {
       "id": "round-trip-sentinels",
       "format": "hwpx",
       "category": "package-preservation",

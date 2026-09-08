@@ -4,6 +4,7 @@ const GENERATORS = new Set([
   'createCompatibilityHwpx',
   'createTableColumnHwpx',
   'createListMarkerHwpx',
+  'createMultiColumnHwpx',
   'createRoundTripHwpx',
   'createInvalidHwpx'
 ])
@@ -16,6 +17,9 @@ const EXACT_METRICS = [
   'markedParagraphs',
   'bulletParagraphs',
   'numberedParagraphs',
+  'diagnostics',
+  'multiColumnSections',
+  'declaredColumns',
   'estimatedPages'
 ]
 
@@ -73,6 +77,8 @@ export function summarizeViewerDocument(document, estimatedPages) {
     numberedParagraphs: 0,
     nonWhitespaceCharacters: 0,
     diagnostics: document.diagnostics.length,
+    multiColumnSections: document.sections.filter((section) => (section.columnLayout?.count ?? 1) > 1).length,
+    declaredColumns: document.sections.reduce((sum, section) => sum + (section.columnLayout?.count ?? 0), 0),
     estimatedPages
   }
   const visitParagraphs = (paragraphs) => {
@@ -161,6 +167,9 @@ export function createCorpusReport(manifest, observations) {
       markedParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.markedParagraphs ?? 0), 0),
       bulletParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.bulletParagraphs ?? 0), 0),
       numberedParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.numberedParagraphs ?? 0), 0),
+      diagnostics: opened.reduce((sum, fixture) => sum + (fixture.metrics?.diagnostics ?? 0), 0),
+      multiColumnSections: opened.reduce((sum, fixture) => sum + (fixture.metrics?.multiColumnSections ?? 0), 0),
+      declaredColumns: opened.reduce((sum, fixture) => sum + (fixture.metrics?.declaredColumns ?? 0), 0),
       estimatedPages: opened.reduce((sum, fixture) => sum + (fixture.metrics?.estimatedPages ?? 0), 0)
     },
     passed: fixtures.every((fixture) => fixture.passed),

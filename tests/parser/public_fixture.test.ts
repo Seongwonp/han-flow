@@ -8,7 +8,7 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createMultiColumnHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
@@ -24,6 +24,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
   const cellFragmentFixture = createCellFragmentHwpx(directory)
   const compatibilityFixture = createCompatibilityHwpx(directory)
   const listMarkerFixture = createListMarkerHwpx(directory)
+  const multiColumnFixture = createMultiColumnHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -178,5 +179,26 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
       numberPattern: '^1.',
       numberFormat: 'DIGIT'
     })
+  })
+
+  test('다단 속성을 보존하고 단일 흐름 fallback 손실을 진단한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(multiColumnFixture))
+    expect(document.sections[0].columnLayout).toEqual({
+      type: 'NEWSPAPER',
+      layout: 'LEFT',
+      count: 2,
+      sameSize: true,
+      sameGap: 600,
+      columns: []
+    })
+    expect(document.sections[0].blocks.flatMap((paragraph) => paragraph.content)).toEqual([
+      expect.objectContaining({ type: 'text', text: '두 단 문서의 첫 문단' }),
+      expect.objectContaining({ type: 'text', text: '두 단 문서의 둘째 문단' })
+    ])
+    expect(document.diagnostics).toEqual([expect.objectContaining({
+      source: 'Contents/section0.xml',
+      code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK'
+    })])
+    expect(paginateViewerDocument(document)).toHaveLength(1)
   })
 })

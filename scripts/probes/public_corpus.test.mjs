@@ -68,6 +68,9 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
       markedParagraphs: 4,
       bulletParagraphs: 2,
       numberedParagraphs: 2,
+      diagnostics: 0,
+      multiColumnSections: 0,
+      declaredColumns: 0,
       estimatedPages: 3
     }
   }])
@@ -81,6 +84,9 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
     markedParagraphs: 4,
     bulletParagraphs: 2,
     numberedParagraphs: 2,
+    diagnostics: 0,
+    multiColumnSections: 0,
+    declaredColumns: 0,
     estimatedPages: 3
   })
   assert.equal(JSON.stringify(report).includes('본문'), false)

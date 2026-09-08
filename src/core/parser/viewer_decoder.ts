@@ -1,4 +1,4 @@
-import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
@@ -127,6 +127,62 @@ function decodePageNumber(nodes: OrderedXmlNode[]): ViewerPageNumber | undefined
   }
 }
 
+function decodeColumnLayout(
+  nodes: OrderedXmlNode[],
+  source: string
+): { columnLayout?: ViewerColumnLayout; diagnostics: ViewerDiagnostic[] } {
+  const findColumnNode = (items: OrderedXmlNode[]): OrderedXmlNode | undefined => {
+    for (const item of items) {
+      if (item.name === 'hp:header' || item.name === 'hp:footer' || item.name === 'hp:subList') continue
+      if (item.name === 'hp:colPr') return item
+      const nested = findColumnNode(item.children)
+      if (nested) return nested
+    }
+    return undefined
+  }
+  const columnNode = findColumnNode(nodes)
+  if (!columnNode) return { diagnostics: [] }
+
+  const count = num(columnNode.attributes.colCount)
+  if (!Number.isSafeInteger(count) || count < 1 || count > 16) {
+    return {
+      diagnostics: [{
+        source,
+        code: 'HWPX_INVALID_COLUMN_LAYOUT',
+        message: `다단 개수(${columnNode.attributes.colCount ?? '없음'})가 유효 범위(1~16)를 벗어나 단일 본문 흐름으로 표시합니다.`
+      }]
+    }
+  }
+
+  const columnLayout: ViewerColumnLayout = {
+    type: columnNode.attributes.type ?? 'NEWSPAPER',
+    layout: columnNode.attributes.layout ?? 'LEFT',
+    count,
+    sameSize: columnNode.attributes.sameSz === '1',
+    sameGap: num(columnNode.attributes.sameGap),
+    columns: children(columnNode, 'hp:col').map((column) => ({
+      width: num(column.attributes.width),
+      gap: num(column.attributes.gap)
+    }))
+  }
+  const diagnostics: ViewerDiagnostic[] = []
+  if (count > 1) {
+    diagnostics.push({
+      source,
+      code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK',
+      message: `다단 ${count}단 속성은 보존했지만 현재 단별 흐름 조판은 지원하지 않아 단일 본문 흐름으로 표시합니다.`
+    })
+  }
+  if (count > 1 && !columnLayout.sameSize && columnLayout.columns.length !== count) {
+    diagnostics.push({
+      source,
+      code: 'HWPX_COLUMN_DEFINITION_INCOMPLETE',
+      message: `서로 다른 너비의 다단 정의가 ${count}개 중 ${columnLayout.columns.length}개만 있어 원본 단 너비를 완전히 복원할 수 없습니다.`
+    })
+  }
+  return { columnLayout, diagnostics }
+}
+
 function decodeHeaderFooters(
   nodes: OrderedXmlNode[],
   name: 'hp:header' | 'hp:footer',
@@ -239,7 +295,8 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
   const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
   const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
-  const sections = sectionXml.map(({ path, nodes }) => {
+  const columnResults = sectionXml.map(({ path, nodes }) => decodeColumnLayout(nodes, path))
+  const sections = sectionXml.map(({ path, nodes }, position) => {
     const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
     const root = nodes.find((node) => node.name === 'hs:sec')
     return {
@@ -251,6 +308,7 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
           )
         : [],
       pageNumber: decodePageNumber(nodes),
+      columnLayout: columnResults[position].columnLayout,
       headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, path).map((control) => ({
         ...control,
         paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
@@ -277,6 +335,6 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
     ...header,
     resources,
     sections,
-    diagnostics: []
+    diagnostics: columnResults.flatMap(({ diagnostics }) => diagnostics)
   }
 }

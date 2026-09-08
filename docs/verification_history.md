@@ -8,6 +8,19 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-08 — 다단 레이아웃 읽기 전용 모델과 손실 진단
+
+HWPX `hp:colPr`의 type·layout·단 개수·동일 너비·공통 간격과 개별 단 정의를
+`ViewerSection.columnLayout`에 보존했다. 유효하지 않은 단 개수와 불완전한 비동일 너비 정의를
+별도 code로 진단하고, 2단 이상은 현재 단별 조판 미지원 사실을
+`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`으로 명시해 열기 성공과 시각 충실도를 구분했다.
+
+동일 너비 2단과 600 HWPUNIT 간격을 가진 `multi-column-layout` fixture를 추가했다. 공개 HWPX
+9종은 111,302 bytes, section 88개, 다단 section 1개·선언 단 2개·diagnostic 1개, table 7개,
+cell 29개, resource 15개와 core 추정 2,511쪽으로 모두 통과했다. 독립 report SHA-256은
+`7D33EC615F203271AE1E34C8D230C1A3D9F029592C17C7FC28C83EDE18F314FF`로 일치했다. 실제 단별
+흐름 조판과 각주·수식 모델은 다음 호환성 slice로 남긴다.
+
 ## 2026-09-08 — 글머리표·번호 목록 공개 corpus 확장
 
 현재 decoder가 `ViewerHeadingStyle`과 paragraph `marker`로 실제 보존하는 목록 구조를 전용 공개

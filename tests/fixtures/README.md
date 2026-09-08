@@ -54,6 +54,10 @@ Git에 커밋하지 않는다.
 corpus는 marker 총 4개, bullet 2개와 numbering 2개를 exact 값으로 검사해 목록 정의가 단순
 본문으로만 열리거나 번호 순서가 사라지는 회귀를 차단한다.
 
+`createMultiColumnHwpx`는 동일 너비 2단과 600 HWPUNIT 단 간격을 선언한다. decoder test는
+type·배치·단 개수·간격을 읽기 전용 모델에 보존하고 본문 문단을 유지하는지 확인한다. core corpus는
+다단 section 1개, 선언 단 2개와 단일 흐름 fallback diagnostic 1건을 exact 값으로 검사한다.
+
 같은 생성기의 `createCellFragmentHwpx`는 반복 header 아래 한 셀에 15개 문단을 넣고,
 그 뒤에 별도 앵커 표를 둔다. 측정 pagination에서 장문 셀이 head/tail continuation 행으로
 나뉘는지, 문단 ID가 빠지거나 중복되지 않는지, 뒤쪽 표가 추가 페이지로 밀리지 않는지를

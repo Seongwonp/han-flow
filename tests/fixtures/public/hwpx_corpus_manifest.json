@@ -48,6 +48,23 @@
       }
     },
     {
+      "id": "multi-column-layout",
+      "category": "multi-column-layout",
+      "generator": "createMultiColumnHwpx",
+      "fileName": "multi-column-layout.hwpx",
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "diagnostics": 1,
+        "multiColumnSections": 1,
+        "declaredColumns": 2,
+        "estimatedPages": 1
+      }
+    },
+    {
       "id": "round-trip-sentinels",
       "category": "package-preservation",
       "generator": "createRoundTripHwpx",

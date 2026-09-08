@@ -171,6 +171,13 @@ fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규�
 투영해 저장 후 검증할 수 있게 하며, 목록 marker projection은 복제된 heading을 그대로 사용한다.
 이 계약은 기존 탭·목록의 보존만 뜻하며 탭 정의나 bullet·numbering definition 편집을 허용하지 않는다.
 
+구역의 `hp:colPr`은 `ViewerSection.columnLayout`에 type, layout, 단 개수, 동일 너비 여부,
+공통 간격과 개별 단 너비·간격으로 정규화한다. 잘못된 단 개수는 모델에 넣지 않고 안정적인
+`HWPX_INVALID_COLUMN_LAYOUT` diagnostic을 남긴다. 2단 이상은 메타데이터를 보존하되 현재
+pagination이 단별 흐름을 계산하지 않으므로 `HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`을 남기고
+단일 본문 흐름으로 표시한다. 서로 다른 너비 선언 수가 단 개수와 다르면 별도 incomplete 진단을
+추가해 구조 손실을 숨기지 않는다.
+
 표 편집 capability는 병합·rowSpan·columnSpan·반복 머리글·pagination fragment를 제외한 body
 cell에서만 열린다. cell에 여러 문단이 있어도 각 문단이 source anchor 하나를 가진 단일 text
 run이면 `TABLE_CELL_TEXT` context를 만들고 cell별 range scope를 공유한다. core paragraph locator는

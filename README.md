@@ -29,6 +29,7 @@ V4 공개 target을 Apple Silicon arm64-only로 확정했습니다. 현재 패�
 - OWPML XML 자식 순서와 미지원 package 항목을 보존하는 문서 모델
 - 문단·글자 스타일, 표·병합 셀, 테두리·배경색과 이미지
 - 목록, 구역별 머리말·꼬리말과 쪽 번호 재시작
+- 다단 개수·배치·간격의 읽기 전용 보존과 단일 흐름 fallback 진단
 - 실제 DOM 높이를 사용하는 2-pass pagination
 - 긴 표 셀의 continuation 행과 반복 머리글
 - Worker 기반 점진 decode와 페이지 가상화
@@ -104,10 +105,10 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 37 suites, 224 passed, 2 suites·11 tests skipped |
+| Jest | 37 suites, 225 passed, 2 suites·11 tests skipped |
 | parser probe | 14 passed |
-| public HWPX corpus | 8/8, 87 sections·13 list markers·7 tables·29 cells·15 resources |
-| public fixture catalog | HWPX 8종·HWP 1종, core/production/HWP pipeline ID 연결 |
+| public HWPX corpus | 9/9, 88 sections·1 multi-column section·1 diagnostic·7 tables·29 cells·15 resources |
+| public fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | production build | main/preload/renderer 성공 |
 | Windows 표 구조 package E2E | 행·열 추가/삭제, 병합·분할, undo/redo·Save As·재개봉 통과 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -199,6 +200,8 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
 - 반복 머리글, 병합·`rowSpan`, continuation fragment와 머리말·꼬리말은 읽기 전용입니다.
   병합되지 않은 일반 body cell은 여러 문단의 단일 text run을 편집하고, 같은 cell 안에서 문단을
   가로지르는 범위 치환·Enter 분할·경계 Backspace/Delete 병합을 수행할 수 있습니다.
+- HWPX 다단의 개수·배치·동일 너비·간격과 개별 단 너비는 읽기 전용 모델에 보존합니다. 실제
+  단별 흐름 조판은 아직 지원하지 않아 단일 본문 흐름으로 표시하며 문서 diagnostic에 이를 남깁니다.
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다.
   글꼴은 문서 `HANGUL` font-face에 이미 선언된 family만 ID로 재사용하며 새 글꼴 추가·포함은 지원하지 않습니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.

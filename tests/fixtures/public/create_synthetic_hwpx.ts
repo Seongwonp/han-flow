@@ -49,6 +49,12 @@ const listMarkerSection = `<?xml version="1.0" encoding="UTF-8"?>
   <hp:p id="5" paraPrIDRef="2"><hp:run charPrIDRef="0"><hp:t>번호 둘째 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="4000" vertsize="1000"/></hp:linesegarray></hp:p>
 </hs:sec>`
 
+const multiColumnSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="12000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr id="columns-2" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="600"/></hp:ctrl><hp:t>두 단 문서의 첫 문단</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>두 단 문서의 둘째 문단</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="1000" vertsize="1000"/></hp:linesegarray></hp:p>
+</hs:sec>`
+
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
 const HWPX_MIMETYPE = 'application/hwp+zip'
 
@@ -164,6 +170,16 @@ export function createListMarkerHwpx(directory: string, fileName = 'han-flow-lis
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(listMarkerSection))
+  zip.writeZip(path)
+  return path
+}
+
+export function createMultiColumnHwpx(directory: string, fileName = 'han-flow-multi-column.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(multiColumnSection))
   zip.writeZip(path)
   return path
 }

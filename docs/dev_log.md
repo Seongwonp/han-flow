@@ -449,3 +449,19 @@
 
 - 다단 section layout을 ViewerDocument에 표현할 최소 read-only 모델과 loss 진단을 설계합니다.
 - 각주·수식은 원문 구조 보존과 화면 fallback 요구를 먼저 문서화한 뒤 fixture를 추가합니다.
+
+## [2026-09-08] 다단 레이아웃 읽기 전용 모델과 공개 corpus 확장
+
+### 완료된 작업
+
+1. `ViewerSection`에 다단 type·배치·개수·동일 너비·간격과 개별 단 정의 모델을 추가했습니다.
+2. 유효하지 않거나 불완전한 다단 정의와 단별 조판 fallback을 안정적인 code로 진단했습니다.
+3. 동일 너비 2단 공개 HWPX fixture와 decoder·pagination 회귀 테스트를 추가했습니다.
+4. corpus에 다단 section·선언 단·diagnostic exact 지표와 합계를 추가했습니다.
+5. 공개 HWPX 9/9와 독립 report SHA-256 일치를 확인했습니다.
+6. 실제 다단 조판을 구현한 것으로 과장하지 않고 현재 단일 흐름 표시 제한을 문서화했습니다.
+
+### 다음 시작점
+
+- 다단 흐름 조판 전에 페이지·단·문단의 진행 순서와 column break 모델을 설계합니다.
+- 각주·수식은 원문 구조 모델과 안전한 화면 fallback을 먼저 추가한 뒤 전용 fixture로 고정합니다.
