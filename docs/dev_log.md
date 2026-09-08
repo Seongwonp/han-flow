@@ -400,3 +400,19 @@
 
 - 한/글 설치 후 WIN-01~10을 실행하고 표 구조 편집본을 한/글에서 저장해 역재개봉합니다.
 - 한/글이 준비되기 전에는 Sprint 4 공개 호환성 corpus 자동화 기반을 설계합니다.
+
+## [2026-09-08] 공개 HWPX corpus 자동화 기반 구현
+
+### 완료된 작업
+
+1. 공개 HWPX 7종을 ID·category·generator·기대 결과 manifest로 통합했습니다.
+2. 중복 ID, 임의 generator와 잘못된 기대값을 실행 전에 차단했습니다.
+3. 본문 없이 구조·문자 수, diagnostic과 core page 추정치를 JSON으로 기록했습니다.
+4. ZIP timestamp를 제외한 content fingerprint로 report 재현성을 보장했습니다.
+5. 독립 두 실행의 report SHA-256 일치와 corpus 7/7을 확인했습니다.
+6. manifest 판정 probe와 `verify:corpus` Windows CI 관문을 추가했습니다.
+
+### 다음 시작점
+
+- 고정 HWP와 production DOM matrix를 동일한 상위 fixture catalog ID에 연결합니다.
+- 다단·각주·수식·목록 중 decoder가 이미 읽는 구조부터 공개 fixture를 확장합니다.

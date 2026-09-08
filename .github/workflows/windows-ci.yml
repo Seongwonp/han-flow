@@ -39,5 +39,8 @@ jobs:
       - name: Parser probes
         run: npm run test:probe
 
+      - name: Public HWPX corpus
+        run: npm run verify:corpus
+
       - name: Production build
         run: npm run build

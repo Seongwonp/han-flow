@@ -8,6 +8,22 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-08 — Sprint 4 공개 HWPX corpus manifest와 결정적 report
+
+기존 production matrix에 흩어진 공개 HWPX 입력을 별도 JSON manifest로 분리하고, GUI 없이
+source package·decoder·pagination을 빠르게 검증하는 `npm run verify:corpus`를 추가했다. 허용
+generator 목록, 중복 ID, category, 기대 outcome·구조 count와 오류 code를 fixture 생성 전에
+검증한다. report에는 본문과 로컬 경로를 넣지 않고 content fingerprint, byte 크기, 구조·문자 수,
+diagnostic과 core `estimatedPages`만 기록한다.
+
+baseline, 긴 cell, 이미지·rowSpan, 3×3 열, round-trip sentinel, 80-section 대형 문서와 손상
+package 7종이 모두 통과했다. 합계는 section 86개, table 7개, cell 29개, resource 15개와 core
+추정 2,509쪽이다. ZIP timestamp를 제외한 entry content fingerprint를 사용해 독립 두 실행의 JSON
+SHA-256 `A7D91650EBD73ABC84CAA299FE9634233C4B2901BC2B536012D66B5E5BF13FD4` 일치를 확인했다.
+manifest·판정기 probe 3종을 포함한 privacy-safe parser probe는 11종 통과했다. Windows CI에도
+같은 corpus 명령을 추가했다. production DOM 실측과 HWP matrix는 의미가 다른 기존 관문으로
+계속 분리한다.
+
 ## 2026-09-07 — Windows production 표 구조 승인 번들 확장
 
 Windows x64 production 앱에서 실제 리본을 사용해 3×3 공개 fixture의 행 추가·삭제, 열

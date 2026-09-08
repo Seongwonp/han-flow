@@ -595,6 +595,19 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 
 두 수동 관문을 통과하면 V3를 완료로 표시하고 V4 서명·공증·배포 작업으로 이동한다.
 
+## 진행 중인 병행 milestone: Sprint 4 공개 corpus 자동화
+
+1. [x] 공개 HWPX fixture ID·category·generator·기대 결과를 JSON manifest로 분리한다.
+2. [x] 임의 generator, 중복 ID와 잘못된 기대값을 fail-closed하는 schema 검증을 추가한다.
+3. [x] 본문 없이 구조 count·비공백 문자 수·core page 추정과 content fingerprint를 보고한다.
+4. [x] 같은 입력의 JSON report가 byte-for-byte 재현되는지 독립 두 실행으로 확인한다.
+5. [x] `npm run verify:corpus`를 Windows CI의 빠른 core 관문에 연결한다.
+6. [ ] 고정 HWP와 production DOM matrix를 같은 fixture ID catalog에 연결한다.
+7. [ ] 다단·각주·수식·목록 fixture를 추가하고 30–50개까지 단계적으로 확대한다.
+
+core `estimatedPages`는 실제 글꼴·DOM 측정 기반 production 페이지 수와 별도 지표다. 자세한
+추가 규칙과 개인정보 계약은 [공개 호환성 corpus 전략](public_corpus_strategy.md)을 따른다.
+
 ## 진행 중인 병행 milestone: V4-0 배포 준비 감사
 
 Windows 환경 없이 가능한 V4 조사만 먼저 진행한다. 이 작업은 V3의 두 외부 승인 항목을
