@@ -149,9 +149,9 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 
 - [x] 공개 HWPX 7종의 manifest, 허용 generator schema와 결정적 JSON report 기반
 - [x] section·paragraph·table·cell·resource·문자 수와 core pagination 추정치 CI 관문
-- [ ] 고정 HWP matrix를 동일한 상위 corpus catalog ID에 연결
+- [x] 고정 HWP matrix를 동일한 상위 corpus catalog ID에 연결
 - [ ] 다단·각주·수식·목록과 머리말·꼬리말 variant 확장
-- [ ] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
+- [x] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
 - [ ] 개인정보 없는 공개 corpus 30–50개 확보
 
 측정 지표:

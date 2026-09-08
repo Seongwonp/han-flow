@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
+  "catalogId": "synthetic-layout",
   "fixture": "synthetic-layout.hwp",
   "generator": "scripts/fixtures/generate_public_hwp_preload.cjs",
   "license": "Apache-2.0",
   "containsPersonalData": false,
   "hwpVersion": "5.0.3.2",
-  "sha256": "b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e",
-  "sizeBytes": 12800,
+  "sha256": "2400fcee7aa03235870701aeea044d084a652bdfb60efa52264f1774d8725317",
+  "sizeBytes": 6656,
   "expected": {
     "sections": 1,
     "pages": 2,

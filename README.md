@@ -105,8 +105,9 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | 관문 | 결과 |
 | --- | ---: |
 | Jest | 37 suites, 223 passed, 2 suites·11 tests skipped |
-| parser probe | 11 passed |
+| parser probe | 14 passed |
 | public HWPX corpus | 7/7, 86 sections·7 tables·29 cells·15 resources |
+| public fixture catalog | HWPX 7종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | production build | main/preload/renderer 성공 |
 | Windows 표 구조 package E2E | 행·열 추가/삭제, 병합·분할, undo/redo·Save As·재개봉 통과 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
@@ -252,6 +253,10 @@ Node.js 22와 npm 10이 필요합니다. `.nvmrc`와 `package.json#engines`가 �
 npm ci
 npm run dev
 ```
+
+PDF 회귀 관문은 Poppler의 `pdfinfo`, `pdftotext`, `pdftoppm`이 PATH에 있어야 합니다. Windows는
+`winget install --id oschwartz10612.Poppler --exact`로 설치할 수 있으며 설치 후 새 터미널에서
+검증 명령을 실행합니다.
 
 프로덕션 빌드와 비서명 macOS 앱:
 

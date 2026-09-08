@@ -264,10 +264,10 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 ## 공개 HWP 회귀 fixture
 
 `tests/fixtures/public/synthetic-layout.hwp`는 외부 문서나 blank template을 복사하지 않고
-`HwpDocument.createEmpty()`에서 생성하고 FileHeader를 5.0.3.2로 기록한 12,800 byte의 고정
-HWP다. 자체 문자열, Canvas PNG, 3×3 표와 두 쪽 반복 머리말을 포함하며 전체 SHA-256
-`b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e`을 manifest에 기록한다.
-두 번 생성한 결과는 byte 단위로 같았고 export 자기 재로드 전후 모두 2쪽이었다.
+`HwpDocument.createEmpty()`에서 생성하고 FileHeader를 5.0.3.2로 기록한 6,656 byte의 고정
+HWP다. 자체 문자열, 플랫폼 독립 고정 PNG, 3×3 표와 두 쪽 반복 머리말을 포함하며 전체 SHA-256
+`2400fcee7aa03235870701aeea044d084a652bdfb60efa52264f1774d8725317`을 manifest에 기록한다.
+Windows 독립 두 생성 결과는 byte 단위로 같았고 export 자기 재로드 전후 모두 2쪽이었다.
 
 `npm run verify:hwp-matrix`의 독립 관찰 결과는 다음과 같다.
 

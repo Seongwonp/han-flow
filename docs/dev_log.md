@@ -416,3 +416,20 @@
 
 - 고정 HWP와 production DOM matrix를 동일한 상위 fixture catalog ID에 연결합니다.
 - 다단·각주·수식·목록 중 decoder가 이미 읽는 구조부터 공개 fixture를 확장합니다.
+
+## [2026-09-08] 공개 fixture 상위 catalog와 Windows HWP 관문 연결
+
+### 완료된 작업
+
+1. HWPX 7종과 HWP 1종의 ID·형식·category·pipeline을 상위 catalog로 통합했습니다.
+2. HWPX core 7종, production DOM 5종과 HWP production 1종을 같은 ID에서 선택합니다.
+3. 중복 ID·pipeline, 형식 불일치, manifest 누락·category drift와 HWP 파일명 변경을 차단했습니다.
+4. Windows production matrix 5종을 실행해 동일한 `fixtureId`와 virtualization을 확인했습니다.
+5. Windows Electron shim·ESM file URL·production 앱 기본 경로 문제를 수정했습니다.
+6. Canvas 의존 이미지를 고정 PNG bytes로 바꿔 HWP 독립 생성 SHA-256 일치를 복구했습니다.
+7. HWP 2쪽·표 1·셀 9·이미지 1·PDF 98.6%와 오류 5종 matrix를 통과했습니다.
+
+### 다음 시작점
+
+- 다단·각주·수식·목록 중 decoder가 이미 읽는 구조부터 공개 HWPX fixture를 확장합니다.
+- 같은 ID의 core 추정과 production 실측을 한 report에서 비교하는 통합 요약을 설계합니다.

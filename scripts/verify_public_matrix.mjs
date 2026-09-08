@@ -1,13 +1,21 @@
 import { createRequire } from 'node:module'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
+import { generateCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
+import { linkHwpxManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
-const appBinary = resolve(process.argv[2] ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
-const generatorPath = resolve('tests/fixtures/public/create_synthetic_hwpx.ts')
+const root = resolve(import.meta.dirname, '..')
+const defaultAppBinary = process.platform === 'win32'
+  ? resolve(root, 'release/win-unpacked/Han-Flow.exe')
+  : resolve(root, 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const appBinary = resolve(process.argv[2] ?? defaultAppBinary)
+const generatorPath = resolve(root, 'tests/fixtures/public/create_synthetic_hwpx.ts')
+const manifestPath = resolve(root, 'tests/fixtures/public/hwpx_corpus_manifest.json')
+const catalogPath = resolve(root, 'tests/fixtures/public/fixture_catalog.json')
 
 function loadGenerator() {
   const source = require('node:fs').readFileSync(generatorPath, 'utf8')
@@ -28,7 +36,7 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
   let standardOutput = ''
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
-    const arguments_ = [resolve('scripts/verify_app.mjs'), fixture, appBinary]
+    const arguments_ = [resolve(root, 'scripts/verify_app.mjs'), fixture, appBinary]
     if (expectedError) arguments_.push('--expect-error')
     const child = spawn(process.execPath, arguments_, {
       env: { ...process.env, HAN_FLOW_VERIFY_DELAY_MS: String(delayMs), ...environment },
@@ -49,12 +57,12 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
 try {
-  const { createCellFragmentHwpx, createCompatibilityHwpx, createInvalidHwpx, createSyntheticHwpx } = loadGenerator()
-  const fixtures = [
-    {
-      name: 'baseline',
-      path: createSyntheticHwpx(directory, { fileName: 'baseline.hwpx' }),
-      delayMs: 500,
+  const generator = loadGenerator()
+  const manifest = validateCorpusManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
+  const catalog = validateFixtureCatalog(JSON.parse(await readFile(catalogPath, 'utf8')))
+  const productionFixtures = linkHwpxManifest(catalog, manifest)
+  const productionOptions = {
+    baseline: {
       environment: {
         HAN_FLOW_VERIFY_EDIT_TEXT: '셀검증',
         HAN_FLOW_VERIFY_EDIT_MODE: 'range',
@@ -62,47 +70,31 @@ try {
         HAN_FLOW_VERIFY_EDIT_SAVE: '1'
       }
     },
-    {
-      name: 'cell-continuation',
-      path: createCellFragmentHwpx(directory, 'cell-continuation.hwpx'),
-      delayMs: 500
-    },
-    {
-      name: 'images-rowspan',
-      path: createCompatibilityHwpx(directory, 'images-rowspan.hwpx'),
-      delayMs: 500
-    },
-    {
-      name: 'large-progressive',
-      path: createSyntheticHwpx(directory, {
-        fileName: 'large-progressive.hwpx',
-        sectionCount: 80,
-        paragraphsPerExtraSection: 250,
-        imageBytes: 5 * 1024 * 1024
-      }),
-      delayMs: 500
-    },
-    {
-      name: 'invalid-package',
-      path: createInvalidHwpx(directory, 'invalid-package.hwpx'),
-      delayMs: 500,
+    'invalid-package': {
       expectedError: true
     }
-  ]
+  }
+  const fixtures = productionFixtures.map((fixture) => ({
+    id: fixture.id,
+    path: generateCorpusFixture(generator, directory, fixture.manifest),
+    delayMs: 500,
+    ...productionOptions[fixture.id]
+  }))
   const results = []
   for (const fixture of fixtures) {
     results.push({
-      name: fixture.name,
+      fixtureId: fixture.id,
+      name: fixture.id,
       ...await verify(fixture.path, fixture.delayMs, fixture.expectedError, fixture.environment)
     })
   }
 
-  const continuation = results.find(({ name }) => name === 'cell-continuation')
-  const compatibility = results.find(({ name }) => name === 'images-rowspan')
-  const large = results.find(({ name }) => name === 'large-progressive')
-  const invalid = results.find(({ name }) => name === 'invalid-package')
+  const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
+  const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
+  const large = results.find(({ fixtureId }) => fixtureId === 'large-progressive')
+  const invalid = results.find(({ fixtureId }) => fixtureId === 'invalid-package')
   const failures = [
-    ...results.filter(({ passed }) => !passed).map(({ name }) => `${name}: verify 실패`),
+    ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
     compatibility?.imageCount === 12 ? undefined : 'images-rowspan: 이미지 12개가 decode되지 않음',
     large && large.totalPages > 50 ? undefined : 'large-progressive: 50페이지를 넘지 않음',
@@ -111,8 +103,8 @@ try {
   ].filter(Boolean)
   const summary = {
     passed: failures.length === 0,
-    fixtures: results.map(({ name, totalPages, mountedPages, imageCount, overflowPages }) => ({
-      name, totalPages, mountedPages, imageCount, overflowPages
+    fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages }) => ({
+      fixtureId, name, totalPages, mountedPages, imageCount, overflowPages
     })),
     failures
   }

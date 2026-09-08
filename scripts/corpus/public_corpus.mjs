@@ -9,6 +9,13 @@ const GENERATORS = new Set([
 
 const EXACT_METRICS = ['sections', 'tables', 'cells', 'resources', 'estimatedPages']
 
+export function generateCorpusFixture(generator, directory, fixture) {
+  const create = generator[fixture.generator]
+  if (typeof create !== 'function') throw new Error(`${fixture.id}: fixture generator를 찾을 수 없습니다.`)
+  if (fixture.options) return create(directory, fixture.options)
+  return create(directory, fixture.fileName)
+}
+
 export function validateCorpusManifest(manifest) {
   if (!manifest || typeof manifest !== 'object') throw new Error('corpus manifest는 object여야 합니다.')
   if (manifest.schemaVersion !== 1) throw new Error('지원하지 않는 corpus manifest schemaVersion입니다.')

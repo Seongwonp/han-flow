@@ -1,14 +1,21 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as CFB from 'cfb'
+import { linkHwpManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const fixture = resolve(root, 'tests/fixtures/public/synthetic-layout.hwp')
 const manifestPath = `${fixture}.json`
-const electron = resolve(root, 'node_modules/.bin/electron')
+const catalogPath = resolve(root, 'tests/fixtures/public/fixture_catalog.json')
+const electron = createRequire(import.meta.url)('electron')
+const defaultAppBinary = process.platform === 'win32'
+  ? resolve(root, 'release/win-unpacked/Han-Flow.exe')
+  : resolve(root, 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const appBinary = resolve(process.argv[2] ?? defaultAppBinary)
 const activeChildren = new Set()
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -86,6 +93,8 @@ async function createHeaderVariant(bytes, output, mutate) {
 const temporaryDirectory = await mkdtemp(join(tmpdir(), 'han-flow-hwp-matrix-'))
 try {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  const catalog = validateFixtureCatalog(JSON.parse(await readFile(catalogPath, 'utf8')))
+  const catalogFixture = linkHwpManifest(catalog, manifest)
   const fixedBytes = await readFile(fixture)
   const generatedFixture = join(temporaryDirectory, 'synthetic-layout.hwp')
   const unsupportedFixtures = [
@@ -138,14 +147,16 @@ try {
     ], { prefix: 'HAN_FLOW_HWP_BAKEOFF ' }),
     run(process.execPath, [
       resolve(root, 'scripts/verify_app.mjs'),
-      fixture
+      fixture,
+      appBinary
     ], {
       env: { HAN_FLOW_VERIFY_SEARCH_QUERY: 'HANFLOW-PUBLIC-HEADER' },
       prefix: 'HAN_FLOW_APP_VERIFY '
     }),
     run(process.execPath, [
       resolve(root, 'scripts/verify_pdf.mjs'),
-      fixture
+      fixture,
+      appBinary
     ], { prefix: 'HAN_FLOW_PDF_VERIFY ', timeoutMs: 120_000 })
   ])
   const unsupportedResults = []
@@ -153,6 +164,7 @@ try {
     unsupportedResults.push(await run(process.execPath, [
       resolve(root, 'scripts/verify_app.mjs'),
       fixtureCase.path,
+      appBinary,
       '--expect-error'
     ], {
       env: { HAN_FLOW_VERIFY_ERROR_CODE: fixtureCase.code },
@@ -216,6 +228,7 @@ try {
   })
 
   const result = {
+    fixtureId: catalogFixture.id,
     fixture: manifest.fixture,
     passed: failures.length === 0,
     deterministic: sha256(generatedBytes) === manifest.sha256,

@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { dirname, resolve } = require('node:path')
+const { pathToFileURL } = require('node:url')
 
 const RESULT_CHANNEL = 'han-flow:generate-public-hwp'
 
@@ -11,25 +12,10 @@ function expectOk(label, result) {
 }
 
 function createPublicImageBytes() {
-  const canvas = document.createElement('canvas')
-  canvas.width = 240
-  canvas.height = 120
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('fixture 이미지용 Canvas를 만들 수 없습니다.')
-
-  context.fillStyle = '#f4f7ff'
-  context.fillRect(0, 0, canvas.width, canvas.height)
-  context.fillStyle = '#3157d5'
-  context.fillRect(0, 0, 56, canvas.height)
-  context.fillStyle = '#172554'
-  context.font = 'bold 28px sans-serif'
-  context.fillText('HAN-FLOW', 76, 55)
-  context.fillStyle = '#52617a'
-  context.font = '18px sans-serif'
-  context.fillText('PUBLIC FIXTURE', 76, 85)
-
-  const base64 = canvas.toDataURL('image/png').split(',')[1]
-  return new Uint8Array(Buffer.from(base64, 'base64'))
+  return new Uint8Array(Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==',
+    'base64'
+  ))
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -44,7 +30,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     const modulePath = require.resolve('@rhwp/core')
-    const rhwp = await import(modulePath)
+    const rhwp = await import(pathToFileURL(modulePath).href)
     const wasm = await readFile(resolve(dirname(modulePath), 'rhwp_bg.wasm'))
     await rhwp.default(wasm)
 

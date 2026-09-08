@@ -3,9 +3,9 @@
 기준일: 2026-09-08
 
 이 문서는 Sprint 4에서 개인정보 없는 HWP/HWPX 호환성 입력을 30–50개까지 확대하기 위한
-manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. 첫 구현은 공개 synthetic HWPX 7종을
-하나의 manifest와 빠른 core 검증기로 묶는다. 고정 HWP는 기존 `verify:hwp-matrix`를 유지하며
-후속 단계에서 같은 상위 catalog에 연결한다.
+manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. 공개 synthetic HWPX 7종과 고정
+HWP 1종을 `tests/fixtures/public/fixture_catalog.json`의 상위 ID로 묶고, 빠른 core 검증과
+production DOM·HWP 앱/PDF 검증은 독립 pipeline으로 실행한다.
 
 ## 1. 역할 분리
 
@@ -16,10 +16,15 @@ manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. �
 
 core의 `estimatedPages`는 source layout 정보를 이용한 pagination 결과다. 실제 글꼴과 DOM 높이를
 반영하는 production 페이지 수와 이름·의미를 섞지 않는다. 따라서 continuation fixture는 core
-추정 3쪽과 production 2쪽, 대형 fixture는 core 추정 2,499쪽과 production 9,767쪽을 각각 독립된
-회귀 기준으로 유지한다.
+추정 3쪽과 production 2쪽을 별도로 기록한다. 대형 fixture의 core 추정은 2,499쪽이고 production
+실측은 빌드·글꼴 환경에 따라 달라질 수 있어 exact 기준으로 고정하지 않는다. 2026-09-08 Windows
+재검증에서는 19,503쪽 중 DOM 12쪽만 mount되어 virtualization 관문을 통과했다.
 
-## 2. manifest 계약
+## 2. catalog와 manifest 계약
+
+`fixture_catalog.json`은 소문자 고유 ID, `hwp`/`hwpx` 형식, category와 pipeline을 관리한다.
+현재 pipeline은 `hwpx-core`, `hwpx-production`, `hwp-production` 세 가지다. 중복 ID·pipeline,
+알 수 없는 pipeline과 형식이 맞지 않는 연결은 실행 전에 거부한다.
 
 `tests/fixtures/public/hwpx_corpus_manifest.json`은 다음 항목을 명시한다.
 
@@ -30,8 +35,9 @@ core의 `estimatedPages`는 source layout 정보를 이용한 pagination 결과�
 - 대형 문서처럼 범위가 중요한 경우 `minimumEstimatedPages`
 - 거부 fixture의 안정적인 사용자 오류 code
 
-중복 ID, 임의 generator, 빈 category와 잘못된 정수 기대값은 fixture 생성 전에 거부한다. corpus
-추가는 generator 구현, manifest 기대값과 필요 회귀 테스트를 같은 commit에 포함한다.
+중복 ID, 임의 generator, 빈 category와 잘못된 정수 기대값은 fixture 생성 전에 거부한다. HWPX
+manifest의 모든 ID·category와 고정 HWP manifest의 `catalogId`·파일명도 catalog와 교차 검증한다.
+corpus 추가는 catalog, generator 구현, manifest 기대값과 필요 회귀 테스트를 같은 commit에 포함한다.
 
 ## 3. 개인정보 없는 report
 
@@ -63,11 +69,10 @@ core 추정 2,509쪽이다. 독립 두 실행의 JSON SHA-256 일치를 확인�
 
 ## 5. 확대 순서
 
-1. HWP 고정 fixture와 기존 matrix를 상위 catalog에서 참조하되 무거운 앱·PDF 실행은 분리한다.
-2. 다단, 각주·수식·목록, 머리말·꼬리말 variant를 공개 synthetic HWPX로 추가한다.
-3. 실패한 실제 문서는 본문을 복사하지 않고 같은 구조를 재현하는 최소 generator로 축소한다.
-4. production matrix 결과도 동일한 fixture ID로 연결해 core 추정과 DOM 실측을 나란히 본다.
-5. corpus 30–50개에서 열기 성공률, crash·timeout, 본문 문자 수와 구조 보존률을 집계한다.
+1. 다단, 각주·수식·목록, 머리말·꼬리말 variant를 공개 synthetic HWPX로 추가한다.
+2. 실패한 실제 문서는 본문을 복사하지 않고 같은 구조를 재현하는 최소 generator로 축소한다.
+3. 같은 fixture ID의 core 추정과 DOM 실측을 나란히 집계하는 통합 요약을 추가한다.
+4. corpus 30–50개에서 열기 성공률, crash·timeout, 본문 문자 수와 구조 보존률을 집계한다.
 
 실제 문서의 hash·본문·캡처는 공개 manifest와 report에 포함하지 않는다. 공개로 재현할 수 없는
 관찰은 비식별 수치만 검증 이력에 분리해서 기록한다.

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { outputProbe } from './hwp_probe_common.mjs'
 
@@ -71,7 +72,7 @@ function run(command, args) {
 }
 
 const root = resolve(import.meta.dirname, '../..')
-const electron = resolve(root, 'node_modules/.bin/electron')
+const electron = createRequire(import.meta.url)('electron')
 const [kordoc, rhwp, hwpx] = await Promise.all([
   run(process.execPath, [resolve(import.meta.dirname, 'kordoc_probe.mjs'), filePath]),
   run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath, ...(pdfPath ? [pdfPath] : [])]),

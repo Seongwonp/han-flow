@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-08 — 공개 fixture 상위 catalog와 Windows HWP 결정성 복구
+
+`fixture_catalog.json`에 HWPX 7종과 HWP 1종의 ID·형식·category·실행 pipeline을 통합했다.
+`verify:corpus`는 HWPX manifest 전체와 고정 HWP manifest의 ID를 GUI 실행 전에 교차 검증한다.
+production DOM matrix도 코드에 fixture를 다시 적지 않고 catalog의 `hwpx-production` 5종을
+선택하며 기존 `name`과 함께 동일한 `fixtureId`를 보고한다. Windows production 앱에서 5종이
+통과했고 대형 문서는 실측 19,503쪽 중 DOM 12쪽만 mount되어 virtualization을 유지했다.
+
+Windows에서 드러난 확장자 없는 Electron shim, `@rhwp/core` 절대 경로 dynamic import와 macOS
+기본 앱 경로 고정 문제를 수정했다. HWP 생성 이미지도 OS별 Canvas raster 대신 고정 공개 PNG
+bytes로 바꿨다. 독립 두 생성본은 6,656 bytes와 SHA-256
+`2400FCEE7AA03235870701AEEA044D084A652BDFB60EFA52264F1774D8725317`이 일치했다. 최종 HWP
+matrix는 catalog ID `synthetic-layout`, 생성 결정성, 두 parser, 2쪽·표 1개·셀 9개·이미지 1개,
+반복 머리말 2회, PDF 2쪽·텍스트 보존 98.6%와 오류 5종을 모두 통과했다.
+
 ## 2026-09-08 — Sprint 4 공개 HWPX corpus manifest와 결정적 report
 
 기존 production matrix에 흩어진 공개 HWPX 입력을 별도 JSON manifest로 분리하고, GUI 없이

@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron')
 const { readFile } = require('node:fs/promises')
 const { dirname, resolve } = require('node:path')
+const { pathToFileURL } = require('node:url')
 const { performance } = require('node:perf_hooks')
 
 const RESULT_CHANNEL = 'han-flow:hwp-probe-result'
@@ -125,7 +126,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
 
     const modulePath = require.resolve('@rhwp/core')
-    const rhwp = await import(modulePath)
+    const rhwp = await import(pathToFileURL(modulePath).href)
     const wasm = await readFile(resolve(dirname(modulePath), 'rhwp_bg.wasm'))
     const initStarted = performance.now()
     await rhwp.default(wasm)

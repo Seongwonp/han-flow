@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "suite": "han-flow-public",
+  "fixtures": [
+    {
+      "id": "baseline",
+      "format": "hwpx",
+      "category": "document-baseline",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
+      "id": "cell-continuation",
+      "format": "hwpx",
+      "category": "table-pagination",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
+      "id": "images-rowspan",
+      "format": "hwpx",
+      "category": "images-and-span",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
+      "id": "table-columns",
+      "format": "hwpx",
+      "category": "table-structure",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "round-trip-sentinels",
+      "format": "hwpx",
+      "category": "package-preservation",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "large-progressive",
+      "format": "hwpx",
+      "category": "large-document",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
+      "id": "invalid-package",
+      "format": "hwpx",
+      "category": "invalid-package",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
+      "id": "synthetic-layout",
+      "format": "hwp",
+      "category": "layout-and-rendering",
+      "pipelines": ["hwp-production"]
+    }
+  ]
+}

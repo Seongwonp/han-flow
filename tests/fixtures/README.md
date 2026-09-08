@@ -1,8 +1,12 @@
 # 문서 fixtures
 
+`public/fixture_catalog.json`은 공개 fixture의 최상위 ID, 형식, category와 실행 pipeline을
+관리한다. HWPX core 7종, production DOM 5종과 고정 HWP 1종은 각 manifest를 이 ID에
+연결하며 `npm run verify:corpus`가 GUI 없이 catalog drift를 먼저 차단한다.
+
 ## Public HWP 5.0 fixture
 
-`public/synthetic-layout.hwp`는 Han-Flow가 직접 작성한 문자열과 Canvas 그림만 넣은 2쪽 합성
+`public/synthetic-layout.hwp`는 Han-Flow가 직접 작성한 문자열과 고정 PNG만 넣은 2쪽 합성
 문서다. 3×3 표, PNG resource 1개, 두 페이지에 반복되는 머리말과 강제 쪽 나누기를 포함한다.
 개인정보와 외부 문서 원문은 없다.
 
@@ -11,14 +15,15 @@
 - 통합 검증: `npm run verify:hwp-matrix`
 
 생성기는 외부 blank HWP 파일을 복사하지 않고 `@rhwp/core`의 `HwpDocument.createEmpty()`에서
-시작한다. serializer 실행 결과는 byte 단위로 결정적이며 manifest의 전체 SHA-256과 비교한다.
+시작한다. 이미지도 OS별 Canvas·글꼴 raster 결과 대신 고정 공개 PNG bytes를 사용한다. serializer
+실행 결과는 byte 단위로 결정적이며 manifest의 전체 SHA-256과 비교한다.
 구조 기대값은 같은 엔진의 자기 검증에만 의존하지 않고 `kordoc` development oracle로도
 표·셀·이미지·resource 수를 교차 검사한다. production 경로에서는 페이지 SVG, 반복 머리말
 검색, 접근성 layer와 PDF 페이지·텍스트 보존을 확인한다. 같은 공개 binary의 FileHeader를
 임시 경로에서만 변형해 암호·배포용·DRM·비지원 version 오류를 만들고, 잘린 CFB로 손상
 오류를 만든다. 변형 fixture는 검증 직후 삭제하며 저장소에는 추가 binary를 남기지 않는다.
 
-fixture의 본문과 Canvas 그림, 생성 스크립트는 Han-Flow Apache-2.0 범위다. HWP 컨테이너
+fixture의 본문과 고정 PNG, 생성 스크립트는 Han-Flow Apache-2.0 범위다. HWP 컨테이너
 직렬화에는 MIT 라이선스의 [`@rhwp/core`](https://github.com/edwardkim/rhwp)를 사용했고
 형식 판정 근거는 [V2 전략의 규격 출처](../../docs/hwp_v2_strategy.md#규격과-보안)에 모았다.
 dependency 고지는 저장소의 `THIRD_PARTY_NOTICES.md`와 패키지 resources에 유지한다.
