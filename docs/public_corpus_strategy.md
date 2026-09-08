@@ -3,7 +3,7 @@
 기준일: 2026-09-08
 
 이 문서는 Sprint 4에서 개인정보 없는 HWP/HWPX 호환성 입력을 30–50개까지 확대하기 위한
-manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. 공개 synthetic HWPX 7종과 고정
+manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. 공개 synthetic HWPX 8종과 고정
 HWP 1종을 `tests/fixtures/public/fixture_catalog.json`의 상위 ID로 묶고, 빠른 core 검증과
 production DOM·HWP 앱/PDF 검증은 독립 pipeline으로 실행한다.
 
@@ -46,6 +46,7 @@ corpus 추가는 catalog, generator 구현, manifest 기대값과 필요 회귀 
 - ZIP timestamp를 제외하고 entry 이름·내용으로 계산한 `contentSha256`
 - container byte 크기
 - section·paragraph·table·cell·resource count
+- marker 문단과 bullet·numbering 문단 count
 - 비공백 문자 **수**와 diagnostic count
 - core `estimatedPages`, fixture별 판정과 실패 이유
 
@@ -60,16 +61,19 @@ corpus 추가는 catalog, generator 구현, manifest 기대값과 필요 회귀 
 | cell-continuation | table-pagination | 긴 cell, 반복 머리글과 뒤쪽 anchor table |
 | images-rowspan | images-and-span | PNG 12개와 `rowSpan` 원점 cell |
 | table-columns | table-structure | 반복 머리글을 포함한 3×3 logical grid |
+| list-markers | lists-and-numbering | 글머리표 2개·DIGIT 번호 2개의 marker 순서 |
 | round-trip-sentinels | package-preservation | unknown XML·binary 보존용 package |
 | large-progressive | large-document | 80개 section과 19,512개 paragraph |
 | invalid-package | invalid-package | 필수 header가 없는 package 거부 |
 
-2026-09-08 기준 7/7이 통과한다. 합계는 section 86개, table 7개, cell 29개, resource 15개와
-core 추정 2,509쪽이다. 독립 두 실행의 JSON SHA-256 일치를 확인했다.
+2026-09-08 기준 8/8이 통과한다. 합계는 section 87개, marker 문단 13개(bullet 5·numbering 8),
+table 7개, cell 29개, resource 15개와 core 추정 2,510쪽이다. 전용 `list-markers` fixture는
+marker 4개(bullet 2·numbering 2)를 exact 값으로 검사한다. 독립 두 JSON report의 SHA-256
+`85F82D921D2EB273D41E7E0208CAB155D51C8261B0BD8698B87D492162AFEB55`가 일치했다.
 
 ## 5. 확대 순서
 
-1. 다단, 각주·수식·목록, 머리말·꼬리말 variant를 공개 synthetic HWPX로 추가한다.
+1. 다단, 각주·수식, 머리말·꼬리말 variant를 지원 구현과 함께 공개 synthetic HWPX로 추가한다.
 2. 실패한 실제 문서는 본문을 복사하지 않고 같은 구조를 재현하는 최소 generator로 축소한다.
 3. 같은 fixture ID의 core 추정과 DOM 실측을 나란히 집계하는 통합 요약을 추가한다.
 4. corpus 30–50개에서 열기 성공률, crash·timeout, 본문 문자 수와 구조 보존률을 집계한다.

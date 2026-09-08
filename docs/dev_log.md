@@ -433,3 +433,19 @@
 
 - 다단·각주·수식·목록 중 decoder가 이미 읽는 구조부터 공개 HWPX fixture를 확장합니다.
 - 같은 ID의 core 추정과 production 실측을 한 report에서 비교하는 통합 요약을 설계합니다.
+
+## [2026-09-08] 글머리표·번호 목록 공개 corpus 확장
+
+### 완료된 작업
+
+1. 다단·각주·수식·목록의 decoder 구조 지원 범위를 다시 확인했습니다.
+2. 이미 marker 모델이 있는 목록만 전용 `list-markers` HWPX fixture로 추가했습니다.
+3. 글머리표 2개, DIGIT 번호 2개의 marker 순서와 heading 정의를 Jest로 검증했습니다.
+4. corpus report에 marker·bullet·numbering 문단 지표와 합계를 추가했습니다.
+5. 공개 HWPX 8/8과 독립 report SHA-256 일치를 확인했습니다.
+6. 다단·각주·수식은 구조 모델 없이 열기 성공만 기록하지 않도록 fixture 추가를 보류했습니다.
+
+### 다음 시작점
+
+- 다단 section layout을 ViewerDocument에 표현할 최소 read-only 모델과 loss 진단을 설계합니다.
+- 각주·수식은 원문 구조 보존과 화면 fallback 요구를 먼저 문서화한 뒤 fixture를 추가합니다.

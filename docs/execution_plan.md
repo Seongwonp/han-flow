@@ -603,7 +603,8 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 4. [x] 같은 입력의 JSON report가 byte-for-byte 재현되는지 독립 두 실행으로 확인한다.
 5. [x] `npm run verify:corpus`를 Windows CI의 빠른 core 관문에 연결한다.
 6. [x] 고정 HWP와 production DOM matrix를 같은 fixture ID catalog에 연결한다.
-7. [ ] 다단·각주·수식·목록 fixture를 추가하고 30–50개까지 단계적으로 확대한다.
+7. [x] 글머리표·번호 목록 marker 전용 fixture와 exact 구조 지표를 추가한다.
+8. [ ] 다단·각주·수식 fixture를 지원 구현과 함께 추가하고 30–50개까지 단계적으로 확대한다.
 
 core `estimatedPages`는 실제 글꼴·DOM 측정 기반 production 페이지 수와 별도 지표다. 자세한
 추가 규칙과 개인정보 계약은 [공개 호환성 corpus 전략](public_corpus_strategy.md)을 따른다.

@@ -8,7 +8,7 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createCellFragmentHwpx, createCompatibilityHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
@@ -23,6 +23,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
   })
   const cellFragmentFixture = createCellFragmentHwpx(directory)
   const compatibilityFixture = createCompatibilityHwpx(directory)
+  const listMarkerFixture = createListMarkerHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -153,5 +154,29 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     expect(table.rows).toHaveLength(3)
     expect(table.rows[1].cells[0]).toMatchObject({ row: 1, column: 0, rowSpan: 2, columnSpan: 1 })
     expect(table.rows[2].cells[0]).toMatchObject({ row: 2, column: 1, rowSpan: 1, columnSpan: 1 })
+  })
+
+  test('글머리표와 번호 목록 marker를 문단 순서대로 투영한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(listMarkerFixture))
+    expect(document.sections[0].blocks.map((paragraph) => paragraph.marker)).toEqual([
+      undefined,
+      '-',
+      '-',
+      '1.',
+      '2.'
+    ])
+    expect(document.paraStyles['1'].heading).toMatchObject({
+      type: 'BULLET',
+      idRef: '1',
+      level: 0,
+      bullet: '-'
+    })
+    expect(document.paraStyles['2'].heading).toMatchObject({
+      type: 'NUMBER',
+      idRef: '1',
+      level: 0,
+      numberPattern: '^1.',
+      numberFormat: 'DIGIT'
+    })
   })
 })

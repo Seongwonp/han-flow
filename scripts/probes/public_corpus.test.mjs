@@ -60,7 +60,16 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
     outcome: 'opened',
     contentSha256: 'abc',
     sizeBytes: 100,
-    metrics: { sections: 2, tables: 1, cells: 4, resources: 1, estimatedPages: 3 }
+    metrics: {
+      sections: 2,
+      tables: 1,
+      cells: 4,
+      resources: 1,
+      markedParagraphs: 4,
+      bulletParagraphs: 2,
+      numberedParagraphs: 2,
+      estimatedPages: 3
+    }
   }])
   assert.equal(report.passed, true)
   assert.deepEqual(report.totals, {
@@ -69,6 +78,9 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
     tables: 1,
     cells: 4,
     resources: 1,
+    markedParagraphs: 4,
+    bulletParagraphs: 2,
+    numberedParagraphs: 2,
     estimatedPages: 3
   })
   assert.equal(JSON.stringify(report).includes('본문'), false)

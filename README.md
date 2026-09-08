@@ -104,10 +104,10 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 
 | 관문 | 결과 |
 | --- | ---: |
-| Jest | 37 suites, 223 passed, 2 suites·11 tests skipped |
+| Jest | 37 suites, 224 passed, 2 suites·11 tests skipped |
 | parser probe | 14 passed |
-| public HWPX corpus | 7/7, 86 sections·7 tables·29 cells·15 resources |
-| public fixture catalog | HWPX 7종·HWP 1종, core/production/HWP pipeline ID 연결 |
+| public HWPX corpus | 8/8, 87 sections·13 list markers·7 tables·29 cells·15 resources |
+| public fixture catalog | HWPX 8종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | production build | main/preload/renderer 성공 |
 | Windows 표 구조 package E2E | 행·열 추가/삭제, 병합·분할, undo/redo·Save As·재개봉 통과 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |

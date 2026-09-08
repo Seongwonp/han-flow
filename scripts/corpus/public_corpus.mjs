@@ -3,11 +3,21 @@ const GENERATORS = new Set([
   'createCellFragmentHwpx',
   'createCompatibilityHwpx',
   'createTableColumnHwpx',
+  'createListMarkerHwpx',
   'createRoundTripHwpx',
   'createInvalidHwpx'
 ])
 
-const EXACT_METRICS = ['sections', 'tables', 'cells', 'resources', 'estimatedPages']
+const EXACT_METRICS = [
+  'sections',
+  'tables',
+  'cells',
+  'resources',
+  'markedParagraphs',
+  'bulletParagraphs',
+  'numberedParagraphs',
+  'estimatedPages'
+]
 
 export function generateCorpusFixture(generator, directory, fixture) {
   const create = generator[fixture.generator]
@@ -58,6 +68,9 @@ export function summarizeViewerDocument(document, estimatedPages) {
     tables: 0,
     cells: 0,
     resources: Object.keys(document.resources).length,
+    markedParagraphs: 0,
+    bulletParagraphs: 0,
+    numberedParagraphs: 0,
     nonWhitespaceCharacters: 0,
     diagnostics: document.diagnostics.length,
     estimatedPages
@@ -65,6 +78,10 @@ export function summarizeViewerDocument(document, estimatedPages) {
   const visitParagraphs = (paragraphs) => {
     for (const paragraph of paragraphs) {
       summary.paragraphs += 1
+      const headingType = document.paraStyles[paragraph.paraStyleId]?.heading?.type
+      if (paragraph.marker !== undefined) summary.markedParagraphs += 1
+      if (headingType === 'BULLET') summary.bulletParagraphs += 1
+      if (headingType === 'NUMBER') summary.numberedParagraphs += 1
       for (const item of paragraph.content) {
         if (item.type === 'text') {
           summary.nonWhitespaceCharacters += (item.text.match(/\S/gu) ?? []).length
@@ -141,6 +158,9 @@ export function createCorpusReport(manifest, observations) {
       tables: opened.reduce((sum, fixture) => sum + (fixture.metrics?.tables ?? 0), 0),
       cells: opened.reduce((sum, fixture) => sum + (fixture.metrics?.cells ?? 0), 0),
       resources: opened.reduce((sum, fixture) => sum + (fixture.metrics?.resources ?? 0), 0),
+      markedParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.markedParagraphs ?? 0), 0),
+      bulletParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.bulletParagraphs ?? 0), 0),
+      numberedParagraphs: opened.reduce((sum, fixture) => sum + (fixture.metrics?.numberedParagraphs ?? 0), 0),
       estimatedPages: opened.reduce((sum, fixture) => sum + (fixture.metrics?.estimatedPages ?? 0), 0)
     },
     passed: fixtures.every((fixture) => fixture.passed),

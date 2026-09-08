@@ -1,7 +1,7 @@
 # 문서 fixtures
 
 `public/fixture_catalog.json`은 공개 fixture의 최상위 ID, 형식, category와 실행 pipeline을
-관리한다. HWPX core 7종, production DOM 5종과 고정 HWP 1종은 각 manifest를 이 ID에
+관리한다. HWPX core 8종, production DOM 5종과 고정 HWP 1종은 각 manifest를 이 ID에
 연결하며 `npm run verify:corpus`가 GUI 없이 catalog drift를 먼저 차단한다.
 
 ## Public HWP 5.0 fixture
@@ -49,6 +49,10 @@ Git에 커밋하지 않는다.
 생성한다. 직접 작성한 최소 XML과 1×1 PNG만 사용하므로 개인정보나 제3자 문서 저작권에
 의존하지 않는다. section 숫자 정렬, 혼합 콘텐츠 순서, 스타일, 이미지 resource, 표의
 행 분할과 반복 header를 private 파일 없이 항상 검증한다.
+
+`createListMarkerHwpx`는 일반 문단 뒤에 글머리표 2개와 DIGIT 번호 문단 2개를 만든다. core
+corpus는 marker 총 4개, bullet 2개와 numbering 2개를 exact 값으로 검사해 목록 정의가 단순
+본문으로만 열리거나 번호 순서가 사라지는 회귀를 차단한다.
 
 같은 생성기의 `createCellFragmentHwpx`는 반복 header 아래 한 셀에 15개 문단을 넣고,
 그 뒤에 별도 앵커 표를 둔다. 측정 pagination에서 장문 셀이 head/tail continuation 행으로

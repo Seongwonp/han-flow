@@ -8,6 +8,19 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-08 — 글머리표·번호 목록 공개 corpus 확장
+
+현재 decoder가 `ViewerHeadingStyle`과 paragraph `marker`로 실제 보존하는 목록 구조를 전용 공개
+HWPX로 분리했다. `list-markers`는 일반 문단, 글머리표 2개와 DIGIT 번호 2개를 포함하며 Jest는
+marker 순서 `없음, -, -, 1., 2.`와 bullet·numbering heading 정의를 확인한다. corpus manifest는
+marker 4개, bullet 2개와 numbering 2개를 exact 값으로 판정한다.
+
+확장된 HWPX 8종이 모두 통과했다. 합계는 109,893 bytes, section 87개, marker 문단 13개
+(bullet 5·numbering 8), table 7개, cell 29개, resource 15개와 core 추정 2,510쪽이다. 독립 두
+JSON report의 SHA-256은
+`85F82D921D2EB273D41E7E0208CAB155D51C8261B0BD8698B87D492162AFEB55`로 일치했다. 다단·각주·수식은
+현재 전용 document model이 없어 열기 성공만으로 구조 보존을 주장하지 않고 후속 구현으로 남겼다.
+
 ## 2026-09-08 — 공개 fixture 상위 catalog와 Windows HWP 결정성 복구
 
 `fixture_catalog.json`에 HWPX 7종과 HWP 1종의 ID·형식·category·실행 pipeline을 통합했다.

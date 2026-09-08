@@ -31,6 +31,23 @@
       "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 9, "resources": 0, "estimatedPages": 1 }
     },
     {
+      "id": "list-markers",
+      "category": "lists-and-numbering",
+      "generator": "createListMarkerHwpx",
+      "fileName": "list-markers.hwpx",
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 4,
+        "bulletParagraphs": 2,
+        "numberedParagraphs": 2,
+        "estimatedPages": 1
+      }
+    },
+    {
       "id": "round-trip-sentinels",
       "category": "package-preservation",
       "generator": "createRoundTripHwpx",

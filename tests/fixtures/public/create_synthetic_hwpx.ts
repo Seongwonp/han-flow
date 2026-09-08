@@ -40,6 +40,15 @@ const columnTableSection = `<?xml version="1.0" encoding="UTF-8"?>
   </hp:tbl></hp:run></hp:p>
 </hs:sec>`
 
+const listMarkerSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="12000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:t>목록 구조 회귀</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="2" paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>글머리표 첫 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="1000" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="3" paraPrIDRef="1"><hp:run charPrIDRef="0"><hp:t>글머리표 둘째 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="2000" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="4" paraPrIDRef="2"><hp:run charPrIDRef="0"><hp:t>번호 첫 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="3000" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="5" paraPrIDRef="2"><hp:run charPrIDRef="0"><hp:t>번호 둘째 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="4000" vertsize="1000"/></hp:linesegarray></hp:p>
+</hs:sec>`
+
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
 const HWPX_MIMETYPE = 'application/hwp+zip'
 
@@ -145,6 +154,16 @@ export function createTableColumnHwpx(directory: string, fileName = 'han-flow-ta
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(columnTableSection))
+  zip.writeZip(path)
+  return path
+}
+
+export function createListMarkerHwpx(directory: string, fileName = 'han-flow-list-markers.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(listMarkerSection))
   zip.writeZip(path)
   return path
 }
