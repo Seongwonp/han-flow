@@ -49,10 +49,21 @@ const listMarkerSection = `<?xml version="1.0" encoding="UTF-8"?>
   <hp:p id="5" paraPrIDRef="2"><hp:run charPrIDRef="0"><hp:t>번호 둘째 항목</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="4000" vertsize="1000"/></hp:linesegarray></hp:p>
 </hs:sec>`
 
+const multiColumnBody = [
+  ['2', '3000', '두 단 문서의 둘째 문단', '0'],
+  ['3', '6000', '명시적 단 나눔 뒤 첫 문단', '1'],
+  ['4', '9000', '오른쪽 단 둘째 문단', '0'],
+  ['5', '12000', '오른쪽 단 셋째 문단', '0'],
+  ['6', '15000', '둘째 페이지 첫 문단', '0'],
+  ['7', '18000', '둘째 페이지 둘째 문단', '0']
+].map(([id, top, text, columnBreak]) =>
+  `<hp:p id="${id}" paraPrIDRef="0" columnBreak="${columnBreak}"><hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="${top}" vertsize="3000"/></hp:linesegarray></hp:p>`
+).join('\n  ')
+
 const multiColumnSection = `<?xml version="1.0" encoding="UTF-8"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
-  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="12000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr id="columns-2" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="600"/></hp:ctrl><hp:t>두 단 문서의 첫 문단</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
-  <hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>두 단 문서의 둘째 문단</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="1000" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="30000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:ctrl><hp:colPr id="columns-2" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="600"/></hp:ctrl><hp:t>두 단 문서의 첫 문단</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="3000"/></hp:linesegarray></hp:p>
+  ${multiColumnBody}
 </hs:sec>`
 
 const transparentPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+X4nHCwAAAABJRU5ErkJggg==', 'base64')
@@ -180,6 +191,16 @@ export function createMultiColumnHwpx(directory: string, fileName = 'han-flow-mu
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(multiColumnSection))
+  zip.writeZip(path)
+  return path
+}
+
+export function createMultiColumnFallbackHwpx(directory: string, fileName = 'han-flow-multi-column-fallback.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(multiColumnSection.replace('type="NEWSPAPER"', 'type="PARALLEL"')))
   zip.writeZip(path)
   return path
 }

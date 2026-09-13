@@ -1,7 +1,7 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { paginateDocument, paginateViewerDocument } from '../../src/core/layout/pagination'
-import { ViewerDocument, ViewerParagraph, ViewerTableRow } from '../../src/core/document/viewer_document'
+import { viewerColumnContentWidth, ViewerDocument, ViewerParagraph, ViewerTableRow } from '../../src/core/document/viewer_document'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 
@@ -9,6 +9,17 @@ const fixture = resolve(__dirname, '../fixtures/private/m1-weekly.hwpx')
 const privateTest = existsSync(fixture) ? test : test.skip
 
 describe('AIDA block pagination', () => {
+  test('동일 너비 다단의 실측 폭에서 공통 간격을 제외한다', () => {
+    expect(viewerColumnContentWidth(10000, {
+      type: 'NEWSPAPER',
+      layout: 'LEFT',
+      count: 2,
+      sameSize: true,
+      sameGap: 600,
+      columns: []
+    })).toBe(4700)
+  })
+
   privateTest('페이지 경계 표를 행 단위로 나눠 8페이지를 구성한다', async () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
     const pages = paginateDocument(document)

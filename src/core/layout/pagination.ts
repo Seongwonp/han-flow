@@ -1,8 +1,10 @@
-import { ViewerDocument, ViewerParagraph, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { supportsViewerColumnFlow, ViewerColumnLayout, ViewerDocument, ViewerParagraph, ViewerTable, ViewerTableRow } from '../document/viewer_document'
 import { cellOccupiedHeight, findSplittableCell, ParagraphHeights, tableSupportsCellSplitting } from './cell_fragment'
 
 export interface ViewerPage {
   blocks: ViewerParagraph[]
+  columns?: ViewerParagraph[][]
+  columnLayout?: ViewerColumnLayout
   sectionIndex: number
   sectionPageIndex: number
 }
@@ -123,36 +125,67 @@ export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] 
 export function paginateViewerDocument(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
   const pages: ViewerPage[] = []
   const availableHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
-  let current: ViewerParagraph[] = []
+  let activeColumnLayout: ViewerColumnLayout | undefined
+  let columnCount = 1
+  let currentColumns: ViewerParagraph[][] = [[]]
+  let columnIndex = 0
   let usedHeight = 0
   let currentSectionIndex = 0
   let sectionPageIndex = 0
   let previousLayoutTop: number | undefined
   let previousBlockFragmented = false
+  const currentColumn = () => currentColumns[columnIndex]
+  const resetPage = () => {
+    currentColumns = Array.from({ length: columnCount }, () => [])
+    columnIndex = 0
+    usedHeight = 0
+  }
   const flush = () => {
-    if (current.length) {
-      pages.push({ blocks: current, sectionIndex: currentSectionIndex, sectionPageIndex })
+    const blocks = currentColumns.flat()
+    if (blocks.length) {
+      pages.push({
+        blocks,
+        ...(activeColumnLayout ? {
+          columns: currentColumns.map((column) => [...column]),
+          columnLayout: activeColumnLayout
+        } : {}),
+        sectionIndex: currentSectionIndex,
+        sectionPageIndex
+      })
       sectionPageIndex += 1
     }
-    current = []
-    usedHeight = 0
+    resetPage()
+  }
+  const advanceFlow = () => {
+    if (columnIndex + 1 < columnCount) {
+      columnIndex += 1
+      usedHeight = 0
+    } else {
+      flush()
+    }
+    previousLayoutTop = undefined
   }
 
   document.sections.forEach((section, sectionIndex) => {
     if (sectionIndex > 0) flush()
     currentSectionIndex = sectionIndex
     sectionPageIndex = 0
+    activeColumnLayout = supportsViewerColumnFlow(section.columnLayout) ? section.columnLayout : undefined
+    columnCount = activeColumnLayout?.count ?? 1
+    resetPage()
     previousLayoutTop = undefined
     previousBlockFragmented = false
     section.blocks.forEach((originalBlock) => {
-      const sourcePageRestart = Boolean(measurements && !previousBlockFragmented && current.length && originalBlock.layoutTop !== undefined && previousLayoutTop !== undefined && originalBlock.layoutTop < previousLayoutTop)
-      if (originalBlock.pageBreak || sourcePageRestart) flush()
+      const sourceFlowRestart = Boolean(measurements && !previousBlockFragmented && currentColumn().length && originalBlock.layoutTop !== undefined && previousLayoutTop !== undefined && originalBlock.layoutTop < previousLayoutTop)
+      if (originalBlock.pageBreak) flush()
+      else if ((originalBlock.columnBreak || sourceFlowRestart) && activeColumnLayout) advanceFlow()
+      else if (sourceFlowRestart) flush()
       const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight, availableHeight, measurements)
       fragments.forEach((block, fragmentIndex) => {
         const measuredHeight = measurements?.blockHeights[block.id]
         const height = measuredHeight ?? block.layoutHeight
-        if (fragmentIndex > 0 || (current.length && height > 0 && usedHeight + height > availableHeight)) flush()
-        current.push(block)
+        if (fragmentIndex > 0 || (currentColumn().length && height > 0 && usedHeight + height > availableHeight)) advanceFlow()
+        currentColumn().push(block)
         usedHeight += height
       })
       previousBlockFragmented = fragments.length > 1

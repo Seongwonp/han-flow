@@ -1,6 +1,7 @@
 import { createElement, createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import {
+  ViewerColumnFlow,
   ViewerPageStack,
   ViewerStage,
   ViewerStatusBar
@@ -233,5 +234,21 @@ describe('viewer shell components', () => {
     expect(markup).toContain('data-total-pages="80"')
     expect(markup.match(/viewer-page-spacer/g)).toHaveLength(2)
     expect(markup).toContain('scale(1.5)')
+  })
+
+  test('동일 너비 다단을 순서와 간격이 있는 grid로 렌더링한다', () => {
+    const markup = renderToStaticMarkup(createElement(ViewerColumnFlow, {
+      gap: 8,
+      columns: [
+        [createElement('p', { key: 'left' }, '왼쪽')],
+        [createElement('p', { key: 'right' }, '오른쪽')]
+      ]
+    }))
+
+    expect(markup).toContain('viewer-column-flow')
+    expect(markup).toContain('data-column-count="2"')
+    expect(markup).toContain('grid-template-columns:repeat(2, minmax(0, 1fr))')
+    expect(markup).toContain('column-gap:8px')
+    expect(markup.indexOf('왼쪽')).toBeLessThan(markup.indexOf('오른쪽'))
   })
 })

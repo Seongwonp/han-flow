@@ -465,3 +465,20 @@
 
 - 다단 흐름 조판 전에 페이지·단·문단의 진행 순서와 column break 모델을 설계합니다.
 - 각주·수식은 원문 구조 모델과 안전한 화면 fallback을 먼저 추가한 뒤 전용 fixture로 고정합니다.
+
+## [2026-09-13] 동일 너비 HWPX 다단 흐름 조판
+
+### 완료된 작업
+
+1. 문단의 `columnBreak`를 보존하고 왼쪽 단→오른쪽 단→다음 페이지 진행 순서를 구현했습니다.
+2. `ViewerPage`에 단별 block을 추가하면서 기존 flat block 소비자 호환성을 유지했습니다.
+3. 본문 폭에서 공통 단 간격을 제외한 실제 단 폭으로 DOM 높이를 다시 측정했습니다.
+4. 동일 너비 `NEWSPAPER/LEFT`만 지원하고 나머지 유형의 fallback diagnostic을 유지했습니다.
+5. 명시적 단 나눔·자동 높이 전환·CSS grid·비지원 유형 회귀 테스트를 추가했습니다.
+6. 공개 core corpus 9/9와 독립 report hash 일치를 확인했습니다.
+7. Windows x64 package의 production matrix 6종에서 2단 DOM·양쪽 본문·overflow 0을 확인했습니다.
+
+### 다음 시작점
+
+- `RIGHT`·`MIRROR`의 단 순서와 비동일 너비 grid·간격 표현을 별도 fixture로 설계합니다.
+- 각주·미주와 수식의 원문 구조 모델 및 화면 fallback을 우선순위대로 추가합니다.

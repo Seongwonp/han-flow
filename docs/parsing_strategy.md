@@ -84,8 +84,10 @@ header/footer 및 표 cell 문단에 같은 방식으로 적용한다.
 
 구역 문단의 `hp:colPr`은 type, layout, `colCount`, `sameSz`, `sameGap`과 개별 `hp:col`
 width·gap을 읽어 `ViewerSection.columnLayout`으로 보존한다. 단 개수는 1~16의 안전한 정수만
-허용한다. 현재 조판기는 다단 흐름을 계산하지 않으므로 2단 이상은 단일 흐름으로 표시하고
-안정적인 loss diagnostic을 함께 반환한다. 이는 열기 성공을 다단 시각 충실도로 오인하지 않게 한다.
+허용한다. 동일 너비 `NEWSPAPER/LEFT`는 문단의 `columnBreak`와 단 높이를 사용해 왼쪽 단,
+오른쪽 단, 다음 페이지 순으로 배치한다. renderer 실측 폭은 본문 폭에서 공통 간격을 뺀 뒤 단 수로
+나누므로 좁은 단의 줄바꿈 높이도 pagination에 반영된다. `PARALLEL`, `RIGHT`·`MIRROR`와 서로 다른
+너비는 단일 흐름으로 표시하고 안정적인 loss diagnostic을 반환한다.
 
 ## 4. 대형 문서
 

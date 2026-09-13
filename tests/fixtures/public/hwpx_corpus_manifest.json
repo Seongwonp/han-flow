@@ -58,10 +58,10 @@
         "tables": 0,
         "cells": 0,
         "resources": 0,
-        "diagnostics": 1,
+        "diagnostics": 0,
         "multiColumnSections": 1,
         "declaredColumns": 2,
-        "estimatedPages": 1
+        "estimatedPages": 2
       }
     },
     {

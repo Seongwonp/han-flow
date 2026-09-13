@@ -605,7 +605,8 @@ package나 main API를 직접 읽지 않는다. toolbar callback과 page stack m
 6. [x] 고정 HWP와 production DOM matrix를 같은 fixture ID catalog에 연결한다.
 7. [x] 글머리표·번호 목록 marker 전용 fixture와 exact 구조 지표를 추가한다.
 8. [x] 다단 section의 읽기 전용 모델·fallback diagnostic과 전용 fixture를 추가한다.
-9. [ ] 실제 다단 흐름 조판과 각주·수식 fixture를 추가하고 30–50개까지 단계적으로 확대한다.
+9. [x] 동일 너비 `NEWSPAPER/LEFT`의 column break·높이 기반 단별 흐름과 production DOM 관문을 추가한다.
+10. [ ] `RIGHT`·`MIRROR`·비동일 너비 다단과 각주·수식 fixture를 추가하고 30–50개까지 확대한다.
 
 core `estimatedPages`는 실제 글꼴·DOM 측정 기반 production 페이지 수와 별도 지표다. 자세한
 추가 규칙과 개인정보 계약은 [공개 호환성 corpus 전략](public_corpus_strategy.md)을 따른다.

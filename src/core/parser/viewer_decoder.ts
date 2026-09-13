@@ -1,4 +1,4 @@
-import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
@@ -69,7 +69,15 @@ function decodeParagraph(node: OrderedXmlNode, id: string, sectionPath?: string)
   )
   const layoutHeight = Math.max(measuredLayoutHeight, tableLayoutHeight)
   const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
-  return { id, paraStyleId: node.attributes.paraPrIDRef ?? '0', pageBreak: node.attributes.pageBreak === '1', layoutTop, layoutHeight, content }
+  return {
+    id,
+    paraStyleId: node.attributes.paraPrIDRef ?? '0',
+    pageBreak: node.attributes.pageBreak === '1',
+    ...(node.attributes.columnBreak === '1' ? { columnBreak: true } : {}),
+    layoutTop,
+    layoutHeight,
+    content
+  }
 }
 
 function decodeImage(node: OrderedXmlNode): ViewerImage {
@@ -166,7 +174,7 @@ function decodeColumnLayout(
     }))
   }
   const diagnostics: ViewerDiagnostic[] = []
-  if (count > 1) {
+  if (count > 1 && !supportsViewerColumnFlow(columnLayout)) {
     diagnostics.push({
       source,
       code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK',

@@ -173,10 +173,12 @@ fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규�
 
 구역의 `hp:colPr`은 `ViewerSection.columnLayout`에 type, layout, 단 개수, 동일 너비 여부,
 공통 간격과 개별 단 너비·간격으로 정규화한다. 잘못된 단 개수는 모델에 넣지 않고 안정적인
-`HWPX_INVALID_COLUMN_LAYOUT` diagnostic을 남긴다. 2단 이상은 메타데이터를 보존하되 현재
-pagination이 단별 흐름을 계산하지 않으므로 `HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`을 남기고
-단일 본문 흐름으로 표시한다. 서로 다른 너비 선언 수가 단 개수와 다르면 별도 incomplete 진단을
-추가해 구조 손실을 숨기지 않는다.
+`HWPX_INVALID_COLUMN_LAYOUT` diagnostic을 남긴다. 동일 너비 `NEWSPAPER/LEFT`는 문단의
+`columnBreak`, 단별 가용 높이와 source/DOM 측정 높이로 왼쪽 단→오른쪽 단→다음 페이지 순서의
+`ViewerPage.columns`를 만든다. renderer 측정 폭도 `(본문 폭 - 전체 단 간격) / 단 수`로 계산하고
+CSS grid에 같은 간격을 사용한다. 지원하지 않는 `PARALLEL`, `RIGHT`·`MIRROR`와 비동일 너비는
+`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`을 남기고 단일 흐름으로 표시한다. 서로 다른 너비 선언 수가
+단 개수와 다르면 별도 incomplete 진단을 추가해 구조 손실을 숨기지 않는다.
 
 표 편집 capability는 병합·rowSpan·columnSpan·반복 머리글·pagination fragment를 제외한 body
 cell에서만 열린다. cell에 여러 문단이 있어도 각 문단이 source anchor 하나를 가진 단일 text

@@ -59,6 +59,8 @@ button { font: inherit; }
 .viewer-pages-virtualized { gap: 24px; }
 .viewer-page-spacer { flex: none; width: 1px; }
 .viewer-page { position: relative; flex: none; background: white; box-shadow: 0 5px 24px rgba(20,25,35,.22); overflow: hidden; color: #111; }
+.viewer-column-flow { display: grid; align-items: start; width: 100%; }
+.viewer-column { min-width: 0; }
 .viewer-fixed-page { padding: 0; }
 .viewer-fixed-page-search-active { outline: 3px solid rgba(51,94,234,.78); outline-offset: 3px; }
 .viewer-fixed-page-image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; user-select: none; pointer-events: none; }

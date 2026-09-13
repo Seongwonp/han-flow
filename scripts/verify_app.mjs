@@ -215,6 +215,8 @@ try {
     mountedPages: state.mountedPages,
     imageCount: state.images.length,
     overflowPages: state.overflowPages,
+    columnCounts: state.columnCounts,
+    columnTextCounts: state.columnTextCounts,
     errorCode: expectedError ? state.errorCode : undefined,
     pageTextCounts: state.pageTextCounts,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,

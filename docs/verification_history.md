@@ -8,6 +8,21 @@
 페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
 
+## 2026-09-13 — 동일 너비 HWPX 다단 흐름과 Windows production 검증
+
+`hp:p columnBreak="1"`을 문단 모델에 보존하고 동일 너비 `NEWSPAPER/LEFT` 구역을 왼쪽 단,
+오른쪽 단, 다음 페이지 순서로 나누는 pagination을 구현했다. 각 페이지는 기존 호환용 flat block과
+단별 block을 함께 가지며 renderer는 공통 간격의 CSS grid로 표시한다. 실측 layer도 단 폭으로
+문단을 다시 측정해 좁은 단의 줄바꿈 높이가 페이지 계산에서 빠지지 않게 했다. 지원하지 않는
+`PARALLEL` 변형은 기존 fallback diagnostic과 단일 흐름을 유지한다.
+
+공개 core corpus 9/9는 111,424 bytes, section 88개, 다단 section 1개·선언 단 2개·diagnostic
+0개와 추정 2,512쪽을 통과했다. 독립 report SHA-256은
+`10A806F944CFF272584AD3CFF260E5165CE2AE695AFBC42BC51828C2500F8A79`로 일치했다. 새 Windows
+x64 package의 production matrix 6종도 통과했다. 다단 fixture는 DOM 실측 1쪽에 단 2개,
+양쪽 비공백 문자 17·43개, overflow 0을 기록했다. 첫 production 시도에서 지나치게 좁은 synthetic
+용지가 만든 실제 줄바꿈 overflow를 발견해, 단 폭 실측 구현과 현실적인 fixture 폭으로 수정했다.
+
 ## 2026-09-08 — 다단 레이아웃 읽기 전용 모델과 손실 진단
 
 HWPX `hp:colPr`의 type·layout·단 개수·동일 너비·공통 간격과 개별 단 정의를

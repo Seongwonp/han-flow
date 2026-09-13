@@ -1,6 +1,6 @@
 # 공개 호환성 corpus 전략
 
-기준일: 2026-09-08
+기준일: 2026-09-13
 
 이 문서는 Sprint 4에서 개인정보 없는 HWP/HWPX 호환성 입력을 30–50개까지 확대하기 위한
 manifest, 자동 판정, 지표와 개인정보 보호 계약을 정의한다. 공개 synthetic HWPX 9종과 고정
@@ -62,20 +62,22 @@ corpus 추가는 catalog, generator 구현, manifest 기대값과 필요 회귀 
 | images-rowspan | images-and-span | PNG 12개와 `rowSpan` 원점 cell |
 | table-columns | table-structure | 반복 머리글을 포함한 3×3 logical grid |
 | list-markers | lists-and-numbering | 글머리표 2개·DIGIT 번호 2개의 marker 순서 |
-| multi-column-layout | multi-column-layout | 2단 속성 보존과 단일 흐름 fallback diagnostic |
+| multi-column-layout | multi-column-layout | 명시적 단 나눔·높이 기반 2단 흐름과 DOM grid |
 | round-trip-sentinels | package-preservation | unknown XML·binary 보존용 package |
 | large-progressive | large-document | 80개 section과 19,512개 paragraph |
 | invalid-package | invalid-package | 필수 header가 없는 package 거부 |
 
-2026-09-08 기준 9/9가 통과한다. 합계는 section 88개, marker 문단 13개(bullet 5·numbering 8),
-다단 section 1개·선언 단 2개·diagnostic 1개, table 7개, cell 29개, resource 15개와 core 추정
-2,511쪽이다. 전용 `list-markers` fixture는 marker 4개를, `multi-column-layout`은 2단 선언과
-fallback diagnostic 1건을 exact 값으로 검사한다. 독립 두 JSON report의 SHA-256
-`7D33EC615F203271AE1E34C8D230C1A3D9F029592C17C7FC28C83EDE18F314FF`가 일치했다.
+2026-09-13 기준 9/9가 통과한다. 합계는 111,424 bytes, section 88개, marker 문단 13개
+(bullet 5·numbering 8), 다단 section 1개·선언 단 2개·diagnostic 0개, table 7개, cell 29개,
+resource 15개와 core 추정 2,512쪽이다. `multi-column-layout`은 명시적 `columnBreak`, 자동 높이
+전환과 2쪽 단 순서를 검사한다. 독립 두 JSON report의 SHA-256
+`10A806F944CFF272584AD3CFF260E5165CE2AE695AFBC42BC51828C2500F8A79`가 일치했다. Windows
+production matrix 6종도 통과했고 이 fixture의 DOM 실측은 1쪽, 단 2개, 양쪽 비공백 문자
+17·43개와 overflow 0이었다. core 추정과 DOM 실측 페이지 수는 의미가 달라 별도로 기록한다.
 
 ## 5. 확대 순서
 
-1. 실제 다단 흐름 조판, 각주·수식, 머리말·꼬리말 variant를 지원 구현과 함께 추가한다.
+1. `RIGHT`·`MIRROR`·비동일 너비 다단, 각주·수식과 머리말·꼬리말 variant를 추가한다.
 2. 실패한 실제 문서는 본문을 복사하지 않고 같은 구조를 재현하는 최소 generator로 축소한다.
 3. 같은 fixture ID의 core 추정과 DOM 실측을 나란히 집계하는 통합 요약을 추가한다.
 4. corpus 30–50개에서 열기 성공률, crash·timeout, 본문 문자 수와 구조 보존률을 집계한다.

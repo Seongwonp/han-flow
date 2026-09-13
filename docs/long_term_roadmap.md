@@ -152,7 +152,8 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [x] 고정 HWP matrix를 동일한 상위 corpus catalog ID에 연결
 - [x] 글머리표·번호 목록 marker 전용 variant와 exact count 관문
 - [x] 다단 읽기 전용 모델·fallback diagnostic 전용 variant
-- [ ] 실제 다단 흐름 조판·각주·수식과 머리말·꼬리말 전용 variant 확장
+- [x] 동일 너비 `NEWSPAPER/LEFT`의 단별 흐름·column break·production DOM 관문
+- [ ] 나머지 다단 유형·각주·수식과 머리말·꼬리말 전용 variant 확장
 - [x] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
 - [ ] 개인정보 없는 공개 corpus 30–50개 확보
 

@@ -8,7 +8,7 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createMultiColumnHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createMultiColumnFallbackHwpx, createMultiColumnHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
@@ -25,6 +25,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
   const compatibilityFixture = createCompatibilityHwpx(directory)
   const listMarkerFixture = createListMarkerHwpx(directory)
   const multiColumnFixture = createMultiColumnHwpx(directory)
+  const multiColumnFallbackFixture = createMultiColumnFallbackHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -181,7 +182,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     })
   })
 
-  test('다단 속성을 보존하고 단일 흐름 fallback 손실을 진단한다', async () => {
+  test('동일 너비 신문형 다단을 왼쪽에서 오른쪽 단 순서로 조판한다', async () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(multiColumnFixture))
     expect(document.sections[0].columnLayout).toEqual({
       type: 'NEWSPAPER',
@@ -191,14 +192,25 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
       sameGap: 600,
       columns: []
     })
-    expect(document.sections[0].blocks.flatMap((paragraph) => paragraph.content)).toEqual([
-      expect.objectContaining({ type: 'text', text: '두 단 문서의 첫 문단' }),
-      expect.objectContaining({ type: 'text', text: '두 단 문서의 둘째 문단' })
+    expect(document.sections[0].blocks[2]).toMatchObject({ columnBreak: true })
+    expect(document.diagnostics).toEqual([])
+    const pages = paginateViewerDocument(document)
+    expect(pages.map((page) => page.columns?.map((column) => column.map(({ id }) => id)))).toEqual([
+      [['s0:p0', 's0:p1'], ['s0:p2', 's0:p3', 's0:p4']],
+      [['s0:p5', 's0:p6'], []]
     ])
+    expect(pages.map((page) => page.blocks.map(({ id }) => id))).toEqual([
+      ['s0:p0', 's0:p1', 's0:p2', 's0:p3', 's0:p4'],
+      ['s0:p5', 's0:p6']
+    ])
+  })
+
+  test('지원하지 않는 다단 흐름 유형은 단일 흐름 fallback을 계속 진단한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(multiColumnFallbackFixture))
     expect(document.diagnostics).toEqual([expect.objectContaining({
       source: 'Contents/section0.xml',
       code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK'
     })])
-    expect(paginateViewerDocument(document)).toHaveLength(1)
+    expect(paginateViewerDocument(document).every((page) => page.columns === undefined)).toBe(true)
   })
 })

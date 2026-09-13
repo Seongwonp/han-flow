@@ -81,6 +81,23 @@ export function ViewerPageStack({
   </div>
 }
 
+interface ViewerColumnFlowProps {
+  gap: number
+  columns: ReactNode[][]
+}
+
+export function ViewerColumnFlow({ gap, columns }: ViewerColumnFlowProps) {
+  return <div
+    className="viewer-column-flow"
+    data-column-count={columns.length}
+    style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, columnGap: gap }}
+  >
+    {columns.map((column, index) => <div className="viewer-column" data-column-index={index} key={index}>
+      {column}
+    </div>)}
+  </div>
+}
+
 interface ViewerStatusBarProps {
   hasDocument: boolean
   title: string

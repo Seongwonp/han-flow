@@ -43,7 +43,7 @@ export interface ViewerResource { id: string; path: string; mime: string; data: 
 export interface ViewerColumnDefinition { width: HwpUnit; gap: HwpUnit }
 export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[] }
 export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; columnLayout?: ViewerColumnLayout; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
-export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; layoutTop?: HwpUnit; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
+export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; columnBreak?: boolean; layoutTop?: HwpUnit; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage
 export interface ViewerSourceAnchor { sectionPath: string; textNodeId: string }
 export interface ViewerText {
@@ -70,4 +70,19 @@ export interface ViewerTableCell {
   sourceCellId?: string
   splitTop?: boolean
   splitBottom?: boolean
+}
+
+export function supportsViewerColumnFlow(layout?: ViewerColumnLayout): layout is ViewerColumnLayout {
+  return Boolean(
+    layout &&
+    layout.count > 1 &&
+    layout.type === 'NEWSPAPER' &&
+    layout.layout === 'LEFT' &&
+    layout.sameSize
+  )
+}
+
+export function viewerColumnContentWidth(bodyWidth: HwpUnit, layout?: ViewerColumnLayout): HwpUnit {
+  if (!supportsViewerColumnFlow(layout)) return bodyWidth
+  return Math.max((bodyWidth - layout.sameGap * (layout.count - 1)) / layout.count, 0)
 }

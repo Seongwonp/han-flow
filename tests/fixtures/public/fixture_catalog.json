@@ -36,7 +36,7 @@
       "id": "multi-column-layout",
       "format": "hwpx",
       "category": "multi-column-layout",
-      "pipelines": ["hwpx-core"]
+      "pipelines": ["hwpx-core", "hwpx-production"]
     },
     {
       "id": "round-trip-sentinels",

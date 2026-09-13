@@ -715,6 +715,12 @@ function captureVisualState(window: BrowserWindow): void {
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
+      columnCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column').length),
+      columnTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) =>
+        Array.from(page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column')).map((column) =>
+          (column.textContent?.match(/\\S/g) || []).length
+        )
+      ),
       tableTopologies: Array.from(document.querySelectorAll('.viewer-page .viewer-table')).map((table) => ({
         rows: table.querySelectorAll(':scope > tbody > tr').length,
         columns: table.querySelectorAll(':scope > colgroup > col').length,

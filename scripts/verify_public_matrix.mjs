@@ -91,20 +91,28 @@ try {
 
   const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
   const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
+  const multiColumn = results.find(({ fixtureId }) => fixtureId === 'multi-column-layout')
   const large = results.find(({ fixtureId }) => fixtureId === 'large-progressive')
   const invalid = results.find(({ fixtureId }) => fixtureId === 'invalid-package')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
     compatibility?.imageCount === 12 ? undefined : 'images-rowspan: 이미지 12개가 decode되지 않음',
+    multiColumn?.totalPages > 0 ? undefined : 'multi-column-layout: 페이지가 생성되지 않음',
+    multiColumn?.columnCounts?.length === multiColumn?.totalPages && multiColumn.columnCounts.every((count) => count === 2)
+      ? undefined
+      : 'multi-column-layout: 각 페이지의 2단 DOM이 생성되지 않음',
+    multiColumn?.columnTextCounts?.[0]?.length === 2 && multiColumn.columnTextCounts[0].every((count) => count > 0)
+      ? undefined
+      : 'multi-column-layout: 첫 페이지 양쪽 단의 본문이 비어 있음',
     large && large.totalPages > 50 ? undefined : 'large-progressive: 50페이지를 넘지 않음',
     large && large.mountedPages < large.totalPages ? undefined : 'large-progressive: page virtualization이 적용되지 않음',
     invalid?.expectedError && invalid.passed ? undefined : 'invalid-package: 오류 안내 검증 실패'
   ].filter(Boolean)
   const summary = {
     passed: failures.length === 0,
-    fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages }) => ({
-      fixtureId, name, totalPages, mountedPages, imageCount, overflowPages
+    fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
+      fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
     })),
     failures
   }
