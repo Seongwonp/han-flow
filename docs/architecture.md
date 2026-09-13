@@ -1,14 +1,15 @@
 # Han-Flow 기술 아키텍처
 
-Han-Flow는 V1의 읽기 전용 HWPX flow renderer와 V2의 HWP fixed-page renderer를 공통
-macOS shell에 연결했다. 현재 production 경로는 편집 상태나 Undo/Redo를 관리하지 않고,
-받은 문서를 빠르게 열어 레이아웃이 깨지지 않게 표시하고 PDF로 내보내는 데 집중한다.
-V3 편집은 이 read-only 경계를 변경하지 않고 source package와 command layer를 별도로 둔다.
+Han-Flow는 HWPX flow renderer, HWP fixed-page renderer와 제한적 HWPX 편집 계층을
+Windows·macOS 공통 Electron shell에 연결한다. production 경로는 읽기·검색·PDF뿐 아니라
+main process가 소유하는 편집 session, transaction 기반 Undo/Redo, 구조별 loss policy와
+검증형 Save As를 함께 관리한다. HWP는 계속 읽기 전용이며 HWPX 편집은 source package와
+command layer를 화면용 `ViewerDocument`와 분리해 원본 package 보존 경계를 유지한다.
 
 ## 파이프라인
 
 ```text
-macOS open-file / drag-and-drop / file dialog
+Windows/macOS file open / drag-and-drop / file dialog
   → Electron main process
   ├─ HWPX → HwpxPackageReader → ordered XML → flow ViewerDocument → block pagination
   └─ HWP  → size/CFB magic → dedicated Web Worker → @rhwp/core WASM

@@ -1,9 +1,19 @@
 # Han-Flow 실행 계획
 
-기준일: 2026-08-09
+기준일: 2026-09-13
 
 이 문서는 현재 작업 순서를 기록한다. 과거 editor prototype 계획은 현재 제품 범위가 아니며
 [제품 비전과 로드맵](vision_and_roadmap.md)에서 V3로 다시 정의했다.
+
+## 현재 실행 포인트
+
+- 동일 너비 `NEWSPAPER/LEFT` 다단의 단별 흐름, 명시적 `columnBreak`, 단 폭 재측정과
+  production DOM 관문까지 완료했다.
+- 다음 구현은 `RIGHT`·`MIRROR`와 비동일 너비 다단을 각각 독립 fixture로 고정하는 작업이다.
+- 그다음은 각주·미주와 수식의 읽기 전용 원문 모델, 안전한 화면 fallback과 diagnostic이다.
+- V3 자동 코드 관문은 완료했으며 Windows 한/글 왕복과 실제 Mac 물리 IME는 외부 승인으로 남아 있다.
+- 공개 corpus는 현재 HWPX 9종·HWP 1종이며 장기 목표는 개인정보 없는 30–50종이다.
+- macOS 공개 배포는 Apple Silicon Mac과 Developer ID 인증서를 확보한 뒤 서명·공증한다.
 
 ## 완료한 milestone: V2 fixed-page 품질 관문
 

@@ -1,12 +1,12 @@
 # Han-Flow 제품 비전과 로드맵
 
-기준일: 2026-08-09
+기준일: 2026-09-13
 
 ## 비전
 
-Han-Flow는 “상용 오피스를 복제하는 프로젝트”가 아니라 macOS에서 매주 실제로 쓰는 한글
-문서 도구다. 받은 파일이 빠르게 열리고, 표와 이미지가 무너지지 않으며, 필요하면 PDF로
-전달할 수 있어야 한다.
+Han-Flow는 “상용 오피스를 복제하는 프로젝트”가 아니라 Windows와 Apple Silicon Mac에서
+실제로 쓰는 한글 문서 도구다. 받은 파일이 빠르게 열리고, 표와 이미지가 무너지지 않으며,
+필요하면 PDF로 전달하고 지원 범위의 HWPX는 원본 package를 보존하며 수정할 수 있어야 한다.
 
 프로젝트의 우선순위는 다음과 같다.
 
@@ -37,6 +37,7 @@ Han-Flow는 “상용 오피스를 복제하는 프로젝트”가 아니라 mac
 - [x] zoom, dark chrome, single-instance macOS UX
 - [x] 화면과 같은 DOM을 사용하는 PDF export
 - [x] production app/PDF/public matrix 통합 검증
+- [x] 동일 너비 `NEWSPAPER/LEFT` 다단의 단별 흐름과 명시적 단 나눔
 
 V1 known limitation은 대체 글꼴 metric, 한 문단 내부 line 단위 분할, 복잡한 rowSpan 표의
 fallback이다. V2가 이를 무관하게 깨뜨리면 안 된다.
@@ -79,6 +80,11 @@ V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기
 - 미지원 원본 속성의 보존과 loss report
 - crash-safe 저장, 임시 파일, 원본 보호
 
+현재는 일반 문단과 안전한 표 body cell의 텍스트·문단·글자 모양 편집, 여러 문단 선택과
+분할·병합, 제한된 표 행·열·수평 병합·분할, transaction 기반 Undo/Redo, dirty 보호와
+구조별 loss policy가 production UI와 검증형 Save As에 연결돼 있다. 자동 관문을 통과했지만
+물리 Mac의 사용자 입력과 Windows 한/글 왕복이 끝나기 전에는 V3를 완료로 표시하지 않는다.
+
 `.hwp` 저장은 V3의 기본 약속이 아니다. HWPX 안전 저장이 검증된 뒤 별도 결정한다.
 구체적인 source package, command, IME와 안전 저장 계약은
 [V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)을 따른다.
@@ -108,11 +114,11 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 ## 현재 다음 작업
 
-1. Windows clean clone의 install·test·probe·build CI 기준선 확정
-2. HWPX 보기·편집의 package resource 제한과 Electron 보안 경계 강화
-3. 공개 identity·편집 결과를 Windows 한/글에서 재열기
-4. 실제 macOS 두벌식 수동 matrix와 V3 완료 판정
-5. Windows 배포 후보와 macOS arm64 서명·공증 관문 진행
+1. `RIGHT`·`MIRROR`와 비동일 너비 다단의 진행 순서·grid·간격을 fixture로 고정
+2. 각주·미주와 수식의 읽기 전용 원문 모델·화면 fallback·diagnostic 구현
+3. 공개 fixture를 30–50종으로 확장하고 core 추정과 production 실측을 함께 비교
+4. 공개 identity·편집 결과를 Windows 한/글에서 재열어 V3 외부 승인
+5. 실제 Apple Silicon Mac의 물리 두벌식 입력과 Developer ID 서명·공증 관문 진행
 
 여러 run 문단 입력과 굵게·크기·색상은 V3 코드 관문에서 완료했다. 글꼴 family 편집,
 원본 in-place 덮어쓰기와 범용 crash recovery는 현재 안전한 Save As 계약을 약화시키지

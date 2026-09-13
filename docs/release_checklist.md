@@ -1,6 +1,6 @@
 # Han-Flow 릴리스 체크리스트
 
-기준일: 2026-08-09
+기준일: 2026-09-13
 
 이 문서의 앞부분은 완료한 V1 RC 기준선을 보존한다. 실제 공개 배포 판단은 아래 V4 관문과
 [V4 macOS 배포 전략](v4_release_strategy.md)을 함께 따른다.
@@ -10,7 +10,7 @@
 v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도구다. 편집, `.hwp` 5.0
 바이너리 직접 파싱, 한컴오피스와 픽셀 단위 동일 렌더링은 이번 릴리스 범위가 아니다.
 
-## 자동 품질 관문
+## V1 당시 자동 품질 관문
 
 - [x] `npm test -- --runInBand`
 - [x] `npm run build`
@@ -38,6 +38,19 @@ v1은 HWPX를 빠르게 열어 읽고 PDF로 내보내는 macOS용 read-only 도
 `verify:app`은 본문 문자열을 출력하지 않는다. 파일 basename, 페이지 수, 이미지 수,
 overflow 페이지와 페이지별 비공백 글자 수만 사용하며 임시 JSON과 Electron user-data는
 검증 종료 후 삭제한다.
+
+## 2026-09-13 현재 자동 관문
+
+- [x] Jest 37 suites, 228 passed, 2 suites·11 tests skipped
+- [x] parser probe 14 passed와 main·preload·renderer typecheck 통과
+- [x] 공개 HWPX corpus 9/9, 88 sections와 동일 너비 2단 section 1개 통과
+- [x] corpus 독립 report SHA-256 `10A806F944CFF272584AD3CFF260E5165CE2AE695AFBC42BC51828C2500F8A79` 일치
+- [x] Windows x64 production package와 HWPX production matrix 6/6 통과
+- [x] 동일 너비 2단 DOM 1쪽·단 2개·본문 17/43자·overflow 0
+- [x] 대형 progressive HWPX 19,503쪽 중 DOM 12쪽 mount
+- [x] 표 행·열 추가/삭제와 제한적 병합·분할의 Undo/Redo·Save As·재개봉 통과
+- [ ] Windows 한/글에서 identity·편집본 재열기와 재저장 왕복
+- [ ] 실제 Apple Silicon Mac의 물리 두벌식 입력·서명·공증·설치 관문
 
 ## 로컬 베타 판정
 

@@ -112,7 +112,7 @@ production `.app`과 다시 생성한 PDF를 함께 사용해 검증합니다. �
 | production build | main/preload/renderer 성공 |
 | Windows 표 구조 package E2E | 행·열 추가/삭제, 병합·분할, undo/redo·Save As·재개봉 통과 |
 | macOS arm64 package | unsigned `.app` 생성 성공 |
-| macOS 실제 두벌식 matrix | 문단·표 셀 연속 입력, Backspace·Escape·양방향 치환·undo/redo 통과 |
+| macOS 두벌식 OS-level key matrix | 문단·표 셀 연속 입력, Backspace·Escape·양방향 치환·undo/redo 통과 |
 | 배포 고지 | Apache-2.0, rhwp MIT, Third-Party Notices 일치 |
 
 ### 성능과 대형 문서
@@ -171,11 +171,16 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용하며,
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
 | V3 — 편집 | 승인 대기 | Windows package 자동 검증 완료, 물리 IME·Windows 한/글 실기 대기 |
 | Sprint 0 — 기반 정비 | 완료 | Windows CI·P0 방어·resource budget·legacy 제거 |
+| Sprint 4 — 호환성 corpus | 진행 중 | HWPX 9종·HWP 1종, 목록·동일 너비 다단 완료, 30–50종 목표 |
 | V4 — 사용자 배포 | 준비 중 | Windows 후보와 macOS arm64 서명·공증·설치 대기 |
 
 단일 완료율은 범위와 검증 수준을 숨길 수 있어 더 이상 공개 완료 판정으로 사용하지 않습니다.
 기능은 코드, 공개 fixture, 실제 문서, 한/글 왕복과 OS별 검증을 순서대로 통과해야 완료입니다.
 세부 장기 순서와 품질 관문은 [장기 완성도 로드맵](docs/long_term_roadmap.md)에 기록합니다.
+
+현재 다음 구현은 `RIGHT`·`MIRROR`와 비동일 너비 다단 조판이며, 이어서 각주·미주와 수식의
+읽기 전용 모델·fallback을 추가합니다. V3 완료 판정에는 Windows 한/글 왕복과 실제 Mac의
+물리 두벌식 입력 승인이 필요하며, 공개 corpus는 개인정보 없는 30–50종까지 확장합니다.
 
 V3에서는 과거 `contentEditable` prototype을 완성된 기능으로 간주하지 않습니다. HWPX 원본
 속성을 보존하는 editable model, command와 transaction, 한국어 IME composition,
