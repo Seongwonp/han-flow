@@ -4,6 +4,7 @@
 
 ### Sprint 0 재현성과 P0 방어
 
+- ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고 decoder worker에 heap 한도·wall-clock timeout·구조화된 오류 code 추가
 - Node.js 22·npm 10 개발 계약과 Windows install/test/probe/build CI 추가
 - 단일 완료율을 폐기하고 capability별 외부 승인까지 추적하는 장기 로드맵 추가
 - HWPX read-only와 editing 경로의 entry·경로·암호화·압축 해제 제한 통합

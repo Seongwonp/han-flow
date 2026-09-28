@@ -1,4 +1,5 @@
 import * as unzipper from 'unzipper'
+import { openHwpxZipDirectory, readEntryBounded } from './bounded_entry'
 import { OrderedXmlNode, parseOrderedXml } from './ordered_xml'
 import {
   validateHwpxSourceEntryMetadata,
@@ -24,7 +25,7 @@ export class HwpxPackageReader implements HwpxReadablePackage {
   private constructor(private readonly directory: unzipper.CentralDirectory) {}
 
   static async open(filePath: string): Promise<HwpxPackageReader> {
-    const directory = await unzipper.Open.file(filePath)
+    const directory = await openHwpxZipDirectory(filePath)
     validateHwpxSourceEntryMetadata(directory.files.map((entry) => ({
       path: entry.path,
       type: (entry.type === 'Directory' ? 'directory' : 'file') as HwpxSourceEntryType,
@@ -42,8 +43,13 @@ export class HwpxPackageReader implements HwpxReadablePackage {
     return found
   }
 
+  private readEntry(path: string): Promise<Buffer> {
+    const entry = this.entry(path)
+    return readEntryBounded(entry, entry.uncompressedSize)
+  }
+
   async index(): Promise<HwpxPackageIndex> {
-    const mimetype = (await this.entry('mimetype').buffer()).toString('utf8').trim()
+    const mimetype = (await this.readEntry('mimetype')).toString('utf8').trim()
     if (mimetype !== 'application/hwp+zip') {
       throw new Error(`지원하지 않는 HWPX mimetype입니다: ${mimetype}`)
     }
@@ -72,10 +78,10 @@ export class HwpxPackageReader implements HwpxReadablePackage {
   }
 
   async readOrderedXml(path: string): Promise<OrderedXmlNode[]> {
-    return parseOrderedXml(await this.entry(path).buffer())
+    return parseOrderedXml(await this.readEntry(path))
   }
 
   async readBuffer(path: string): Promise<Buffer> {
-    return this.entry(path).buffer()
+    return this.readEntry(path)
   }
 }
