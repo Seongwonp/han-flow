@@ -1,7 +1,7 @@
 import type { RefObject } from 'react'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import type { RendererEditingSession } from './renderer_state'
-import { shortcutLabel } from './keyboard_shortcuts'
+import { rendererPlatform, shortcutLabel } from './keyboard_shortcuts'
 
 export interface RibbonStyleState {
   bold: boolean
@@ -98,7 +98,7 @@ interface ViewerToolbarProps {
 export function ViewerToolbar(props: ViewerToolbarProps) {
   const {
     fileName,
-    shortcutPlatform = 'darwin',
+    shortcutPlatform = rendererPlatform(),
     editing,
     editingPending,
     documentLoading,

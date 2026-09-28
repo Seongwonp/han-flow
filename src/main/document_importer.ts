@@ -10,7 +10,6 @@ import {
 import { ViewerDocument } from '../core/document/viewer_document'
 import { HwpxPackageReader } from '../core/parser/package_reader'
 import { shouldLoadProgressively } from '../core/parser/progressive_loading'
-import { decodeViewerDocument } from '../core/parser/viewer_decoder'
 import { HwpFileError, readHwpContainer } from './hwp_file'
 
 interface DecoderResult {
@@ -20,10 +19,17 @@ interface DecoderResult {
   code?: string
 }
 
-/** decoder worker 한 번의 디코딩 전체에 허용하는 wall-clock 시간. */
+/*
+ * decoder worker 한도. 모든 HWPX 디코딩은 main thread가 아니라 이 한도를 건 worker에서 실행한다.
+ * 한 번 열 때 worker 요청은 최대 두 번이다(progressive면 첫 section 요청과 background 전체 요청,
+ * 아니면 전체 요청 한 번). 두 상수는 요청마다 따로 적용되며, 첫 요청이 쓴 시간은 background 요청의
+ * 예산에서 빼지 않는다.
+ */
+
+/** worker 요청 하나(첫 section 또는 전체 디코딩)에 허용하는 wall-clock 시간. */
 export const DECODER_WORKER_TIMEOUT_MS = 120_000
 
-/** worker heap 한도. 초과 시 process 전체 abort 대신 ERR_WORKER_OUT_OF_MEMORY로 끝난다. */
+/** worker 요청 하나의 heap 한도. 초과 시 process 전체 abort 대신 ERR_WORKER_OUT_OF_MEMORY로 끝난다. */
 export const DECODER_WORKER_RESOURCE_LIMITS: ResourceLimits = {
   maxOldGenerationSizeMb: 1024,
   maxYoungGenerationSizeMb: 64
@@ -146,12 +152,12 @@ export class DocumentImporter {
       const index = await reader.index()
       const packageIndexedAt = performance.now()
       const progressive = shouldLoadProgressively(index)
-      const firstResult = progressive
-        ? await this.decodeInWorker(context.senderId, request.filePath, [index.sectionPaths[0]])
-        : {
-            document: await decodeViewerDocument(reader, index),
-            decodeMs: performance.now() - packageIndexedAt
-          }
+      // main thread는 package index만 읽고, section 디코딩은 크기와 무관하게 한도를 건 worker에서 한다.
+      const firstResult = await this.decodeInWorker(
+        context.senderId,
+        request.filePath,
+        progressive ? [index.sectionPaths[0]] : undefined
+      )
       const decodedAt = performance.now()
 
       if (progressive && this.isActive(context.senderId, request.loadId)) {
@@ -228,7 +234,8 @@ export class DocumentImporter {
     this.decodeWorkers.set(senderId, worker)
     return new Promise((resolve, reject) => {
       let settled = false
-      // 현재 protocol에는 진행 이벤트가 없으므로 디코딩 전체에 하나의 deadline을 적용한다.
+      // 현재 protocol에는 진행 이벤트가 없으므로 이 요청 전체에 하나의 deadline을 적용한다.
+      // 요청마다 새 timer를 만들므로 첫 section 요청과 background 요청은 각각 전체 예산을 받는다.
       const timeout = setTimeout(() => {
         if (settled) return
         settled = true

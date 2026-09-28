@@ -2,12 +2,9 @@ import AdmZip from 'adm-zip'
 import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import {
-  DECODER_WORKER_RESOURCE_LIMITS,
-  DECODER_WORKER_TIMEOUT_MS,
-  DocumentImporter
-} from '../../src/main/document_importer'
+import { DocumentImporter } from '../../src/main/document_importer'
 import { PROGRESSIVE_SECTION_COUNT } from '../../src/core/parser/progressive_loading'
+import { writeDecoderWorkerShim } from './decoder_worker_shim'
 
 const SECTION = '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"/>'
 
@@ -34,11 +31,19 @@ describe('decoder worker 자원 제한', () => {
     join(directory, 'progressive.hwpx'),
     Array.from({ length: PROGRESSIVE_SECTION_COUNT }, () => Buffer.from(SECTION))
   )
+  const small = hwpx(join(directory, 'small.hwpx'), [Buffer.from(SECTION)])
   const stalling = worker(directory, 'stalling', `parentPort.once('message', () => { for (;;) {} })`)
   const firstThenStall = worker(directory, 'first-then-stall', `
 parentPort.once('message', ({ sectionPaths }) => {
   if (!sectionPaths) for (;;) {}
   parentPort.postMessage({ document: { sections: [] }, decodeMs: 0 })
+})`)
+  // 요청마다 600ms를 쓰고 응답한다. 1000ms 예산을 두 요청이 나눠 쓰면 background 요청이 timeout된다.
+  const slowEachRequest = worker(directory, 'slow-each-request', `
+parentPort.once('message', () => {
+  const end = Date.now() + 600
+  while (Date.now() < end) {}
+  parentPort.postMessage({ document: { sections: [] }, decodeMs: 600 })
 })`)
   const hungry = worker(directory, 'hungry', `
 parentPort.once('message', () => {
@@ -56,11 +61,6 @@ parentPort.once('message', () => parentPort.postMessage({
     rmSync(directory, { recursive: true, force: true })
   })
 
-  test('기본 한도는 설정 가능한 상수로 노출한다', () => {
-    expect(DECODER_WORKER_TIMEOUT_MS).toBe(120_000)
-    expect(DECODER_WORKER_RESOURCE_LIMITS).toMatchObject({ maxOldGenerationSizeMb: 1024 })
-  })
-
   test('멈춘 worker를 wall-clock timeout으로 종료하고 구조화된 오류를 반환한다', async () => {
     const importer = new DocumentImporter(stalling, { decodeTimeoutMs: 200 })
     const ctx = context()
@@ -75,6 +75,39 @@ parentPort.once('message', () => parentPort.postMessage({
     })
     if (result.ok) throw new Error('timeout이 적용되지 않았습니다.')
     expect(result.error.message).toContain('제한 시간')
+    importer.cancel(ctx.senderId)
+  })
+
+  test('progressive가 아닌 작은 문서도 worker에서 디코딩해 timeout을 적용한다', async () => {
+    const importer = new DocumentImporter(stalling, { decodeTimeoutMs: 200 })
+    const ctx = context()
+    const result = await importer.importDocument({ filePath: small, loadId: 'small-stall' }, ctx)
+    expect(result).toMatchObject({
+      ok: false,
+      format: 'hwpx',
+      loadId: 'small-stall',
+      error: { code: 'HWPX_DECODE_TIMEOUT' }
+    })
+    importer.cancel(ctx.senderId)
+  })
+
+  test('첫 section 요청과 background 요청은 각각 전체 timeout 예산을 받는다', async () => {
+    const importer = new DocumentImporter(slowEachRequest, { decodeTimeoutMs: 1_000 })
+    const ctx = context()
+    const result = await importer.importDocument({ filePath: progressive, loadId: 'budget' }, ctx)
+    expect(result).toMatchObject({ ok: true, format: 'hwpx', complete: false })
+
+    await new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error('background 완료가 오지 않았습니다.')), 10_000)
+      const settle = () => {
+        clearTimeout(deadline)
+        resolve()
+      }
+      ctx.onComplete.mockImplementation(settle)
+      ctx.onError.mockImplementation(settle)
+    })
+    expect(ctx.onError).not.toHaveBeenCalled()
+    expect(ctx.onComplete).toHaveBeenCalledWith(expect.objectContaining({ loadId: 'budget' }))
     importer.cancel(ctx.senderId)
   })
 
@@ -135,7 +168,7 @@ parentPort.once('message', () => parentPort.postMessage({
     importer.cancel(ctx.senderId)
   })
 
-  test('main thread 경로의 zip bomb section도 구조화된 code로 반환한다', async () => {
+  test('작은 문서의 zip bomb section도 실제 decoder worker에서 구조화된 code로 반환한다', async () => {
     const path = hwpx(join(directory, 'bomb.hwpx'), [Buffer.alloc(8 * 1024 * 1024, 0x20)])
     const zip = new AdmZip(path)
     // adm-zip으로 쓴 뒤 central directory·local header의 uncompressedSize만 1 KiB로 조작한다.
@@ -149,12 +182,14 @@ parentPort.once('message', () => parentPort.postMessage({
     }
     writeFileSync(path, bytes)
 
-    const importer = new DocumentImporter(join(directory, 'unused.js'))
-    const result = await importer.importDocument({ filePath: path, loadId: 'bomb' }, context())
+    const importer = new DocumentImporter(writeDecoderWorkerShim(directory))
+    const ctx = context()
+    const result = await importer.importDocument({ filePath: path, loadId: 'bomb' }, ctx)
+    importer.cancel(ctx.senderId)
     expect(result).toMatchObject({
       ok: false,
       format: 'hwpx',
       error: { code: 'HWPX_ENTRY_SIZE_EXCEEDED' }
     })
-  })
+  }, 30_000)
 })

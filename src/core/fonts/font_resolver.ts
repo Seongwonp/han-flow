@@ -40,7 +40,11 @@ const FONT_NAME_GROUPS: string[][] = [
 const FONT_ALIASES: Map<string, string[]> = new Map(FONT_NAME_GROUPS.flatMap((group) =>
   group.map((name) => [name.toLocaleLowerCase(), group] as [string, string[]])))
 
-/** 운영체제별 대체 체인. 앞에 올수록 해당 OS의 기본 설치 글꼴이다. */
+/**
+ * 운영체제별 대체 체인. 앞에 올수록 해당 OS에서 먼저 찾는 글꼴이다.
+ * Windows에서 모든 설치본에 보장되는 한글 글꼴은 맑은 고딕뿐이고, 바탕은 한국어 보조 글꼴이 있을 때만
+ * 쓰이며 없으면 다음 후보와 CSS generic으로 넘어간다.
+ */
 const PLATFORM_FALLBACKS: Record<'darwin' | 'win32' | 'linux', Record<GenericFontFamily, string[]>> = {
   darwin: {
     serif: ['AppleMyungjo', 'Nanum Myeongjo', 'Noto Serif CJK KR', 'Noto Serif KR'],

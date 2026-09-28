@@ -1,8 +1,8 @@
 name: Windows CI
 
+# 이 저장소는 PR 없이 branch push로 작업하므로 push만 사용해 같은 commit이 두 번 실행되지 않게 한다.
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 permissions:

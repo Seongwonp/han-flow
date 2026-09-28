@@ -16,10 +16,17 @@ type ShortcutKeyEvent = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'alt
 
 export const isMacPlatform = (platform: string | undefined): boolean => platform === 'darwin'
 
-/** preload가 노출한 Electron `process.platform`. 테스트·비 Electron 환경에서는 빈 문자열이다. */
+/**
+ * 단축키·글꼴 판단에 쓰는 platform. preload가 노출한 Electron `process.platform`을 우선한다.
+ * preload가 없으면(테스트·비 Electron 환경) `navigator.platform`이 Mac이면 'darwin',
+ * 그 밖에는 빈 문자열(= Ctrl modifier)을 돌려준다. toolbar 표기와 키 처리는 모두 이 값을 쓴다.
+ */
 export function rendererPlatform(): string {
-  const platform = (globalThis as { api?: { platform?: unknown } }).api?.platform
-  return typeof platform === 'string' ? platform : ''
+  const scope = globalThis as { api?: { platform?: unknown }; navigator?: { platform?: unknown } }
+  const platform = scope.api?.platform
+  if (typeof platform === 'string') return platform
+  const navigatorPlatform = scope.navigator?.platform
+  return typeof navigatorPlatform === 'string' && navigatorPlatform.startsWith('Mac') ? 'darwin' : ''
 }
 
 /**

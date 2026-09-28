@@ -1,11 +1,15 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
 import { HwpxSaveAsError, saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
-import { EditingSessionManager, saveAsFailureMessage } from '../../src/main/editing_session'
+import {
+  EditingSessionManager,
+  pdfExportFailureMessage,
+  saveAsFailureMessage
+} from '../../src/main/editing_session'
 import {
   createRoundTripHwpx,
   createTableColumnHwpx
@@ -1249,6 +1253,14 @@ describe('main process HWPX editing session', () => {
     expect(await manager.saveAsDestinationDecision(13, started.sessionId, fixture)).toBe('protected')
     // 다른 창에서 편집 중인 원본도 보호한다.
     expect(await manager.saveAsDestinationDecision(13, started.sessionId, otherSource)).toBe('protected')
+    // 심볼릭 링크 목적지는 따라가지 않고 대화상자 단계에서 invalid로 거부한다.
+    if (process.platform !== 'win32') {
+      const linkToSource = join(directory, 'policy-link-to-source.hwpx')
+      symlinkSync(fixture, linkToSource)
+      expect(await manager.saveAsDestinationDecision(13, started.sessionId, linkToSource)).toBe('invalid')
+      rmSync(linkToSource)
+    }
+    expect(manager.protectedSourcePaths()).toEqual([fixture, otherSource])
 
     const originalBytes = readFileSync(fixture)
     const otherBytes = readFileSync(otherSource)
@@ -1285,5 +1297,20 @@ describe('main process HWPX editing session', () => {
     expect(saveAsFailureMessage(filesystem('EXDEV'))).toContain('원자적 교체를 지원하지 않아')
     expect(saveAsFailureMessage(filesystem('ENOSPC'))).toContain('공간이 부족해')
     expect(saveAsFailureMessage(new Error('저장 검증 실패'))).toContain('변경본을 검증해 저장하지 못했습니다')
+    expect(saveAsFailureMessage(new HwpxSaveAsError('HWPX_SAVE_INVALID_DESTINATION', 'x')))
+      .toContain('바로가기(심볼릭 링크)')
+  })
+
+  test('PDF 내보내기 실패는 .hwpx가 아닌 PDF 맥락의 안내를 돌려준다', () => {
+    const protectedMessage = pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_PROTECTED_DESTINATION', 'x'))
+    expect(protectedMessage).toContain('PDF를 저장할 수 없습니다')
+    const invalidMessage = pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_INVALID_DESTINATION', 'x'))
+    expect(invalidMessage).toContain('.pdf 파일 이름')
+    expect(invalidMessage).toContain('심볼릭 링크')
+    for (const message of [protectedMessage, invalidMessage]) expect(message).not.toContain('.hwpx')
+    expect(pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_FILESYSTEM', 'fs', 'ENOSPC')))
+      .toContain('PDF를 저장하지 못했습니다')
+    expect(pdfExportFailureMessage(new Error('PDF 렌더링 준비 시간이 초과되었습니다.')))
+      .toBe('PDF 렌더링 준비 시간이 초과되었습니다.')
   })
 })

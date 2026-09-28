@@ -242,13 +242,14 @@ undo/redo로 저장 당시 logical state에 돌아왔는지는 revision 숫자 �
   같은 모양의 빈 문단을 만듭니다. 너비 근거가 없거나 기존 span·복합 콘텐츠가 있으면 거부합니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않습니다. 구조 편집이 남아 있으면 `stale`, 원문 상태로
   undo했으면 `current`, 원래 없으면 `omitted`로 저장 확인창과 완료 상태에 표시합니다.
-- 현재 저장은 다른 이름으로 저장만 지원하며, 저장 대화상자에서 교체를 확인한 다른 기존 파일은 원자적으로 교체하지만 열려 있는 원본 문서 덮어쓰기는 항상 거부합니다.
+- 현재 저장은 다른 이름으로 저장만 지원하며, 저장 대화상자에서 교체를 확인한 다른 기존 파일은 원자적으로 교체하지만 열려 있는 원본 문서 덮어쓰기는 항상 거부합니다. hard link를 지원하지 않는 파일 시스템(exFAT·FAT32·일부 SMB)에서는 새 파일 게시가 확인 후 rename으로 대체되어, 확인 직후 다른 프로그램이 같은 이름의 파일을 만드는 짧은 경쟁 구간이 남습니다.
 - 한컴오피스와 픽셀 단위로 동일한 렌더링을 목표로 하지 않습니다.
 - 원문 글꼴이 없으면 대체 글꼴 폭에 따라 HWPX 줄바꿈과 페이지 분배가 달라질 수 있습니다.
 - 한 문단 내부의 줄 단위 페이지 분할은 아직 지원하지 않습니다.
 - 복잡한 `rowSpan`과 단일 초대형 문단은 내용 보존을 우선한 fallback을 사용합니다.
 - 암호·DRM·배포용 HWP는 해제하거나 렌더링하지 않고 분류된 오류를 표시합니다.
 - 현재 macOS 패키지는 Developer ID 서명과 Apple notarization을 하지 않았습니다.
+- macOS 패키지는 Electron 44 요구사항에 따라 macOS 13 Ventura 이상에서만 실행되며(`minimumSystemVersion` 13.0), Apple Silicon arm64 전용이라 Intel Mac은 지원하지 않습니다.
 
 함초롬체는 제3자 앱 재배포 권한이 확인되지 않아 번들하지 않습니다. 시스템 설치본의
 한글·영문 family 이름을 찾아 사용하며 자세한 근거는 [글꼴 전략](docs/font_strategy.md)에
@@ -279,6 +280,7 @@ npm run package:win:installer
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. Linux CI는 `release/linux-unpacked`를 묶은 unpacked 앱을 7일 보관 artifact로 올립니다.
+Ubuntu 24.04 이상은 비특권 user namespace를 제한하므로 이 unpacked `dir` 빌드를 실행하려면 `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`로 sandbox helper 권한을 주거나 `--no-sandbox`로 실행해야 하며, AppArmor profile을 포함한 deb/AppImage 패키지는 이후 과제입니다.
 Windows CI는 비서명 NSIS 설치본(`Han-Flow-<version>-win-x64.exe`)과 unpacked 앱을 7일 보관 artifact로 올리며, code signing(V4) 전까지 SmartScreen 경고가 표시됩니다.
 
 주요 회귀 관문:

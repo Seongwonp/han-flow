@@ -91,8 +91,8 @@ width·gap을 읽어 `ViewerSection.columnLayout`으로 보존한다. 단 개수
 
 ## 4. 대형 문서
 
-section 20개 이상 또는 압축 전 2MiB 이상 section이 있으면 worker thread에서 디코딩한다.
-첫 section을 먼저 표시한 뒤 전체 모델로 교체하고, load ID로 취소되거나 늦게 도착한 작업을
+모든 HWPX 디코딩은 heap 한도와 요청별 timeout을 건 worker thread에서 실행한다. section 20개
+이상 또는 압축 전 2MiB 이상 section이 있으면 첫 section을 먼저 표시한 뒤 전체 모델로 교체하고, load ID로 취소되거나 늦게 도착한 작업을
 격리한다. 50페이지 초과 문서는 viewport 주변 페이지만 mount한다. resource reference 단위
 선별 로딩과 section 단위 누적 모델은 이후 최적화 후보이며 정확도를 희생하는 lazy decode는
 도입하지 않는다.

@@ -217,14 +217,15 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 - 자체 HWPX UTI와 기존 한컴 HWPX UTI의 Finder 문서 연결
 - HWPX 확장자와 패키지 필수 entry 검증
 - HWP 200 MiB·CFB magic preflight와 byte 전달
-- 작은 문서의 전체 decode 및 renderer IPC 전달
-- 대형 문서 worker 생성·취소·오류 전달
+- HWPX package index와 decoder worker 생성·취소·오류 전달(section 디코딩은 main thread에서 하지 않음)
 - renderer 준비 완료 후 `webContents.printToPDF` 실행과 파일 저장
 
 ### Decoder worker
 
-section이 20개 이상이거나 section 하나의 압축 전 크기가 2MiB 이상이면 worker thread를
-사용한다. 첫 section 모델을 먼저 보내고 전체 모델은 별도 worker 작업으로 완성한다. load ID가
+모든 HWPX section 디코딩은 heap 한도(`maxOldGenerationSizeMb` 1024)와 wall-clock timeout(120초)을
+건 worker thread에서 실행한다. 두 한도는 worker 요청마다 따로 적용한다. section이 20개 이상이거나
+section 하나의 압축 전 크기가 2MiB 이상이면 첫 section 모델을 먼저 보내고 전체 모델은 별도 worker
+요청으로 완성하며, 그 밖의 문서는 한 번의 worker 요청으로 전체를 디코딩한다. load ID가
 바뀌면 이전 worker를 종료하며 늦게 도착한 결과는 renderer가 무시한다. worker 오류가 발생해도
 이미 표시한 첫 section은 유지하고 상태 표시줄에 나머지 페이지 오류를 노출한다.
 
@@ -307,7 +308,7 @@ renderer는 이를 이용해 `startNum page > 0`에서 번호를 재시작하고
 
 ```text
 package index
-  ├─ small document → full decode → render
+  ├─ small document → worker(full document) → render
   └─ large document → worker(first section) → first paint
                     └→ worker(full document) → load ID 확인 → model 교체
                                               → viewport virtualization

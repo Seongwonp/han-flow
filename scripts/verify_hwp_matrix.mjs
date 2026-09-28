@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as CFB from 'cfb'
 import { linkHwpManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
-import { defaultAppBinary, electronLaunchEnvironment } from './app_binary.mjs'
+import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const fixture = resolve(root, 'tests/fixtures/public/synthetic-layout.hwp')
@@ -37,7 +37,7 @@ function run(command, arguments_, { env, prefix, timeoutMs = 90_000 } = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, arguments_, {
       cwd: root,
-      env: { ...process.env, ...electronLaunchEnvironment(), ...env, ELECTRON_ENABLE_LOGGING: '0' },
+      env: { ...process.env, ...env, ELECTRON_ENABLE_LOGGING: '0' },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     activeChildren.add(child)
@@ -123,6 +123,7 @@ try {
   ]
 
   await run(electron, [
+    ...electronLaunchArguments(),
     resolve(root, 'scripts/fixtures/generate_public_hwp_main.cjs'),
     generatedFixture
   ], { prefix: 'HAN_FLOW_PUBLIC_HWP_GENERATED ' })

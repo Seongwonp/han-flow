@@ -4,7 +4,7 @@
 
 ### Sprint 0 재현성과 P0 방어
 
-- ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고 decoder worker에 heap 한도·wall-clock timeout·구조화된 오류 code 추가
+- ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고, 크기와 무관하게 모든 HWPX 디코딩을 decoder worker로 옮겨 요청(첫 section·background 전체)마다 heap 한도·wall-clock timeout·구조화된 오류 code 적용
 - Node.js 22·npm 10 개발 계약과 Windows install/test/probe/build CI 추가
 - Linux `dir` 패키지 target과 xvfb 패키지 앱 matrix·HWP·PDF E2E, unpacked 앱 artifact를 올리는 Linux CI 추가
 - 단일 완료율을 폐기하고 capability별 외부 승인까지 추적하는 장기 로드맵 추가
@@ -22,8 +22,9 @@
 - 손실성 초기 parser·normalization·renderer-engine·Zustand store와 구형 shared 타입 제거
 - 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
 - Windows x64 production `dir` package 명령과 OS별 V3 acceptance bundle 생성 지원
-- OS별 글꼴 대체 체인(Windows 맑은 고딕·바탕 우선)과 한/영 family alias, 미설치 시 CSS generic fallback
+- OS별 글꼴 대체 체인(Windows 맑은 고딕 우선, 바탕은 한국어 보조 글꼴 설치 시)과 한/영 family alias, 미설치 시 CSS generic fallback, 글꼴 목록 실패 시 Windows는 맑은 고딕만 반환(자동 테스트 기준, Windows 실기 검증 대기)
 - EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
+- Electron 44 요구사항에 맞춰 macOS 패키지 `minimumSystemVersion`을 13.0으로 지정
 
 ### Sprint 4 호환성 corpus
 
@@ -72,10 +73,12 @@
 - style projection 뒤 stale DOM selection offset 방어와 run 수 변경 시 안전한 surface 재생성
 - `ApplyCharacterStyleCommand`의 5–72pt 글자 크기와 `#RRGGBB` 글자색
 - 글자 크기 증감·색상 선택 toolbar와 활성 source style 동기화
-- Windows·Linux Ctrl 단축키(Ctrl+Y 포함)·tooltip 표기와 contentEditable 네이티브 undo/redo의 앱 history 우회
+- Windows·Linux Ctrl 단축키(Ctrl+Y 포함)·tooltip 표기와 contentEditable 네이티브 undo/redo의 앱 history 우회(자동 테스트 기준, Windows 실기 검증 대기)
 - 부분 글자 style·문단 정렬을 함께 적용한 package Save As·재개봉 통합 검증
 - V3 자동 코드 관문 완료와 macOS 실제 두벌식·Windows 한/글 외부 승인 matrix 분리
-- Save As를 hard link 대신 같은 폴더 임시 파일의 `rename` 원자적 게시로 바꿔 exFAT·FAT32·일부 SMB에서도 저장하고, 저장 대화상자에서 교체를 확인한 기존 파일만 덮어쓰며 열린 원본은 항상 거부
+- Save As를 같은 폴더 임시 파일로 쓰고, 새 파일은 hard link(목적지가 생기면 OS가 EEXIST로 거부)로, 교체를 확인한 기존 파일은 `rename`으로 원자적 게시하며 hard link 미지원 파일 시스템(exFAT·FAT32·일부 SMB)에서만 확인 후 `rename`으로 대체하고 열린 원본은 항상 거부(자동 테스트 기준, Windows 실기 검증 대기)
+- 저장·PDF 파일 권한을 0o600 대신 umask를 적용한 기본값으로 게시하고, PDF 내보내기도 편집 중인 원본·심볼릭 링크 목적지를 PDF 전용 안내와 함께 거부
+- 개발 빌드의 Windows·Linux에서 메뉴 없이 F12·Ctrl+Shift+I로 DevTools 열기
 
 ### V2 HWP fixed-page
 

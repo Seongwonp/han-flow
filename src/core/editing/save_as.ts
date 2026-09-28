@@ -1,4 +1,4 @@
-import { lstat, open, rename, stat, unlink } from 'fs/promises'
+import { link, lstat, open, rename, stat, unlink } from 'fs/promises'
 import type { Stats } from 'fs'
 import { basename, dirname, extname, resolve } from 'path'
 import { randomUUID } from 'crypto'
@@ -15,6 +15,11 @@ export interface SaveHwpxAsOptions {
   overwrite?: boolean
   /** 원본 외에 덮어쓰면 안 되는 경로(예: 다른 편집 session의 원본). */
   protectedPaths?: readonly string[]
+  /**
+   * 테스트 전용 seam: 마지막 목적지 확인 뒤, 게시 직전에 호출된다.
+   * 확인과 게시 사이에 목적지가 생기는 경쟁 상황을 재현하는 데만 쓴다.
+   */
+  onBeforePublish?: () => Promise<void> | void
 }
 
 export interface SaveHwpxAsResult {
@@ -55,6 +60,9 @@ function filesystemError(action: string, reason: unknown): HwpxSaveAsError {
   )
 }
 
+const DESTINATION_EXISTS_MESSAGE =
+  '같은 이름의 파일이 이미 있습니다. 교체를 확인하지 않은 기존 파일은 덮어쓰지 않습니다.'
+
 function temporaryPathFor(destinationPath: string): string {
   return resolve(dirname(destinationPath), `.${basename(destinationPath)}.han-flow-${randomUUID()}.tmp`)
 }
@@ -83,7 +91,8 @@ function sameFile(left: Stats, right: Stats): boolean {
 
 /**
  * 목적지가 원본·보호 경로가 아니며, overwrite가 없을 때는 아직 존재하지 않음을 확인한다.
- * 임시 파일을 쓰기 전과 rename 직전에 두 번 호출해 대화상자 이후 바뀐 상태도 거부한다.
+ * 임시 파일을 쓰기 전과 게시 직전에 호출해 대화상자 이후 바뀐 상태도 거부한다.
+ * overwrite가 없을 때 마지막 보장은 publishTemporary의 hard link(EEXIST)가 맡는다.
  */
 async function assertDestinationPublishable(
   destinationPath: string,
@@ -107,7 +116,7 @@ async function assertDestinationPublishable(
   if (!overwrite) {
     throw new HwpxSaveAsError(
       'HWPX_SAVE_DESTINATION_EXISTS',
-      '같은 이름의 파일이 이미 있습니다. 교체를 확인하지 않은 기존 파일은 덮어쓰지 않습니다.'
+      DESTINATION_EXISTS_MESSAGE
     )
   }
   for (const protectedPath of protectedPaths) {
@@ -122,6 +131,14 @@ async function assertDestinationPublishable(
   return true
 }
 
+/**
+ * 게시할 파일의 권한: 일반 파일 기본값(0o666)에 현재 umask를 적용한 값.
+ * 임시 파일은 쓰는 동안 0o600으로 만들고, 게시 직전에 이 값으로 바꾼다.
+ */
+function publishedFileMode(): number {
+  return 0o666 & ~process.umask()
+}
+
 /** 임시 파일을 만들고 fsync한다. 실패하면 스스로 정리하므로 호출자는 성공한 뒤에만 정리 책임을 진다. */
 async function writeTemporarySibling(temporaryPath: string, data: Uint8Array): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>>
@@ -133,6 +150,7 @@ async function writeTemporarySibling(temporaryPath: string, data: Uint8Array): P
   try {
     try {
       await handle.writeFile(data)
+      await handle.chmod(publishedFileMode())
       await handle.sync()
     } finally {
       await handle.close()
@@ -158,8 +176,46 @@ async function syncDirectory(directoryPath: string): Promise<void> {
   }
 }
 
-/** 같은 디렉터리의 임시 파일을 rename으로 목적지에 게시한다. 같은 volume 안에서 원자적이다. */
-async function publishTemporary(temporaryPath: string, destinationPath: string): Promise<void> {
+/** hard link를 지원하지 않는 파일 시스템(exFAT·FAT32·일부 SMB 등)이 link에 돌려주는 errno. */
+const LINK_UNSUPPORTED_CODES = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EXDEV', 'EACCES'])
+
+/**
+ * 같은 디렉터리의 임시 파일을 목적지에 게시한다.
+ * - overwrite: rename으로 기존 파일을 원자적으로 교체한다.
+ * - overwrite 아님: hard link로 게시한다. 목적지가 이미 있으면 OS가 EEXIST로 원자적으로 거부하므로
+ *   확인 뒤에 생긴 파일도 덮어쓰지 않는다. 성공하면 임시 이름만 지운다.
+ *   hard link를 지원하지 않는 파일 시스템에서만 확인 후 rename으로 물러선다(확인과 rename 사이의 짧은 경쟁은 남는다).
+ */
+async function publishTemporary(
+  temporaryPath: string,
+  destinationPath: string,
+  overwrite: boolean,
+  recheck: () => Promise<unknown>
+): Promise<void> {
+  if (!overwrite) {
+    let linked = false
+    try {
+      await link(temporaryPath, destinationPath)
+      linked = true
+    } catch (reason) {
+      const code = systemErrorCode(reason)
+      if (code === 'EEXIST') {
+        throw new HwpxSaveAsError(
+          'HWPX_SAVE_DESTINATION_EXISTS',
+          DESTINATION_EXISTS_MESSAGE
+        )
+      }
+      if (!code || !LINK_UNSUPPORTED_CODES.has(code)) throw filesystemError('저장 파일 게시', reason)
+    }
+    if (linked) {
+      // 목적지는 이미 게시됐다. 임시 이름 정리는 실패해도 저장 결과에 영향을 주지 않는다.
+      await unlink(temporaryPath).catch(() => undefined)
+      await syncDirectory(dirname(destinationPath))
+      return
+    }
+    // hard link 미지원 파일 시스템: rename 직전에 다시 확인한다.
+    await recheck()
+  }
   try {
     await rename(temporaryPath, destinationPath)
   } catch (reason) {
@@ -169,8 +225,8 @@ async function publishTemporary(temporaryPath: string, destinationPath: string):
 }
 
 /**
- * 임시 파일에 쓰고 fsync한 뒤 rename으로 교체한다. 기존 파일이 있으면 overwrite가 true일 때만 교체한다.
- * 검증이 필요 없는 산출물(PDF 내보내기 등)에 쓴다.
+ * 임시 파일에 쓰고 fsync한 뒤 게시한다. 기존 파일이 있으면 overwrite가 true일 때만 교체한다.
+ * 검증이 필요 없는 산출물(PDF 내보내기 등)에 쓴다. protectedPaths는 overwrite와 무관하게 거부한다.
  */
 export async function writeFileAtomically(
   destinationPath: string,
@@ -187,7 +243,9 @@ export async function writeFileAtomically(
     await writeTemporarySibling(temporaryPath, data)
     temporaryExists = true
     await assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
-    await publishTemporary(temporaryPath, resolvedDestination)
+    await publishTemporary(temporaryPath, resolvedDestination, overwrite, () =>
+      assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
+    )
     temporaryExists = false
   } finally {
     if (temporaryExists) {
@@ -264,7 +322,10 @@ export async function saveHwpxAs(
       protectedPaths,
       overwrite
     )
-    await publishTemporary(temporaryPath, resolvedDestination)
+    await options.onBeforePublish?.()
+    await publishTemporary(temporaryPath, resolvedDestination, overwrite, () =>
+      assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
+    )
     temporaryExists = false
     return {
       destinationPath: resolvedDestination,

@@ -208,9 +208,13 @@ test('catalog external provenance는 manifest source: file 항목과만 대응�
     manifestOf(fixture, fileFixture)
   ), /서로 대응하지 않습니다/)
   assert.throws(() => linkHwpxManifest(
-    validateFixtureCatalog({ schemaVersion: 1, suite: 'test', fixtures: [{ ...catalogFixture, provenance: 'external' }] }),
+    validateFixtureCatalog({ schemaVersion: 1, suite: 'test', fixtures: [{ ...catalogFixture, provenance: 'external', pipelines: ['hwpx-core'] }] }),
     manifestOf(fixture)
   ), /서로 대응하지 않습니다/)
+  // production matrix는 generator fixture만 만들므로 external fixture를 production pipeline에 넣을 수 없다.
+  assert.throws(() => validateFixtureCatalog({
+    schemaVersion: 1, suite: 'test', fixtures: [{ ...externalCatalog, pipelines: ['hwpx-core', 'hwpx-production'] }]
+  }), /external fixture는 hwpx-core/)
   assert.throws(() => validateFixtureCatalog({
     schemaVersion: 1, suite: 'test', fixtures: [{ ...externalCatalog, provenance: 'real' }]
   }), /provenance는 synthetic 또는 external/)

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import {
   historyInputDirection,
   interceptHistoryInput,
+  rendererPlatform,
   resolveShortcut,
   shortcutLabel,
   shortcutModifierPressed
@@ -13,6 +14,30 @@ const key = (
   value: string,
   modifiers: Partial<{ metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }> = {}
 ) => ({ key: value, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...modifiers })
+
+/** globalThis.api·navigator를 잠시 바꿔 rendererPlatform()의 입력을 고정한다. */
+function withPlatform(values: { api?: string; navigator?: string }, run: () => void): void {
+  const scope = globalThis as Record<string, unknown>
+  const saved = ['api', 'navigator'].map((name) => [name, Object.getOwnPropertyDescriptor(scope, name)] as const)
+  try {
+    Object.defineProperty(scope, 'api', {
+      value: values.api === undefined ? undefined : { platform: values.api },
+      configurable: true,
+      writable: true
+    })
+    Object.defineProperty(scope, 'navigator', {
+      value: values.navigator === undefined ? undefined : { platform: values.navigator },
+      configurable: true,
+      writable: true
+    })
+    run()
+  } finally {
+    for (const [name, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(scope, name, descriptor)
+      else delete scope[name]
+    }
+  }
+}
 
 describe('keyboard shortcuts', () => {
   test('win32·linux는 Ctrl을 modifier로 쓰고 Win(meta)·AltGr(Ctrl+Alt) 조합은 무시한다', () => {
@@ -108,6 +133,25 @@ describe('keyboard shortcuts', () => {
     expect(mac).toContain('title="실행 취소 (⌘Z)"')
     expect(mac).toContain('title="다시 실행 (⇧⌘Z)"')
     expect(mac).not.toContain('Ctrl+')
+
+    // shortcutPlatform을 넘기지 않으면 키 처리와 같은 rendererPlatform() 규칙을 따른다.
+    withPlatform({ navigator: 'Win32' }, () => {
+      const fallback = render(undefined as unknown as string)
+      expect(fallback).toContain('title="실행 취소 (Ctrl+Z)"')
+      expect(resolveShortcut(key('z', { ctrlKey: true }), rendererPlatform())).toBe('undo')
+    })
+    withPlatform({ navigator: 'MacIntel' }, () => {
+      expect(render(undefined as unknown as string)).toContain('title="실행 취소 (⌘Z)"')
+    })
+  })
+
+  test('rendererPlatform은 preload platform을 우선하고 없으면 Mac navigator만 darwin으로 본다', () => {
+    withPlatform({ api: 'win32', navigator: 'MacIntel' }, () => expect(rendererPlatform()).toBe('win32'))
+    withPlatform({ api: 'darwin', navigator: 'Win32' }, () => expect(rendererPlatform()).toBe('darwin'))
+    withPlatform({ navigator: 'MacIntel' }, () => expect(rendererPlatform()).toBe('darwin'))
+    withPlatform({ navigator: 'Win32' }, () => expect(rendererPlatform()).toBe(''))
+    withPlatform({ navigator: 'Linux x86_64' }, () => expect(rendererPlatform()).toBe(''))
+    withPlatform({}, () => expect(rendererPlatform()).toBe(''))
   })
 })
 

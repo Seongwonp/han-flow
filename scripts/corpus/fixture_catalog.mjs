@@ -33,7 +33,10 @@ export function validateFixtureCatalog(catalog) {
     if (fixture.provenance !== undefined && !PROVENANCES.has(fixture.provenance)) {
       throw new Error(`${fixture.id}: provenance는 synthetic 또는 external이어야 합니다.`)
     }
-    if (fixtureProvenance(fixture) === 'external' && (fixture.format !== 'hwpx' || !fixture.pipelines.includes('hwpx-core'))) {
+    if (
+      fixtureProvenance(fixture) === 'external' &&
+      (fixture.format !== 'hwpx' || fixture.pipelines.length !== 1 || fixture.pipelines[0] !== 'hwpx-core')
+    ) {
       throw new Error(`${fixture.id}: external fixture는 hwpx-core pipeline의 HWPX만 허용합니다.`)
     }
     const pipelines = new Set()

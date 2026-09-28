@@ -16,12 +16,8 @@ export function sandboxDisabled() {
   return process.getuid?.() === 0 || process.env.HAN_FLOW_NO_SANDBOX === '1'
 }
 
-// 패키지 앱 실행 인자.
+// Electron 실행 인자. 패키지 앱과 `electron <script> <args>` 보조 스크립트 모두 맨 앞에 붙인다.
+// 보조 스크립트(*.cjs)는 자기 스크립트 경로 뒤의 인자만 위치 인자로 읽으므로 앞에 붙은 옵션과 섞이지 않는다.
 export function electronLaunchArguments() {
   return sandboxDisabled() ? ['--no-sandbox'] : []
-}
-
-// 위치 인자를 쓰는 Electron 보조 스크립트는 인자 대신 환경 변수로 sandbox를 끈다.
-export function electronLaunchEnvironment() {
-  return sandboxDisabled() ? { ELECTRON_DISABLE_SANDBOX: '1' } : {}
 }

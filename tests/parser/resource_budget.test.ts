@@ -8,6 +8,7 @@ import {
   validateXmlResourceBudget,
   XmlResourceLimits
 } from '../../src/core/parser/resource_budget'
+import { writeDecoderWorkerShim } from '../main/decoder_worker_shim'
 import { DocumentImporter } from '../../src/main/document_importer'
 
 const xmlLimits: XmlResourceLimits = {
@@ -86,7 +87,7 @@ describe('HWPX image resource budget', () => {
 
 describe('HWPX adversarial package import', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-resource-budget-'))
-  const importer = new DocumentImporter(join(directory, 'unused-worker.js'))
+  const importer = new DocumentImporter(writeDecoderWorkerShim(directory))
   const context = { senderId: 91, onComplete: jest.fn(), onError: jest.fn() }
 
   function packagePath(fileName: string, section: string, resource?: Buffer): string {

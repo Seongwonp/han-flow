@@ -3,7 +3,13 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
-import { EditingSessionManager, PROTECTED_DESTINATION_MESSAGE } from './editing_session'
+import {
+  EditingSessionManager,
+  INVALID_DESTINATION_MESSAGE,
+  PROTECTED_DESTINATION_MESSAGE,
+  pdfExportFailureMessage
+} from './editing_session'
+import { isDevToolsShortcut } from './dev_tools_shortcut'
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
@@ -149,6 +155,18 @@ async function saveEditingSessionWithDialog(
         title: 'HWPX 변경본 저장',
         message: '원본 문서에는 저장할 수 없습니다.',
         detail: PROTECTED_DESTINATION_MESSAGE
+      })
+      return { outcome: 'cancelled' as const }
+    }
+    if (decision === 'invalid') {
+      await showMessageBox(window, {
+        type: 'error',
+        buttons: ['확인'],
+        defaultId: 0,
+        noLink: true,
+        title: 'HWPX 변경본 저장',
+        message: '이 위치에는 저장할 수 없습니다.',
+        detail: INVALID_DESTINATION_MESSAGE
       })
       return { outcome: 'cancelled' as const }
     }
@@ -886,6 +904,15 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
       })
   })
   mainWindow.on('closed', () => { mainWindow = null })
+  if (!app.isPackaged && process.platform !== 'darwin') {
+    // 메뉴를 제거한 Windows·Linux 개발 빌드에서 DevTools를 열 수 있도록 창 단위로만 가로챈다(전역 단축키 아님).
+    const devToolsTarget = mainWindow.webContents
+    devToolsTarget.on('before-input-event', (event, input) => {
+      if (!isDevToolsShortcut(input, process.platform)) return
+      event.preventDefault()
+      devToolsTarget.toggleDevTools()
+    })
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -997,7 +1024,15 @@ app.whenReady().then(() => {
       }
       const pdf = await event.sender.printToPDF(printOptions)
       // 기존 PDF 교체 동작은 유지하되, 중간에 실패해도 반쯤 쓴 파일이 남지 않도록 임시 파일 rename으로 게시한다.
-      await writeFileAtomically(targetPath, pdf, { overwrite: true })
+      // 편집 중인 원본 문서와 심볼릭 링크 목적지는 교체하지 않는다.
+      try {
+        await writeFileAtomically(targetPath, pdf, {
+          overwrite: true,
+          protectedPaths: editingSessions.protectedSourcePaths()
+        })
+      } catch (reason) {
+        throw new Error(pdfExportFailureMessage(reason))
+      }
       return targetPath
     } finally {
       if (!event.sender.isDestroyed()) event.sender.send('pdf:finish', requestId)
@@ -1011,8 +1046,9 @@ app.whenReady().then(() => {
       return await fontList.getFonts()
     } catch (error) {
       console.error('Font error:', error)
-      // font-list 실패 시 OS 기본 한글 글꼴만 돌려준다. 설치 여부가 불확실한 글꼴은 넣지 않는다.
-      if (process.platform === 'win32') return ['Malgun Gothic', '맑은 고딕', 'Batang', '바탕', 'Gulim', 'Dotum']
+      // font-list 실패 시 모든 설치본에 있는 OS 기본 한글 글꼴만 돌려준다.
+      // Windows에서 항상 보장되는 것은 맑은 고딕뿐이다. 바탕·굴림·돋움은 한국어 보조 글꼴(선택 기능)이라 넣지 않는다.
+      if (process.platform === 'win32') return ['Malgun Gothic', '맑은 고딕']
       if (process.platform === 'darwin') return ['Apple SD Gothic Neo', 'AppleMyungjo']
       return []
     }

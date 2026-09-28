@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
-import { prepareCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
+import { generateCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
 import { linkHwpxManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
 import { defaultAppBinary } from './app_binary.mjs'
 
@@ -74,7 +74,8 @@ try {
   }
   const fixtures = productionFixtures.map((fixture) => ({
     id: fixture.id,
-    path: prepareCorpusFixture(fixture.manifest, { generator, directory, publicRoot: dirname(manifestPath) }),
+    // production matrix는 catalog가 synthetic generator fixture만 허용한다(external은 hwpx-core 전용).
+    path: generateCorpusFixture(generator, directory, fixture.manifest),
     delayMs: 500,
     ...productionOptions[fixture.id]
   }))

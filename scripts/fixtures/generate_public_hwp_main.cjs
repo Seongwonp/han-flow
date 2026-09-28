@@ -3,7 +3,10 @@ const { writeFile } = require('node:fs/promises')
 const { resolve } = require('node:path')
 const CFB = require('cfb')
 
-const outputPath = process.argv[2]
+// Electron 옵션(--no-sandbox 등)이 스크립트 경로 앞에 올 수 있으므로 스크립트 경로 뒤의 인자만 위치 인자로 읽는다.
+const scriptIndex = process.argv.findIndex((argument) => resolve(argument) === __filename)
+const scriptArguments = process.argv.slice(scriptIndex >= 0 ? scriptIndex + 1 : 2)
+const outputPath = scriptArguments[0]
 const RESULT_CHANNEL = 'han-flow:generate-public-hwp'
 const HWP_VERSION_5_0_3_2 = 0x05000302
 

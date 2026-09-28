@@ -1,5 +1,15 @@
 import { createHash } from 'crypto'
-import { existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import {
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from 'fs'
 import { tmpdir } from 'os'
 import { basename, join } from 'path'
 import {
@@ -9,9 +19,12 @@ import {
   listHwpxTextAnchors,
   ReplaceTextCommand
 } from '../../src/core/editing/text_patch'
-import { saveHwpxAs } from '../../src/core/editing/save_as'
+import { saveHwpxAs, writeFileAtomically } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createRoundTripHwpx, roundTripSentinels } from '../fixtures/public/create_synthetic_hwpx'
+
+// save_as가 호출 시점에 읽는 실제 module 객체. namespace import는 spyOn으로 바꿀 수 없다.
+const fsPromises: typeof import('fs/promises') = jest.requireActual('fs/promises')
 
 function hash(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex')
@@ -275,6 +288,76 @@ describe('HWPX text patch와 Save As', () => {
       )?.text
     ).toBe('교체 저장')
     expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+  })
+
+  test('overwrite 없이 확인 뒤 게시 직전에 생긴 목적지는 교체하지 않는다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '경쟁 저장')).package
+    const destination = join(directory, 'race-created.hwpx')
+
+    await expect(
+      saveHwpxAs(edited, destination, {
+        onBeforePublish: () => writeFileSync(destination, '다른 프로그램이 만든 파일')
+      })
+    ).rejects.toMatchObject({ name: 'HwpxSaveAsError', code: 'HWPX_SAVE_DESTINATION_EXISTS' })
+    expect(readFileSync(destination, 'utf8')).toBe('다른 프로그램이 만든 파일')
+    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+  })
+
+  test('hard link를 지원하지 않는 파일 시스템에서는 확인 후 rename으로 저장한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', 'link 미지원')).package
+    const destination = join(directory, 'no-hard-link.hwpx')
+    const unsupported = Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+    const linkSpy = jest.spyOn(fsPromises, 'link').mockRejectedValue(unsupported)
+    try {
+      await expect(saveHwpxAs(edited, destination)).resolves.toMatchObject({ replacedExisting: false })
+      expect(linkSpy).toHaveBeenCalledTimes(1)
+
+      // 대체 경로도 rename 직전에 다시 확인해 그 사이 생긴 파일을 거부한다.
+      const raced = join(directory, 'no-hard-link-raced.hwpx')
+      await expect(
+        saveHwpxAs(edited, raced, { onBeforePublish: () => writeFileSync(raced, '먼저 생긴 파일') })
+      ).rejects.toMatchObject({ code: 'HWPX_SAVE_DESTINATION_EXISTS' })
+      expect(readFileSync(raced, 'utf8')).toBe('먼저 생긴 파일')
+    } finally {
+      linkSpy.mockRestore()
+    }
+    const saved = await HwpxSourcePackage.open(destination)
+    expect(hash(saved.toBuffer())).toBe(hash(edited.toBuffer()))
+    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+  })
+
+  ;(process.platform === 'win32' ? test.skip : test)('저장 파일 권한은 0o600이 아니라 umask를 적용한 기본값이다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '권한')).package
+    const destination = join(directory, 'mode.hwpx')
+    await saveHwpxAs(edited, destination)
+    expect(statSync(destination).mode & 0o777).toBe(0o666 & ~process.umask())
+
+    const pdf = join(directory, 'mode.pdf')
+    await writeFileAtomically(pdf, Buffer.from('%PDF-1.4'))
+    expect(statSync(pdf).mode & 0o777).toBe(0o666 & ~process.umask())
+  })
+
+  test('writeFileAtomically는 보호 경로와 symlink 목적지를 overwrite여도 거부한다', async () => {
+    const protectedPath = join(directory, 'open-source.hwpx')
+    writeFileSync(protectedPath, '열린 원본')
+    await expect(
+      writeFileAtomically(protectedPath, Buffer.from('%PDF'), { overwrite: true, protectedPaths: [protectedPath] })
+    ).rejects.toMatchObject({ code: 'HWPX_SAVE_PROTECTED_DESTINATION' })
+    expect(readFileSync(protectedPath, 'utf8')).toBe('열린 원본')
+
+    if (process.platform !== 'win32') {
+      const linkPath = join(directory, 'link-to-source.pdf')
+      symlinkSync(protectedPath, linkPath)
+      await expect(
+        writeFileAtomically(linkPath, Buffer.from('%PDF'), { overwrite: true })
+      ).rejects.toMatchObject({ code: 'HWPX_SAVE_INVALID_DESTINATION' })
+      expect(readFileSync(protectedPath, 'utf8')).toBe('열린 원본')
+      rmSync(linkPath)
+    }
+    rmSync(protectedPath)
   })
 
   test('overwrite 교체 중 검증이 실패하면 기존 파일을 보존하고 임시 파일을 지운다', async () => {

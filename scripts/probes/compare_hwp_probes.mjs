@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { outputProbe } from './hwp_probe_common.mjs'
+import { electronLaunchArguments } from '../app_binary.mjs'
 
 const filePath = process.argv[2]
 const hwpxFlag = process.argv.indexOf('--hwpx')
@@ -75,7 +76,7 @@ const root = resolve(import.meta.dirname, '../..')
 const electron = createRequire(import.meta.url)('electron')
 const [kordoc, rhwp, hwpx] = await Promise.all([
   run(process.execPath, [resolve(import.meta.dirname, 'kordoc_probe.mjs'), filePath]),
-  run(electron, [resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath, ...(pdfPath ? [pdfPath] : [])]),
+  run(electron, [...electronLaunchArguments(), resolve(import.meta.dirname, 'rhwp_probe_main.cjs'), filePath, ...(pdfPath ? [pdfPath] : [])]),
   hwpxPath
     ? run(process.execPath, [resolve(import.meta.dirname, 'hwpx_reference_probe.mjs'), hwpxPath])
     : Promise.resolve({ code: 0, payload: null })

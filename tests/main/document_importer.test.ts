@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { resolve } from 'path'
+import { writeDecoderWorkerShim } from './decoder_worker_shim'
 import { DocumentImporter, documentFormatFromPath } from '../../src/main/document_importer'
 import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
@@ -8,7 +9,7 @@ describe('문서 가져오기 경계', () => {
   const directory = mkdtempSync(resolve(tmpdir(), 'han-flow-importer-'))
   const hwpxFixture = createSyntheticHwpx(directory)
   const hwpFixture = resolve(__dirname, '../fixtures/public/synthetic-layout.hwp')
-  const importer = new DocumentImporter(resolve(directory, 'unused-decoder-worker.js'))
+  const importer = new DocumentImporter(writeDecoderWorkerShim(directory))
   const context = {
     senderId: 1,
     onComplete: jest.fn(),
