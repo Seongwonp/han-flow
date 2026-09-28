@@ -983,7 +983,10 @@ app.whenReady().then(() => {
       return await fontList.getFonts()
     } catch (error) {
       console.error('Font error:', error)
-      return ['함초롬바탕', 'Pretendard', '나눔고딕', 'Apple SD Gothic Neo']
+      // font-list 실패 시 OS 기본 한글 글꼴만 돌려준다. 설치 여부가 불확실한 글꼴은 넣지 않는다.
+      if (process.platform === 'win32') return ['Malgun Gothic', '맑은 고딕', 'Batang', '바탕', 'Gulim', 'Dotum']
+      if (process.platform === 'darwin') return ['Apple SD Gothic Neo', 'AppleMyungjo']
+      return []
     }
   })
 

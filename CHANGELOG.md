@@ -20,6 +20,7 @@
 - 손실성 초기 parser·normalization·renderer-engine·Zustand store와 구형 shared 타입 제거
 - 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
 - Windows x64 production `dir` package 명령과 OS별 V3 acceptance bundle 생성 지원
+- OS별 글꼴 대체 체인(Windows 맑은 고딕·바탕 우선)과 한/영 family alias, 미설치 시 CSS generic fallback
 
 ### V3 HWPX 편집 기반
 

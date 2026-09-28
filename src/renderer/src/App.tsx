@@ -18,7 +18,7 @@ import {
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
-import { resolveDocumentFonts } from '../../core/fonts/font_resolver'
+import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
@@ -64,7 +64,7 @@ function borderCss(border: ViewerCellStyle['left']): string {
 function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerDocument): CSSProperties {
   const style = document.charStyles[item.charStyleId]
   return {
-    fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined,
+    fontFamily: style?.fontFamily ? `${cssFontFamilyName(style.fontFamily)}, ${KOREAN_SANS_STACK}` : undefined,
     fontSize: style ? `${style.height / 100}pt` : undefined,
     fontWeight: style?.bold ? 700 : 400,
     fontStyle: style?.italic ? 'italic' : 'normal',
@@ -886,7 +886,10 @@ export default function App() {
     if (!document) return
     setLayoutMeasurements(undefined)
     const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
-    void api().getFonts().then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts))).catch(() => setFontResolutions(resolveDocumentFonts(requested, [])))
+    const fontOptions = { platform: rendererPlatform() }
+    void api().getFonts()
+      .then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts, fontOptions)))
+      .catch(() => setFontResolutions(resolveDocumentFonts(requested, [], fontOptions)))
   }, [document])
   useEffect(() => {
     if (!effectiveDocument || !measurementRef.current) return
