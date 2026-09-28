@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
@@ -916,6 +916,9 @@ if (!hasSingleInstanceLock) {
 }
 
 app.whenReady().then(() => {
+  // Windows·Linux의 기본 Electron 메뉴는 Ctrl+Z·Ctrl+= 등을 renderer 단축키와 중복 실행하므로 제거한다.
+  // macOS는 ⌘Q·편집 role을 위해 기본 메뉴를 유지한다.
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
   ipcMain.handle('benchmark:complete', async (_event, timing: unknown) => {
     if (!benchmarkFile || !benchmarkOutput) return false
     benchmarkMeasurements.push(timing)
