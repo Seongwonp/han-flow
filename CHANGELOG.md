@@ -22,6 +22,7 @@
 - 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
 - Windows x64 production `dir` package 명령과 OS별 V3 acceptance bundle 생성 지원
 - OS별 글꼴 대체 체인(Windows 맑은 고딕·바탕 우선)과 한/영 family alias, 미설치 시 CSS generic fallback
+- EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
 
 ### V3 HWPX 편집 기반
 

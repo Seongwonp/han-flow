@@ -1660,8 +1660,9 @@ export default function App() {
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => {
     event.preventDefault()
-    const path = (event.dataTransfer.files[0] as any)?.path
-    if (/\.(?:hwp|hwpx)$/iu.test(path ?? '')) await openPath(path)
+    const file = event.dataTransfer.files[0]
+    const path: string | undefined = file ? api().getPathForFile(file) || undefined : undefined
+    if (path && /\.(?:hwp|hwpx)$/iu.test(path)) await openPath(path)
     else {
       setErrorCode('UNSUPPORTED_FILE_TYPE')
       setError('HWP 또는 HWPX 파일만 열 수 있습니다.')

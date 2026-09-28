@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
@@ -30,6 +30,8 @@ const api = {
   askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
   openNewWindow: () => ipcRenderer.invoke('window:openNew'),
   openImage: () => ipcRenderer.invoke('dialog:openImage'),
+  // Electron 32부터 File.path가 제거되어 drag-and-drop 경로는 webUtils로만 얻을 수 있다.
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
   onOpenFile: (listener: (payload: { filePath: string; receivedAt: number }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: { filePath: string; receivedAt: number }) => listener(payload)
     ipcRenderer.on('file:open', handler)

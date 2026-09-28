@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
-import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
@@ -84,6 +84,14 @@ async function showMessageBox(
   options: Electron.MessageBoxOptions
 ): Promise<Electron.MessageBoxReturnValue> {
   return window ? dialog.showMessageBox(window, options) : dialog.showMessageBox(options)
+}
+
+// Electron 43부터 defaultPath를 생략한 파일 대화상자는 OS의 마지막 폴더 대신 항상 다운로드 폴더에서 열린다.
+// 이전처럼 마지막으로 쓴 폴더를 이어 쓰도록 직접 기억한다.
+let lastDialogDirectory: string | undefined
+
+function rememberDialogDirectory(filePath: string | undefined): void {
+  if (filePath) lastDialogDirectory = dirname(filePath)
 }
 
 async function showSaveDialog(
@@ -837,7 +845,7 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     }
   })
   if (visualStateOutput) {
-    mainWindow.webContents.on('console-message', (_event, _level, message) => {
+    mainWindow.webContents.on('console-message', ({ message }) => {
       if (message.startsWith('HAN_FLOW_E2E_PHASE ')) console.error(message)
     })
   }
@@ -960,10 +968,11 @@ app.whenReady().then(() => {
     const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
     const targetPath = testPath ?? (await showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
       title: 'PDF로 내보내기',
-      defaultPath: '문서.pdf',
+      defaultPath: lastDialogDirectory ? join(lastDialogDirectory, '문서.pdf') : '문서.pdf',
       filters: [{ name: 'PDF 문서', extensions: ['pdf'] }]
     })).filePath
     if (!targetPath) return null
+    if (!testPath) rememberDialogDirectory(targetPath)
 
     const requestId = `${Date.now()}`
     try {
@@ -1032,12 +1041,14 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:openFile', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '문서 열기',
+      defaultPath: lastDialogDirectory,
       properties: ['openFile'],
       filters: [
         { name: '한글 문서', extensions: ['hwp', 'hwpx'] }
       ]
     })
     if (canceled) return null
+    rememberDialogDirectory(filePaths[0])
     return filePaths[0]
   })
 
@@ -1063,6 +1074,7 @@ app.whenReady().then(() => {
   ipcMain.handle('dialog:openImage', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '이미지 삽입',
+      defaultPath: lastDialogDirectory,
       properties: ['openFile'],
       filters: [
         { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp'] }
@@ -1071,6 +1083,7 @@ app.whenReady().then(() => {
     if (canceled) return null
     
     const filePath = filePaths[0]
+    rememberDialogDirectory(filePath)
     const fs = require('fs')
     const buffer = fs.readFileSync(filePath)
     const ext = filePath.split('.').pop()
