@@ -175,7 +175,7 @@ paint p95 1초 이내와 저장본 복구 경고 0이다. 글꼴 차이로 인�
 
 예상: 4–6주
 
-- Windows 11 x64 installer와 파일 연결
+- [ ] Windows 11 x64 installer와 파일 연결 — 부분 완료 (비서명 NSIS, CI artifact)
 - 한/글 병행 설치, IME와 DPI 100/125/150/200%
 - 다중 모니터, 시스템 글꼴 mapping과 PDF
 - code signing과 SmartScreen 전략

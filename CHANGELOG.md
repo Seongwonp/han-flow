@@ -29,6 +29,10 @@
 
 - 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
 
+### Sprint 5 Windows 배포 후보
+
+- 결정적 `icon:ico` 생성기와 비서명 x64 NSIS 설치본 target(한국어·설치 경로 선택·파일 연결), Windows CI의 패키지 앱 matrix·HWP·PDF E2E와 설치본·unpacked artifact 업로드 추가
+
 ### V3 HWPX 편집 기반
 
 - 과거 editor store·normalized model·serializer와 저장 IPC 감사

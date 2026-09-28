@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test-and-build:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -44,3 +44,44 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Package unpacked Windows app
+        run: npm run package:win
+
+      # windows-latest에는 Chocolatey가 있고 shim이 이미 PATH에 있는 bin 폴더에 생긴다.
+      - name: Install Poppler for PDF checks
+        run: |
+          choco install poppler -y --no-progress
+          pdfinfo -v
+
+      # Windows 러너는 데스크톱 세션이 있어 xvfb 없이 패키지 앱을 띄운다.
+      - name: Packaged app HWPX matrix
+        run: npm run verify:matrix
+
+      - name: Packaged app HWP matrix
+        run: npm run verify:hwp-matrix
+
+      - name: Packaged app PDF export
+        run: npm run verify:pdf -- tests/fixtures/public/synthetic-layout.hwp
+
+      - name: Build unsigned NSIS installer
+        run: npm run package:win:installer
+
+      # NSIS 실패 시 남는 불완전한 exe를 올리지 않도록 성공한 경우에만 올린다.
+      - name: Upload unsigned Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: han-flow-windows-installer
+          path: release/Han-Flow-*-win-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      # upload-artifact가 디렉터리를 zip으로 묶어 올린다.
+      - name: Upload unpacked Windows app
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: han-flow-windows-unpacked
+          path: release/win-unpacked
+          if-no-files-found: warn
+          retention-days: 7

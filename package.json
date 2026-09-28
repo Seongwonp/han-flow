@@ -43,12 +43,34 @@
       ]
     },
     "win": {
-      "target": ["dir"],
-      "icon": "build/icon.png",
+      "target": [{ "target": "nsis", "arch": ["x64"] }, "dir"],
+      "icon": "build/icon.ico",
+      "artifactName": "Han-Flow-${version}-win-x64.${ext}",
       "fileAssociations": [
-        { "ext": "hwp", "name": "HWP 문서", "description": "HWP 문서" },
-        { "ext": "hwpx", "name": "HWPX 문서", "description": "HWPX 문서" }
+        {
+          "ext": "hwp",
+          "name": "HWP 문서",
+          "description": "HWP 문서",
+          "mimeType": "application/x-hwp",
+          "role": "Viewer"
+        },
+        {
+          "ext": "hwpx",
+          "name": "HWPX 문서",
+          "description": "HWPX 문서",
+          "mimeType": "application/hwp+zip",
+          "role": "Viewer"
+        }
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Han-Flow",
+      "language": "1042",
+      "deleteAppDataOnUninstall": false
     },
     "mac": {
       "category": "public.app-category.productivity",
@@ -91,9 +113,11 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "icon:ico": "node scripts/build/make_ico.mjs",
     "typecheck": "tsc --noEmit && tsc -p src/renderer/tsconfig.json --noEmit",
     "package:mac": "npm run build && electron-builder --mac dir",
     "package:win": "npm run build && electron-builder --win dir --x64",
+    "package:win:installer": "npm run build && electron-builder --win nsis --x64",
     "package:linux": "npm run build && electron-builder --linux dir",
     "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64",
     "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal",

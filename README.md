@@ -275,9 +275,11 @@ npm test -- --runInBand
 npm run build
 npm run package:mac
 npm run package:linux
+npm run package:win:installer
 ```
 
 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. Linux CI는 `release/linux-unpacked`를 묶은 unpacked 앱을 7일 보관 artifact로 올립니다.
+Windows CI는 비서명 NSIS 설치본(`Han-Flow-<version>-win-x64.exe`)과 unpacked 앱을 7일 보관 artifact로 올리며, code signing(V4) 전까지 SmartScreen 경고가 표시됩니다.
 
 주요 회귀 관문:
 
