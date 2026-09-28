@@ -1,0 +1,84 @@
+name: Linux CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-package-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Unit and integration tests
+        run: npm test -- --runInBand
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Parser probes
+        run: npm run test:probe
+
+      - name: Public HWPX corpus
+        run: npm run verify:corpus
+
+      - name: Production build
+        run: npm run build
+
+      - name: Package unpacked Linux app
+        run: npm run package:linux
+
+      - name: Install headless E2E dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb poppler-utils fonts-noto-cjk
+
+      # Ubuntu 24.04 러너는 비특권 user namespace를 AppArmor로 막으므로 sandbox를 끈다.
+      - name: Packaged app HWPX matrix
+        env:
+          HAN_FLOW_NO_SANDBOX: '1'
+        run: xvfb-run -a npm run verify:matrix
+
+      - name: Packaged app HWP matrix
+        env:
+          HAN_FLOW_NO_SANDBOX: '1'
+        run: xvfb-run -a npm run verify:hwp-matrix
+
+      - name: Packaged app PDF export
+        env:
+          HAN_FLOW_NO_SANDBOX: '1'
+        run: xvfb-run -a npm run verify:pdf -- tests/fixtures/public/synthetic-layout.hwp
+
+      # upload-artifact는 실행 권한을 보존하지 않으므로 tar로 묶어 올린다.
+      - name: Archive unpacked Linux app
+        if: ${{ !cancelled() }}
+        run: tar -czf release/han-flow-linux-unpacked.tar.gz -C release linux-unpacked
+
+      - name: Upload unpacked Linux app
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: han-flow-linux-unpacked
+          path: release/han-flow-linux-unpacked.tar.gz
+          if-no-files-found: warn
+          retention-days: 7

@@ -2,9 +2,10 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
+import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
 const fixture = process.argv[2]
-const appBinary = resolve(process.argv[3] ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const appBinary = process.argv[3] ? resolve(process.argv[3]) : defaultAppBinary()
 const keepArtifacts = process.env.HAN_FLOW_KEEP_VERIFY_OUTPUT === '1'
 
 if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
@@ -32,7 +33,7 @@ const directory = await mkdtemp(join(tmpdir(), 'han-flow-pdf-verify-'))
 const statePath = join(directory, 'visual-state.json')
 const pdfPath = join(directory, 'document.pdf')
 try {
-  await run(appBinary, [], {
+  await run(appBinary, electronLaunchArguments(), {
     env: {
       ...process.env,
       HAN_FLOW_E2E: '1',

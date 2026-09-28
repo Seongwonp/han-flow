@@ -32,6 +32,24 @@
       "output": "release"
     },
     "files": ["out/**/*", "package.json"],
+    "linux": {
+      "target": ["dir"],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "executableName": "han-flow",
+      "fileAssociations": [
+        { "ext": "hwp", "name": "HWP 문서", "mimeType": "application/x-hwp" },
+        { "ext": "hwpx", "name": "HWPX 문서", "mimeType": "application/hwp+zip" }
+      ]
+    },
+    "win": {
+      "target": ["dir"],
+      "icon": "build/icon.png",
+      "fileAssociations": [
+        { "ext": "hwp", "name": "HWP 문서", "description": "HWP 문서" },
+        { "ext": "hwpx", "name": "HWPX 문서", "description": "HWPX 문서" }
+      ]
+    },
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
@@ -76,6 +94,7 @@
     "typecheck": "tsc --noEmit && tsc -p src/renderer/tsconfig.json --noEmit",
     "package:mac": "npm run build && electron-builder --mac dir",
     "package:win": "npm run build && electron-builder --win dir --x64",
+    "package:linux": "npm run build && electron-builder --linux dir",
     "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64",
     "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal",
     "preview": "electron-vite preview",

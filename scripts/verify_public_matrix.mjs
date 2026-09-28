@@ -5,14 +5,12 @@ import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { prepareCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
 import { linkHwpxManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
+import { defaultAppBinary } from './app_binary.mjs'
 
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
 const root = resolve(import.meta.dirname, '..')
-const defaultAppBinary = process.platform === 'win32'
-  ? resolve(root, 'release/win-unpacked/Han-Flow.exe')
-  : resolve(root, 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
-const appBinary = resolve(process.argv[2] ?? defaultAppBinary)
+const appBinary = process.argv[2] ? resolve(process.argv[2]) : defaultAppBinary(root)
 const generatorPath = resolve(root, 'tests/fixtures/public/create_synthetic_hwpx.ts')
 const manifestPath = resolve(root, 'tests/fixtures/public/hwpx_corpus_manifest.json')
 const catalogPath = resolve(root, 'tests/fixtures/public/fixture_catalog.json')

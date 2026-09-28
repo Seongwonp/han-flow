@@ -49,7 +49,7 @@ React UI, public fixture와 Windows 한/글 왕복은 Windows에서 완결한다
 macOS 전용 관문은 CI와 실제 Apple Silicon Mac으로 분리한다.
 
 - Windows CI: `npm ci`, Jest, parser probe, production build
-- macOS CI: build와 package smoke
+- macOS CI: 아직 없음. 현재 CI는 Windows(install·test·build)와 Linux(`package:linux`·xvfb 패키지 앱 E2E·PDF·artifact)
 - Linux(Docker·WSL·Ubuntu VM): `verify:corpus`, xvfb E2E와 글꼴 폴백 재현, macOS 관문은 대체하지 않음
 - 실제 Mac: 물리 IME, Finder 연결, 글꼴·PDF, Developer ID, 공증, Gatekeeper와 DMG 설치
 

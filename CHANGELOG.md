@@ -6,6 +6,7 @@
 
 - ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고 decoder worker에 heap 한도·wall-clock timeout·구조화된 오류 code 추가
 - Node.js 22·npm 10 개발 계약과 Windows install/test/probe/build CI 추가
+- Linux `dir` 패키지 target과 xvfb 패키지 앱 matrix·HWP·PDF E2E, unpacked 앱 artifact를 올리는 Linux CI 추가
 - 단일 완료율을 폐기하고 capability별 외부 승인까지 추적하는 장기 로드맵 추가
 - HWPX read-only와 editing 경로의 entry·경로·암호화·압축 해제 제한 통합
 - Electron renderer sandbox와 명시적 context isolation 활성화

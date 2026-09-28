@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
 const fixture = process.argv[2]
 const expectedError = process.argv.includes('--expect-error')
@@ -18,7 +19,8 @@ const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
 const forcedArchitecture = process.env.HAN_FLOW_VERIFY_ARCH
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
-const appBinary = resolve(appArgument ?? 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
+const appBinary = appArgument ? resolve(appArgument) : defaultAppBinary()
+const launchArguments = electronLaunchArguments()
 
 if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
   console.error('HAN_FLOW_VERIFY_ARCH는 arm64 또는 x86_64여야 합니다.')
@@ -41,8 +43,8 @@ async function launch(output, userData, options = {}) {
   await new Promise((resolvePromise, reject) => {
     let settled = false
     const child = spawn(forcedArchitecture ? 'arch' : appBinary, forcedArchitecture
-      ? [`-${forcedArchitecture}`, appBinary]
-      : [], {
+      ? [`-${forcedArchitecture}`, appBinary, ...launchArguments]
+      : launchArguments, {
       env: {
         ...process.env,
         HAN_FLOW_E2E: '1',
