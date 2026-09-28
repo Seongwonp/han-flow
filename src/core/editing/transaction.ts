@@ -28,6 +28,7 @@ import {
   applyReplaceTableFragmentCommand,
   ReplaceTableFragmentCommand
 } from './table_patch'
+import { buildLossReport } from './xml_scan'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
@@ -146,7 +147,6 @@ export function applyEditTransaction(
   }
 
   validateEditorSelection(currentPackage, transaction.selectionAfter)
-  const allEntries = sourcePackage.listEntries().map((entry) => entry.path)
   const changed = currentPackage !== sourcePackage
   return {
     package: currentPackage,
@@ -162,14 +162,7 @@ export function applyEditTransaction(
           timestamp: transaction.timestamp
         }
       : undefined,
-    lossReport: {
-      preservedEntries: allEntries.filter((path) => !modifiedEntries.has(path)),
-      modifiedEntries: [...modifiedEntries],
-      regeneratedEntries: [],
-      omittedEntries: [],
-      unsupportedFeatures: [],
-      previewStatus
-    },
+    lossReport: buildLossReport(sourcePackage, [...modifiedEntries], previewStatus),
     changed
   }
 }

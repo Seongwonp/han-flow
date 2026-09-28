@@ -5,6 +5,18 @@ import {
   HwpxLossReport,
   listHwpxTextAnchors
 } from './text_patch'
+import {
+  attribute,
+  buildLossReport,
+  findTagEnd,
+  isSurrogateBoundarySafe,
+  nearestAncestor,
+  replaceRange,
+  scanXmlElements,
+  setAttribute,
+  targetOrdinal,
+  XmlElementSpan
+} from './xml_scan'
 
 export type ParagraphAlignment = 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY'
 
@@ -75,22 +87,6 @@ export interface StylePatchResult {
   changed: boolean
 }
 
-interface XmlElementSpan {
-  name: string
-  start: number
-  openEnd: number
-  closeStart: number
-  end: number
-  parent?: XmlElementSpan
-}
-
-interface OpenElement {
-  name: string
-  start: number
-  openEnd: number
-  parent?: XmlElementSpan
-}
-
 interface TextStyleContext {
   textNode: XmlElementSpan
   run: XmlElementSpan
@@ -107,160 +103,6 @@ interface StyleCollection {
   span: XmlElementSpan
   openTag: string
   definitions: StyleDefinition[]
-}
-
-function findTagEnd(xml: string, start: number): number {
-  let quote: '"' | "'" | undefined
-  for (let index = start + 1; index < xml.length; index += 1) {
-    const character = xml[index]
-    if (quote) {
-      if (character === quote) quote = undefined
-    } else if (character === '"' || character === "'") {
-      quote = character
-    } else if (character === '>') {
-      return index + 1
-    }
-  }
-  throw new Error('끝나지 않은 XML tag가 있습니다.')
-}
-
-function scanXmlElements(xml: string): XmlElementSpan[] {
-  const spans: XmlElementSpan[] = []
-  const stack: OpenElement[] = []
-  let cursor = 0
-
-  while (cursor < xml.length) {
-    const start = xml.indexOf('<', cursor)
-    if (start < 0) break
-    if (xml.startsWith('<!--', start)) {
-      const close = xml.indexOf('-->', start + 4)
-      if (close < 0) throw new Error('끝나지 않은 XML comment가 있습니다.')
-      cursor = close + 3
-      continue
-    }
-    if (xml.startsWith('<![CDATA[', start)) {
-      const close = xml.indexOf(']]>', start + 9)
-      if (close < 0) throw new Error('끝나지 않은 XML CDATA가 있습니다.')
-      cursor = close + 3
-      continue
-    }
-    if (xml.startsWith('<?', start)) {
-      const close = xml.indexOf('?>', start + 2)
-      if (close < 0) throw new Error('끝나지 않은 XML processing instruction이 있습니다.')
-      cursor = close + 2
-      continue
-    }
-
-    const end = findTagEnd(xml, start)
-    const source = xml.slice(start, end)
-    if (source.startsWith('<!')) {
-      cursor = end
-      continue
-    }
-
-    const closing = /^<\s*\//.test(source)
-    const name = source.match(closing ? /^<\s*\/\s*([^\s>]+)/ : /^<\s*([^\s/>]+)/)?.[1]
-    if (!name) throw new Error(`해석할 수 없는 XML tag가 있습니다: ${source.slice(0, 32)}`)
-    const selfClosing = !closing && /\/\s*>$/.test(source)
-
-    if (closing) {
-      const open = stack.pop()
-      if (!open || open.name !== name) {
-        throw new Error(`XML tag 순서가 올바르지 않습니다: ${name}`)
-      }
-      spans.push({
-        name,
-        start: open.start,
-        openEnd: open.openEnd,
-        closeStart: start,
-        end,
-        parent: open.parent
-      })
-    } else if (selfClosing) {
-      spans.push({
-        name,
-        start,
-        openEnd: end,
-        closeStart: end,
-        end,
-        parent: stack[stack.length - 1]
-          ? {
-              name: stack[stack.length - 1].name,
-              start: stack[stack.length - 1].start,
-              openEnd: stack[stack.length - 1].openEnd,
-              closeStart: -1,
-              end: -1,
-              parent: stack[stack.length - 1].parent
-            }
-          : undefined
-      })
-    } else {
-      const parent = stack[stack.length - 1]
-      stack.push({
-        name,
-        start,
-        openEnd: end,
-        parent: parent
-          ? {
-              name: parent.name,
-              start: parent.start,
-              openEnd: parent.openEnd,
-              closeStart: -1,
-              end: -1,
-              parent: parent.parent
-            }
-          : undefined
-      })
-    }
-    cursor = end
-  }
-
-  if (stack.length) throw new Error(`끝나지 않은 XML element가 있습니다: ${stack[stack.length - 1].name}`)
-
-  const byStart = new Map(spans.map((span) => [span.start, span]))
-  for (const span of spans) {
-    if (span.parent) span.parent = byStart.get(span.parent.start)
-  }
-  return spans.sort((left, right) => left.start - right.start)
-}
-
-function attribute(openTag: string, name: string): string | undefined {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return openTag.match(new RegExp(`\\s${escaped}\\s*=\\s*(["'])(.*?)\\1`))?.[2]
-}
-
-function setAttribute(openTag: string, name: string, value: string): string {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(`(\\s${escaped}\\s*=\\s*)(["'])(.*?)\\2`)
-  if (pattern.test(openTag)) {
-    return openTag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`)
-  }
-  return openTag.replace(/(\s*\/?>)$/, ` ${name}="${value}"$1`)
-}
-
-function replaceRange(source: string, start: number, end: number, replacement: string): string {
-  return source.slice(0, start) + replacement + source.slice(end)
-}
-
-function targetOrdinal(sectionPath: string, textNodeId: string): number {
-  const prefix = `${sectionPath}#hp:t:`
-  if (!textNodeId.startsWith(prefix)) {
-    throw new HwpxEditConflictError(`text anchor가 section과 일치하지 않습니다: ${textNodeId}`)
-  }
-  const ordinal = Number(textNodeId.slice(prefix.length))
-  if (!Number.isSafeInteger(ordinal) || ordinal < 0) {
-    throw new HwpxEditConflictError(`text anchor ordinal이 올바르지 않습니다: ${textNodeId}`)
-  }
-  return ordinal
-}
-
-function nearestAncestor(span: XmlElementSpan, name: string): XmlElementSpan | undefined {
-  let current = span.parent
-  while (current) {
-    if (current.name === name) return current
-    current = current.parent
-  }
-  return undefined
 }
 
 function locateTextStyleContext(
@@ -511,25 +353,10 @@ function insertionGap(headerXml: string, collection: StyleCollection): string {
   return /^\s*$/.test(gap) ? gap : ''
 }
 
-function lossReport(
-  sourcePackage: HwpxSourcePackage,
-  modifiedEntries: string[]
-): HwpxLossReport {
-  const entries = sourcePackage.listEntries().map((entry) => entry.path)
-  return {
-    preservedEntries: entries.filter((path) => !modifiedEntries.includes(path)),
-    modifiedEntries,
-    regeneratedEntries: [],
-    omittedEntries: [],
-    unsupportedFeatures: [],
-    previewStatus: entries.some((path) => path.startsWith('Preview/')) ? 'stale' : 'omitted'
-  }
-}
-
 function noChange(sourcePackage: HwpxSourcePackage): StylePatchResult {
   return {
     package: sourcePackage,
-    lossReport: lossReport(sourcePackage, []),
+    lossReport: buildLossReport(sourcePackage, []),
     changed: false
   }
 }
@@ -631,7 +458,7 @@ function applyStyleDefinition(
       replacementReferenceTag: referenceTag,
       headerMutation
     },
-    lossReport: lossReport(sourcePackage, modifiedEntries),
+    lossReport: buildLossReport(sourcePackage, modifiedEntries),
     changed: true
   }
 }
@@ -685,10 +512,7 @@ export function applyCharacterStyleCommand(
       !Number.isInteger(offset) ||
       offset < 0 ||
       offset > anchor.text.length ||
-      (offset > 0 &&
-        offset < anchor.text.length &&
-        /[\uD800-\uDBFF]/.test(anchor.text[offset - 1]) &&
-        /[\uDC00-\uDFFF]/.test(anchor.text[offset]))
+      !isSurrogateBoundarySafe(anchor.text, offset)
     ) {
       throw new HwpxEditConflictError(`글자 style 범위가 올바르지 않습니다: ${offset}`)
     }
@@ -909,7 +733,7 @@ export function applyRestoreStyleCommand(
       replacementReferenceTag: command.expectedReferenceTag,
       headerMutation: restoredHeader.inverse
     },
-    lossReport: lossReport(sourcePackage, modifiedEntries),
+    lossReport: buildLossReport(sourcePackage, modifiedEntries),
     changed: true
   }
 }
@@ -955,7 +779,7 @@ export function applyRestoreCharacterRunCommand(
       replacementFragment: command.expectedFragment,
       headerMutation: restoredHeader.inverse
     },
-    lossReport: lossReport(sourcePackage, modifiedEntries),
+    lossReport: buildLossReport(sourcePackage, modifiedEntries),
     changed: true
   }
 }

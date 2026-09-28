@@ -1,7 +1,19 @@
 import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
 import { TableCellSelection } from './table_cell_selection'
-import { HwpxEditConflictError, HwpxLossReport, listHwpxTextAnchors } from './text_patch'
+import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
+import {
+  attribute,
+  buildLossReport,
+  nearestAncestor,
+  replaceRange,
+  sameOrdinalMessage,
+  scanXmlElements,
+  setAttribute,
+  TABLE_SCAN_OPTIONS,
+  targetOrdinal,
+  XmlElementSpan
+} from './xml_scan'
 
 export interface ReplaceTableFragmentCommand {
   type: 'replace-table-fragment'
@@ -42,123 +54,19 @@ export interface SplitTableCellPlan {
   selectionAfter: EditorSelection
 }
 
-interface XmlElementSpan {
-  name: string
-  start: number
-  openEnd: number
-  closeStart: number
-  end: number
-  parent?: XmlElementSpan
-}
-
-function findTagEnd(xml: string, start: number): number {
-  let quote: '"' | "'" | undefined
-  for (let index = start + 1; index < xml.length; index += 1) {
-    const value = xml[index]
-    if (quote) {
-      if (value === quote) quote = undefined
-    } else if (value === '"' || value === "'") quote = value
-    else if (value === '>') return index + 1
-  }
-  throw new HwpxEditConflictError('끝나지 않은 XML tag가 있습니다.')
-}
-
-function scanXmlElements(xml: string): XmlElementSpan[] {
-  const spans: XmlElementSpan[] = []
-  const stack: Array<{ name: string; start: number; openEnd: number; parent?: XmlElementSpan }> = []
-  let cursor = 0
-  while (cursor < xml.length) {
-    const start = xml.indexOf('<', cursor)
-    if (start < 0) break
-    if (xml.startsWith('<!--', start)) {
-      const end = xml.indexOf('-->', start + 4)
-      if (end < 0) throw new HwpxEditConflictError('끝나지 않은 XML comment가 있습니다.')
-      cursor = end + 3
-      continue
-    }
-    if (xml.startsWith('<?', start)) {
-      const end = xml.indexOf('?>', start + 2)
-      if (end < 0) throw new HwpxEditConflictError('끝나지 않은 XML 선언이 있습니다.')
-      cursor = end + 2
-      continue
-    }
-    const openEnd = findTagEnd(xml, start)
-    const tag = xml.slice(start, openEnd)
-    if (tag.startsWith('<!')) {
-      cursor = openEnd
-      continue
-    }
-    const closing = /^<\s*\//.test(tag)
-    const name = tag.match(closing ? /^<\s*\/\s*([^\s>]+)/ : /^<\s*([^\s/>]+)/)?.[1]
-    if (!name) throw new HwpxEditConflictError('해석할 수 없는 XML tag가 있습니다.')
-    const selfClosing = !closing && /\/\s*>$/.test(tag)
-    if (closing) {
-      const open = stack.pop()
-      if (!open || open.name !== name) throw new HwpxEditConflictError('XML tag 순서가 올바르지 않습니다.')
-      spans.push({ name, start: open.start, openEnd: open.openEnd, closeStart: start, end: openEnd, parent: open.parent })
-    } else if (selfClosing) {
-      spans.push({ name, start, openEnd, closeStart: openEnd, end: openEnd, parent: stack.at(-1) as XmlElementSpan | undefined })
-    } else {
-      const parent = stack.at(-1)
-      stack.push({
-        name,
-        start,
-        openEnd,
-        parent: parent ? { name: parent.name, start: parent.start, openEnd: parent.openEnd, closeStart: -1, end: -1, parent: parent.parent } : undefined
-      })
-    }
-    cursor = openEnd
-  }
-  if (stack.length) throw new HwpxEditConflictError('끝나지 않은 XML element가 있습니다.')
-  const byStart = new Map(spans.map((span) => [span.start, span]))
-  spans.forEach((span) => { if (span.parent) span.parent = byStart.get(span.parent.start) })
-  return spans.sort((left, right) => left.start - right.start)
-}
-
-function attribute(tag: string, name: string): string | undefined {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return tag.match(new RegExp(`\\s${escaped}\\s*=\\s*(["'])(.*?)\\1`))?.[2]
-}
-
-function setAttribute(tag: string, name: string, value: string): string {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(`(\\s${escaped}\\s*=\\s*)(["'])(.*?)\\2`)
-  return pattern.test(tag)
-    ? tag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`)
-    : tag.replace(/(\s*\/?>)$/, ` ${name}="${value}"$1`)
-}
-
-function replaceRange(source: string, start: number, end: number, replacement: string): string {
-  return source.slice(0, start) + replacement + source.slice(end)
-}
-
-function nearestAncestor(span: XmlElementSpan, name: string): XmlElementSpan | undefined {
-  let current = span.parent
-  while (current) {
-    if (current.name === name) return current
-    current = current.parent
-  }
-  return undefined
-}
-
 function directChildren(spans: XmlElementSpan[], parent: XmlElementSpan, name: string): XmlElementSpan[] {
   return spans.filter((span) => span.name === name && span.parent?.start === parent.start)
 }
 
-function targetOrdinal(sectionPath: string, textNodeId: string): number {
-  const prefix = `${sectionPath}#hp:t:`
-  const ordinal = textNodeId.startsWith(prefix) ? Number(textNodeId.slice(prefix.length)) : Number.NaN
-  if (!Number.isSafeInteger(ordinal) || ordinal < 0) throw new HwpxEditConflictError('표 anchor가 올바르지 않습니다.')
-  return ordinal
-}
+const TABLE_ORDINAL_MESSAGES = sameOrdinalMessage(() => '표 anchor가 올바르지 않습니다.')
 
 function locateTable(sourcePackage: HwpxSourcePackage, sectionPath: string, textNodeId: string) {
   if (!listHwpxTextAnchors(sourcePackage, sectionPath).some((anchor) => anchor.textNodeId === textNodeId)) {
     throw new HwpxEditConflictError('표 anchor를 찾을 수 없습니다.')
   }
   const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
-  const spans = scanXmlElements(xml)
-  const text = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId)]
+  const spans = scanXmlElements(xml, TABLE_SCAN_OPTIONS)
+  const text = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId, TABLE_ORDINAL_MESSAGES)]
   const cell = text && nearestAncestor(text, 'hp:tc')
   const row = cell && nearestAncestor(cell, 'hp:tr')
   const table = row && nearestAncestor(row, 'hp:tbl')
@@ -278,7 +186,7 @@ function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): 
 function cloneEmptyRow(context: ReturnType<typeof locateTable>, newRowIndex: number): string {
   const { xml, spans, row } = context
   const fragment = xml.slice(row.start, row.end)
-  const localSpans = scanXmlElements(fragment)
+  const localSpans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
   const replacements: Array<{ start: number; end: number; value: string }> = []
   for (const address of localSpans.filter((span) => span.name === 'hp:cellAddr')) {
     replacements.push({
@@ -334,7 +242,7 @@ function cloneEmptyCell(
   paragraphId: { next: number }
 ): string {
   const fragment = context.xml.slice(cell.start, cell.end)
-  const localSpans = scanXmlElements(fragment)
+  const localSpans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
   const replacements: Array<{ start: number; end: number; value: string }> = []
   const address = localSpans.find((span) => span.name === 'hp:cellAddr')
   if (!address) throw new HwpxEditConflictError('복제할 표 셀 주소가 없습니다.')
@@ -367,7 +275,7 @@ function cloneEmptyCell(
 }
 
 function shiftTextNodeId(sectionPath: string, textNodeId: string, delta: number): string {
-  return `${sectionPath}#hp:t:${targetOrdinal(sectionPath, textNodeId) + delta}`
+  return `${sectionPath}#hp:t:${targetOrdinal(sectionPath, textNodeId, TABLE_ORDINAL_MESSAGES) + delta}`
 }
 
 function tagAttributes(tag: string, omitted: readonly string[] = []): string {
@@ -380,7 +288,7 @@ function tagAttributes(tag: string, omitted: readonly string[] = []): string {
 
 function withoutLineSegments(fragment: string): string {
   let result = fragment
-  const spans = scanXmlElements(fragment)
+  const spans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
   for (const lines of spans.filter((span) => span.name === 'hp:linesegarray').sort(
     (left, right) => right.start - left.start
   )) {
@@ -396,7 +304,7 @@ function cloneEmptySplitCell(
   width: number
 ): string {
   const fragment = context.xml.slice(cell.start, cell.end)
-  const spans = scanXmlElements(fragment)
+  const spans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
   const address = spans.find((span) => span.name === 'hp:cellAddr')
   const cellSpan = spans.find((span) => span.name === 'hp:cellSpan')
   const cellSize = spans.find((span) => span.name === 'hp:cellSz')
@@ -1090,24 +998,12 @@ export function planDeleteTableRow(sourcePackage: HwpxSourcePackage, selection: 
   }
 }
 
-function report(sourcePackage: HwpxSourcePackage, sectionPath: string): HwpxLossReport {
-  const entries = sourcePackage.listEntries().map((entry) => entry.path)
-  return {
-    preservedEntries: entries.filter((path) => path !== sectionPath),
-    modifiedEntries: [sectionPath],
-    regeneratedEntries: [],
-    omittedEntries: [],
-    unsupportedFeatures: [],
-    previewStatus: entries.some((path) => path.startsWith('Preview/')) ? 'stale' : 'omitted'
-  }
-}
-
 export function applyReplaceTableFragmentCommand(sourcePackage: HwpxSourcePackage, command: ReplaceTableFragmentCommand) {
   const context = locateTable(sourcePackage, command.sectionPath, command.textNodeId)
   const current = context.xml.slice(context.table.start, context.table.end)
   if (current !== command.expectedFragment) throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
   if (command.expectedFragment === command.replacementFragment) {
-    return { package: sourcePackage, lossReport: report(sourcePackage, command.sectionPath), changed: false }
+    return { package: sourcePackage, lossReport: buildLossReport(sourcePackage, [command.sectionPath]), changed: false }
   }
   const nextXml = replaceRange(context.xml, context.table.start, context.table.end, command.replacementFragment)
   return {
@@ -1119,7 +1015,7 @@ export function applyReplaceTableFragmentCommand(sourcePackage: HwpxSourcePackag
       expectedFragment: command.replacementFragment,
       replacementFragment: command.expectedFragment
     },
-    lossReport: report(sourcePackage, command.sectionPath),
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath]),
     changed: true
   }
 }

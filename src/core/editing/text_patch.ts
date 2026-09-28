@@ -1,4 +1,7 @@
 import { HwpxSourcePackage } from '../parser/source_package'
+import { buildLossReport, findTagEnd, HwpxEditConflictError, isSurrogateBoundarySafe } from './xml_scan'
+
+export { HwpxEditConflictError }
 
 export interface HwpxTextAnchor {
   sectionPath: string
@@ -37,10 +40,6 @@ export interface ReplaceTextResult {
   lossReport: HwpxLossReport
 }
 
-export class HwpxEditConflictError extends Error {
-  readonly code = 'HWPX_EDIT_CONFLICT'
-}
-
 interface SourceTextNode extends HwpxTextAnchor {
   contentStart: number
   contentEnd: number
@@ -56,21 +55,6 @@ interface XmlToken {
   end: number
   kind: 'open' | 'close' | 'self-close' | 'special'
   name?: string
-}
-
-function findTagEnd(xml: string, start: number): number {
-  let quote: '"' | "'" | undefined
-  for (let index = start + 1; index < xml.length; index += 1) {
-    const character = xml[index]
-    if (quote) {
-      if (character === quote) quote = undefined
-    } else if (character === '"' || character === "'") {
-      quote = character
-    } else if (character === '>') {
-      return index + 1
-    }
-  }
-  throw new Error('끝나지 않은 XML tag가 있습니다.')
 }
 
 function tokenizeXml(xml: string): XmlToken[] {
@@ -255,12 +239,7 @@ function assertTextBoundary(text: string, offset: number): void {
   if (!Number.isInteger(offset) || offset < 0 || offset > text.length) {
     throw new HwpxEditConflictError(`text 범위가 올바르지 않습니다: ${offset}`)
   }
-  if (
-    offset > 0 &&
-    offset < text.length &&
-    /[\uD800-\uDBFF]/.test(text[offset - 1]) &&
-    /[\uDC00-\uDFFF]/.test(text[offset])
-  ) {
+  if (!isSurrogateBoundarySafe(text, offset)) {
     throw new HwpxEditConflictError('Unicode surrogate pair 중간은 편집할 수 없습니다.')
   }
 }
@@ -291,8 +270,6 @@ export function applyReplaceTextCommand(
     encodeHwpxTextContent(nextText) +
     xml.slice(sourceNode.contentEnd)
   const nextPackage = sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml, 'utf8'))
-  const entries = sourcePackage.listEntries()
-  const hasPreview = entries.some((entry) => entry.path.startsWith('Preview/'))
 
   return {
     package: nextPackage,
@@ -311,13 +288,6 @@ export function applyReplaceTextCommand(
       ordinal: sourceNode.ordinal,
       text: nextText
     },
-    lossReport: {
-      preservedEntries: entries.map((entry) => entry.path).filter((path) => path !== command.sectionPath),
-      modifiedEntries: [command.sectionPath],
-      regeneratedEntries: [],
-      omittedEntries: [],
-      unsupportedFeatures: [],
-      previewStatus: hasPreview ? 'stale' : 'omitted'
-    }
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath])
   }
 }

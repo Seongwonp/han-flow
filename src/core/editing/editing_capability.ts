@@ -5,6 +5,7 @@ import {
   ViewerText
 } from '../document/viewer_document'
 import { EditorSelection } from './selection'
+import { isSurrogateBoundarySafe } from './xml_scan'
 
 export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT'
 export type EditingCapabilityReason =
@@ -145,12 +146,7 @@ export function listEditingAnchorContexts(document: ViewerDocument): EditingAnch
 function safeOffset(text: string, requested: number): number {
   let offset = Number.isFinite(requested) ? Math.floor(requested) : 0
   offset = Math.max(0, Math.min(offset, text.length))
-  if (
-    offset > 0 &&
-    offset < text.length &&
-    /[\uD800-\uDBFF]/.test(text[offset - 1]) &&
-    /[\uDC00-\uDFFF]/.test(text[offset])
-  ) offset -= 1
+  if (!isSurrogateBoundarySafe(text, offset)) offset -= 1
   return offset
 }
 

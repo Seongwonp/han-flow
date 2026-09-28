@@ -351,6 +351,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [파싱 전략](docs/parsing_strategy.md)
 - [V3 HWPX 편집 조사와 구현 전략](docs/v3_editing_strategy.md)
 - [표 셀 병합·분할 구현 전략](docs/table_merge_split_strategy.md)
+- [편집 코어 tree 모델 전환 계획](docs/editing_core_refactor_plan.md)
 - [공개 호환성 corpus 전략](docs/public_corpus_strategy.md)
 - [HWP/HWPX 오픈소스 참고 프로젝트 검토](docs/open_source_reference_review.md)
 - [V3 macOS 한국어 IME 수동 검증 matrix](docs/v3_ime_manual_matrix.md)

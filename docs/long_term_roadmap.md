@@ -169,6 +169,8 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 각 기능은 `Han-Flow 편집 → Han-Flow 재개봉 → 한/글 재개봉 → 한/글 저장 → Han-Flow
 역재개봉`을 통과해야 완료다.
 
+Sprint 3 후반·4와 병행할 편집 코어 tree 모델 전환은 [편집 코어 tree 모델 전환 계획](editing_core_refactor_plan.md)을 따른다.
+
 ### Sprint 4 — 호환성 corpus와 렌더링 품질
 
 예상: 6–10주, 다른 단계와 병행
