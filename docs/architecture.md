@@ -396,6 +396,9 @@ image 경계에서 표시한다. `containsScripts`는 진단하되 Scripts, OLE�
 않는다. HWP 결과와 HWPX 결과는 main의 `DocumentImporter`가 format-neutral
 `document:import` IPC 계약으로 반환하며 preload와 React loader는 형식별 IPC를 노출하지
 않는다. HWPX background 완료·오류도 같은 document event namespace를 사용한다.
+`document:import`와 `editing:start`는 main이 그 창에 건넨 경로(열기 대화상자, OS 파일 열기,
+명령줄)와 preload가 `document:registerDroppedPath`로 등록한 끌어 놓은 파일만 받는다. 심볼릭 링크를
+푼 실제 경로가 창별 허용목록에 없거나 일반 문서 파일이 아니면 `DOCUMENT_PATH_NOT_ALLOWED`로 거부한다.
 
 현재 `@rhwp/core`의 페이지 표현이 우세해 read-only fixed-page variant를 추가했고 zoom,
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text

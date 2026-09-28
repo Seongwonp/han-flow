@@ -25,6 +25,7 @@
 - OS별 글꼴 대체 체인(Windows 맑은 고딕 우선, 바탕은 한국어 보조 글꼴 설치 시)과 한/영 family alias, 미설치 시 CSS generic fallback, 글꼴 목록 실패 시 Windows는 맑은 고딕만 반환(자동 테스트 기준, Windows 실기 검증 대기)
 - EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
 - Electron 44 요구사항에 맞춰 macOS 패키지 `minimumSystemVersion`을 13.0으로 지정
+- OS 파일 열기 경로를 포커스된 창(없으면 최근 창·새 창)으로 전달하고 대화상자를 요청한 창에 연결, `document:import`·`editing:start`는 main이 건넨 경로와 끌어 놓은 일반 문서 파일만 창별 허용목록(실제 경로 비교)으로 받으며 미사용 `dialog:openImage` 제거
 
 ### Sprint 4 호환성 corpus
 

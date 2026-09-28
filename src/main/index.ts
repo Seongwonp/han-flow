@@ -3,6 +3,8 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
+import { DocumentPathNotAllowedError, DocumentPathRegistry } from './document_path_registry'
+import { OpenPathRouter, type OpenPathDecision, type OpenPathRequest } from './open_path_router'
 import {
   EditingSessionManager,
   INVALID_DESTINATION_MESSAGE,
@@ -44,11 +46,14 @@ const benchmarkMeasurements: unknown[] = []
 const benchmarkUserData = testValue('HAN_FLOW_BENCHMARK_USER_DATA')
 const e2eUserData = testValue('HAN_FLOW_E2E_USER_DATA')
 if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData ?? e2eUserData)!)
-let mainWindow: BrowserWindow | null = null
-let pendingOpen: { filePath: string; receivedAt: number } | null = null
+// 창은 webContents id로 구분한다. 편집 session·문서 가져오기·경로 허용목록도 같은 id를 쓴다.
+const windowsById = new Map<number, BrowserWindow>()
+const openPathRouter = new OpenPathRouter()
 let applicationQuitRequested = false
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
 const editingSessions = new EditingSessionManager()
+const documentPaths = new DocumentPathRegistry()
+const latestImportLoadIds = new Map<number, string>()
 
 function isEditingSelection(value: unknown): boolean {
   return (
@@ -221,8 +226,9 @@ function isDocumentPath(filePath: string): boolean {
   return isHwpxPath(filePath) || isHwpPath(filePath)
 }
 
-function pathFromArguments(arguments_: string[]): string | undefined {
-  return arguments_.find(isDocumentPath)
+function pathFromArguments(arguments_: string[], workingDirectory = process.cwd()): string | undefined {
+  const filePath = arguments_.find(isDocumentPath)
+  return filePath ? resolve(workingDirectory, filePath) : undefined
 }
 
 function captureVisualState(window: BrowserWindow): void {
@@ -830,24 +836,58 @@ function captureVisualState(window: BrowserWindow): void {
   setTimeout(() => void captureWhenReady(), captureDelayMs)
 }
 
-function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
-  if (!isDocumentPath(filePath)) return
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    pendingOpen = { filePath, receivedAt }
-    return
-  }
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
-  mainWindow.focus()
-  mainWindow.webContents.send('file:open', { filePath, receivedAt })
-  captureVisualState(mainWindow)
+function focusedWindowId(): number | null {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (!focused || focused.isDestroyed()) return null
+  const windowId = focused.webContents.id
+  return windowsById.has(windowId) ? windowId : null
 }
 
-function createWindow(initialOpen?: { filePath: string; receivedAt: number }): void {
+function revealWindow(window: BrowserWindow): void {
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+}
+
+function sendOpenPath(window: BrowserWindow, request: OpenPathRequest): void {
+  // main이 건넨 경로이므로 이 창의 허용목록에 먼저 올린 뒤 renderer에 알린다.
+  void documentPaths.allow(window.webContents.id, request.filePath)
+  revealWindow(window)
+  window.webContents.send('file:open', request)
+  captureVisualState(window)
+}
+
+function applyOpenPathDecision(decision: OpenPathDecision): void {
+  if (decision.action === 'create') {
+    createWindow(decision.request)
+    return
+  }
+  if (decision.action !== 'deliver') return
+  const window = windowsById.get(decision.windowId)
+  if (!window || window.isDestroyed()) {
+    // closed 처리 전에 사라진 창이면 목록에서 빼고 남은 창으로 다시 정한다.
+    windowsById.delete(decision.windowId)
+    openPathRouter.removeWindow(decision.windowId)
+    applyOpenPathDecision(openPathRouter.route(decision.request, focusedWindowId()))
+    return
+  }
+  sendOpenPath(window, decision.request)
+}
+
+function flushPendingOpen(): void {
+  applyOpenPathDecision(openPathRouter.flush(focusedWindowId()))
+}
+
+function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
+  if (!isDocumentPath(filePath)) return
+  applyOpenPathDecision(openPathRouter.route({ filePath, receivedAt }, focusedWindowId()))
+}
+
+function createWindow(initialOpen?: OpenPathRequest): void {
   const visualCapturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   const visualStateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   // Create the browser window.
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1200,
     height: visualCapturePath || visualStateOutput ? 1500 : 800,
     show: false,
@@ -863,19 +903,27 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     }
   })
   if (visualStateOutput) {
-    mainWindow.webContents.on('console-message', ({ message }) => {
+    window.webContents.on('console-message', ({ message }) => {
       if (message.startsWith('HAN_FLOW_E2E_PHASE ')) console.error(message)
     })
   }
 
-  const senderId = mainWindow.webContents.id
+  const senderId = window.webContents.id
+  windowsById.set(senderId, window)
+  openPathRouter.addWindow(senderId)
   let closeApproved = false
   let resolvingClose = false
-  mainWindow.webContents.once('destroyed', () => {
+  window.webContents.on('did-finish-load', () => {
+    openPathRouter.markReady(senderId)
+    flushPendingOpen()
+  })
+  window.webContents.once('destroyed', () => {
     documentImporter.cancel(senderId)
     editingSessions.stop(senderId)
+    documentPaths.forget(senderId)
+    latestImportLoadIds.delete(senderId)
   })
-  mainWindow.on('close', (event) => {
+  window.on('close', (event) => {
     if (closeApproved || !editingSessions.isDirty(senderId)) return
     if (resolvingClose) {
       event.preventDefault()
@@ -885,14 +933,14 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     const sessionId = editingSessions.currentSessionId(senderId)
     if (!sessionId) return
     resolvingClose = true
-    const window = mainWindow
+    // 닫히는 바로 그 창을 dialog 부모와 close 대상으로 쓴다.
     void resolveDirtyEditing(senderId, sessionId, window)
       .then((result) => {
         if (result.outcome === 'cancelled') {
           applicationQuitRequested = false
           return
         }
-        if (!window || window.isDestroyed()) return
+        if (window.isDestroyed()) return
         closeApproved = true
         editingSessions.stop(senderId)
         const resumeApplicationQuit = applicationQuitRequested
@@ -903,10 +951,15 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
         resolvingClose = false
       })
   })
-  mainWindow.on('closed', () => { mainWindow = null })
+  window.on('closed', () => {
+    windowsById.delete(senderId)
+    openPathRouter.removeWindow(senderId)
+    // 받을 창이 load 중에 닫혔다면 남은 창(없으면 새 창)으로 보류한 경로를 넘긴다.
+    if (!applicationQuitRequested) flushPendingOpen()
+  })
   if (!app.isPackaged && process.platform !== 'darwin') {
     // 메뉴를 제거한 Windows·Linux 개발 빌드에서 DevTools를 열 수 있도록 창 단위로만 가로챈다(전역 단축키 아님).
-    const devToolsTarget = mainWindow.webContents
+    const devToolsTarget = window.webContents
     devToolsTarget.on('before-input-event', (event, input) => {
       if (!isDevToolsShortcut(input, process.platform)) return
       event.preventDefault()
@@ -914,22 +967,22 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
     })
   }
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+  window.on('ready-to-show', () => {
+    window.show()
   })
 
   if (visualCapturePath || visualStateOutput) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      if (mainWindow) captureVisualState(mainWindow)
+    window.webContents.once('did-finish-load', () => {
+      if (!window.isDestroyed()) captureVisualState(window)
     })
   }
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  window.webContents.setWindowOpenHandler((details) => {
     if (isAllowedExternalUrl(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
   })
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    const currentUrl = mainWindow?.webContents.getURL() ?? ''
+  window.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = window.webContents.getURL()
     if (isSameTrustedDocument(url, currentUrl)) return
     event.preventDefault()
     if (isAllowedExternalUrl(url)) void shell.openExternal(url)
@@ -939,16 +992,21 @@ function createWindow(initialOpen?: { filePath: string; receivedAt: number }): v
   // Load the remote URL for development or the local html file for production.
   const visualTestFile = testValue('HAN_FLOW_VISUAL_TEST_FILE')
   const pdfTestPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
-  const openPath = benchmarkFile ?? visualTestFile ?? initialOpen?.filePath
-  const openReceivedAt = benchmarkFile || visualTestFile ? processStartedAt : initialOpen?.receivedAt
+  // E2E·benchmark hook은 첫 창에만 적용한다. 이후 창은 main이 건넨 경로만 연다.
+  const testOpenPath = windowsById.size === 1 ? benchmarkFile ?? visualTestFile : undefined
+  const requestedOpenPath = testOpenPath ?? initialOpen?.filePath
+  const openPath = requestedOpenPath ? resolve(requestedOpenPath) : undefined
+  const openReceivedAt = testOpenPath ? processStartedAt : initialOpen?.receivedAt
+  // renderer가 query로 받은 초기 문서를 읽을 수 있도록 load 전에 허용목록에 올린다.
+  if (openPath) void documentPaths.allow(senderId, openPath)
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
     if (openPath) rendererUrl.searchParams.set('open', openPath)
     if (openReceivedAt) rendererUrl.searchParams.set('openReceivedAt', String(openReceivedAt))
     if (pdfTestPath) rendererUrl.searchParams.set('exportPdf', '1')
-    mainWindow.loadURL(rendererUrl.toString())
+    window.loadURL(rendererUrl.toString())
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
+    window.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
   }
 }
 
@@ -956,10 +1014,17 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', (_event, arguments_) => {
-    const filePath = pathFromArguments(arguments_)
-    if (filePath) deliverOpenPath(filePath)
-    else if (mainWindow) { mainWindow.show(); mainWindow.focus() }
+  app.on('second-instance', (_event, arguments_, workingDirectory) => {
+    const filePath = pathFromArguments(arguments_, workingDirectory)
+    if (filePath) {
+      deliverOpenPath(filePath)
+      return
+    }
+    if (!app.isReady()) return
+    const windowId = openPathRouter.preferredWindowId(focusedWindowId())
+    const window = windowId === undefined ? undefined : windowsById.get(windowId)
+    if (window && !window.isDestroyed()) revealWindow(window)
+    else if (windowsById.size === 0) createWindow()
   })
 
   app.on('open-file', (event, filePath) => {
@@ -972,11 +1037,17 @@ app.whenReady().then(() => {
   // Windows·Linux의 기본 Electron 메뉴는 Ctrl+Z·Ctrl+= 등을 renderer 단축키와 중복 실행하므로 제거한다.
   // macOS는 ⌘Q·편집 role을 위해 기본 메뉴를 유지한다.
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
-  ipcMain.handle('benchmark:complete', async (_event, timing: unknown) => {
+  ipcMain.handle('benchmark:complete', async (event, timing: unknown) => {
     if (!benchmarkFile || !benchmarkOutput) return false
     benchmarkMeasurements.push(timing)
     if (benchmarkMeasurements.length < benchmarkRuns) {
-      setTimeout(() => deliverOpenPath(benchmarkFile), 25)
+      const sender = event.sender
+      setTimeout(() => {
+        const window = BrowserWindow.fromWebContents(sender)
+        if (window && !window.isDestroyed()) {
+          sendOpenPath(window, { filePath: resolve(benchmarkFile), receivedAt: Date.now() })
+        }
+      }, 25)
       return true
     }
     await writeFile(benchmarkOutput, JSON.stringify({ measurements: benchmarkMeasurements }, null, 2))
@@ -1074,23 +1145,29 @@ app.whenReady().then(() => {
   })
 
   // 파일 열기 대화상자 핸들러
-  ipcMain.handle('dialog:openFile', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('dialog:openFile', async (event) => {
+    const options: Electron.OpenDialogOptions = {
       title: '문서 열기',
       defaultPath: lastDialogDirectory,
       properties: ['openFile'],
       filters: [
         { name: '한글 문서', extensions: ['hwp', 'hwpx'] }
       ]
-    })
-    if (canceled) return null
+    }
+    const window = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = window
+      ? await dialog.showOpenDialog(window, options)
+      : await dialog.showOpenDialog(options)
+    if (canceled || !filePaths[0]) return null
     rememberDialogDirectory(filePaths[0])
+    // 사용자가 이 창의 대화상자에서 고른 경로만 이 창이 읽을 수 있다.
+    await documentPaths.allow(event.sender.id, filePaths[0])
     return filePaths[0]
   })
 
   // 새 창에서 열기 대화상자
-  ipcMain.handle('dialog:askOpenMode', async () => {
-    const { response } = await dialog.showMessageBox({
+  ipcMain.handle('dialog:askOpenMode', async (event) => {
+    const { response } = await showMessageBox(BrowserWindow.fromWebContents(event.sender), {
       type: 'question',
       buttons: ['현재 창에서 열기', '새 창에서 열기', '취소'],
       defaultId: 1,
@@ -1106,30 +1183,6 @@ app.whenReady().then(() => {
     return true
   })
 
-  // 이미지 열기 대화상자
-  ipcMain.handle('dialog:openImage', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '이미지 삽입',
-      defaultPath: lastDialogDirectory,
-      properties: ['openFile'],
-      filters: [
-        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp'] }
-      ]
-    })
-    if (canceled) return null
-    
-    const filePath = filePaths[0]
-    rememberDialogDirectory(filePath)
-    const fs = require('fs')
-    const buffer = fs.readFileSync(filePath)
-    const ext = filePath.split('.').pop()
-    return {
-      path: filePath,
-      data: buffer.toString('base64'),
-      ext: ext
-    }
-  })
-
   ipcMain.handle('document:import', async (event, request: unknown) => {
     if (
       !request ||
@@ -1140,8 +1193,28 @@ app.whenReady().then(() => {
       throw new Error('문서 열기 요청 형식이 올바르지 않습니다.')
     }
     const sender = event.sender
+    const importRequest = request as { filePath: string; loadId: string }
+    latestImportLoadIds.set(sender.id, importRequest.loadId)
+    try {
+      await documentPaths.authorize(sender.id, importRequest.filePath)
+    } catch (reason) {
+      if (!(reason instanceof DocumentPathNotAllowedError)) throw reason
+      return {
+        ok: false as const,
+        loadId: importRequest.loadId,
+        error: { code: reason.code, message: reason.message }
+      }
+    }
+    // 경로 확인을 기다리는 동안 더 새 열기 요청이 왔다면 이 요청은 시작하지 않는다.
+    if (latestImportLoadIds.get(sender.id) !== importRequest.loadId) {
+      return {
+        ok: false as const,
+        loadId: importRequest.loadId,
+        error: { code: 'DOCUMENT_LOAD_SUPERSEDED', message: '더 최근에 연 문서로 대체되었습니다.' }
+      }
+    }
     return documentImporter.importDocument(
-      request as { filePath: string; loadId: string },
+      importRequest,
       {
         senderId: sender.id,
         onComplete: (payload) => {
@@ -1154,6 +1227,11 @@ app.whenReady().then(() => {
     )
   })
 
+  // preload가 drag-and-drop File에서 얻은 경로. 존재하는 일반 .hwp/.hwpx 파일만 등록한다.
+  ipcMain.handle('document:registerDroppedPath', (event, filePath: unknown) =>
+    documentPaths.registerDropped(event.sender.id, filePath)
+  )
+
   ipcMain.handle('editing:start', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
@@ -1165,7 +1243,14 @@ app.whenReady().then(() => {
         'HWPX 편집 시작 요청 형식이 올바르지 않습니다.'
       )
     }
-    return editingSessions.start(event.sender.id, (request as { filePath: string }).filePath)
+    const filePath = (request as { filePath: string }).filePath
+    try {
+      await documentPaths.authorize(event.sender.id, filePath)
+    } catch (reason) {
+      if (!(reason instanceof DocumentPathNotAllowedError)) throw reason
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', reason.message)
+    }
+    return editingSessions.start(event.sender.id, filePath)
   }))
 
   ipcMain.handle('editing:commit', editingIpcHandler(async (event, request: unknown) => {
@@ -1524,8 +1609,12 @@ app.whenReady().then(() => {
   }))
 
   const commandLinePath = pathFromArguments(process.argv)
-  createWindow(pendingOpen ?? (commandLinePath ? { filePath: commandLinePath, receivedAt: processStartedAt } : undefined))
-  pendingOpen = null
+  openPathRouter.setAppReady()
+  // macOS는 app 준비 전에 open-file을 보낼 수 있다. 보류한 경로가 명령줄 경로보다 우선한다.
+  createWindow(
+    openPathRouter.takePending() ??
+      (commandLinePath ? { filePath: commandLinePath, receivedAt: processStartedAt } : undefined)
+  )
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
