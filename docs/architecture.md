@@ -1,7 +1,9 @@
 # Han-Flow 기술 아키텍처
 
+기준일: 2026-09-28
+
 Han-Flow는 HWPX flow renderer, HWP fixed-page renderer와 제한적 HWPX 편집 계층을
-Windows·macOS 공통 Electron shell에 연결한다. production 경로는 읽기·검색·PDF뿐 아니라
+Windows·macOS·Linux 공통 Electron 44 shell에 연결한다. production 경로는 읽기·검색·PDF뿐 아니라
 main process가 소유하는 편집 session, transaction 기반 Undo/Redo, 구조별 loss policy와
 검증형 Save As를 함께 관리한다. HWP는 계속 읽기 전용이며 HWPX 편집은 source package와
 command layer를 화면용 `ViewerDocument`와 분리해 원본 package 보존 경계를 유지한다.
@@ -9,9 +11,9 @@ command layer를 화면용 `ViewerDocument`와 분리해 원본 package 보존 �
 ## 파이프라인
 
 ```text
-Windows/macOS file open / drag-and-drop / file dialog
-  → Electron main process
-  ├─ HWPX → HwpxPackageReader → ordered XML → flow ViewerDocument → block pagination
+OS file open / drag-and-drop / file dialog
+  → Electron main process (창별 경로 허용목록)
+  ├─ HWPX → HwpxPackageReader → decoder worker → ordered XML → flow ViewerDocument → block pagination
   └─ HWP  → size/CFB magic → dedicated Web Worker → @rhwp/core WASM
                                                     → FixedPageDocument
                                                     ├─ sanitized page SVG image
@@ -45,7 +47,7 @@ SourcePackage → EditTransaction → EditableDocument
 ```
 
 조합 중인 paragraph input surface는 browser가 소유하고 `compositionend`에서 한 transaction을
-commit한다. 저장은 같은 디렉터리의 임시 package를 다시 열어 검증한 뒤 교체한다. 세부 모델,
+commit한다. 저장은 같은 디렉터리의 임시 package를 다시 열어 검증한 뒤 목적지에 원자적으로 게시한다. 세부 모델,
 기존 코드 폐기 판정과 품질 관문은
 [V3 HWPX 편집 조사와 구현 전략](v3_editing_strategy.md)에 기록한다.
 
@@ -65,11 +67,19 @@ V3-2의 `text_patch`는 UTF-8 section XML을 token 단위로 훑고 단순 `hp:t
 공백과 unknown node는 byte 단위로 유지된다. 복합 자식, 잘못된 entity, 비 UTF-8 XML,
 surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict로 끝낸다.
 
-`saveHwpxAs`는 원본 overwrite와 기존 목적지 overwrite를 모두 금지한다. 목적지와 같은
-directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음, source package identity와 기존
-Han-Flow decoder를 다시 통과시킨다. 추가 semantic verifier까지 성공한 뒤에만 hard link로
-목적지 이름을 원자적으로 생성하고 임시 이름을 제거한다. V3-2 시점에는 이 코어를 preload에
-노출하지 않았다.
+`saveHwpxAs`는 목적지와 같은 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음,
+source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 통과시킨 뒤에만 게시한다.
+2026-09-28 기준 게시 정책은 다음과 같다.
+
+- 원본과 열린 편집 session의 원본은 경로와 `dev`·`ino` 비교로 항상 거부한다.
+- 저장 대화상자에서 교체를 확인하지 않았으면 hard link(`link`)로 게시한다. 확인 뒤 같은 이름이
+  생겼다면 OS가 `EEXIST`로 원자적으로 거부한다. 성공하면 임시 이름만 지운다.
+- 교체를 확인했으면(`overwrite`) 게시 직전에 정책을 다시 확인하고 `rename`으로 원자 교체한다.
+- hard link를 지원하지 않는 파일 시스템(exFAT·FAT32·일부 SMB)에서는 재확인 후 `rename`으로
+  물러서며, 확인과 rename 사이의 짧은 경쟁 구간이 남는다.
+- POSIX에서는 게시 뒤 디렉터리를 `fsync`한다. 게시 파일 권한은 umask를 적용한 기본값이다.
+- 목적지 판정은 `lstat`을 사용해 심볼릭 링크·폴더를 대화상자 단계에서 거부한다.
+- PDF 내보내기도 같은 원자적 쓰기 도우미와 원본 보호를 사용한다.
 
 V3-3의 `EditTransaction`은 base revision, command 배열, 전후 selection, `inputType`과
 composition ID를 가진다. command는 순서대로 immutable package에 적용하며 중간 command가
@@ -96,9 +106,9 @@ offset을 가진다. 코어는 ordered `hp:t` 순서로 여러 run 범위를 정
 run 경계의 Shift+방향키 selection을 이 모델로 확장한다. cross-run 입력은
 첫 run의 선택 꼬리에 새 text를 넣고 중간 run 전체와 마지막 run의 선택 머리를 비우는 command
 배열로 main에 보내며, 한 transaction으로 undo/redo한다. 빈 `hp:t`와 run style 구조는 손실 방지를
-위해 유지한다. 독립 `contentEditable` host 사이의 native pointer selection은 Chromium이 한 host로
-접으므로 공통 paragraph editing host 설계 전까지 지원하지 않는다. 글자 style command는 아직 한
-run 범위만 적용한다.
+위해 유지한다. 2026-08-22부터 공통 paragraph editing host가 native pointer drag selection을 모델
+selection으로 읽으며, 같은 section의 최상위 문단은 scope를 공유하고 표 셀 문단은 cell별 scope로
+격리한다. 글자 style command는 아직 한 run 범위만 적용한다.
 
 V3-4에서 source package와 history의 실제 소유자를 Electron main으로 확정했다. 각
 `webContents.id`에는 하나의 무작위 session ID만 연결되고 commit은 sender별 queue에서
@@ -109,7 +119,7 @@ UTF-16 diff와 전후 selection만 보낸다. 창 종료나 새 문서 열기에
 React의 `plaintext-only` surface는 composition 동안 browser DOM을 그대로 두고,
 `compositionend`에서 한 transaction을 main에 보낸다. projection 응답이 돌아오기 전에는
 낡은 React text로 DOM을 덮어쓰지 않으며 마지막 응답 뒤 selection을 복원한다. 현재 editable
-surface는 최상위 text 문단의 source anchor별 run과 안전한 일반 body cell의 단일 run에
+surface는 최상위 text 문단의 source anchor별 run과, 모든 문단이 단일 run인 안전한 일반 body cell에
 적용된다. 여러 run은 별도 surface로 source style을 유지하고 좌우 경계 navigation으로
 연결한다. measurement tree, 반복·병합·continuation 표, 머리말·꼬리말과 HWP fixed page에는
 적용하지 않는다.
@@ -152,7 +162,8 @@ family 문자열은 command에 들어가지 않으므로 renderer가 임의 pack
 
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
-`close` handler는 renderer가 응답할 수 없는 `⌘Q`와 창 닫기를 직접 보호한다. 선택지는
+`close` handler는 renderer가 응답할 수 없는 앱 종료(macOS `⌘Q`)와 창 닫기를 직접 보호한다. 여러 창이
+열려 있으면 닫히는 그 창을 dialog 부모와 close 대상으로 사용한다. 선택지는
 Save As, discard, cancel이며 Save As는 위와 같은 검증 writer를 재사용한다.
 
 비동기 결정을 기다리는 동안 반복 close는 `resolvingClose`로 막지만, 결정 후 호출하는 두
@@ -213,7 +224,10 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 
 ### Electron main
 
-- macOS `open-file`, single-instance, 파일 대화상자 처리
+- `webContents.id`별 창 목록과 `OpenPathRouter`: macOS `open-file`, Windows·Linux 명령줄·
+  `second-instance` 경로를 작업 폴더 기준 절대 경로로 바꿔 포커스된 창(없으면 최근 창, 창이 없으면 새 창)에 전달
+- 요청한 창에 연결한 열기·열기 방식 대화상자와 창별 `DocumentPathRegistry` 허용목록
+- Windows·Linux는 기본 메뉴를 제거하고 단축키를 renderer가 처리(개발 빌드만 F12·Ctrl+Shift+I DevTools)
 - 자체 HWPX UTI와 기존 한컴 HWPX UTI의 Finder 문서 연결
 - HWPX 확장자와 패키지 필수 entry 검증
 - HWP 200 MiB·CFB magic preflight와 byte 전달
@@ -248,15 +262,20 @@ layout도 JSON parse 전에 같은 크기 상한을 적용하고 run·문자·�
 - HWP WASM과 약 7 MB asset을 `.hwp`를 열 때만 지연 로딩
 - HWP 첫 페이지 SVG를 먼저 생성하고 짧은 유휴 구간 뒤 나머지 페이지를 순차 생성
 - HWP SVG의 실행 요소·event attribute·외부 resource를 거부한 뒤 blob image로 표시
-- SVG image가 표시된 뒤 React text layer를 붙여 `⌘F` 검색·선택·접근성 제공
+- SVG image가 표시된 뒤 React text layer를 붙여 검색(macOS `⌘F`, 그 밖 `Ctrl+F`)·선택·접근성 제공
 - `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
 - 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
 - 시스템 함초롬체의 한글·영문 family 별칭 해석(글꼴 파일은 번들하지 않음)
 - 50페이지 이하는 전체 DOM 렌더
 - 50페이지 초과는 viewport 주변 page만 mount
-- 트랙패드 pinch와 `⌘+`/`⌘-`/`⌘0`을 50–200% zoom 상태로 통합
-- 문서 mutation, 저장 history, `contentEditable` 금지
+- 트랙패드 pinch와 modifier(`⌘` 또는 `Ctrl`)+`+`/`-`/`0`을 50–200% zoom 상태로 통합
+- 단축키 modifier는 preload가 노출한 `process.platform`으로 정한다. macOS는 `metaKey`, 그 밖은
+  `ctrlKey`(Alt·Win 조합 제외)를 쓰고 Windows·Linux에는 `Ctrl+Y` redo를 더한다.
+- `contentEditable`의 `historyUndo`·`historyRedo` 기본 동작은 막고 main history로 보낸다.
+- package bytes와 history는 소유하지 않는다. HWPX 편집 surface는 `plaintext-only` 입력을 main
+  편집 session의 transaction으로만 보내고, HWP fixed page는 편집하지 않는다.
+- 글꼴 대체는 platform별 체인(Windows 맑은 고딕·바탕, macOS Apple 글꼴, Linux Noto)과 한/영 alias를 쓴다.
 
 첫 화면은 OWPML `lineseg`와 셀 선언 높이를 사용하는 결정적 pagination으로 즉시 표시한다.
 동시에 화면 밖 측정 레이어가 원본 block과 표 행을 현재 resolved font로 한 번 렌더링해 CSS
@@ -333,7 +352,7 @@ section에서 실제 참조한 resource만 먼저 읽는 것과, section 단위 
 
 production 번들의 반복 가능한 검증이 필요할 때만 `HAN_FLOW_E2E=1`을 설정한다. 이 모드에서는
 개발용 visual capture, 앱 성능 측정과 고정 PDF 출력 경로를 패키지 앱에서도 사용할 수 있다. 환경 변수가
-없는 일반 패키지 실행은 항상 macOS 저장 대화상자를 사용한다. overflow는 세로뿐 아니라
+없는 일반 패키지 실행은 항상 OS 저장 대화상자를 사용한다. overflow는 세로뿐 아니라
 가로 `scrollWidth`도 검사하며, 표는 본문 너비를 넘지 않도록 축소한다.
 
 visual E2E 상태는 본문 문자열을 기록하지 않고 페이지 수, 이미지 decode 상태, 페이지별
@@ -354,7 +373,8 @@ matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 p
 손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
 HWPX core와 production matrix, 고정 HWP matrix의 실행 대상은 상위 `fixture_catalog.json`에서
 동일한 fixture ID로 선택한다. 각 형식 manifest가 catalog와 어긋나면 GUI 실행 전에 실패한다.
-Windows에서는 unpacked `.exe`, macOS에서는 `.app` 내부 실행 파일을 기본 production 경로로 쓴다.
+Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked/han-flow`, macOS는 `.app` 내부 실행 파일을
+기본 production 경로로 쓴다. root 실행이나 `HAN_FLOW_NO_SANDBOX=1`이면 패키지 앱에 `--no-sandbox`를 붙인다.
 
 `verify:pdf`는 production 앱의 고정 PDF 출력과 visual state를 같은 격리 실행에서 수집한다.
 Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 각 page MediaBox에 대응하는 용지
@@ -378,7 +398,7 @@ file path
       ├─ HwpxImporter → current flow ViewerDocument
       └─ HwpImporter  → selected parser adapter
   → read-only page boundary
-  → shared macOS viewer shell and PDF export
+  → shared desktop viewer shell and PDF export
 ```
 
 V2는 `.hwp` 레코드 parser 전체를 직접 만들지 않는다. 저장소 밖 기준 문서 삼쌍 비교와 품질 관문
@@ -404,10 +424,11 @@ image 경계에서 표시한다. `containsScripts`는 진단하되 Scripts, OLE�
 virtualization과 진단 shell을 공유한다. 정제된 blob image 위에 renderer가 검증한 좌표형 text
 run을 React로 렌더링한다. 따라서 SVG markup을 DOM에 주입하지 않으면서 검색·선택·접근성을
 제공한다. 첫 page image의 `load`를 첫 화면 기준으로 삼고 text layer와 나머지 page는 그 뒤
-불러온다. Worker 격리 후 cold 20회 첫 화면 p95는 614ms다. CSS named page 기반
+불러온다. 과거 macOS arm64(Electron 28) 측정에서 Worker 격리 후 cold 20회 첫 화면 p95는
+614ms였으며 현재 commit에서는 재측정하지 못했다. CSS named page 기반
 mixed-orientation PDF도 page별 크기와
-텍스트 보존, 대표 PNG 관문을 통과했다. Worker 격리 후 실사용 기준 HWP aggregate
-working set peak p95는 647.6MiB이고 HWPX 기준선은 438.3MiB다. 격리 전 HWP p95보다
+텍스트 보존, 대표 PNG 관문을 통과했다. 같은 과거 macOS 측정에서 실사용 기준 HWP aggregate
+working set peak p95는 647.6MiB, HWPX 기준선은 438.3MiB였다. 격리 전 HWP p95보다
 58.0MiB 증가한 비용은 다음 최적화 판단에 사용한다. 자세한 결정 기준과 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)에 기록한다.
 

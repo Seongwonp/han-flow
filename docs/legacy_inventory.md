@@ -1,6 +1,6 @@
 # Production·legacy 코드 inventory
 
-기준일: 2026-08-21
+기준일: 2026-09-28
 
 ## 판정 기준
 
@@ -38,6 +38,7 @@ Jest와 `scripts/` 참조, TypeScript project 범위를 모두 검색해 세 범
 - `cfb`: HWP FileHeader·CFB preflight에 사용한다.
 - `font-list`: main process의 시스템 글꼴 조회에서 동적으로 import한다.
 
-`docs/dev_log.md`, `docs/ux_strategy.md`, `docs/v1_baseline.md`의 prototype 설명은 과거 의사결정
-근거이므로 삭제하지 않는다. 해당 문서의 파일·dependency 이름은 현재 설치나 runtime 계약을
+[개발·검증 이력](verification_history.md)의 2026-06 prototype 요약, `docs/ux_strategy.md`,
+`docs/v1_baseline.md`의 prototype 설명은 과거 의사결정 근거이므로 삭제하지 않는다. 과거 개발 일지의
+날짜별 원문은 2026-09-28 개발·검증 이력으로 통합했다. 해당 문서의 파일·dependency 이름은 현재 설치나 runtime 계약을
 뜻하지 않는다.
