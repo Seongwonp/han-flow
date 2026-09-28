@@ -43,8 +43,10 @@ import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { ViewerToolbar } from './ViewerToolbar'
+import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
 const api = () => (window as any).api
+const shortcutPlatform = rendererPlatform()
 
 type RhwpAdapter = typeof import('./rhwp_fixed_page_adapter')
 let rhwpAdapter: Promise<RhwpAdapter> | null = null
@@ -158,6 +160,7 @@ interface ParagraphEditingProps {
     timestamp: number
   ) => void
   onParagraphStructureUnavailable: () => void
+  onHistory?: (direction: HistoryDirection) => void
   tableCellSelection?: TableCellSelection
   onTableCellSelectionChange: (selection: TableCellSelection) => void
 }
@@ -275,6 +278,7 @@ export function ParagraphView({
       allowMergeNext={index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
       allowParagraphStructure={activeEditing.allowParagraphStructure}
       onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
+      onHistory={activeEditing.onHistory}
       onBoundaryNavigate={(direction, selection) => {
         const host = editorHost()
         const currentAnchor = editableText.sourceAnchor
@@ -1533,6 +1537,11 @@ export default function App() {
       await recoverEditingFailure('다시 실행', reason)
     }
   }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
+  const routeNativeHistory = useCallback((direction: HistoryDirection) => {
+    if (editingTransient.current.isComposing) return
+    if (direction === 'redo') void redoEditing()
+    else void undoEditing()
+  }, [undoEditing, redoEditing])
   const saveEditingAs = useCallback(async () => {
     if (!editing?.isDirty || editingPending || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
@@ -1584,41 +1593,42 @@ export default function App() {
         closeSearch()
         return
       }
-      if (!event.metaKey) return
-      if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle && characterStyleAvailable) {
+      const action = resolveShortcut(event, shortcutPlatform)
+      if (!action) return
+      if (action === 'bold' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ bold: !activeStyle.bold })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'i' && editing && activeStyle && characterStyleAvailable) {
+      if (action === 'italic' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ italic: !activeStyle.italic })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'u' && editing && activeStyle && characterStyleAvailable) {
+      if (action === 'underline' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ underline: !activeStyle.underline })
         return
       }
-      if (event.key.toLocaleLowerCase() === 's' && editing) {
+      if (action === 'save' && editing) {
         event.preventDefault()
         void saveEditingAs()
         return
       }
-      if (event.key.toLocaleLowerCase() === 'z' && editing && !editingTransient.current.isComposing) {
+      if ((action === 'undo' || action === 'redo') && editing && !editingTransient.current.isComposing) {
         event.preventDefault()
-        if (event.shiftKey) void redoEditing()
+        if (action === 'redo') void redoEditing()
         else void undoEditing()
         return
       }
-      if (event.key.toLocaleLowerCase() === 'f' && fixedDocument) {
+      if (action === 'search' && fixedDocument) {
         event.preventDefault()
         openSearch()
         return
       }
-      if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
-      if (event.key === '-') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
-      if (event.key === '0') { event.preventDefault(); changeZoomAt(1) }
+      if (action === 'zoomIn') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
+      if (action === 'zoomOut') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
+      if (action === 'zoomReset') { event.preventDefault(); changeZoomAt(1) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -1721,6 +1731,7 @@ export default function App() {
     >{section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>)}</div>}
     <ViewerToolbar
       fileName={fileName}
+      shortcutPlatform={shortcutPlatform}
       editing={editing}
       editingPending={editingPending}
       documentLoading={documentLoading}
@@ -1803,7 +1814,7 @@ export default function App() {
             key={paragraph.id}
             paragraph={paragraph}
             document={effectiveDocument}
-            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
+            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
           />)
           const body = page.columns && page.columnLayout
             ? <ViewerColumnFlow

@@ -24,6 +24,7 @@ const invokeEditing = <T>(channel: string, ...args: unknown[]): Promise<T> =>
 
 // Custom APIs for renderer
 const api = {
+  platform: process.platform,
   getFonts: () => ipcRenderer.invoke('system:getFonts'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),

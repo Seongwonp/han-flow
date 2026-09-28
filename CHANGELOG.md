@@ -60,6 +60,7 @@
 - style projection 뒤 stale DOM selection offset 방어와 run 수 변경 시 안전한 surface 재생성
 - `ApplyCharacterStyleCommand`의 5–72pt 글자 크기와 `#RRGGBB` 글자색
 - 글자 크기 증감·색상 선택 toolbar와 활성 source style 동기화
+- Windows·Linux Ctrl 단축키(Ctrl+Y 포함)·tooltip 표기와 contentEditable 네이티브 undo/redo의 앱 history 우회
 - 부분 글자 style·문단 정렬을 함께 적용한 package Save As·재개봉 통합 검증
 - V3 자동 코드 관문 완료와 macOS 실제 두벌식·Windows 한/글 외부 승인 matrix 분리
 

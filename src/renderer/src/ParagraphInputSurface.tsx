@@ -7,6 +7,7 @@ import {
 } from '../../core/editing/composition_input'
 import { ViewerSourceAnchor } from '../../core/document/viewer_document'
 import { EditorSelection } from '../../core/editing/selection'
+import { HistoryDirection, interceptHistoryInput } from './keyboard_shortcuts'
 
 interface ParagraphInputSurfaceProps {
   text: string
@@ -40,6 +41,8 @@ interface ParagraphInputSurfaceProps {
   allowMergeNext?: boolean
   allowParagraphStructure?: boolean
   onParagraphStructureUnavailable?: () => void
+  /** 브라우저 기본 undo/redo(`historyUndo`/`historyRedo`)를 앱 transaction history로 보낸다. */
+  onHistory?: (direction: HistoryDirection) => void
 }
 
 function textSelection(element: HTMLElement): TextSelection {
@@ -120,7 +123,8 @@ export function ParagraphInputSurface({
   allowMergePrevious = false,
   allowMergeNext = false,
   allowParagraphStructure = true,
-  onParagraphStructureUnavailable
+  onParagraphStructureUnavailable,
+  onHistory
 }: ParagraphInputSurfaceProps) {
   const elementRef = useRef<HTMLSpanElement>(null)
   const controllerRef = useRef(new CompositionInputController(text))
@@ -138,6 +142,7 @@ export function ParagraphInputSurface({
   const onSplitParagraphRef = useRef(onSplitParagraph)
   const onMergeParagraphRef = useRef(onMergeParagraph)
   const onParagraphStructureUnavailableRef = useRef(onParagraphStructureUnavailable)
+  const onHistoryRef = useRef(onHistory)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
@@ -151,6 +156,7 @@ export function ParagraphInputSurface({
   onSplitParagraphRef.current = onSplitParagraph
   onMergeParagraphRef.current = onMergeParagraph
   onParagraphStructureUnavailableRef.current = onParagraphStructureUnavailable
+  onHistoryRef.current = onHistory
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -290,6 +296,16 @@ export function ParagraphInputSurface({
       return Boolean(onMergeParagraphRef.current)
     }
     const beforeInput = (event: InputEvent) => {
+      if (
+        interceptHistoryInput(
+          event,
+          event.isComposing ||
+            controller.isComposing ||
+            compositionBuffer.pending ||
+            Boolean(rangeCompositionRef.current),
+          onHistoryRef.current
+        )
+      ) return
       if (rangeCompositionRef.current) {
         event.preventDefault()
         return
