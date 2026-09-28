@@ -65,6 +65,7 @@
 - Windows·Linux Ctrl 단축키(Ctrl+Y 포함)·tooltip 표기와 contentEditable 네이티브 undo/redo의 앱 history 우회
 - 부분 글자 style·문단 정렬을 함께 적용한 package Save As·재개봉 통합 검증
 - V3 자동 코드 관문 완료와 macOS 실제 두벌식·Windows 한/글 외부 승인 matrix 분리
+- Save As를 hard link 대신 같은 폴더 임시 파일의 `rename` 원자적 게시로 바꿔 exFAT·FAT32·일부 SMB에서도 저장하고, 저장 대화상자에서 교체를 확인한 기존 파일만 덮어쓰며 열린 원본은 항상 거부
 
 ### V2 HWP fixed-page
 

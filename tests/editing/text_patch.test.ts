@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 import {
   applyReplaceTextCommand,
   escapeXmlText,
@@ -182,6 +182,7 @@ describe('HWPX text patch와 Save As', () => {
     const source = await HwpxSourcePackage.open(fixture)
     const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '실패 주입')).package
     const failedDestination = join(directory, 'validation-failed.hwpx')
+    const temporaryNames = () => readdirSync(directory).filter((name) => name.includes('.han-flow-'))
 
     await expect(
       saveHwpxAs(edited, failedDestination, {
@@ -191,14 +192,107 @@ describe('HWPX text patch와 Save As', () => {
       })
     ).rejects.toThrow('의도한 검증 실패')
     expect(existsSync(failedDestination)).toBe(false)
-    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+    expect(temporaryNames()).toEqual([])
 
     const existingDestination = join(directory, 'existing.hwpx')
     writeFileSync(existingDestination, '기존 파일')
-    await expect(saveHwpxAs(edited, existingDestination)).rejects.toMatchObject({ code: 'EEXIST' })
+    const verify = jest.fn()
+    await expect(saveHwpxAs(edited, existingDestination, { verify })).rejects.toMatchObject({
+      name: 'HwpxSaveAsError',
+      code: 'HWPX_SAVE_DESTINATION_EXISTS'
+    })
+    // 기존 파일 충돌은 임시 파일을 쓰거나 검증하기 전에 거부한다.
+    expect(verify).not.toHaveBeenCalled()
+    expect(temporaryNames()).toEqual([])
     expect(readFileSync(existingDestination, 'utf8')).toBe('기존 파일')
+
     await expect(saveHwpxAs(edited, fixture)).rejects.toThrow('원본 파일 덮어쓰기')
-    await expect(saveHwpxAs(edited, join(directory, 'wrong.txt'))).rejects.toThrow('.hwpx')
+    await expect(saveHwpxAs(edited, join(directory, 'wrong.txt'))).rejects.toMatchObject({
+      code: 'HWPX_SAVE_INVALID_DESTINATION',
+      message: expect.stringContaining('.hwpx')
+    })
+  })
+
+  test('overwrite 플래그가 있어도 원본과 보호 경로는 덮어쓰지 않는다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const originalHash = hash(readFileSync(fixture))
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '원본 보호')).package
+    const verify = jest.fn()
+
+    await expect(saveHwpxAs(edited, fixture, { overwrite: true, verify })).rejects.toMatchObject({
+      code: 'HWPX_SAVE_PROTECTED_DESTINATION',
+      message: expect.stringContaining('원본 파일 덮어쓰기')
+    })
+    // 같은 파일을 가리키는 다른 경로 표기도 원본으로 취급한다.
+    await expect(
+      saveHwpxAs(edited, join(directory, '.', 'nested', '..', basename(fixture)), { overwrite: true })
+    ).rejects.toMatchObject({ code: 'HWPX_SAVE_PROTECTED_DESTINATION' })
+    // 원본과 같은 inode를 가리키는 hard link도 교체하지 않는다.
+    const sourceAlias = join(directory, 'source-alias.hwpx')
+    linkSync(fixture, sourceAlias)
+    await expect(saveHwpxAs(edited, sourceAlias, { overwrite: true })).rejects.toMatchObject({
+      code: 'HWPX_SAVE_PROTECTED_DESTINATION'
+    })
+    rmSync(sourceAlias)
+
+    const otherOpenDocument = join(directory, 'other-open.hwpx')
+    writeFileSync(otherOpenDocument, '다른 session 원본')
+    await expect(
+      saveHwpxAs(edited, otherOpenDocument, { overwrite: true, protectedPaths: [otherOpenDocument] })
+    ).rejects.toMatchObject({ code: 'HWPX_SAVE_PROTECTED_DESTINATION' })
+
+    expect(verify).not.toHaveBeenCalled()
+    expect(hash(readFileSync(fixture))).toBe(originalHash)
+    expect(readFileSync(otherOpenDocument, 'utf8')).toBe('다른 session 원본')
+    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+  })
+
+  test('overwrite 플래그가 있으면 기존 파일을 검증된 package로 원자적으로 교체한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const command = replaceWholeText(source, '공개 헤더', '교체 저장')
+    const edited = applyReplaceTextCommand(source, command).package
+    const destination = join(directory, 'replace-me.hwpx')
+    writeFileSync(destination, '교체될 기존 파일')
+
+    const result = await saveHwpxAs(edited, destination, {
+      overwrite: true,
+      verify: (savedPackage) => {
+        // 검증 중에는 기존 파일이 그대로 남아 있어야 한다.
+        expect(readFileSync(destination, 'utf8')).toBe('교체될 기존 파일')
+        const anchor = listHwpxTextAnchors(savedPackage, command.sectionPath).find(
+          (candidate) => candidate.textNodeId === command.textNodeId
+        )
+        expect(anchor?.text).toBe('교체 저장')
+      }
+    })
+
+    expect(result).toMatchObject({ destinationPath: destination, replacedExisting: true })
+    const saved = await HwpxSourcePackage.open(destination)
+    expect(hash(saved.toBuffer())).toBe(hash(edited.toBuffer()))
+    expect(
+      listHwpxTextAnchors(saved, command.sectionPath).find(
+        (candidate) => candidate.textNodeId === command.textNodeId
+      )?.text
+    ).toBe('교체 저장')
+    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
+  })
+
+  test('overwrite 교체 중 검증이 실패하면 기존 파일을 보존하고 임시 파일을 지운다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '교체 실패')).package
+    const destination = join(directory, 'keep-on-failure.hwpx')
+    writeFileSync(destination, '보존될 기존 파일')
+
+    await expect(
+      saveHwpxAs(edited, destination, {
+        overwrite: true,
+        verify: () => {
+          throw new Error('교체 전 검증 실패')
+        }
+      })
+    ).rejects.toThrow('교체 전 검증 실패')
+    expect(readFileSync(destination, 'utf8')).toBe('보존될 기존 파일')
+    expect(readdirSync(directory).filter((name) => name.includes('.han-flow-'))).toEqual([])
   })
   ;(privateFixture ? test : test.skip)(
     '비공개 실문서를 본문 노출 없이 한 글자 patch하고 Save As로 재개봉한다',

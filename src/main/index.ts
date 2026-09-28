@@ -3,7 +3,8 @@ import { basename, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
-import { EditingSessionManager } from './editing_session'
+import { EditingSessionManager, PROTECTED_DESTINATION_MESSAGE } from './editing_session'
+import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
 import type {
@@ -118,6 +119,8 @@ async function saveEditingSessionWithDialog(
   }
 
   let destinationPath = testDestination
+  // 테스트 경로는 교체 확인을 거치지 않았으므로 기존 파일을 덮어쓰지 않는다.
+  let overwrite = false
   if (!destinationPath) {
     const selection = await showSaveDialog(window, {
       title: 'HWPX 변경본을 다른 이름으로 저장',
@@ -127,11 +130,26 @@ async function saveEditingSessionWithDialog(
     })
     if (selection.canceled || !selection.filePath) return { outcome: 'cancelled' as const }
     destinationPath = selection.filePath
+    // OS 대화상자가 기존 파일 교체를 이미 확인했다. 단 원본 문서는 확인 여부와 무관하게 거부한다.
+    const decision = await editingSessions.saveAsDestinationDecision(senderId, sessionId, destinationPath)
+    if (decision === 'protected') {
+      await showMessageBox(window, {
+        type: 'error',
+        buttons: ['확인'],
+        defaultId: 0,
+        noLink: true,
+        title: 'HWPX 변경본 저장',
+        message: '원본 문서에는 저장할 수 없습니다.',
+        detail: PROTECTED_DESTINATION_MESSAGE
+      })
+      return { outcome: 'cancelled' as const }
+    }
+    overwrite = decision === 'replace'
   }
 
   return {
     outcome: 'saved' as const,
-    ...(await editingSessions.saveAs(senderId, sessionId, destinationPath))
+    ...(await editingSessions.saveAs(senderId, sessionId, destinationPath, { overwrite }))
   }
 }
 
@@ -969,7 +987,8 @@ app.whenReady().then(() => {
         printOptions.pageSize = { width: options.width, height: options.height }
       }
       const pdf = await event.sender.printToPDF(printOptions)
-      await writeFile(targetPath, pdf)
+      // 기존 PDF 교체 동작은 유지하되, 중간에 실패해도 반쯤 쓴 파일이 남지 않도록 임시 파일 rename으로 게시한다.
+      await writeFileAtomically(targetPath, pdf, { overwrite: true })
       return targetPath
     } finally {
       if (!event.sender.isDestroyed()) event.sender.send('pdf:finish', requestId)
