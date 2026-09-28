@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve, sep } from 'node:path'
+
 const GENERATORS = new Set([
   'createSyntheticHwpx',
   'createCellFragmentHwpx',
@@ -9,7 +13,13 @@ const GENERATORS = new Set([
   'createInvalidHwpx'
 ])
 
-const EXACT_METRICS = [
+export const LICENSES = new Set(['KOGL-1', 'CC-BY-4.0', 'Apache-2.0', 'MIT', 'project-authored', 'other'])
+
+const GENERATOR_KEYS = new Set(['id', 'category', 'source', 'generator', 'fileName', 'options', 'expected'])
+const FILE_KEYS = new Set(['id', 'category', 'source', 'file', 'origin', 'sha256', 'personalData', 'expected'])
+const ORIGIN_KEYS = new Set(['url', 'publisher', 'license', 'retrievedAt', 'producer'])
+
+export const EXACT_METRICS = [
   'sections',
   'tables',
   'cells',
@@ -23,7 +33,49 @@ const EXACT_METRICS = [
   'estimatedPages'
 ]
 
+export function fixtureSource(fixture) {
+  return fixture.source ?? 'generator'
+}
+
+export function sha256Hex(bytes) {
+  return createHash('sha256').update(bytes).digest('hex')
+}
+
+export function isSafeFixturePath(file) {
+  if (typeof file !== 'string' || !file || file.length > 200) return false
+  if (file.includes('\\') || file.startsWith('/') || /^[A-Za-z]:/.test(file)) return false
+  const segments = file.split('/')
+  return segments.every((segment) => segment && segment !== '.' && segment !== '..') && file.toLowerCase().endsWith('.hwpx')
+}
+
+export function resolveFileFixturePath(publicRoot, fixture) {
+  if (!isSafeFixturePath(fixture.file)) throw new Error(`${fixture.id}: fixture 파일 경로가 올바르지 않습니다.`)
+  const base = resolve(publicRoot)
+  const path = resolve(base, fixture.file)
+  if (!path.startsWith(`${base}${sep}`)) throw new Error(`${fixture.id}: fixture 파일이 공개 fixture 폴더 밖에 있습니다.`)
+  return path
+}
+
+// file fixture의 byte SHA-256이 manifest와 다르면 decode 전에 실패 이유를 돌려준다.
+export function checkFixtureIntegrity(fixture, bytes) {
+  if (fixtureSource(fixture) !== 'file') return undefined
+  const actual = sha256Hex(bytes)
+  return actual === fixture.sha256 ? undefined : `sha256 불일치: manifest ${fixture.sha256}, 실제 ${actual}`
+}
+
+// generator fixture는 임시 폴더에 만들고 file fixture는 무결성을 확인한 공개 fixture 경로를 돌려준다.
+export function prepareCorpusFixture(fixture, { generator, directory, publicRoot }) {
+  if (fixtureSource(fixture) === 'file') {
+    const path = resolveFileFixturePath(publicRoot, fixture)
+    const failure = checkFixtureIntegrity(fixture, readFileSync(path))
+    if (failure) throw new Error(`${fixture.id}: ${failure}`)
+    return path
+  }
+  return generateCorpusFixture(generator, directory, fixture)
+}
+
 export function generateCorpusFixture(generator, directory, fixture) {
+  if (fixtureSource(fixture) !== 'generator') throw new Error(`${fixture.id}: generator fixture가 아닙니다.`)
   const create = generator[fixture.generator]
   if (typeof create !== 'function') throw new Error(`${fixture.id}: fixture generator를 찾을 수 없습니다.`)
   if (fixture.options) return create(directory, fixture.options)
@@ -46,9 +98,10 @@ export function validateCorpusManifest(manifest) {
     if (typeof fixture.category !== 'string' || !fixture.category.trim()) {
       throw new Error(`${fixture.id}: category가 비어 있습니다.`)
     }
-    if (!GENERATORS.has(fixture.generator)) {
-      throw new Error(`${fixture.id}: 허용하지 않은 fixture generator입니다.`)
-    }
+    const source = fixtureSource(fixture)
+    if (source === 'generator') validateGeneratorFixture(fixture)
+    else if (source === 'file') validateFileFixture(fixture)
+    else throw new Error(`${fixture.id}: source는 generator 또는 file이어야 합니다.`)
     if (!fixture.expected || !['opened', 'rejected'].includes(fixture.expected.outcome)) {
       throw new Error(`${fixture.id}: expected outcome이 올바르지 않습니다.`)
     }
@@ -63,6 +116,52 @@ export function validateCorpusManifest(manifest) {
     }
   }
   return manifest
+}
+
+function rejectUnknownKeys(fixture, object, allowed, label) {
+  for (const key of Object.keys(object)) {
+    if (!allowed.has(key)) throw new Error(`${fixture.id}: ${label}에 허용하지 않은 항목입니다: ${key}`)
+  }
+}
+
+function validateGeneratorFixture(fixture) {
+  rejectUnknownKeys(fixture, fixture, GENERATOR_KEYS, 'generator fixture')
+  if (!GENERATORS.has(fixture.generator)) {
+    throw new Error(`${fixture.id}: 허용하지 않은 fixture generator입니다.`)
+  }
+}
+
+function isIsoDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+function isNonEmptyText(value) {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= 200
+}
+
+function validateFileFixture(fixture) {
+  rejectUnknownKeys(fixture, fixture, FILE_KEYS, 'file fixture')
+  if (!isSafeFixturePath(fixture.file)) {
+    throw new Error(`${fixture.id}: file은 공개 fixture 폴더 기준 상대 .hwpx 경로여야 하며 절대 경로와 ..를 허용하지 않습니다.`)
+  }
+  if (typeof fixture.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(fixture.sha256)) {
+    throw new Error(`${fixture.id}: sha256은 소문자 64자리 hex여야 합니다.`)
+  }
+  if (fixture.personalData !== false) {
+    throw new Error(`${fixture.id}: personalData는 false여야 합니다. 개인정보가 있는 파일은 공개 corpus에 넣을 수 없습니다.`)
+  }
+  const origin = fixture.origin
+  if (!origin || typeof origin !== 'object' || Array.isArray(origin)) throw new Error(`${fixture.id}: origin이 없습니다.`)
+  rejectUnknownKeys(fixture, origin, ORIGIN_KEYS, 'origin')
+  if (typeof origin.url !== 'string' || !/^https?:\/\/\S+$/.test(origin.url)) {
+    throw new Error(`${fixture.id}: origin.url이 올바르지 않습니다.`)
+  }
+  if (!isNonEmptyText(origin.publisher)) throw new Error(`${fixture.id}: origin.publisher가 비어 있습니다.`)
+  if (!LICENSES.has(origin.license)) throw new Error(`${fixture.id}: 허용하지 않은 license입니다.`)
+  if (!isIsoDate(origin.retrievedAt)) throw new Error(`${fixture.id}: origin.retrievedAt은 YYYY-MM-DD여야 합니다.`)
+  if (!isNonEmptyText(origin.producer)) throw new Error(`${fixture.id}: origin.producer가 비어 있습니다.`)
 }
 
 export function summarizeViewerDocument(document, estimatedPages) {
@@ -111,6 +210,7 @@ export function summarizeViewerDocument(document, estimatedPages) {
 
 export function evaluateCorpusFixture(fixture, observation) {
   const failures = []
+  if (observation.integrityFailure) return [observation.integrityFailure]
   if (observation.outcome !== fixture.expected.outcome) {
     failures.push(`outcome 기대 ${fixture.expected.outcome}, 실제 ${observation.outcome}`)
     return failures
@@ -139,9 +239,14 @@ export function createCorpusReport(manifest, observations) {
   const fixtures = manifest.fixtures.map((fixture) => {
     const observation = observations.find((candidate) => candidate.id === fixture.id)
     const failures = observation ? evaluateCorpusFixture(fixture, observation) : ['관찰 결과가 없습니다.']
+    const provenance = fixtureSource(fixture) === 'file'
+      ? { license: fixture.origin.license, producer: fixture.origin.producer }
+      : {}
     return {
       id: fixture.id,
       category: fixture.category,
+      source: fixtureSource(fixture),
+      ...provenance,
       outcome: observation?.outcome ?? 'missing',
       contentSha256: observation?.contentSha256,
       sizeBytes: observation?.sizeBytes,
@@ -156,6 +261,7 @@ export function createCorpusReport(manifest, observations) {
     schemaVersion: 1,
     suite: manifest.suite,
     fixtureCount: fixtures.length,
+    fileFixtureCount: fixtures.filter((fixture) => fixture.source === 'file').length,
     passedCount: fixtures.filter((fixture) => fixture.passed).length,
     rejectedCount: fixtures.filter((fixture) => fixture.outcome === 'rejected').length,
     totals: {

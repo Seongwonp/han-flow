@@ -50,6 +50,7 @@ macOS 전용 관문은 CI와 실제 Apple Silicon Mac으로 분리한다.
 
 - Windows CI: `npm ci`, Jest, parser probe, production build
 - macOS CI: build와 package smoke
+- Linux(Docker·WSL·Ubuntu VM): `verify:corpus`, xvfb E2E와 글꼴 폴백 재현, macOS 관문은 대체하지 않음
 - 실제 Mac: 물리 IME, Finder 연결, 글꼴·PDF, Developer ID, 공증, Gatekeeper와 DMG 설치
 
 Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clone의 `npm ci`가 실패하면
@@ -156,6 +157,7 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [ ] 나머지 다단 유형·각주·수식과 머리말·꼬리말 전용 variant 확장
 - [x] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
 - [ ] 개인정보 없는 공개 corpus 30–50개 확보
+- [ ] 실제 한/글 HWPX 20종 외부 fixture intake (source: file manifest)
 
 측정 지표:
 

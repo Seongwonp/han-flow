@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
-import { generateCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
+import { prepareCorpusFixture, validateCorpusManifest } from './corpus/public_corpus.mjs'
 import { linkHwpxManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
 
 const require = createRequire(import.meta.url)
@@ -76,7 +76,7 @@ try {
   }
   const fixtures = productionFixtures.map((fixture) => ({
     id: fixture.id,
-    path: generateCorpusFixture(generator, directory, fixture.manifest),
+    path: prepareCorpusFixture(fixture.manifest, { generator, directory, publicRoot: dirname(manifestPath) }),
     delayMs: 500,
     ...productionOptions[fixture.id]
   }))

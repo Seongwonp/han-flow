@@ -24,6 +24,10 @@
 - OS별 글꼴 대체 체인(Windows 맑은 고딕·바탕 우선)과 한/영 family alias, 미설치 시 CSS generic fallback
 - EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
 
+### Sprint 4 호환성 corpus
+
+- 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
+
 ### V3 HWPX 편집 기반
 
 - 과거 editor store·normalized model·serializer와 저장 IPC 감사
