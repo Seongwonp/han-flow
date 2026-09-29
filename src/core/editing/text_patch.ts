@@ -5,6 +5,7 @@ import {
   createSourceElement,
   createSourceText,
   decodeXmlEntities,
+  elementCloseTag,
   elementOpenTag,
   findSourceElements,
   parseSourceFragment,
@@ -269,16 +270,53 @@ function insertSourceNodes(insertSource: string, insert: string): SourceNode[] {
 const EMPTY_TREE: SourceTree = { source: '', children: [] }
 
 /**
- * `hp:t` element를 주어진 논리 텍스트로 다시 쓴다.
- * `openTag`·`closeTag`는 원문 XML에서 잘라 낸 tag이고, 자기 닫힘 `<hp:t/>`이면 `closeTag`는 빈 문자열이다.
- * 자기 닫힘 tag는 text가 비어 있으면 원문 그대로 두고, 아니면 같은 attribute의 열린 tag로 펼친다.
+ * @internal `hp:t` 내용을 논리 offset에서 둘로 나눈 원문 표기. text node는 entity 경계에서 원문을 자르고,
+ * inline `hp:tab`(attribute 포함)·`hp:lineBreak`·원문 CR/LF·entity 표기는 byte 그대로 앞 또는 뒤 조각에 남는다.
+ * offset 위치의 inline control은 뒤 조각에 속한다. 문단 분할·여러 문단 치환이 쓴다.
  */
-export function rewriteHwpxTextElement(openTag: string, closeTag: string, text: string): string {
-  if (!closeTag) {
-    if (!isSelfClosingTextTag(openTag)) throw new HwpxEditConflictError('hp:t tag 형식이 올바르지 않습니다.')
-    return text ? `${expandSelfClosingTag(openTag)}${encodeHwpxTextContent(text)}</hp:t>` : openTag
+export function splitHwpxTextContent(
+  tree: SourceTree,
+  element: SourceElement,
+  offset: number
+): { before: string; after: string } {
+  let before = ''
+  let after = ''
+  let position = 0
+  for (const child of element.children) {
+    if (child.kind !== 'text') {
+      const length = inlineControlLength(child)
+      if (!length) throw new HwpxEditConflictError('지원하지 않는 hp:t 혼합 콘텐츠가 있습니다.')
+      if (position < offset) before += serializeSourceNode(tree, child)
+      else after += serializeSourceNode(tree, child)
+      position += length
+      continue
+    }
+    const raw = textRaw(tree, child)
+    const length = decodeXmlEntities(raw).length
+    if (position + length <= offset) before += raw
+    else if (position >= offset) after += raw
+    else {
+      const cut = rawOffsetOf(raw, offset - position)
+      before += raw.slice(0, cut)
+      after += raw.slice(cut)
+    }
+    position += length
   }
-  return openTag + encodeHwpxTextContent(text) + closeTag
+  if (offset < 0 || offset > position) throw new HwpxEditConflictError(`text 범위가 올바르지 않습니다: ${offset}`)
+  return { before, after }
+}
+
+/**
+ * @internal `hp:t` element를 주어진 원문 내용(escape된 XML 혼합 콘텐츠)으로 다시 쓴 XML 표기.
+ * 자기 닫힘 `<hp:t/>`는 내용이 비면 원문 tag 그대로 두고, 아니면 같은 attribute의 열린 tag로 펼친다.
+ */
+export function hwpxTextElementSource(tree: SourceTree, element: SourceElement, content: string): string {
+  const openTag = elementOpenTag(tree, element)
+  if (element.selfClosing) {
+    if (!isSelfClosingTextTag(openTag)) throw new HwpxEditConflictError('hp:t tag 형식이 올바르지 않습니다.')
+    return content ? `${expandSelfClosingTag(openTag)}${content}</hp:t>` : openTag
+  }
+  return openTag + content + elementCloseTag(tree, element)
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +331,8 @@ interface SectionTextState {
   tree: SourceTree
   elements: SourceElement[]
   anchors: readonly HwpxTextAnchor[]
+  /** element → ordinal. 문단 command가 처음 쓸 때 만든다. */
+  ordinals?: Map<SourceElement, number>
 }
 
 /**
@@ -375,6 +415,16 @@ export function locateHwpxTextElement(
   if (index < 0) return undefined
   const anchor = state.anchors[index]
   return { tree: state.tree, element: state.elements[anchor.ordinal], anchor }
+}
+
+/**
+ * @internal `hp:t` element의 anchor ordinal(section 안 문서 순서, 편집 불가 `hp:t` 포함). tree에 없으면 -1.
+ * 문단 command가 인접 문단의 첫 `hp:t`를 anchor id로 바꿀 때 쓴다.
+ */
+export function hwpxTextOrdinal(sourcePackage: HwpxSourcePackage, sectionPath: string, element: SourceElement): number {
+  const state = sectionTextState(sourcePackage, sectionPath)
+  if (!state.ordinals) state.ordinals = new Map(state.elements.map((candidate, ordinal) => [candidate, ordinal]))
+  return state.ordinals.get(element) ?? -1
 }
 
 // ---------------------------------------------------------------------------

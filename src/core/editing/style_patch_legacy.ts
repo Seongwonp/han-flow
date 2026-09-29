@@ -3,7 +3,7 @@
  *
  * tree 모델로 옮기기 전 `style_patch.ts`의 문자열 구현(scanXmlElements span + 정규식 attribute + replaceRange)을
  * 그대로 보존한 사본이다. `tests/editing/style_tree_differential.test.ts`와 style benchmark가 새 tree 경로와 출력
- * bytes를 비교하는 데만 쓴다. 3단계에서 삭제한다.
+ * bytes를 비교하는 데만 쓴다. 4단계(표) 전환 뒤 삭제한다.
  */
 import { HwpxSourcePackage } from '../parser/source_package'
 import type {

@@ -71,8 +71,10 @@ surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict�
 원문 구간을 그대로 복사하는 serializer로 새 section을 만든다. 2단계부터 글자·문단·셀 모양 command도 같은 tree에서
 `hp:run`·`hp:p`·`hp:tc`를 부모 관계로 찾아 reference attribute를 바꾸고, 복제한 `hh:charPr`·`hh:paraPr`·`hh:borderFill`을
 header.xml tree의 collection 끝에 붙인다. section·header tree는 package 객체별 cache(`package_trees.ts`)에 있어
-tree를 고친 command가 새 package로 옮기므로 연속 입력·모양 변경은 entry를 다시 parse하지 않고, 문단·표 command는
-아직 문자열 patch 경로를 쓴다.
+tree를 고친 command가 새 package로 옮기므로 연속 입력·모양 변경은 entry를 다시 parse하지 않는다. 3단계부터 문단
+분할·병합·여러 문단 범위 치환도 같은 tree에서 `hp:p`·`hp:run`·`hp:t` node로 교체 fragment를 만들어 지우지 않은 부분의
+inline `hp:tab`·entity 원문 표기를 보존하고, fragment에 해당하는 형제 node를 조각 tree로 바꿔 cache를 이어 간다.
+표 구조 command만 아직 문자열 patch 경로를 쓴다.
 
 `saveHwpxAs`는 목적지와 같은 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음,
 source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 통과시킨 뒤에만 게시한다.
