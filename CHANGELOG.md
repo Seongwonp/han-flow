@@ -84,6 +84,7 @@
 - 개발 빌드의 Windows·Linux에서 메뉴 없이 F12·Ctrl+Shift+I로 DevTools 열기
 - 한/글이 빈 입력 칸으로 저장하는 자기 닫힘 `<hp:t/>`를 빈 text anchor로 인정해 입력 시 `<hp:t>…</hp:t>`로 펼치고 undo는 원래 tag bytes로 복원, viewer decoder와 편집 tokenizer의 `hp:t` ordinal·text를 공개 corpus 전체에서 교차 검증
 - 표 셀 text 편집을 구조 편집 조건에서 분리해 병합·머리글·여러 run 셀도 문단 하나 안에서 입력·삭제·치환 허용(행·열·병합·분할·셀 style·문단 나눔은 기존대로 일반 body 셀만, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용)
+- 편집 코어 tree 전환 1단계: 원문 범위를 보존하는 source tree와 serializer로 text 입력·삭제·치환을 옮기고(출력 bytes는 전환 전과 동일, 공개 corpus identity·differential 관문), package별 tree cache로 대형 section 입력 비용을 keystroke당 약 4.1ms에서 1.2ms로 단축
 
 ### V2 HWP fixed-page
 

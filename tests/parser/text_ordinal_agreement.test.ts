@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors, listHwpxTextOrdinals } from '../../src/core/editing/text_patch'
+import { legacyListHwpxTextAnchors, legacyListHwpxTextOrdinals } from '../../src/core/editing/text_patch_legacy'
 import { OrderedXmlNode, walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
@@ -9,6 +10,8 @@ import * as generators from '../fixtures/public/create_synthetic_hwpx'
 // viewer decoder(fast-xml-parser 기반 ordered_xml의 sourceOrdinal)와 편집 tokenizer(text_patch)는
 // 같은 `${sectionPath}#hp:t:N` anchor를 서로 다른 parser로 만든다. 둘이 어긋나면 화면에서 고른 run과
 // 다른 hp:t가 patch되므로, 모든 공개 fixture에서 ordinal 목록과 편집 가능 text가 일치하는지 확인한다.
+// 1단계 tree 전환 뒤 `text_patch`의 목록은 source tree(`source_tree.ts`)에서 나온다. 세 번째 참여자로
+// 전환 전 편집 tokenizer(`text_patch_legacy.ts`)를 비교해 viewer·tree·legacy 셋이 모두 같음을 확인한다.
 
 interface ManifestFixture {
   id: string
@@ -81,6 +84,26 @@ describe('hp:t ordinal 교차 parser 일치', () => {
         expect(new Map(anchors.map((anchor) => [anchor.textNodeId, anchor.text]))).toEqual(viewerEditable)
         const raw = sourcePackage.readEntry(sectionPath).toString('utf8')
         selfClosingAnchors += (raw.match(/<hp:t(?:\s[^>]*)?\/>/g) ?? []).length
+      }
+    },
+    60_000
+  )
+
+  test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
+    '%s: source tree와 전환 전 편집 tokenizer의 hp:t ordinal·anchor가 같다',
+    async (_id, fixture) => {
+      const sourcePackage = await HwpxSourcePackage.open(fixturePath(fixture))
+      const index = await sourcePackage.index()
+      for (const sectionPath of index.sectionPaths) {
+        const viewerOrdinals = walkOrderedXml(await sourcePackage.readOrderedXml(sectionPath))
+          .filter((node) => node.name === 'hp:t')
+          .map((node) => node.sourceOrdinal)
+        const treeOrdinals = listHwpxTextOrdinals(sourcePackage, sectionPath)
+        expect(treeOrdinals).toEqual(legacyListHwpxTextOrdinals(sourcePackage, sectionPath))
+        expect(treeOrdinals).toEqual(viewerOrdinals)
+        expect(listHwpxTextAnchors(sourcePackage, sectionPath)).toEqual(
+          legacyListHwpxTextAnchors(sourcePackage, sectionPath)
+        )
       }
     },
     60_000

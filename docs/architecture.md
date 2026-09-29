@@ -66,6 +66,10 @@ V3-2의 `text_patch`는 UTF-8 section XML을 token 단위로 훑고 단순 `hp:t
 범위를 함께 검증한다. target text content만 XML escape해 교체하므로 target 밖의 tag, attribute,
 공백과 unknown node는 byte 단위로 유지된다. 복합 자식, 잘못된 entity, 비 UTF-8 XML,
 surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict로 끝낸다.
+편집 코어 tree 전환 1단계부터 text command는 section XML을 원문 byte 범위를 보존하는 source tree
+(`source_tree.ts`)로 읽어 ordinal로 찾은 `hp:t`의 자식 node만 바꾸고, 바뀐 node만 다시 쓰고 나머지는
+원문 구간을 그대로 복사하는 serializer로 새 section을 만든다. tree는 package 객체별로 cache되어 연속 입력은
+section을 다시 parse하지 않으며, style·문단·표 command는 아직 문자열 patch 경로를 쓴다.
 
 `saveHwpxAs`는 목적지와 같은 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음,
 source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 통과시킨 뒤에만 게시한다.

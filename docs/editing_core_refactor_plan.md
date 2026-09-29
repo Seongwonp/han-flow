@@ -1,6 +1,6 @@
 # 편집 코어 tree 모델 전환 계획
 
-상태: 제안 — 1단계(XML scanner 통합, `src/core/editing/xml_scan.ts`) 완료, tree 전환 미착수
+상태: 진행 중 — XML scanner 통합(`src/core/editing/xml_scan.ts`)과 tree 전환 1단계(text) 완료, 2단계(style) 미착수
 
 실제 한/글 문서 편집 가능 비율 기준선과 우선 해제 순서: [편집 가능 비율 기준선](editing_coverage.md)
 
@@ -61,6 +61,66 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
    tree 위 함수로 옮기고 topology whitelist를 tree 검사로 대체한다.
 
 전환 중에는 `xml_scan.ts`를 문자열 command와 비교 oracle 양쪽이 공유한다.
+
+## 4-1. 1단계 완료 (text, 2026-09-29)
+
+**옮긴 것**
+
+- `src/core/editing/source_tree.ts`: section·header XML을 element·text·comment·PI·CDATA·선언 node로 읽는
+  lossless tree. node마다 원문 범위(`start`/`openEnd`/`closeStart`/`end`)와 dirty 표시를 두고, serializer는
+  dirty가 아닌 연속 형제를 원문 한 구간으로 복사하고 dirty node만 다시 쓴다. 편집하지 않은 tree는 입력과
+  byte 단위로 같다. 자기 닫힘 펼치기(`replaceElementChildren`)·되돌리기(`collapseElementToSelfClosing`)가
+  tree 연산이다. text node는 entity를 원문 표기로 들고 `decodeXmlEntities`로만 해석한다.
+- tokenizer는 새로 만들지 않았다. `xml_scan.ts`에 token 단위 iterator(`iterateXmlTokens`)를 추가하고
+  `scanXmlElements`와 source tree가 함께 쓴다(오류 message·CDATA 방식은 그대로).
+- tree attribute는 따옴표를 인식해 다른 값 안의 `name="..."`·`>`·줄바꿈이 든 값을 정확히 나누고, 읽을 때
+  entity를 해석하고 쓸 때 escape한다(`parseTagAttributes`·`readTagAttribute`·`writeTagAttribute`·
+  `setSourceAttribute`). 기존 정규식 `attribute`/`setAttribute`는 아직 옮기지 않은 모듈을 위해 남겼다.
+- `text_patch.ts`: `listHwpxTextOrdinals`·`listHwpxTextAnchors`·`applyReplaceTextCommand`가 tree에서
+  `hp:t`를 ordinal로 찾아 자식 node를 바꾸고 직렬화한다. `<hp:t/>` 펼치기·`restoreSelfClosingTag` 복원,
+  `hp:lineBreak`/`hp:tab` 혼합 콘텐츠 규칙, command·inverse 모양과 오류 code·message는 그대로다.
+  `range_edit.ts`·`composition_input.ts`·`transaction.ts`·`history.ts`·`editing_session.ts`는 바꾸지 않았다.
+- tree cache: package 객체(불변, revision과 bytes가 고정)별로 section tree·`hp:t` 목록·anchor 목록을
+  보관한다. text command는 tree를 제자리에서 고친 뒤 cache를 새 package로 옮기므로 연속 입력과 selection 검증이
+  section을 다시 parse하지 않는다. 다른 command가 만든 package에는 cache가 없어 첫 조회 때 다시 parse한다.
+  anchor 목록은 고정(frozen) 배열로 돌려준다.
+- 비교 oracle: 전환 전 문자열 구현을 `text_patch_legacy.ts`(internal, test 전용)로 보존했다.
+
+**측정**
+
+- identity: 열리는 공개 fixture 34종의 section 114개와 header 34개, 148 entry가 parse → serialize 뒤
+  byte 단위로 같다(`tests/editing/text_tree_differential.test.ts`).
+- differential: fixture마다 최대 40개(+빈 `<hp:t/>` 최대 16개) anchor, 총 362 anchor(자기 닫힘 펼치기 46)에
+  처음·가운데·끝 삽입, 범위 삭제, `&`·`<`·`>`·따옴표·surrogate pair·tab·줄바꿈·CR 치환, 전체 삭제를 차례로
+  2,896회 적용하고 inverse 2,896회로 되돌렸다. 매 단계 section bytes·revision·inverse·anchor·loss report가
+  전환 전 경로와 같고, 되돌린 section은 원래 bytes(`<hp:t/>` 포함)와 같다. `hp:tab`·비표준 entity·CRLF·
+  편집 불가 형제(CDATA·사용자 entity·comment)를 섞은 손 작성 section도 두 경로가 같다.
+- 교차 parser: viewer decoder·source tree·전환 전 tokenizer의 `hp:t` ordinal과 편집 가능 anchor가 34종 전체에서 같다.
+- keystroke 비용(`HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/text_edit_benchmark.test.ts`,
+  large-progressive의 가장 큰 section 47,305 bytes·anchor 250개 가운데 run에 500자 입력, anchor 조회 → command →
+  anchor 조회): 전환 전 평균 4.11ms(p50 3.82·p95 5.94) → 전환 후 1.16ms(p50 1.05·p95 1.87).
+  `HwpxEditHistory.commit` 전체 경로는 1.24ms(p50 1.05·p95 1.80). 남은 비용은 새 section bytes 생성과
+  `withEntry`의 CRC 계산이다.
+- `npm run corpus:editing-coverage` 결과는 `editing_coverage_2026-09-29-after.json`과 같다(기능 변화 없음).
+
+**differential이 드러낸 기존 동작(전환 전과 동일하게 유지)**
+
+- 편집한 `hp:t`의 내용은 논리 text에서 다시 쓰므로, attribute가 있는 `<hp:tab width=".." leader=".." type=".."/>`은
+  `&#9;`로 바뀌어 탭 폭·채움 정보가 사라지고, `&#x41;`·`&apos;`·원문 CR/LF 같은 비표준 표기는 기본 escape
+  (`A`·`'`·`&#13;<hp:lineBreak/>`)로 바뀐다. 내용이 같은 빈 편집(`from = to`, `insert = ''`)도 마찬가지다.
+- 그래서 undo는 원래 내용이 기본 표기일 때만 byte 단위로 원문과 같다. 공개 corpus의 편집 가능 `hp:t`는 모두
+  기본 표기이고, `hp:tab`이 든 유일한 `hp:t`(`ext-hwpxlib-change-track`)는 변경 추적 때문에 편집 불가다.
+  바뀐 text node만 다시 쓰는 편집과 구조적 inverse로 고치되, 출력이 달라지므로 별도 결정으로 분리한다.
+
+**남은 것 (2단계: style)**
+
+- `style_patch.ts`·`cell_style_patch.ts`를 tree 연산으로 옮긴다. header collection `itemCnt`·정의 재사용·
+  run 분할을 `setSourceAttribute`와 자식 교체로 표현하고, header·section 두 entry 동시 변경의 inverse를 검증한다.
+  header.xml identity는 1단계에서 이미 확인했다.
+- style command가 tree를 쓰면 cache를 text 전용에서 package 전체 편집으로 넓힌다(지금은 non-text revision마다 다시 parse).
+- `text_patch_legacy.ts`와 그 tokenizer를 삭제하고, differential test는 style 비교로 교체한다.
+- 문단(`paragraph_patch.ts`, 아직 `rewriteHwpxTextElement` 문자열 helper 사용)·표(`table_patch.ts`)와 정규식
+  `attribute`/`setAttribute`는 3·4단계까지 문자열 경로에 남는다.
 
 ## 5. 위험
 
