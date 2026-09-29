@@ -5,6 +5,7 @@ import {
   findTagEnd,
   HwpxEditConflictError,
   isSurrogateBoundarySafe,
+  iterateXmlTokens,
   nearestAncestor,
   replaceRange,
   sameOrdinalMessage,
@@ -163,5 +164,32 @@ describe('xml_scan helpers', () => {
   test('HwpxEditConflictError는 text_patch 경로에서도 같은 class다', () => {
     expect(ReexportedConflictError).toBe(HwpxEditConflictError)
     expect(new ReexportedConflictError('x').code).toBe('HWPX_EDIT_CONFLICT')
+  })
+})
+
+describe('xml_scan iterateXmlTokens', () => {
+  test('markup token 종류와 범위를 문서 순서대로 돌려주고 사이 구간은 text로 남긴다', () => {
+    const xml = '<?xml version="1.0"?>\n<!DOCTYPE r><r a="x>y"><!-- c --><![CDATA[<b>]]>t&amp;<e/></r>'
+    const tokens = [...iterateXmlTokens(xml)]
+    expect(tokens.map((token) => [token.kind, token.name, xml.slice(token.start, token.end)])).toEqual([
+      ['pi', undefined, '<?xml version="1.0"?>'],
+      ['declaration', undefined, '<!DOCTYPE r>'],
+      ['open', 'r', '<r a="x>y">'],
+      ['comment', undefined, '<!-- c -->'],
+      ['cdata', undefined, '<![CDATA[<b>]]>'],
+      ['self-close', 'e', '<e/>'],
+      ['close', 'r', '</r>']
+    ])
+    // CDATA를 일반 `<!` tag로 다루는 표 scanner 방식에서는 declaration으로 나온다.
+    expect([...iterateXmlTokens('<![CDATA[x]]>', TABLE_SCAN_OPTIONS)].map((token) => token.kind)).toEqual(['declaration'])
+  })
+
+  test('짝이 맞지 않는 tag는 검사하지 않고 tokenizer 오류는 그 token에서 던진다', () => {
+    expect([...iterateXmlTokens('</a><b>')].map((token) => token.kind)).toEqual(['close', 'open'])
+    const iterator = iterateXmlTokens('<a></a><!-- x')
+    expect(iterator.next().value).toMatchObject({ kind: 'open', name: 'a' })
+    expect(iterator.next().value).toMatchObject({ kind: 'close', name: 'a' })
+    expect(() => iterator.next()).toThrow('끝나지 않은 XML comment가 있습니다.')
+    expect(thrown(() => [...iterateXmlTokens('<a', TABLE_SCAN_OPTIONS)])).toBeInstanceOf(HwpxEditConflictError)
   })
 })

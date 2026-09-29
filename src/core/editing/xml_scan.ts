@@ -87,6 +87,80 @@ function provisionalParent(open: OpenElement | undefined): XmlElementSpan | unde
 }
 
 /**
+ * markup token 종류.
+ * - `open`/`close`/`self-close`: element tag
+ * - `comment`: `<!-- ... -->`
+ * - `cdata`: `<![CDATA[ ... ]]>` (`cdata: 'skip'`일 때만. `'as-tag'`이면 `declaration`으로 나온다.)
+ * - `pi`: `<? ... ?>`(XML 선언 포함)
+ * - `declaration`: 그 밖의 `<!` tag(`<!DOCTYPE ...>` 등)
+ */
+export type XmlTokenKind = 'open' | 'close' | 'self-close' | 'comment' | 'cdata' | 'pi' | 'declaration'
+
+/** raw XML 위 markup token 하나. token 사이의 문자열은 모두 text다. */
+export interface XmlToken {
+  kind: XmlTokenKind
+  /** `<` 위치 */
+  start: number
+  /** token 바로 뒤 위치 */
+  end: number
+  /** element tag(`open`/`close`/`self-close`)의 이름 */
+  name?: string
+}
+
+/**
+ * raw XML의 markup token을 문서 순서대로 하나씩 돌려준다. token 사이 구간이 text다.
+ * element 짝(여는·닫는 tag 순서)은 검사하지 않는다. 오류는 해당 token에 도달했을 때 던진다.
+ * {@link scanXmlElements}와 편집 source tree(`source_tree.ts`)가 같은 tokenizer로 이 함수를 쓴다.
+ */
+export function* iterateXmlTokens(xml: string, options: XmlScanOptions = {}): Generator<XmlToken, void, undefined> {
+  const errors = options.errors ?? 'plain'
+  const detailed = errors === 'plain'
+  const skipCdata = (options.cdata ?? 'skip') === 'skip'
+  let cursor = 0
+  while (cursor < xml.length) {
+    const start = xml.indexOf('<', cursor)
+    if (start < 0) break
+    if (xml.startsWith('<!--', start)) {
+      const close = xml.indexOf('-->', start + 4)
+      if (close < 0) throw scanError(errors, '끝나지 않은 XML comment가 있습니다.')
+      cursor = close + 3
+      yield { kind: 'comment', start, end: cursor }
+      continue
+    }
+    if (skipCdata && xml.startsWith('<![CDATA[', start)) {
+      const close = xml.indexOf(']]>', start + 9)
+      if (close < 0) throw scanError(errors, '끝나지 않은 XML CDATA가 있습니다.')
+      cursor = close + 3
+      yield { kind: 'cdata', start, end: cursor }
+      continue
+    }
+    if (xml.startsWith('<?', start)) {
+      const close = xml.indexOf('?>', start + 2)
+      if (close < 0) {
+        throw scanError(errors, detailed ? '끝나지 않은 XML processing instruction이 있습니다.' : '끝나지 않은 XML 선언이 있습니다.')
+      }
+      cursor = close + 2
+      yield { kind: 'pi', start, end: cursor }
+      continue
+    }
+    const end = findTagEnd(xml, start, errors)
+    cursor = end
+    if (xml.startsWith('<!', start)) {
+      yield { kind: 'declaration', start, end }
+      continue
+    }
+    const source = xml.slice(start, end)
+    const closing = /^<\s*\//.test(source)
+    const name = source.match(closing ? /^<\s*\/\s*([^\s>]+)/ : /^<\s*([^\s/>]+)/)?.[1]
+    if (!name) {
+      throw scanError(errors, detailed ? `해석할 수 없는 XML tag가 있습니다: ${source.slice(0, 32)}` : '해석할 수 없는 XML tag가 있습니다.')
+    }
+    const selfClosing = !closing && /\/\s*>$/.test(source)
+    yield { kind: closing ? 'close' : selfClosing ? 'self-close' : 'open', start, end, name }
+  }
+}
+
+/**
  * raw XML을 훑어 모든 element의 offset 범위를 시작 위치 순으로 돌려준다.
  * comment, processing instruction, `<!` 선언은 element로 보지 않는다.
  * 각 span의 `parent`는 최종적으로 같은 배열 안의 span 객체를 가리킨다.
@@ -96,42 +170,11 @@ export function scanXmlElements(xml: string, options: XmlScanOptions = {}): XmlE
   const detailed = errors === 'plain'
   const spans: XmlElementSpan[] = []
   const stack: OpenElement[] = []
-  let cursor = 0
-  while (cursor < xml.length) {
-    const start = xml.indexOf('<', cursor)
-    if (start < 0) break
-    if (xml.startsWith('<!--', start)) {
-      const close = xml.indexOf('-->', start + 4)
-      if (close < 0) throw scanError(errors, '끝나지 않은 XML comment가 있습니다.')
-      cursor = close + 3
-      continue
-    }
-    if ((options.cdata ?? 'skip') === 'skip' && xml.startsWith('<![CDATA[', start)) {
-      const close = xml.indexOf(']]>', start + 9)
-      if (close < 0) throw scanError(errors, '끝나지 않은 XML CDATA가 있습니다.')
-      cursor = close + 3
-      continue
-    }
-    if (xml.startsWith('<?', start)) {
-      const close = xml.indexOf('?>', start + 2)
-      if (close < 0) {
-        throw scanError(errors, detailed ? '끝나지 않은 XML processing instruction이 있습니다.' : '끝나지 않은 XML 선언이 있습니다.')
-      }
-      cursor = close + 2
-      continue
-    }
-    const end = findTagEnd(xml, start, errors)
-    const source = xml.slice(start, end)
-    if (source.startsWith('<!')) {
-      cursor = end
-      continue
-    }
-    const closing = /^<\s*\//.test(source)
-    const name = source.match(closing ? /^<\s*\/\s*([^\s>]+)/ : /^<\s*([^\s/>]+)/)?.[1]
-    if (!name) {
-      throw scanError(errors, detailed ? `해석할 수 없는 XML tag가 있습니다: ${source.slice(0, 32)}` : '해석할 수 없는 XML tag가 있습니다.')
-    }
-    const selfClosing = !closing && /\/\s*>$/.test(source)
+  for (const token of iterateXmlTokens(xml, options)) {
+    if (token.name === undefined) continue
+    const { start, end, name } = token
+    const closing = token.kind === 'close'
+    const selfClosing = token.kind === 'self-close'
     if (closing) {
       const open = stack.pop()
       if (!open || open.name !== name) {
@@ -143,7 +186,6 @@ export function scanXmlElements(xml: string, options: XmlScanOptions = {}): XmlE
     } else {
       stack.push({ name, start, openEnd: end, parent: provisionalParent(stack[stack.length - 1]) })
     }
-    cursor = end
   }
   if (stack.length) {
     throw scanError(
