@@ -103,14 +103,25 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
   `withEntry`의 CRC 계산이다.
 - `npm run corpus:editing-coverage` 결과는 `editing_coverage_2026-09-29-after.json`과 같다(기능 변화 없음).
 
-**differential이 드러낸 기존 동작(전환 전과 동일하게 유지)**
+**differential이 드러낸 전환 전 경로의 버그 — 고침(2026-09-29)**
 
-- 편집한 `hp:t`의 내용은 논리 text에서 다시 쓰므로, attribute가 있는 `<hp:tab width=".." leader=".." type=".."/>`은
-  `&#9;`로 바뀌어 탭 폭·채움 정보가 사라지고, `&#x41;`·`&apos;`·원문 CR/LF 같은 비표준 표기는 기본 escape
-  (`A`·`'`·`&#13;<hp:lineBreak/>`)로 바뀐다. 내용이 같은 빈 편집(`from = to`, `insert = ''`)도 마찬가지다.
-- 그래서 undo는 원래 내용이 기본 표기일 때만 byte 단위로 원문과 같다. 공개 corpus의 편집 가능 `hp:t`는 모두
-  기본 표기이고, `hp:tab`이 든 유일한 `hp:t`(`ext-hwpxlib-change-track`)는 변경 추적 때문에 편집 불가다.
-  바뀐 text node만 다시 쓰는 편집과 구조적 inverse로 고치되, 출력이 달라지므로 별도 결정으로 분리한다.
+- 전환 전 경로는 편집한 `hp:t`의 내용을 논리 text에서 다시 써서, attribute가 있는 `<hp:tab width=".." leader=".." type=".."/>`을
+  `&#9;`로 바꿔 탭 폭·채움 정보를 잃고, `&#x41;`·`&apos;`·원문 CR/LF 같은 비표준 표기를 기본 escape
+  (`A`·`'`·`&#13;<hp:lineBreak/>`)로 바꿨다. 내용이 같은 빈 편집(`from = to`, `insert = ''`)도 마찬가지였고, undo는 원래 내용이
+  기본 표기일 때만 원문 bytes로 돌아왔다. 최소 재현: `<hp:t>탭<hp:tab width="3112" leader="0" type="1"/>뒤&#x41;&apos;&#13;&gt;</hp:t>`에
+  `from=0,to=0,insert=''` → `<hp:t>탭&#9;뒤A'&#13;&gt;</hp:t>`.
+- **고침**: tree 경로가 `hp:t`의 자식 가운데 편집 범위에 걸친 text node만 바꾼다. 범위 밖 text의 원문 표기, inline `hp:tab`(attribute
+  포함)·`hp:lineBreak`, 원문 CR/LF는 byte 그대로이고, 경계에 걸친 text node는 entity 경계에서 원문을 잘라 앞뒤 조각을 남긴다.
+  빈 편집은 입력과 같은 bytes다. 새로 넣는 text는 전과 같이 기본 escape(`\t` → `&#9;`, `\n` → `<hp:lineBreak/>`)이고, 범위 안의
+  `hp:tab`·`hp:lineBreak` element는 지운다. 지운 범위가 기본 표기가 아니면 inverse가 그 원문 표기를 `insertSource`(선택 field,
+  history byte 예산에 포함)로 들고 가 undo가 모든 경우 원래 bytes를 복원한다. `insertSource`는 text와 자기 닫힘
+  `hp:lineBreak`/`hp:tab`만 받고 해석한 논리 text가 `insert`와 다르면 거부한다.
+- differential은 편집 전 `hp:t` 내용이 기본 표기인 단계에서만 전환 전 경로와 bytes·inverse가 같음을 단언한다. 공개 corpus 362 anchor
+  2,896 편집은 모두 기본 표기라 전부 같고, 손 작성 section 5 anchor 40 편집 가운데 기본 표기가 아닌 10 편집만 달라지며(undo는 모두
+  원래 bytes), 34종 전체의 편집 가능 anchor 19,945개에 처음·가운데·끝 빈 편집을 적용해도 section bytes가 그대로다
+  (`tests/editing/text_inline_preservation.test.ts`, `text_tree_differential.test.ts`).
+- 남은 것: 문단 분할·병합(`paragraph_patch.ts`)은 3단계 전까지 `rewriteHwpxTextElement`로 논리 text에서 다시 쓰므로 그 경로의
+  `hp:t`는 여전히 기본 표기로 바뀐다.
 
 **남은 것 (2단계: style)**
 

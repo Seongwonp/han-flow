@@ -9,6 +9,7 @@ import {
   findSourceElements,
   parseSourceTree,
   replaceElementChildren,
+  serializeSourceNode,
   serializeSourceTree,
   SourceElement,
   SourceNode,
@@ -39,6 +40,12 @@ export interface ReplaceTextCommand {
    * 빈 `<hp:t/>`에 글자를 넣은 편집을 실행 취소할 때 원본 bytes를 그대로 복원하기 위해 쓴다.
    */
   restoreSelfClosingTag?: string
+  /**
+   * inverse 전용. `insert`를 기본 escape 대신 이 원문 XML 표기(text·entity·`hp:lineBreak`/`hp:tab` element)로
+   * 넣는다. 지운 범위가 attribute 있는 `<hp:tab .../>`, 비표준 entity, 원문 CR/LF처럼 기본 표기가 아니었을 때
+   * 실행 취소가 원래 bytes를 그대로 복원하도록 쓴다. 해석한 논리 text는 `insert`와 같아야 한다.
+   */
+  insertSource?: string
 }
 
 export interface HwpxLossReport {
@@ -131,6 +138,141 @@ function hwpxTextValue(tree: SourceTree, element: SourceElement): string | undef
     }
   }
   return text
+}
+
+/** 자기 닫힘 inline control element(`hp:lineBreak`/`hp:tab`)는 논리 text 한 글자다. 그 밖의 node는 0. */
+function inlineControlLength(node: SourceNode): number {
+  return node.kind === 'element' && node.selfClosing && INLINE_TEXT_CONTROLS[node.name] !== undefined ? 1 : 0
+}
+
+/**
+ * text node 원문(entity 미해석) 안에서 논리 offset에 해당하는 원문 offset. entity 하나는 해석한 문자 길이만큼
+ * 논리 offset을 차지하므로 entity 중간에서 멈추지 않는다(surrogate 경계 검사가 앞서 이를 보장한다).
+ */
+function rawOffsetOf(raw: string, logicalOffset: number): number {
+  let logical = 0
+  let index = 0
+  while (logical < logicalOffset) {
+    if (index >= raw.length) throw new HwpxEditConflictError('text 범위가 원문을 벗어났습니다.')
+    if (raw[index] === '&') {
+      const end = raw.indexOf(';', index)
+      if (end < 0) throw new HwpxEditConflictError('해석할 수 없는 XML entity가 있습니다.')
+      logical += decodeXmlEntities(raw.slice(index, end + 1)).length
+      index = end + 1
+    } else {
+      logical += 1
+      index += 1
+    }
+  }
+  if (logical !== logicalOffset) throw new HwpxEditConflictError('XML entity 중간은 편집할 수 없습니다.')
+  return index
+}
+
+/** 이어진 text node를 하나로 합친다. 원문 표기를 이어 붙이므로 직렬화 결과는 같다. */
+function mergeAdjacentText(tree: SourceTree, nodes: SourceNode[]): SourceNode[] {
+  const merged: SourceNode[] = []
+  for (const node of nodes) {
+    const previous = merged[merged.length - 1]
+    if (node.kind === 'text' && previous?.kind === 'text') {
+      merged[merged.length - 1] = createSourceText(textRaw(tree, previous) + textRaw(tree, node))
+    } else {
+      merged.push(node)
+    }
+  }
+  return merged
+}
+
+interface TextChildSplice {
+  children: SourceNode[]
+  /** 지운 논리 범위의 원문 표기(entity·inline control element 포함) */
+  removedSource: string
+}
+
+/**
+ * `hp:t` 자식 가운데 논리 범위 [from, to)에 걸친 node만 바꾼다. 범위 밖 text 원문·`hp:tab`(attribute 포함)·
+ * `hp:lineBreak` node는 그대로 두고, 범위 경계에 걸친 text node는 원문 표기를 잘라 앞뒤 조각으로 남긴다.
+ * 범위 안의 inline control element는 지운다.
+ */
+function spliceTextChildren(
+  tree: SourceTree,
+  element: SourceElement,
+  from: number,
+  to: number,
+  insertNodes: SourceNode[]
+): TextChildSplice {
+  const before: SourceNode[] = []
+  const after: SourceNode[] = []
+  let prefix = ''
+  let suffix = ''
+  let removedSource = ''
+  let position = 0
+  for (const child of element.children) {
+    let length: number
+    let raw: string | undefined
+    if (child.kind === 'text') {
+      raw = textRaw(tree, child)
+      length = decodeXmlEntities(raw).length
+    } else {
+      length = inlineControlLength(child)
+      if (!length) throw new HwpxEditConflictError('지원하지 않는 hp:t 혼합 콘텐츠가 있습니다.')
+    }
+    const start = position
+    const end = position + length
+    position = end
+    if (end <= from) {
+      before.push(child)
+      continue
+    }
+    if (start >= to) {
+      after.push(child)
+      continue
+    }
+    if (raw === undefined) {
+      // 범위 안에 온전히 든 inline control. 원문 표기(attribute 포함)를 inverse용으로 모은다.
+      removedSource += serializeSourceNode(tree, child)
+      continue
+    }
+    const cutStart = rawOffsetOf(raw, Math.max(0, from - start))
+    const cutEnd = rawOffsetOf(raw, Math.min(length, to - start))
+    if (start < from) prefix = raw.slice(0, cutStart)
+    if (end > to) suffix = raw.slice(cutEnd)
+    removedSource += raw.slice(cutStart, cutEnd)
+  }
+  const middle: SourceNode[] = []
+  if (prefix) middle.push(createSourceText(prefix))
+  middle.push(...insertNodes)
+  if (suffix) middle.push(createSourceText(suffix))
+  // 경계의 text node를 합쳐 연속 입력이 text node를 잘게 쪼개지 않게 한다(원문 표기를 이어 붙이므로 bytes는 같다).
+  return { children: mergeAdjacentText(tree, [...before, ...middle, ...after]), removedSource }
+}
+
+/**
+ * inverse의 `insertSource`를 `hp:t` 자식 node로 만든다. text와 자기 닫힘 `hp:lineBreak`/`hp:tab`만 받고,
+ * 해석한 논리 text가 `insert`와 다르면 거부한다.
+ */
+function insertSourceNodes(insertSource: string, insert: string): SourceNode[] {
+  const mismatch = (): HwpxEditConflictError =>
+    new HwpxEditConflictError('되돌릴 hp:t 원문 표기가 삽입할 text와 일치하지 않습니다.')
+  let fragment: SourceTree
+  try {
+    fragment = parseSourceTree(insertSource)
+  } catch {
+    throw mismatch()
+  }
+  const holder = createSourceElement('hp:t', '<hp:t>', false)
+  holder.children = fragment.children
+  const value = hwpxTextValue(fragment, holder)
+  if (value !== insert) throw mismatch()
+  try {
+    assertXmlCharacters(value)
+  } catch {
+    throw mismatch()
+  }
+  return fragment.children.map((node) =>
+    node.kind === 'text'
+      ? createSourceText(textRaw(fragment, node))
+      : createSourceElement((node as SourceElement).name, fragment.source.slice(node.start, node.end), true)
+  )
 }
 
 function decodeUtf8(bytes: Buffer): string {
@@ -264,8 +406,10 @@ type TextElementEdit =
   | { kind: 'collapse'; tag: string }
 
 /**
- * `hp:t` 하나의 text 범위를 바꾼다. section source tree에서 ordinal로 `hp:t`를 찾아 자식 node를 바꾸고,
- * 바뀐 node만 다시 쓰는 serializer로 새 section XML을 만든다. 손대지 않은 byte는 원문 그대로다.
+ * `hp:t` 하나의 text 범위를 바꾼다. section source tree에서 ordinal로 `hp:t`를 찾아 범위에 걸친 자식 node만
+ * 바꾸고, 바뀐 node만 다시 쓰는 serializer로 새 section XML을 만든다. 범위 밖 text의 entity 표기·inline
+ * `hp:tab`(attribute 포함)·`hp:lineBreak`·원문 CR/LF는 byte 그대로이고, 빈 편집은 입력과 같은 bytes를 만든다.
+ * inverse는 지운 범위의 원문 표기를 `insertSource`로 들고 있어 실행 취소가 원래 bytes를 복원한다.
  */
 export function applyReplaceTextCommand(
   sourcePackage: HwpxSourcePackage,
@@ -292,24 +436,38 @@ export function applyReplaceTextCommand(
   const openTag = elementOpenTag(state.tree, element)
 
   // tree를 고치기 전에 모든 검증과 escape를 끝낸다. 도중 실패가 cache된 tree를 망가뜨리지 않게 한다.
+  // 새로 넣는 text는 기본 escape(`\t` → `&#9;`, `\n` → `<hp:lineBreak/>`)로 쓰고, inverse는 지운 범위의 원문 표기를
+  // `insertSource`로 넘겨 받아 그대로 되살린다.
+  const insertNodes =
+    command.insertSource !== undefined
+      ? insertSourceNodes(command.insertSource, command.insert)
+      : hwpxTextContentNodes(command.insert)
   let edit: TextElementEdit
   let restoreSelfClosingTag: string | undefined
+  let removedSource = ''
   if (element.selfClosing) {
     // `<hp:t/>` → `<hp:t>…</hp:t>`로 펼친다. inverse가 빈 text로 되돌릴 때 원래 tag bytes를 다시 쓴다.
     if (!isSelfClosingTextTag(openTag)) throw new HwpxEditConflictError('hp:t tag 형식이 올바르지 않습니다.')
-    edit = nextText ? { kind: 'content', children: hwpxTextContentNodes(nextText) } : { kind: 'none' }
+    edit = nextText ? { kind: 'content', children: insertNodes } : { kind: 'none' }
     if (nextText) restoreSelfClosingTag = openTag
-  } else if (command.restoreSelfClosingTag !== undefined && nextText === '') {
-    if (
-      !isSelfClosingTextTag(command.restoreSelfClosingTag) ||
-      expandSelfClosingTag(command.restoreSelfClosingTag) !== openTag
-    ) {
-      throw new HwpxEditConflictError('되돌릴 빈 hp:t tag가 현재 원문과 일치하지 않습니다.')
-    }
-    edit = { kind: 'collapse', tag: command.restoreSelfClosingTag }
   } else {
-    edit = { kind: 'content', children: hwpxTextContentNodes(nextText) }
+    // 바뀐 범위에 걸친 자식 node만 바꾼다. 범위 밖 원문 표기(attribute 있는 `hp:tab`, entity 표기, CR/LF)는 그대로다.
+    const splice = spliceTextChildren(state.tree, element, command.from, command.to, insertNodes)
+    removedSource = splice.removedSource
+    if (command.restoreSelfClosingTag !== undefined && nextText === '') {
+      if (
+        !isSelfClosingTextTag(command.restoreSelfClosingTag) ||
+        expandSelfClosingTag(command.restoreSelfClosingTag) !== openTag
+      ) {
+        throw new HwpxEditConflictError('되돌릴 빈 hp:t tag가 현재 원문과 일치하지 않습니다.')
+      }
+      edit = { kind: 'collapse', tag: command.restoreSelfClosingTag }
+    } else {
+      edit = { kind: 'content', children: splice.children }
+    }
   }
+  // 지운 범위가 기본 표기가 아니면(원문 `hp:tab` attribute, 비표준 entity, CR/LF 등) inverse가 원문 표기를 들고 간다.
+  const insertSource = removedSource !== encodeHwpxTextContent(removed) ? removedSource : undefined
 
   let nextPackage = sourcePackage
   const anchor: HwpxTextAnchor = freezeAnchor({
@@ -343,7 +501,8 @@ export function applyReplaceTextCommand(
       from: command.from,
       to: command.from + command.insert.length,
       insert: removed,
-      ...(restoreSelfClosingTag !== undefined ? { restoreSelfClosingTag } : {})
+      ...(restoreSelfClosingTag !== undefined ? { restoreSelfClosingTag } : {}),
+      ...(insertSource !== undefined ? { insertSource } : {})
     },
     anchor: { ...anchor },
     lossReport: buildLossReport(sourcePackage, [command.sectionPath])

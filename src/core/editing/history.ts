@@ -82,7 +82,8 @@ function commandBytes(transaction: EditTransaction): number {
         64
       if (command.type === 'replace-text') {
         return sum + common + Buffer.byteLength(command.insert, 'utf8') +
-          Buffer.byteLength(command.restoreSelfClosingTag ?? '', 'utf8')
+          Buffer.byteLength(command.restoreSelfClosingTag ?? '', 'utf8') +
+          Buffer.byteLength(command.insertSource ?? '', 'utf8')
       }
       if (command.type === 'replace-paragraph-fragment') {
         return (

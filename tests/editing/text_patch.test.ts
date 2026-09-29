@@ -255,7 +255,7 @@ describe('HWPX text patch와 Save As', () => {
     })
     expect(edited.anchor.text).toBe('첫 줄\n새 줄\n둘째 줄\t탭')
     expect(edited.package.readEntry(sectionPath).toString('utf8')).toContain(
-      '첫 줄<hp:lineBreak/>새 줄<hp:lineBreak/>둘째 줄&#9;탭'
+      '첫 줄<hp:lineBreak/>새 줄<hp:lineBreak/>둘째 줄<hp:tab/>탭'
     )
   })
 
