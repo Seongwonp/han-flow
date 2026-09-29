@@ -29,6 +29,7 @@
 
 ### Sprint 4 호환성 corpus
 
+- 한/글 저장본 공개 테스트 HWPX 26종(hwpxlib·python-hwpx, Apache-2.0)을 sha256·출처와 함께 external corpus로 반입, 전부 열림
 - 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
 
 ### Sprint 5 Windows 배포 후보

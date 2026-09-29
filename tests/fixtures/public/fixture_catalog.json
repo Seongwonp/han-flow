@@ -61,6 +61,188 @@
       "format": "hwp",
       "category": "layout-and-rendering",
       "pipelines": ["hwp-production"]
+    },
+    {
+      "id": "ext-hwpxlib-table-scores",
+      "format": "hwpx",
+      "category": "table-basic",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-para-heads",
+      "format": "hwpx",
+      "category": "lists-and-numbering",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-rect-in-para",
+      "format": "hwpx",
+      "category": "inline-shapes",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-multi-column",
+      "format": "hwpx",
+      "category": "multi-column-layout",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-header-footer",
+      "format": "hwpx",
+      "category": "header-footer",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-page-functions",
+      "format": "hwpx",
+      "category": "page-numbering",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-sample1",
+      "format": "hwpx",
+      "category": "document-baseline",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-simple-table",
+      "format": "hwpx",
+      "category": "table-span",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-equation",
+      "format": "hwpx",
+      "category": "equations",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-picture",
+      "format": "hwpx",
+      "category": "images",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-change-track",
+      "format": "hwpx",
+      "category": "change-tracking",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-dutmal",
+      "format": "hwpx",
+      "category": "ruby-text",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-page-size",
+      "format": "hwpx",
+      "category": "page-setup",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-table-page-break-cell",
+      "format": "hwpx",
+      "category": "table-pagination",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-merge-3x3",
+      "format": "hwpx",
+      "category": "table-span",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-merge-2x2",
+      "format": "hwpx",
+      "category": "table-span",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-list-bullet-l2",
+      "format": "hwpx",
+      "category": "lists-and-numbering",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-list-number-l3",
+      "format": "hwpx",
+      "category": "lists-and-numbering",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-memos",
+      "format": "hwpx",
+      "category": "memos",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-foot-endnotes",
+      "format": "hwpx",
+      "category": "footnotes-endnotes",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-text-box-fields",
+      "format": "hwpx",
+      "category": "form-fields",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-cell-border-vmerge",
+      "format": "hwpx",
+      "category": "table-span",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-fill-image",
+      "format": "hwpx",
+      "category": "cell-image-fill",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-form-fields-spanning",
+      "format": "hwpx",
+      "category": "form-fields",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-auto-grow-cell",
+      "format": "hwpx",
+      "category": "table-pagination",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-pyhwpx-paragraph-margins",
+      "format": "hwpx",
+      "category": "paragraph-layout",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
     }
   ]
 }
