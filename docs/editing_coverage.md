@@ -1,7 +1,8 @@
 # 편집 가능 비율 기준선 (2026-09-29)
 
 실제 한/글 저장본에서 편집기가 얼마나 고칠 수 있는지 재는 도구와 첫 측정 결과입니다.
-원본 JSON은 [`editing_coverage_2026-09-29.json`](editing_coverage_2026-09-29.json)에 있습니다.
+원본 JSON은 [`editing_coverage_2026-09-29.json`](editing_coverage_2026-09-29.json)(기준선)과
+[`editing_coverage_2026-09-29-after.json`](editing_coverage_2026-09-29-after.json)(아래 "개선 후")에 있습니다.
 다시 재려면 `npm run corpus:editing-coverage -- --output <file>`를 실행합니다(약 6초).
 
 ## 측정 방법
@@ -25,11 +26,21 @@
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 합성 8종 | 19,575 | 100% | 99.9% | 99.97% | 99.7% | 99.6% (19,513/19,583) | 19/29 | 5/7 |
 | 외부 한/글 26종 | 371 | 95.7% | 79.5% | 89.3% | 45.0% | 44.8% (178/397) | 45/66 (68.2%) | 13/19 |
+| 합성 8종 · 개선 후 | 19,575 | 100% | 99.9% | 99.98% | 99.7% | 99.6% (19,513/19,583) | 29/29 | 5/7 |
+| 외부 한/글 26종 · 개선 후 | 371 | 95.7% | 89.8% (333) | 92.8% | 46.9% | 49.4% (196/397) | 49/66 (74.2%) | 13/19 |
 
 합성 합계는 `large-progressive`(19,511 run)가 지배하므로 판단 근거로는 외부 묶음을 씁니다.
 외부 26종은 hwpxlib·python-hwpx의 기능별 소형 표본(총 1,147자)이라 실제 공문서 분포와는 다릅니다.
 
-## 외부 fixture category별
+**개선 후**는 아래 "결론"의 1·2번을 반영한 측정입니다(같은 날, 같은 도구).
+
+- 빈 `<hp:t/>` 수정: text 편집 +25 run(모두 본문 container). 빈 run이라 글자 가중은 그대로입니다.
+- 표 셀 text 조건 분리: 병합·머리글·여러 run 셀 +13 run·+40자, 표 셀 45 → 49. 셀 style·표 구조는
+  구조 조건을 그대로 두어 45·13/19에서 변하지 않습니다. 외부 표 셀 안 `hp:t` 120개가 모두 text 편집 가능해졌고
+  남은 표 셀 거부는 `hp:t`가 없는 빈 셀(`NO_TEXT_NODE` 17)뿐입니다.
+- 글자·문단 style이 늘어난 것은 새로 열린 빈 본문 run이 style dry-run 대상이 되었기 때문입니다.
+
+## 외부 fixture category별 (기준선)
 
 | category | 종 | runs | text 편집 | 글자 가중 | 글자 style | 표 셀 | 표 구조 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -45,7 +56,15 @@
 | header-footer · change-tracking | 2 | 4 | 0% | 0% | 0% | - | - |
 | equations · images · ruby-text · page-setup · cell-image-fill | 5 | 5 | 0% | - | 0% | 0/6 | 0/1 |
 
-## 주요 거부 사유 (외부 26종)
+개선 후 달라진 category(text 편집 · 글자 가중 · 표 셀):
+table-span 45.5% → 81.8% · 54.4% → 100% · 7/18 → 10/18, form-fields 43.9% → 78.0% · 59.8% → 75.9% · 2/3 → 3/3,
+table-basic 81.5% → 88.9%, table-pagination 94.6% → 97.3%, paragraph-layout 47.1% → 52.9%,
+memos 28.6% → 71.4%, footnotes-endnotes 33.3% → 66.7%, document-baseline 83.3% → 100%,
+page-numbering 66.7% → 100%, header-footer 0% → 33.3%, equations·ruby-text·page-setup 0% → 100%(빈 run 1개씩).
+
+## 주요 거부 사유 (외부 26종, 기준선)
+
+개선 후 text 단계 거부는 `NOT_LISTED_PARAGRAPH_HAS_TABLE` 19·머리말/꼬리말 2·이미지 문단 1만 남았습니다.
 
 | 단계 · 사유 | 건수 | 잃는 글자 | 발생 위치 |
 | --- | ---: | ---: | --- |
@@ -62,10 +81,10 @@
 
 ## 결론 — tree 모델 전환의 첫 단위
 
-1. **capability와 patch가 어긋나는 빈 `<hp:t/>`**: 25개 run은 capability가 text 편집을 허용하지만
+1. **(반영됨) capability와 patch가 어긋나는 빈 `<hp:t/>`**: 25개 run은 capability가 text 편집을 허용하지만
    commit 때 `text_patch`가 거부합니다. 표 옆·빈 셀의 입력 칸이라 양식 채우기에 직결되므로,
    자기 닫힘 `hp:t`를 빈 anchor로 인정(필요 시 열린 태그로 확장)하는 수정이 가장 먼저입니다.
-2. **글자 기준 최대 단일 해제는 셀 text 조건 분리**: `tableContexts`의 병합·run 1개 조건은
+2. **(반영됨, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용) 글자 기준 최대 단일 해제는 셀 text 조건 분리**: `tableContexts`의 병합·run 1개 조건은
    구조 편집용인데 text 입력까지 막습니다. text용 anchor만 풀면 patch 수정 없이 13 run·40자,
    글자 가중 89.3% → 92.8%, 표 셀 68.2% → 74.2%입니다(시험 적용으로 확인). **첫 해제로 권장**합니다.
 3. **style은 표 셀 차단 하나가 절반을 막음**: capability와 `locateTextStyleContext`의 `hs:sec`

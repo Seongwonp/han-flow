@@ -91,6 +91,20 @@ export function isEditableTableCell(cell: ViewerTableCell, measurable = false): 
   )
 }
 
+export type TableCellEditingMode = 'structure' | 'text'
+
+/**
+ * 표 셀 편집 방식.
+ * - `'structure'`: 병합되지 않은 일반 body 셀. text와 문단 나눔·범위 치환, 행·열·셀 style command를 허용한다.
+ * - `'text'`: 병합·머리글 셀이나 여러 run 문단이 있는 셀. 문단 하나 안의 text 입력·삭제·치환만 허용한다.
+ * 쪽을 넘어 나뉜 셀 조각은 조각 사이 caret·선택 복원을 검증하지 않았으므로 편집하지 않는다.
+ */
+export function tableCellEditingMode(cell: ViewerTableCell, measurable = false): TableCellEditingMode | undefined {
+  if (measurable || cell.splitTop || cell.splitBottom) return undefined
+  if (isEditableTableCell(cell)) return 'structure'
+  return cell.paragraphs.some((paragraph) => isEditableTextParagraph(paragraph, true)) ? 'text' : undefined
+}
+
 export function tableCellRangeScope(tableId: string, cell: ViewerTableCell): string | undefined {
   const text = cell.paragraphs.flatMap((paragraph) => paragraph.content)
     .find((item): item is ViewerText => item.type === 'text' && Boolean(item.sourceAnchor))
@@ -99,10 +113,17 @@ export function tableCellRangeScope(tableId: string, cell: ViewerTableCell): str
     : undefined
 }
 
-export function tableCellParagraphLabel(index: number, count: number): string {
+export function tableCellParagraphLabel(index: number, count: number, textOnly = false): string {
+  const action = textOnly ? '글자 편집' : '편집'
   return count > 1
-    ? `HWPX 표 셀 ${index + 1}/${count} 문단 편집`
-    : 'HWPX 표 셀 편집'
+    ? `HWPX 표 셀 ${index + 1}/${count} 문단 ${action}`
+    : `HWPX 표 셀 ${action}`
+}
+
+/** 셀 안 입력 surface에서 시작한 click·key는 병합 셀 선택이 아니라 text 편집으로 둔다. */
+function fromEditorSurface(target: EventTarget | null): boolean {
+  return typeof (target as Element | null)?.closest === 'function' &&
+    Boolean((target as Element).closest('[data-editor-range-scope]'))
 }
 
 function Content({
@@ -364,6 +385,7 @@ export function TableView({
       ? selectableMergedTableCell(table, cell)
       : undefined
     const selected = equalTableCellSelections(cellSelection, editing?.tableCellSelection)
+    const cellMode = editing ? tableCellEditingMode(cell, measurable) : undefined
     const selectCell = () => {
       if (!cellSelection || !editing) return
       globalThis.getSelection()?.removeAllRanges()
@@ -377,9 +399,12 @@ export function TableView({
       aria-selected={cellSelection ? selected : undefined}
       aria-label={cellSelection ? `병합 표 셀 ${cell.row + 1}행 ${cell.column + 1}열` : undefined}
       tabIndex={cellSelection ? 0 : undefined}
-      onClick={cellSelection ? selectCell : undefined}
+      onClick={cellSelection ? (event) => {
+        if (fromEditorSurface(event.target)) return
+        selectCell()
+      } : undefined}
       onKeyDown={cellSelection ? (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
         selectCell()
       } : undefined}
@@ -400,7 +425,7 @@ export function TableView({
       document={document}
       measurable={measurable}
       editing={
-        isEditableTableCell(cell, measurable) && editing
+        cellMode === 'structure' && editing
           ? {
               ...editing,
               surfaceLabel: tableCellParagraphLabel(paragraphIndex, cell.paragraphs.length),
@@ -411,7 +436,18 @@ export function TableView({
               allowParagraphMergePrevious: paragraphIndex > 0,
               allowParagraphMergeNext: paragraphIndex < cell.paragraphs.length - 1
             }
-          : undefined
+          : cellMode === 'text' && editing
+            ? {
+                ...editing,
+                surfaceLabel: tableCellParagraphLabel(paragraphIndex, cell.paragraphs.length, true),
+                allowMultipleRuns: true,
+                allowParagraphRange: false,
+                allowParagraphStructure: false,
+                rangeScope: undefined,
+                allowParagraphMergePrevious: false,
+                allowParagraphMergeNext: false
+              }
+            : undefined
       }
     />)}</td>
   })}</tr>)}</tbody></table>

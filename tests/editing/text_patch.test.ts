@@ -17,6 +17,7 @@ import {
   escapeXmlText,
   HwpxEditConflictError,
   listHwpxTextAnchors,
+  listHwpxTextOrdinals,
   ReplaceTextCommand
 } from '../../src/core/editing/text_patch'
 import { saveHwpxAs, writeFileAtomically } from '../../src/core/editing/save_as'
@@ -124,6 +125,103 @@ describe('HWPX text patch와 Save As', () => {
     ).toThrow('surrogate pair')
   })
 
+  test('자기 닫힘 <hp:t/>에 입력하면 열린 tag로 펼치고 inverse는 원래 bytes로 되돌린다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const selfClosing = '<hp:t xml:space="preserve" />'
+    const original = source.readEntry(sectionPath).toString('utf8').replace(
+      '<hp:t></hp:t>',
+      selfClosing
+    )
+    expect(original).toContain(selfClosing)
+    const guarded = source.withEntry(sectionPath, Buffer.from(original))
+    const anchors = listHwpxTextAnchors(guarded, sectionPath)
+    const empty = anchors.find((anchor) => anchor.text === '')!
+    expect(empty).toBeDefined()
+    expect(listHwpxTextOrdinals(guarded, sectionPath)).toContain(empty.ordinal)
+
+    const inserted = applyReplaceTextCommand(guarded, {
+      type: 'replace-text',
+      revision: guarded.revision,
+      sectionPath,
+      textNodeId: empty.textNodeId,
+      from: 0,
+      to: 0,
+      insert: '빈 칸 & 입력'
+    })
+    const insertedXml = inserted.package.readEntry(sectionPath).toString('utf8')
+    expect(insertedXml).toContain('<hp:t xml:space="preserve">빈 칸 &amp; 입력</hp:t>')
+    expect(insertedXml).not.toContain(selfClosing)
+    expect(inserted.anchor).toMatchObject({ textNodeId: empty.textNodeId, text: '빈 칸 & 입력' })
+    expect(inserted.inverse).toMatchObject({ from: 0, to: 8, insert: '', restoreSelfClosingTag: selfClosing })
+    expect(listHwpxTextAnchors(inserted.package, sectionPath).map((anchor) => anchor.textNodeId))
+      .toEqual(anchors.map((anchor) => anchor.textNodeId))
+
+    // 이어서 입력한 뒤 전체 inverse를 거꾸로 적용하면 원래 자기 닫힘 tag bytes가 돌아온다.
+    const appended = applyReplaceTextCommand(inserted.package, {
+      type: 'replace-text',
+      revision: inserted.package.revision,
+      sectionPath,
+      textNodeId: empty.textNodeId,
+      from: 8,
+      to: 8,
+      insert: '끝'
+    })
+    expect(appended.inverse.restoreSelfClosingTag).toBeUndefined()
+    const undoAppend = applyReplaceTextCommand(appended.package, appended.inverse)
+    const undoInsert = applyReplaceTextCommand(undoAppend.package, {
+      ...inserted.inverse,
+      revision: undoAppend.package.revision
+    })
+    expect(undoInsert.package.readEntry(sectionPath)).toEqual(Buffer.from(original))
+    // 되돌린 뒤 다시 실행(원래 command)도 같은 결과를 만든다.
+    expect(undoInsert.inverse.restoreSelfClosingTag).toBeUndefined()
+    const redo = applyReplaceTextCommand(undoInsert.package, {
+      ...undoInsert.inverse,
+      revision: undoInsert.package.revision
+    })
+    expect(redo.package.readEntry(sectionPath).toString('utf8')).toBe(insertedXml)
+
+    // 빈 결과를 만드는 편집은 자기 닫힘 tag를 그대로 둔다.
+    const noop = applyReplaceTextCommand(guarded, {
+      type: 'replace-text',
+      revision: guarded.revision,
+      sectionPath,
+      textNodeId: empty.textNodeId,
+      from: 0,
+      to: 0,
+      insert: ''
+    })
+    expect(noop.package.readEntry(sectionPath)).toEqual(Buffer.from(original))
+  })
+
+  test('자기 닫힘 복원 tag가 현재 hp:t attribute와 다르면 충돌로 거부한다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const guarded = source.withEntry(
+      sectionPath,
+      Buffer.from(source.readEntry(sectionPath).toString('utf8').replace('<hp:t></hp:t>', '<hp:t/>'))
+    )
+    const empty = listHwpxTextAnchors(guarded, sectionPath).find((anchor) => anchor.text === '')!
+    const inserted = applyReplaceTextCommand(guarded, {
+      type: 'replace-text',
+      revision: guarded.revision,
+      sectionPath,
+      textNodeId: empty.textNodeId,
+      from: 0,
+      to: 0,
+      insert: 'A'
+    })
+    expect(() => applyReplaceTextCommand(inserted.package, {
+      ...inserted.inverse,
+      restoreSelfClosingTag: '<hp:t id="other"/>'
+    })).toThrow(HwpxEditConflictError)
+    expect(() => applyReplaceTextCommand(inserted.package, {
+      ...inserted.inverse,
+      restoreSelfClosingTag: '<hp:run/>'
+    })).toThrow(HwpxEditConflictError)
+  })
+
   test('XML 1.0 금지 문자를 거부한다', () => {
     expect(() => escapeXmlText('NUL\0')).toThrow('XML 1.0')
     expect(() => escapeXmlText('\ud800')).toThrow('XML 1.0')
@@ -140,7 +238,8 @@ describe('HWPX text patch와 Save As', () => {
     const guarded = source.withEntry(sectionPath, Buffer.from(unsupported))
     const anchors = listHwpxTextAnchors(guarded, sectionPath)
 
-    expect(anchors.filter((anchor) => anchor.text === '')).toHaveLength(1)
+    // fixture의 `<hp:t></hp:t>`와 끝에 붙인 자기 닫힘 `<hp:t/>` 둘 다 빈 anchor다.
+    expect(anchors.filter((anchor) => anchor.text === '')).toHaveLength(2)
     expect(anchors.some((anchor) => anchor.text === '첫 줄\n둘째 줄\t탭')).toBe(true)
     expect(anchors.some((anchor) => anchor.text.includes('custom'))).toBe(false)
 

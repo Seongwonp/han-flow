@@ -43,30 +43,29 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
     const baseline = await measureEditingCoverage(baselinePath)
     const list = await measureEditingCoverage(listPath)
 
+    // 머리글 셀(4자)은 text만 편집할 수 있다: 셀 text는 열리지만 셀 style·표 구조 대상은 아니다.
     assert.deepEqual(pick(baseline), {
       textRuns: 11,
       anchored: 11,
-      textEditable: 3,
+      textEditable: 4,
       charStyleEditable: 0,
       paragraphs: 12,
       paraStyleEditable: 0,
       tableCells: 4,
-      tableCellsEditable: 3,
+      tableCellsEditable: 4,
       tableCellStyleEditable: 3,
       tables: 1,
       tableStructureEditable: 1,
       characters: 52,
-      editableCharacters: 11
+      editableCharacters: 15
     })
     assert.deepEqual(baseline.byContainer.headerFooter, { textRuns: 6, textEditable: 0 })
     assert.deepEqual(baseline.rejectionReasons.text, {
-      NOT_LISTED_CELL_HEADER: 1,
       NOT_LISTED_HEADER_FOOTER: 6,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 1
     })
-    assert.deepEqual(baseline.rejectionReasons.charStyle, { 'capability: TABLE_CELL_STRUCTURE': 3 })
+    assert.deepEqual(baseline.rejectionReasons.charStyle, { 'capability: TABLE_CELL_STRUCTURE': 4 })
     assert.deepEqual(baseline.nonEditableCharactersByReason, {
-      NOT_LISTED_CELL_HEADER: 4,
       NOT_LISTED_HEADER_FOOTER: 30,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 7
     })
@@ -92,7 +91,7 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
 
     const total = aggregateCoverage([baseline, list])
     assert.equal(total.textRuns, 16)
-    assert.equal(total.ratios.characterWeighted, Math.round((43 / 84) * 10000) / 10000)
+    assert.equal(total.ratios.characterWeighted, Math.round((47 / 84) * 10000) / 10000)
 
     const serialized = JSON.stringify({ baseline, list, total })
     const texts = [...sectionTexts(baselinePath), ...sectionTexts(listPath)]

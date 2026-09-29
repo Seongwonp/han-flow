@@ -8,6 +8,7 @@ import {
   isEditableTableCell,
   isEditableTextParagraph,
   ParagraphView,
+  tableCellEditingMode,
   tableCellParagraphLabel,
   tableCellRangeScope
 } from '../../src/renderer/src/App'
@@ -105,6 +106,38 @@ describe('DOM 측정 마커', () => {
         }]
       }]
     })).toBe(true)
+  })
+
+  test('병합·머리글·여러 run 셀은 text 전용으로, 셀 조각과 측정용 렌더는 편집하지 않는다', () => {
+    const table = topParagraph.content[0]
+    if (table.type !== 'table') throw new Error('테스트 표가 없습니다.')
+    const cell = table.rows[0].cells[0]
+    expect(tableCellEditingMode(cell)).toBe('structure')
+    expect(tableCellEditingMode(cell, true)).toBeUndefined()
+    for (const textOnly of [{ header: true }, { rowSpan: 2 }, { columnSpan: 2 }]) {
+      expect(tableCellEditingMode({ ...cell, ...textOnly })).toBe('text')
+    }
+    const anchored = (ordinal: number) => ({
+      type: 'text' as const,
+      text: `run${ordinal}`,
+      charStyleId: '0',
+      sourceAnchor: { sectionPath: 'Contents/section0.xml', textNodeId: `Contents/section0.xml#hp:t:${ordinal}` }
+    })
+    expect(tableCellEditingMode({
+      ...cell,
+      paragraphs: [{ ...nestedParagraph, content: [anchored(20), anchored(21)] }]
+    })).toBe('text')
+    for (const fragment of [{ splitTop: true }, { splitBottom: true }]) {
+      expect(tableCellEditingMode({ ...cell, ...fragment })).toBeUndefined()
+      expect(tableCellEditingMode({ ...cell, ...fragment, header: true })).toBeUndefined()
+    }
+    expect(tableCellEditingMode({
+      ...cell,
+      header: true,
+      paragraphs: [{ ...nestedParagraph, content: [{ type: 'text', text: '앵커 없음', charStyleId: '0' }] }]
+    })).toBeUndefined()
+    expect(tableCellParagraphLabel(0, 1, true)).toBe('HWPX 표 셀 글자 편집')
+    expect(tableCellParagraphLabel(1, 2, true)).toBe('HWPX 표 셀 2/2 문단 글자 편집')
   })
 
   test('source anchor가 있는 여러 text run은 일반 문단에서만 다시 편집할 수 있다', () => {

@@ -192,9 +192,11 @@ CSS grid에 같은 간격을 사용한다. 지원하지 않는 `PARALLEL`, `RIGH
 `HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`을 남기고 단일 흐름으로 표시한다. 서로 다른 너비 선언 수가
 단 개수와 다르면 별도 incomplete 진단을 추가해 구조 손실을 숨기지 않는다.
 
-표 편집 capability는 병합·rowSpan·columnSpan·반복 머리글·pagination fragment를 제외한 body
-cell에서만 열린다. cell에 여러 문단이 있어도 각 문단이 source anchor 하나를 가진 단일 text
-run이면 `TABLE_CELL_TEXT` context를 만들고 cell별 range scope를 공유한다. core paragraph locator는
+표 셀 text와 구조 편집 조건은 분리한다. pagination fragment를 제외한 모든 셀에서 source anchor만으로
+이루어진 문단은 `TABLE_CELL_TEXT` context가 되어 text 입력·삭제·치환을 허용한다. 구조 command(행·열
+추가/삭제, 병합·분할, 셀 style, 문단 나눔·병합)는 `cellStructureEditable`인 셀, 즉 병합·rowSpan·
+columnSpan·반복 머리글이 아니고 모든 문단이 단일 text run인 body cell에서만 열리며 이런 셀의 문단은
+cell별 range scope를 공유한다. 그 밖의 셀은 문단별 range scope를 받아 문단을 넘는 선택을 막는다. core paragraph locator는
 `hp:tc > hp:subList > hp:p` ancestry와 header·cellSpan을 다시 검증한 뒤 같은 subList의 direct
 paragraph만 범위 치환·분할·병합 대상으로 사용한다. 다른 cell이나 머리말·꼬리말 subList를
 가로지르는 요청은 renderer scope와 core source 검사 양쪽에서 차단한다.

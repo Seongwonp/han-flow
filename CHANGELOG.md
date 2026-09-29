@@ -31,7 +31,7 @@
 
 - 한/글 저장본 공개 테스트 HWPX 26종(hwpxlib·python-hwpx, Apache-2.0)을 sha256·출처와 함께 external corpus로 반입, 전부 열림
 - 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
-- 편집 가능 비율 측정 `corpus:editing-coverage`(run·문단·표 셀·표 구조별 capability와 patch dry-run, 거부 사유 histogram)와 기준선 추가: 외부 26종 text 편집 79.5%·글자 가중 89.3%
+- 편집 가능 비율 측정 `corpus:editing-coverage`(run·문단·표 셀·표 구조별 capability와 patch dry-run, 거부 사유 histogram)와 기준선 추가: 외부 26종 text 편집 79.5%·글자 가중 89.3%(빈 `<hp:t/>`·표 셀 text 해제 후 89.8%·92.8%)
 
 ### Sprint 5 Windows 배포 후보
 
@@ -82,6 +82,8 @@
 - Save As를 같은 폴더 임시 파일로 쓰고, 새 파일은 hard link(목적지가 생기면 OS가 EEXIST로 거부)로, 교체를 확인한 기존 파일은 `rename`으로 원자적 게시하며 hard link 미지원 파일 시스템(exFAT·FAT32·일부 SMB)에서만 확인 후 `rename`으로 대체하고 열린 원본은 항상 거부(자동 테스트 기준, Windows 실기 검증 대기)
 - 저장·PDF 파일 권한을 0o600 대신 umask를 적용한 기본값으로 게시하고, PDF 내보내기도 편집 중인 원본·심볼릭 링크 목적지를 PDF 전용 안내와 함께 거부
 - 개발 빌드의 Windows·Linux에서 메뉴 없이 F12·Ctrl+Shift+I로 DevTools 열기
+- 한/글이 빈 입력 칸으로 저장하는 자기 닫힘 `<hp:t/>`를 빈 text anchor로 인정해 입력 시 `<hp:t>…</hp:t>`로 펼치고 undo는 원래 tag bytes로 복원, viewer decoder와 편집 tokenizer의 `hp:t` ordinal·text를 공개 corpus 전체에서 교차 검증
+- 표 셀 text 편집을 구조 편집 조건에서 분리해 병합·머리글·여러 run 셀도 문단 하나 안에서 입력·삭제·치환 허용(행·열·병합·분할·셀 style·문단 나눔은 기존대로 일반 body 셀만, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용)
 
 ### V2 HWP fixed-page
 

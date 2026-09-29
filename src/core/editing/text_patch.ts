@@ -18,6 +18,11 @@ export interface ReplaceTextCommand {
   from: number
   to: number
   insert: string
+  /**
+   * inverse 전용. 적용 결과 text가 비면 `hp:t`를 이 자기 닫힘 tag 원문(`<hp:t/>` 등)으로 되돌린다.
+   * 빈 `<hp:t/>`에 글자를 넣은 편집을 실행 취소할 때 원본 bytes를 그대로 복원하기 위해 쓴다.
+   */
+  restoreSelfClosingTag?: string
 }
 
 export interface HwpxLossReport {
@@ -43,6 +48,31 @@ export interface ReplaceTextResult {
 interface SourceTextNode extends HwpxTextAnchor {
   contentStart: number
   contentEnd: number
+  /** `hp:t` element 전체(여는 tag부터 닫는 tag까지)의 offset 범위 */
+  elementStart: number
+  elementEnd: number
+  /** 자기 닫힘 `<hp:t/>`이면 true. 이때 content 범위는 비어 있고 element 범위가 tag 하나다. */
+  selfClosing: boolean
+}
+
+interface SourceTextElement {
+  ordinal: number
+  elementStart: number
+  contentStart: number
+  contentEnd: number
+  elementEnd: number
+  selfClosing: boolean
+}
+
+const SELF_CLOSING_END = /\s*\/\s*>$/
+
+/** 자기 닫힘 `<hp:t .../>`를 같은 attribute의 여는 tag `<hp:t ...>`로 바꾼다. */
+function expandSelfClosingTag(tag: string): string {
+  return tag.replace(SELF_CLOSING_END, '>')
+}
+
+function isSelfClosingTextTag(tag: string): boolean {
+  return /^<\s*hp:t(?=[\s/])/.test(tag) && SELF_CLOSING_END.test(tag)
 }
 
 const INLINE_TEXT_CONTROLS: Readonly<Record<string, string>> = {
@@ -185,45 +215,84 @@ function decodeUtf8(bytes: Buffer): string {
   return xml
 }
 
-function sourceTextNodes(sectionPath: string, xml: string): SourceTextNode[] {
-  const result: SourceTextNode[] = []
-  let ordinal = 0
-  let active: { ordinal: number; contentStart: number } | undefined
-
+/**
+ * section XML의 `hp:t` element를 문서 순서대로 훑는다. 자기 닫힘 `<hp:t/>`도 ordinal 하나를 차지한다.
+ * ordinal 규칙은 viewer decoder(`ordered_xml.ts`의 `sourceOrdinal`)와 같아야 한다.
+ */
+function scanTextElements(xml: string): SourceTextElement[] {
+  const result: SourceTextElement[] = []
+  let active: { ordinal: number; elementStart: number; contentStart: number } | undefined
   for (const token of tokenizeXml(xml)) {
     if (!active) {
       if (token.name !== 'hp:t' || (token.kind !== 'open' && token.kind !== 'self-close')) continue
-      const currentOrdinal = ordinal
-      ordinal += 1
+      const ordinal = result.length
       if (token.kind === 'open') {
-        active = {
-          ordinal: currentOrdinal,
-          contentStart: token.end
-        }
+        active = { ordinal, elementStart: token.start, contentStart: token.end }
+      } else {
+        result.push({
+          ordinal,
+          elementStart: token.start,
+          contentStart: token.end,
+          contentEnd: token.end,
+          elementEnd: token.end,
+          selfClosing: true
+        })
       }
       continue
     }
-
     if (token.kind === 'close' && token.name === 'hp:t') {
-      try {
-        const text = decodeHwpxTextContent(xml.slice(active.contentStart, token.start))
-        result.push({
-          sectionPath,
-          textNodeId: `${sectionPath}#hp:t:${active.ordinal}`,
-          ordinal: active.ordinal,
-          text,
-          contentStart: active.contentStart,
-          contentEnd: token.start
-        })
-      } catch {
-        // 사용자 정의 entity나 알 수 없는 inline control은 안전하게 복원할 수 없으므로 노출하지 않는다.
-      }
+      result.push({
+        ordinal: active.ordinal,
+        elementStart: active.elementStart,
+        contentStart: active.contentStart,
+        contentEnd: token.start,
+        elementEnd: token.end,
+        selfClosing: false
+      })
       active = undefined
-      continue
     }
   }
   if (active) throw new Error('끝나지 않은 hp:t node가 있습니다.')
   return result
+}
+
+function sourceTextNodes(sectionPath: string, xml: string): SourceTextNode[] {
+  const result: SourceTextNode[] = []
+  for (const element of scanTextElements(xml)) {
+    try {
+      // 한/글은 빈 입력 칸을 `<hp:t/>`로 저장한다. 빈 anchor로 노출하고 첫 입력 때 열린 tag로 펼친다.
+      const text = element.selfClosing
+        ? ''
+        : decodeHwpxTextContent(xml.slice(element.contentStart, element.contentEnd))
+      result.push({
+        sectionPath,
+        textNodeId: `${sectionPath}#hp:t:${element.ordinal}`,
+        text,
+        ...element
+      })
+    } catch {
+      // 사용자 정의 entity나 알 수 없는 inline control은 안전하게 복원할 수 없으므로 노출하지 않는다.
+    }
+  }
+  return result
+}
+
+/**
+ * `hp:t` element를 주어진 논리 텍스트로 다시 쓴다.
+ * `openTag`·`closeTag`는 원문 XML에서 잘라 낸 tag이고, 자기 닫힘 `<hp:t/>`이면 `closeTag`는 빈 문자열이다.
+ * 자기 닫힘 tag는 text가 비어 있으면 원문 그대로 두고, 아니면 같은 attribute의 열린 tag로 펼친다.
+ */
+export function rewriteHwpxTextElement(openTag: string, closeTag: string, text: string): string {
+  if (!closeTag) {
+    if (!isSelfClosingTextTag(openTag)) throw new HwpxEditConflictError('hp:t tag 형식이 올바르지 않습니다.')
+    return text ? `${expandSelfClosingTag(openTag)}${encodeHwpxTextContent(text)}</hp:t>` : openTag
+  }
+  return openTag + encodeHwpxTextContent(text) + closeTag
+}
+
+/** section XML에 있는 모든 `hp:t`의 ordinal을 편집 tokenizer 기준 문서 순서대로 돌려준다(교차 parser 검증용). */
+export function listHwpxTextOrdinals(sourcePackage: HwpxSourcePackage, sectionPath: string): number[] {
+  return scanTextElements(decodeUtf8(sourcePackage.readEntry(sectionPath))).map((element) => element.ordinal)
 }
 
 export function listHwpxTextAnchors(sourcePackage: HwpxSourcePackage, sectionPath: string): readonly HwpxTextAnchor[] {
@@ -231,7 +300,7 @@ export function listHwpxTextAnchors(sourcePackage: HwpxSourcePackage, sectionPat
     throw new Error(`HWPX section 경로가 아닙니다: ${sectionPath}`)
   }
   return sourceTextNodes(sectionPath, decodeUtf8(sourcePackage.readEntry(sectionPath))).map(
-    ({ contentStart: _start, contentEnd: _end, ...anchor }) => anchor
+    ({ sectionPath: path, textNodeId, ordinal, text }) => ({ sectionPath: path, textNodeId, ordinal, text })
   )
 }
 
@@ -265,10 +334,29 @@ export function applyReplaceTextCommand(
 
   const removed = sourceNode.text.slice(command.from, command.to)
   const nextText = sourceNode.text.slice(0, command.from) + command.insert + sourceNode.text.slice(command.to)
-  const nextXml =
-    xml.slice(0, sourceNode.contentStart) +
-    encodeHwpxTextContent(nextText) +
-    xml.slice(sourceNode.contentEnd)
+  let replacement: string
+  let restoreSelfClosingTag: string | undefined
+  if (sourceNode.selfClosing) {
+    // `<hp:t/>` → `<hp:t>…</hp:t>`로 펼친다. inverse가 빈 text로 되돌릴 때 원래 tag bytes를 다시 쓴다.
+    const selfClosingTag = xml.slice(sourceNode.elementStart, sourceNode.elementEnd)
+    replacement = rewriteHwpxTextElement(selfClosingTag, '', nextText)
+    if (nextText) restoreSelfClosingTag = selfClosingTag
+  } else if (command.restoreSelfClosingTag !== undefined && nextText === '') {
+    const openTag = xml.slice(sourceNode.elementStart, sourceNode.contentStart)
+    if (
+      !isSelfClosingTextTag(command.restoreSelfClosingTag) ||
+      expandSelfClosingTag(command.restoreSelfClosingTag) !== openTag
+    ) {
+      throw new HwpxEditConflictError('되돌릴 빈 hp:t tag가 현재 원문과 일치하지 않습니다.')
+    }
+    replacement = command.restoreSelfClosingTag
+  } else {
+    replacement =
+      xml.slice(sourceNode.elementStart, sourceNode.contentStart) +
+      encodeHwpxTextContent(nextText) +
+      xml.slice(sourceNode.contentEnd, sourceNode.elementEnd)
+  }
+  const nextXml = xml.slice(0, sourceNode.elementStart) + replacement + xml.slice(sourceNode.elementEnd)
   const nextPackage = sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml, 'utf8'))
 
   return {
@@ -280,7 +368,8 @@ export function applyReplaceTextCommand(
       textNodeId: command.textNodeId,
       from: command.from,
       to: command.from + command.insert.length,
-      insert: removed
+      insert: removed,
+      ...(restoreSelfClosingTag !== undefined ? { restoreSelfClosingTag } : {})
     },
     anchor: {
       sectionPath: sourceNode.sectionPath,

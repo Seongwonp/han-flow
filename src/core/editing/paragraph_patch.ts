@@ -2,10 +2,10 @@ import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
 import { EditingOperationError } from './editing_error'
 import {
-  encodeHwpxTextContent,
   HwpxEditConflictError,
   HwpxLossReport,
-  listHwpxTextAnchors
+  listHwpxTextAnchors,
+  rewriteHwpxTextElement
 } from './text_patch'
 import {
   attribute,
@@ -164,9 +164,11 @@ function changedTextRun(context: ParagraphContext, text: string): string {
   const { xml, run, textNode } = context
   return (
     xml.slice(run.start, run.openEnd) +
-    xml.slice(textNode.start, textNode.openEnd) +
-    encodeHwpxTextContent(text) +
-    xml.slice(textNode.closeStart, textNode.end) +
+    rewriteHwpxTextElement(
+      xml.slice(textNode.start, textNode.openEnd),
+      xml.slice(textNode.closeStart, textNode.end),
+      text
+    ) +
     xml.slice(run.closeStart, run.end)
   )
 }

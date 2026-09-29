@@ -165,6 +165,11 @@ describe('viewer shell components', () => {
       row: 0,
       column: 0
     }
+    // 병합 셀의 text 입력 surface는 useLayoutEffect를 쓰므로 server render 경고만 걸러 낸다.
+    const consoleError = jest.spyOn(console, 'error').mockImplementation((message: unknown, ...rest: unknown[]) => {
+      if (String(message).includes('useLayoutEffect does nothing on the server')) return
+      throw new Error([message, ...rest].map(String).join(' '))
+    })
     const markup = renderToStaticMarkup(createElement(TableView as any, {
       table,
       document,
@@ -174,11 +179,14 @@ describe('viewer shell components', () => {
         onTableCellSelectionChange: noop
       }
     }))
+    consoleError.mockRestore()
 
     expect(markup).toContain('viewer-selectable-table-cell viewer-table-cell-selected')
     expect(markup).toContain('aria-selected="true"')
     expect(markup).toContain('aria-label="병합 표 셀 1행 1열"')
     expect(markup).toContain('tabindex="0"')
+    // 병합 셀도 text 전용 입력 surface를 받는다(구조 command는 capability가 막는다).
+    expect(markup).toContain('aria-label="HWPX 표 셀 글자 편집"')
   })
 
   test('status bar는 revision·경고·진행률을 독립적으로 조합한다', () => {

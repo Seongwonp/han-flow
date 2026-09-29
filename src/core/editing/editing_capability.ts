@@ -2,6 +2,7 @@ import {
   ViewerDocument,
   ViewerParagraph,
   ViewerTable,
+  ViewerTableCell,
   ViewerText
 } from '../document/viewer_document'
 import { EditorSelection } from './selection'
@@ -31,6 +32,11 @@ export interface EditingAnchorContext {
   rangeScope: string
   structure: EditingStructure
   cellStyleId?: string
+  /**
+   * 표 셀 text에서만 쓴다. true면 행·열·병합·분할·셀 style·문단 나눔 같은 구조 command를 허용하는 셀이다.
+   * false면 병합·머리글 셀이거나 문단에 run이 여러 개인 셀이라 text 입력·삭제·치환만 허용한다.
+   */
+  cellStructureEditable?: boolean
 }
 
 export interface EditingCapabilities {
@@ -64,12 +70,11 @@ function editableTexts(paragraph: ViewerParagraph): ViewerText[] | undefined {
 
 function paragraphContexts(
   paragraph: ViewerParagraph,
+  texts: readonly ViewerText[],
   structure: EditingStructure,
   rangeScope: string,
-  cellStyleId?: string
+  cell?: { cellStyleId?: string; cellStructureEditable: boolean }
 ): EditingAnchorContext[] {
-  const texts = editableTexts(paragraph)
-  if (!texts || (structure === 'TABLE_CELL_TEXT' && texts.length !== 1)) return []
   return texts.map((text) => ({
     sectionPath: text.sourceAnchor!.sectionPath,
     textNodeId: text.sourceAnchor!.textNodeId,
@@ -79,30 +84,41 @@ function paragraphContexts(
     paragraphId: paragraph.id,
     rangeScope,
     structure,
-    cellStyleId
+    ...(cell ? { cellStyleId: cell.cellStyleId, cellStructureEditable: cell.cellStructureEditable } : {})
   }))
+}
+
+/**
+ * 셀이 구조 command(행·열 추가/삭제, 병합·분할, 셀 style, 문단 나눔·병합)의 대상이 될 수 있는지.
+ * text 입력은 이 조건과 무관하게 source anchor가 있는 run이면 허용한다.
+ */
+function isStructureEditableCell(cell: ViewerTableCell, paragraphTexts: ReadonlyArray<ViewerText[] | undefined>): boolean {
+  return (
+    !cell.header &&
+    cell.rowSpan === 1 &&
+    cell.columnSpan === 1 &&
+    paragraphTexts.length > 0 &&
+    paragraphTexts.every((texts) => texts?.length === 1)
+  )
 }
 
 function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorContext[] {
   return table.rows.flatMap((row) => row.cells.flatMap((cell) => {
-    const safeCell =
-      !cell.splitTop &&
-      !cell.splitBottom &&
-      !cell.header &&
-      cell.rowSpan === 1 &&
-      cell.columnSpan === 1 &&
-      cell.paragraphs.length > 0
-    if (!safeCell) return []
+    // 쪽을 넘어 나뉜 셀 조각은 layout 단계에서만 생기며 조각 사이 caret·선택 복원을 검증하지 않았으므로 제외한다.
+    if (cell.splitTop || cell.splitBottom || !cell.paragraphs.length) return []
     const cellScope = `${sectionPath}:table-cell:${cell.sourceCellId ?? `${table.id}:r${cell.row}c${cell.column}`}`
-    const contexts = cell.paragraphs.map((paragraph) => paragraphContexts(
-      paragraph,
-      'TABLE_CELL_TEXT',
-      cellScope,
-      cell.borderFillId
-    ))
-    return contexts.every((paragraph) => paragraph.length === 1)
-      ? contexts.flat()
-      : []
+    const paragraphTexts = cell.paragraphs.map(editableTexts)
+    const cellStructureEditable = isStructureEditableCell(cell, paragraphTexts)
+    return cell.paragraphs.flatMap((paragraph, index) => {
+      const texts = paragraphTexts[index]
+      if (!texts) return []
+      // 구조 편집이 안 되는 셀은 문단 사이 치환(문단 fragment patch)이 거부되므로 선택 범위를 문단 하나로 묶는다.
+      const rangeScope = cellStructureEditable ? cellScope : `${cellScope}:paragraph:${paragraph.id}`
+      return paragraphContexts(paragraph, texts, 'TABLE_CELL_TEXT', rangeScope, {
+        cellStyleId: cell.borderFillId,
+        cellStructureEditable
+      })
+    })
   }))
 }
 
@@ -130,11 +146,10 @@ export function listEditingAnchorContexts(document: ViewerDocument): EditingAnch
       .find((path): path is string => Boolean(path))
     if (!sectionPath) return []
     return section.blocks.flatMap((paragraph) => {
-      const topLevel = paragraphContexts(
-        paragraph,
-        'TOP_LEVEL_TEXT',
-        `${sectionPath}:top-level`
-      )
+      const texts = editableTexts(paragraph)
+      const topLevel = texts
+        ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', `${sectionPath}:top-level`)
+        : []
       const nested = paragraph.content.flatMap((item) =>
         item.type === 'table' ? tableContexts(item, sectionPath) : []
       )
@@ -248,6 +263,7 @@ export function editingCapabilities(
   }
   const topLevel = anchor.structure === 'TOP_LEVEL_TEXT' && focus.structure === 'TOP_LEVEL_TEXT'
   const tableCell = anchor.structure === 'TABLE_CELL_TEXT' && focus.structure === 'TABLE_CELL_TEXT'
+  const structuralCell = tableCell && anchor.cellStructureEditable === true && focus.cellStructureEditable === true
   const sameRun = anchor.textNodeId === focus.textNodeId
   const sameParagraph = anchor.paragraphId === focus.paragraphId
   return {
@@ -263,12 +279,12 @@ export function editingCapabilities(
       : !sameParagraph
         ? unavailable('MULTI_PARAGRAPH_SELECTION')
         : { available: true },
-    paragraphStructure: !topLevel && !tableCell
+    paragraphStructure: !topLevel && !structuralCell
       ? unavailable('TABLE_CELL_STRUCTURE')
       : !sameRun
         ? unavailable('MULTI_RUN_SELECTION')
         : { available: true },
-    cellStyle: !tableCell || !focus.cellStyleId
+    cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },
     focus

@@ -11,6 +11,7 @@ import {
   saveAsFailureMessage
 } from '../../src/main/editing_session'
 import {
+  createCompatibilityHwpx,
   createRoundTripHwpx,
   createTableColumnHwpx
 } from '../fixtures/public/create_synthetic_hwpx'
@@ -967,6 +968,67 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(undone.document)).not.toContain('셀검증')
     const redone = await manager.redo(24, started.sessionId)
     expect(JSON.stringify(redone.document)).toContain('긴 설명 셀검증')
+  })
+
+  test('병합·머리글 셀은 text commit·undo만 허용하고 표 구조·셀 style command는 거부한다', async () => {
+    const mergedFixture = createCompatibilityHwpx(directory, 'merged-header-cells.hwpx')
+    const manager = new EditingSessionManager(() => 'merged-header-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(mergedFixture)
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const started = await manager.start(51, mergedFixture)
+    for (const [text, insert] of [['R', '병합셀'], ['H1', '머리글']] as const) {
+      const anchor = anchors.find((candidate) => candidate.text === text)!
+      const caret = (offset: number) => ({
+        sectionPath,
+        anchorTextNodeId: anchor.textNodeId,
+        anchorOffset: offset,
+        focusTextNodeId: anchor.textNodeId,
+        focusOffset: offset
+      })
+      const committed = await manager.commit(51, {
+        sessionId: started.sessionId,
+        transactionId: `type-${text}`,
+        sectionPath,
+        textNodeId: anchor.textNodeId,
+        from: text.length,
+        to: text.length,
+        insert,
+        selectionBefore: caret(text.length),
+        selectionAfter: caret(text.length + insert.length),
+        inputType: 'insertText',
+        timestamp: 1
+      })
+      expect(JSON.stringify(committed.document)).toContain(`"text":"${text}${insert}"`)
+      const undone = await manager.undo(51, started.sessionId)
+      expect(JSON.stringify(undone.document)).toContain(`"text":"${text}"`)
+      expect(undone.isDirty).toBe(false)
+
+      const request = {
+        sessionId: started.sessionId,
+        transactionId: `structure-${text}`,
+        selectionBefore: caret(0),
+        timestamp: 2
+      }
+      for (const action of [
+        () => manager.insertTableRowAfter(51, request),
+        () => manager.deleteTableRow(51, request),
+        () => manager.insertTableColumnAfter(51, request),
+        () => manager.deleteTableColumn(51, request),
+        () => manager.mergeTableCellRight(51, request),
+        () => manager.applyCellStyle(51, {
+          sessionId: started.sessionId,
+          transactionId: `cell-style-${text}`,
+          sectionPath,
+          textNodeId: anchor.textNodeId,
+          selection: caret(0),
+          backgroundColor: '#FFF2CC',
+          timestamp: 2
+        })
+      ]) {
+        await expect(action()).rejects.toMatchObject({ code: 'EDITING_UNSUPPORTED' })
+      }
+    }
   })
 
   test('일반 body cell의 여러 문단 범위를 치환해 undo·redo하고 저장·재개봉한다', async () => {

@@ -182,25 +182,13 @@ function listingExclusions(document) {
   const markTable = (table, reason) => {
     for (const row of table.rows) for (const cell of row.cells) for (const paragraph of cell.paragraphs) mark(paragraph, reason)
   }
+  // 표 셀 text는 셀 구조(병합·머리글·run 수)와 무관하게 문단 단위로 anchor를 연다. 쪽을 넘어 나뉜 셀 조각만 통째로 뺀다.
   const topLevelTable = (table) => {
     for (const row of table.rows) {
       for (const cell of row.cells) {
-        const cellReason = cell.header
-          ? 'CELL_HEADER'
-          : cell.rowSpan !== 1 || cell.columnSpan !== 1
-            ? 'CELL_MERGED'
-            : cell.splitTop || cell.splitBottom
-              ? 'CELL_SPLIT'
-              : undefined
-        const paragraphReasons = cell.paragraphs.map((paragraph) => {
-          const excluded = paragraphExclusion(paragraph, 'CELL_')
-          if (excluded) return excluded
-          return paragraph.content.length !== 1 ? 'CELL_PARAGRAPH_MULTI_RUN' : undefined
-        })
-        const firstReason = paragraphReasons.find(Boolean)
-        cell.paragraphs.forEach((paragraph, index) => {
-          mark(paragraph, cellReason ?? paragraphReasons[index] ?? (firstReason ? 'CELL_SIBLING_PARAGRAPH_UNSUPPORTED' : 'UNKNOWN'))
-        })
+        for (const paragraph of cell.paragraphs) {
+          mark(paragraph, cell.splitTop || cell.splitBottom ? 'CELL_SPLIT' : paragraphExclusion(paragraph, 'CELL_') ?? 'UNKNOWN')
+        }
       }
     }
   }

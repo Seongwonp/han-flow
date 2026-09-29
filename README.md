@@ -113,7 +113,7 @@ Mac·로컬 기기 측정은 별도 절로 분리합니다. 날짜별 상세는 
 | Jest (`npm test -- --runInBand`) | 43 suites passed·2 skipped, 292 passed·12 skipped |
 | parser probe (`npm run test:probe`) | 18 passed |
 | 공개 HWPX corpus (`npm run verify:corpus`) | 35/35 (synthetic 9종 + 한/글 저장본 external 26종, invalid-package 1종 의도적 거부) |
-| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 26종 371 run: anchor 95.7%·text 편집 79.5%·글자 가중 89.3%·표 셀 45/66, [기준선](docs/editing_coverage.md) |
+| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 26종 371 run: anchor 95.7%·text 편집 89.8%·글자 가중 92.8%·표 셀 49/66 (기준선 79.5%·89.3%·45/66, [측정](docs/editing_coverage.md)) |
 | 공개 fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | Windows CI (`windows-latest`) | test·typecheck·probe·corpus·build·package, 패키지 앱 HWPX·HWP matrix·PDF E2E, 비서명 NSIS artifact 통과 |
 | Linux CI (`ubuntu-latest`, xvfb) | 같은 자동 관문과 `package:linux`, 패키지 앱 HWPX·HWP matrix·PDF E2E, unpacked artifact 통과 |
@@ -201,9 +201,12 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
 
 - HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 text run 문단을 지원합니다. 부분 style로
   나뉜 여러 run과 여러 최상위 문단은 키보드·pointer 범위 선택과 치환을 지원합니다.
-- 반복 머리글, 병합·`rowSpan`, continuation fragment와 머리말·꼬리말은 읽기 전용입니다.
-  병합되지 않은 일반 body cell은 여러 문단의 단일 text run을 편집하고, 같은 cell 안에서 문단을
-  가로지르는 범위 치환·Enter 분할·경계 Backspace/Delete 병합을 수행할 수 있습니다.
+- 머리글·병합(`rowSpan`·`colSpan`) 셀과 여러 run 문단이 있는 셀은 문단 하나 안에서 text 입력·삭제·치환만
+  지원하고 구조·모양 편집은 막습니다. 쪽을 넘어 나뉜 셀 조각(continuation fragment)과 머리말·꼬리말은
+  읽기 전용입니다. 병합되지 않은 일반 body cell은 여러 문단의 단일 text run을 편집하고, 같은 cell 안에서
+  문단을 가로지르는 범위 치환·Enter 분할·경계 Backspace/Delete 병합을 수행할 수 있습니다.
+- 한/글이 빈 입력 칸으로 저장한 `<hp:t/>`에 입력하면 `<hp:t>…</hp:t>`로 펼치고, 실행 취소는 원래
+  `<hp:t/>` bytes를 복원합니다.
 - HWPX 동일 너비 `NEWSPAPER/LEFT` 다단은 공통 간격을 제외한 단 폭으로 다시 실측하고,
   `columnBreak`와 높이에 따라 왼쪽 단→오른쪽 단→다음 페이지 순서로 표시합니다. `PARALLEL`,
   `RIGHT`·`MIRROR`와 서로 다른 단 너비는 모델에는 보존하지만 단일 흐름 fallback diagnostic을 남깁니다.

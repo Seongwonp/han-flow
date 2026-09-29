@@ -1,0 +1,3421 @@
+{
+  "schemaVersion": 1,
+  "suite": "han-flow-public-hwpx",
+  "fixtureCount": 35,
+  "measuredCount": 34,
+  "totals": {
+    "all": {
+      "fixtures": 34,
+      "textRuns": 19946,
+      "anchored": 19930,
+      "textEditable": 19889,
+      "charStyleEditable": 19685,
+      "paragraphs": 19980,
+      "paraStyleEditable": 19709,
+      "tableCells": 95,
+      "tableCellsEditable": 78,
+      "tableCellStyleEditable": 64,
+      "tables": 26,
+      "tableStructureEditable": 18,
+      "characters": 478373,
+      "editableCharacters": 478193,
+      "byContainer": {
+        "body": {
+          "textRuns": 19749,
+          "textEditable": 19726
+        },
+        "tableCell": {
+          "textRuns": 163,
+          "textEditable": 163
+        },
+        "headerFooter": {
+          "textRuns": 19,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 11,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 2,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {
+        "hp:deleteBegin": 1,
+        "hp:deleteEnd": 1,
+        "hp:insertBegin": 1,
+        "hp:insertEnd": 1
+      },
+      "nonEditableCharactersByReason": {
+        "DECODER_MIXED_INLINE_CONTENT": 7,
+        "DECODER_SKIPS_FIELD_SUBLIST": 6,
+        "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 8,
+        "DECODER_SKIPS_TEXT_BOX": 53,
+        "NOT_LISTED_HEADER_FOOTER": 92,
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 14,
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_MIXED_INLINE_CONTENT": 1,
+          "DECODER_SKIPS_FIELD_SUBLIST": 2,
+          "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2,
+          "DECODER_SKIPS_TEXT_BOX": 11
+        },
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 19,
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 3,
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 19
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 163,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 41
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_MIXED_INLINE_CONTENT": 1,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FIELD_SUBLIST": 2,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 10,
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 19,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 3,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 19,
+          "capability: TABLE_CELL_STRUCTURE": 161,
+          "NO_TEXT_NODE": 54
+        },
+        "tableCell": {
+          "NO_TEXT_NODE": 17
+        },
+        "tableStructure": {
+          "NO_SAFE_CELL_SELECTION": 3,
+          "table_patch: 병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
+          "table_patch: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
+          "table_patch: 직사각형 표에만 행을 추가할 수 있습니다.": 2,
+          "table_patch: 행마다 너비가 다른 열은 아직 추가할 수 없습니다.": 1
+        }
+      },
+      "topRejectionReasons": [
+        {
+          "stage": "charStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 163
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 161
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "NO_TEXT_NODE",
+          "count": 54
+        },
+        {
+          "stage": "charStyle",
+          "reason": "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.",
+          "count": 41
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER",
+          "count": 19
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE",
+          "count": 19
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_HEADER_FOOTER",
+          "count": 19
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_PARAGRAPH_HAS_TABLE",
+          "count": 19
+        },
+        {
+          "stage": "tableCell",
+          "reason": "NO_TEXT_NODE",
+          "count": 17
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_SKIPS_TEXT_BOX",
+          "count": 11
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX",
+          "count": 10
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE",
+          "count": 3
+        },
+        {
+          "stage": "tableStructure",
+          "reason": "NO_SAFE_CELL_SELECTION",
+          "count": 3
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_PARAGRAPH_HAS_IMAGE",
+          "count": 3
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_SKIPS_FIELD_SUBLIST",
+          "count": 2
+        }
+      ],
+      "ratios": {
+        "anchored": 0.9992,
+        "textEditable": 0.9971,
+        "charStyleEditable": 0.9869,
+        "paraStyleEditable": 0.9864,
+        "tableCellsEditable": 0.8211,
+        "tableStructureEditable": 0.6923,
+        "characterWeighted": 0.9996
+      }
+    },
+    "synthetic": {
+      "fixtures": 8,
+      "textRuns": 19575,
+      "anchored": 19575,
+      "textEditable": 19556,
+      "charStyleEditable": 19511,
+      "paragraphs": 19583,
+      "paraStyleEditable": 19513,
+      "tableCells": 29,
+      "tableCellsEditable": 29,
+      "tableCellStyleEditable": 19,
+      "tables": 7,
+      "tableStructureEditable": 5,
+      "characters": 477226,
+      "editableCharacters": 477129,
+      "byContainer": {
+        "body": {
+          "textRuns": 19515,
+          "textEditable": 19513
+        },
+        "tableCell": {
+          "textRuns": 43,
+          "textEditable": 43
+        },
+        "headerFooter": {
+          "textRuns": 17,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_HEADER_FOOTER": 83,
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 14
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 17,
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 2
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 43,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 2
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 17,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 2,
+          "capability: TABLE_CELL_STRUCTURE": 43,
+          "NO_TEXT_NODE": 8
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "table_patch: 병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
+          "table_patch: 행마다 너비가 다른 열은 아직 추가할 수 없습니다.": 1
+        }
+      },
+      "topRejectionReasons": [
+        {
+          "stage": "charStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 43
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 43
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER",
+          "count": 17
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_HEADER_FOOTER",
+          "count": 17
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "NO_TEXT_NODE",
+          "count": 8
+        },
+        {
+          "stage": "charStyle",
+          "reason": "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.",
+          "count": 2
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE",
+          "count": 2
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_PARAGRAPH_HAS_IMAGE",
+          "count": 2
+        },
+        {
+          "stage": "tableStructure",
+          "reason": "table_patch: 병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.",
+          "count": 1
+        },
+        {
+          "stage": "tableStructure",
+          "reason": "table_patch: 행마다 너비가 다른 열은 아직 추가할 수 없습니다.",
+          "count": 1
+        }
+      ],
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.999,
+        "charStyleEditable": 0.9967,
+        "paraStyleEditable": 0.9964,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0.7143,
+        "characterWeighted": 0.9998
+      }
+    },
+    "external": {
+      "fixtures": 26,
+      "textRuns": 371,
+      "anchored": 355,
+      "textEditable": 333,
+      "charStyleEditable": 174,
+      "paragraphs": 397,
+      "paraStyleEditable": 196,
+      "tableCells": 66,
+      "tableCellsEditable": 49,
+      "tableCellStyleEditable": 45,
+      "tables": 19,
+      "tableStructureEditable": 13,
+      "characters": 1147,
+      "editableCharacters": 1064,
+      "byContainer": {
+        "body": {
+          "textRuns": 234,
+          "textEditable": 213
+        },
+        "tableCell": {
+          "textRuns": 120,
+          "textEditable": 120
+        },
+        "headerFooter": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 11,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 2,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {
+        "hp:deleteBegin": 1,
+        "hp:deleteEnd": 1,
+        "hp:insertBegin": 1,
+        "hp:insertEnd": 1
+      },
+      "nonEditableCharactersByReason": {
+        "DECODER_MIXED_INLINE_CONTENT": 7,
+        "DECODER_SKIPS_FIELD_SUBLIST": 6,
+        "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 8,
+        "DECODER_SKIPS_TEXT_BOX": 53,
+        "NOT_LISTED_HEADER_FOOTER": 9,
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 0,
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_MIXED_INLINE_CONTENT": 1,
+          "DECODER_SKIPS_FIELD_SUBLIST": 2,
+          "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2,
+          "DECODER_SKIPS_TEXT_BOX": 11
+        },
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 2,
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1,
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 19
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 120,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 39
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_MIXED_INLINE_CONTENT": 1,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FIELD_SUBLIST": 2,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2,
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 10,
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 2,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 19,
+          "capability: TABLE_CELL_STRUCTURE": 118,
+          "NO_TEXT_NODE": 46
+        },
+        "tableCell": {
+          "NO_TEXT_NODE": 17
+        },
+        "tableStructure": {
+          "NO_SAFE_CELL_SELECTION": 3,
+          "table_patch: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
+          "table_patch: 직사각형 표에만 행을 추가할 수 있습니다.": 2
+        }
+      },
+      "topRejectionReasons": [
+        {
+          "stage": "charStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 120
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "capability: TABLE_CELL_STRUCTURE",
+          "count": 118
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "NO_TEXT_NODE",
+          "count": 46
+        },
+        {
+          "stage": "charStyle",
+          "reason": "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.",
+          "count": 39
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE",
+          "count": 19
+        },
+        {
+          "stage": "text",
+          "reason": "NOT_LISTED_PARAGRAPH_HAS_TABLE",
+          "count": 19
+        },
+        {
+          "stage": "tableCell",
+          "reason": "NO_TEXT_NODE",
+          "count": 17
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_SKIPS_TEXT_BOX",
+          "count": 11
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX",
+          "count": 10
+        },
+        {
+          "stage": "tableStructure",
+          "reason": "NO_SAFE_CELL_SELECTION",
+          "count": 3
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_SKIPS_FIELD_SUBLIST",
+          "count": 2
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_SKIPS_FOOTNOTE_ENDNOTE",
+          "count": 2
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_FIELD_SUBLIST",
+          "count": 2
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_FOOTNOTE_ENDNOTE",
+          "count": 2
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER",
+          "count": 2
+        }
+      ],
+      "ratios": {
+        "anchored": 0.9569,
+        "textEditable": 0.8976,
+        "charStyleEditable": 0.469,
+        "paraStyleEditable": 0.4937,
+        "tableCellsEditable": 0.7424,
+        "tableStructureEditable": 0.6842,
+        "characterWeighted": 0.9276
+      }
+    }
+  },
+  "externalByCategory": {
+    "cell-image-fill": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 8,
+      "paraStyleEditable": 0,
+      "tableCells": 6,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 0,
+        "tableStructureEditable": 0,
+        "characterWeighted": null
+      }
+    },
+    "change-tracking": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 0,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 0,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 7,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 0,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0
+      }
+    },
+    "document-baseline": {
+      "fixtures": 1,
+      "textRuns": 6,
+      "anchored": 6,
+      "textEditable": 6,
+      "charStyleEditable": 2,
+      "paragraphs": 3,
+      "paraStyleEditable": 2,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 11,
+      "editableCharacters": 11,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.3333,
+        "paraStyleEditable": 0.6667,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    "equations": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    "footnotes-endnotes": {
+      "fixtures": 1,
+      "textRuns": 6,
+      "anchored": 4,
+      "textEditable": 4,
+      "charStyleEditable": 2,
+      "paragraphs": 5,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 22,
+      "editableCharacters": 14,
+      "ratios": {
+        "anchored": 0.6667,
+        "textEditable": 0.6667,
+        "charStyleEditable": 0.3333,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.6364
+      }
+    },
+    "form-fields": {
+      "fixtures": 2,
+      "textRuns": 41,
+      "anchored": 35,
+      "textEditable": 32,
+      "charStyleEditable": 8,
+      "paragraphs": 32,
+      "paraStyleEditable": 18,
+      "tableCells": 3,
+      "tableCellsEditable": 3,
+      "tableCellStyleEditable": 2,
+      "tables": 3,
+      "tableStructureEditable": 2,
+      "characters": 87,
+      "editableCharacters": 66,
+      "ratios": {
+        "anchored": 0.8537,
+        "textEditable": 0.7805,
+        "charStyleEditable": 0.1951,
+        "paraStyleEditable": 0.5625,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0.6667,
+        "characterWeighted": 0.7586
+      }
+    },
+    "header-footer": {
+      "fixtures": 1,
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 4,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 9,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.3333,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0.25,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0
+      }
+    },
+    "images": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 0,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    "inline-shapes": {
+      "fixtures": 1,
+      "textRuns": 6,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 0,
+      "paragraphs": 4,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 119,
+      "editableCharacters": 93,
+      "ratios": {
+        "anchored": 0.5,
+        "textEditable": 0.5,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0.25,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.7815
+      }
+    },
+    "lists-and-numbering": {
+      "fixtures": 3,
+      "textRuns": 27,
+      "anchored": 27,
+      "textEditable": 27,
+      "charStyleEditable": 26,
+      "paragraphs": 34,
+      "paraStyleEditable": 27,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 147,
+      "editableCharacters": 147,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.963,
+        "paraStyleEditable": 0.7941,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    "memos": {
+      "fixtures": 1,
+      "textRuns": 7,
+      "anchored": 5,
+      "textEditable": 5,
+      "charStyleEditable": 1,
+      "paragraphs": 5,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 22,
+      "editableCharacters": 16,
+      "ratios": {
+        "anchored": 0.7143,
+        "textEditable": 0.7143,
+        "charStyleEditable": 0.1429,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.7273
+      }
+    },
+    "multi-column-layout": {
+      "fixtures": 1,
+      "textRuns": 126,
+      "anchored": 126,
+      "textEditable": 126,
+      "charStyleEditable": 125,
+      "paragraphs": 127,
+      "paraStyleEditable": 126,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 140,
+      "editableCharacters": 140,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.9921,
+        "paraStyleEditable": 0.9921,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    "page-numbering": {
+      "fixtures": 1,
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 2,
+      "paragraphs": 3,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 14,
+      "editableCharacters": 14,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.6667,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    "page-setup": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    "paragraph-layout": {
+      "fixtures": 1,
+      "textRuns": 17,
+      "anchored": 17,
+      "textEditable": 9,
+      "charStyleEditable": 1,
+      "paragraphs": 26,
+      "paraStyleEditable": 1,
+      "tableCells": 8,
+      "tableCellsEditable": 8,
+      "tableCellStyleEditable": 8,
+      "tables": 8,
+      "tableStructureEditable": 8,
+      "characters": 80,
+      "editableCharacters": 80,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.5294,
+        "charStyleEditable": 0.0588,
+        "paraStyleEditable": 0.0385,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    "ruby-text": {
+      "fixtures": 1,
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    "table-basic": {
+      "fixtures": 1,
+      "textRuns": 27,
+      "anchored": 25,
+      "textEditable": 24,
+      "charStyleEditable": 1,
+      "paragraphs": 33,
+      "paraStyleEditable": 2,
+      "tableCells": 24,
+      "tableCellsEditable": 21,
+      "tableCellStyleEditable": 21,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 54,
+      "editableCharacters": 48,
+      "ratios": {
+        "anchored": 0.9259,
+        "textEditable": 0.8889,
+        "charStyleEditable": 0.037,
+        "paraStyleEditable": 0.0606,
+        "tableCellsEditable": 0.875,
+        "tableStructureEditable": 0,
+        "characterWeighted": 0.8889
+      }
+    },
+    "table-pagination": {
+      "fixtures": 2,
+      "textRuns": 74,
+      "anchored": 74,
+      "textEditable": 72,
+      "charStyleEditable": 6,
+      "paragraphs": 74,
+      "paraStyleEditable": 6,
+      "tableCells": 7,
+      "tableCellsEditable": 7,
+      "tableCellStyleEditable": 7,
+      "tables": 2,
+      "tableStructureEditable": 2,
+      "characters": 378,
+      "editableCharacters": 378,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.973,
+        "charStyleEditable": 0.0811,
+        "paraStyleEditable": 0.0811,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    "table-span": {
+      "fixtures": 4,
+      "textRuns": 22,
+      "anchored": 22,
+      "textEditable": 18,
+      "charStyleEditable": 0,
+      "paragraphs": 34,
+      "paraStyleEditable": 0,
+      "tableCells": 18,
+      "tableCellsEditable": 10,
+      "tableCellStyleEditable": 7,
+      "tables": 4,
+      "tableStructureEditable": 1,
+      "characters": 57,
+      "editableCharacters": 57,
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.8182,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 0.5556,
+        "tableStructureEditable": 0.25,
+        "characterWeighted": 1
+      }
+    }
+  },
+  "fixtures": [
+    {
+      "id": "baseline",
+      "category": "document-baseline",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 11,
+      "anchored": 11,
+      "textEditable": 4,
+      "charStyleEditable": 0,
+      "paragraphs": 12,
+      "paraStyleEditable": 0,
+      "tableCells": 4,
+      "tableCellsEditable": 4,
+      "tableCellStyleEditable": 3,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 52,
+      "editableCharacters": 15,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 4,
+          "textEditable": 4
+        },
+        "headerFooter": {
+          "textRuns": 6,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_HEADER_FOOTER": 30,
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 7
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 6,
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 4
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 6,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 4,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.3636,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 0.2885
+      }
+    },
+    {
+      "id": "cell-continuation",
+      "category": "table-pagination",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 17,
+      "anchored": 17,
+      "textEditable": 17,
+      "charStyleEditable": 0,
+      "paragraphs": 19,
+      "paraStyleEditable": 0,
+      "tableCells": 3,
+      "tableCellsEditable": 3,
+      "tableCellStyleEditable": 2,
+      "tables": 2,
+      "tableStructureEditable": 1,
+      "characters": 47,
+      "editableCharacters": 47,
+      "byContainer": {
+        "body": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 17,
+          "textEditable": 17
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 17
+        },
+        "paraStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 17,
+          "NO_TEXT_NODE": 2
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "table_patch: 행마다 너비가 다른 열은 아직 추가할 수 없습니다.": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0.5,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "images-rowspan",
+      "category": "images-and-span",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 5,
+      "anchored": 5,
+      "textEditable": 5,
+      "charStyleEditable": 0,
+      "paragraphs": 7,
+      "paraStyleEditable": 0,
+      "tableCells": 5,
+      "tableCellsEditable": 5,
+      "tableCellStyleEditable": 2,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 7,
+      "editableCharacters": 7,
+      "byContainer": {
+        "body": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 5,
+          "textEditable": 5
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 5
+        },
+        "paraStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 5,
+          "NO_TEXT_NODE": 2
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "table_patch: 병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "table-columns",
+      "category": "table-structure",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 9,
+      "anchored": 9,
+      "textEditable": 9,
+      "charStyleEditable": 0,
+      "paragraphs": 10,
+      "paraStyleEditable": 0,
+      "tableCells": 9,
+      "tableCellsEditable": 9,
+      "tableCellStyleEditable": 6,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 18,
+      "editableCharacters": 18,
+      "byContainer": {
+        "body": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 9,
+          "textEditable": 9
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 9
+        },
+        "paraStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 9,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "list-markers",
+      "category": "lists-and-numbering",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 5,
+      "anchored": 5,
+      "textEditable": 5,
+      "charStyleEditable": 4,
+      "paragraphs": 5,
+      "paraStyleEditable": 5,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 32,
+      "editableCharacters": 32,
+      "byContainer": {
+        "body": {
+          "textRuns": 5,
+          "textEditable": 5
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.8,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "multi-column-layout",
+      "category": "multi-column-layout",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 7,
+      "anchored": 7,
+      "textEditable": 7,
+      "charStyleEditable": 6,
+      "paragraphs": 7,
+      "paraStyleEditable": 7,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 60,
+      "editableCharacters": 60,
+      "byContainer": {
+        "body": {
+          "textRuns": 7,
+          "textEditable": 7
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.8571,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "round-trip-sentinels",
+      "category": "package-preservation",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 10,
+      "anchored": 10,
+      "textEditable": 5,
+      "charStyleEditable": 1,
+      "paragraphs": 11,
+      "paraStyleEditable": 1,
+      "tableCells": 4,
+      "tableCellsEditable": 4,
+      "tableCellStyleEditable": 3,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 38,
+      "editableCharacters": 15,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 4,
+          "textEditable": 4
+        },
+        "headerFooter": {
+          "textRuns": 5,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_HEADER_FOOTER": 23
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 5
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 4
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 5,
+          "capability: TABLE_CELL_STRUCTURE": 4,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.5,
+        "charStyleEditable": 0.1,
+        "paraStyleEditable": 0.0909,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 0.3947
+      }
+    },
+    {
+      "id": "large-progressive",
+      "category": "large-document",
+      "source": "generator",
+      "outcome": "measured",
+      "textRuns": 19511,
+      "anchored": 19511,
+      "textEditable": 19504,
+      "charStyleEditable": 19500,
+      "paragraphs": 19512,
+      "paraStyleEditable": 19500,
+      "tableCells": 4,
+      "tableCellsEditable": 4,
+      "tableCellStyleEditable": 3,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 476972,
+      "editableCharacters": 476935,
+      "byContainer": {
+        "body": {
+          "textRuns": 19501,
+          "textEditable": 19500
+        },
+        "tableCell": {
+          "textRuns": 4,
+          "textEditable": 4
+        },
+        "headerFooter": {
+          "textRuns": 6,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_HEADER_FOOTER": 30,
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 7
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 6,
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 4
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 6,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 4,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.9996,
+        "charStyleEditable": 0.9994,
+        "paraStyleEditable": 0.9994,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 0.9999
+      }
+    },
+    {
+      "id": "invalid-package",
+      "category": "invalid-package",
+      "source": "generator",
+      "outcome": "skipped"
+    },
+    {
+      "id": "ext-hwpxlib-table-scores",
+      "category": "table-basic",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 27,
+      "anchored": 25,
+      "textEditable": 24,
+      "charStyleEditable": 1,
+      "paragraphs": 33,
+      "paraStyleEditable": 2,
+      "tableCells": 24,
+      "tableCellsEditable": 21,
+      "tableCellStyleEditable": 21,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 54,
+      "editableCharacters": 48,
+      "byContainer": {
+        "body": {
+          "textRuns": 4,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 21,
+          "textEditable": 21
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "DECODER_SKIPS_TEXT_BOX": 6,
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_SKIPS_TEXT_BOX": 2
+        },
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 21,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 2
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 1,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 21,
+          "NO_TEXT_NODE": 8
+        },
+        "tableCell": {
+          "NO_TEXT_NODE": 3
+        },
+        "tableStructure": {
+          "table_patch: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.": 1
+        }
+      },
+      "ratios": {
+        "anchored": 0.9259,
+        "textEditable": 0.8889,
+        "charStyleEditable": 0.037,
+        "paraStyleEditable": 0.0606,
+        "tableCellsEditable": 0.875,
+        "tableStructureEditable": 0,
+        "characterWeighted": 0.8889
+      }
+    },
+    {
+      "id": "ext-hwpxlib-para-heads",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 21,
+      "anchored": 21,
+      "textEditable": 21,
+      "charStyleEditable": 20,
+      "paragraphs": 26,
+      "paraStyleEditable": 21,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 117,
+      "editableCharacters": 117,
+      "byContainer": {
+        "body": {
+          "textRuns": 21,
+          "textEditable": 21
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {
+          "NO_TEXT_NODE": 5
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.9524,
+        "paraStyleEditable": 0.8077,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-rect-in-para",
+      "category": "inline-shapes",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 6,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 0,
+      "paragraphs": 4,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 119,
+      "editableCharacters": 93,
+      "byContainer": {
+        "body": {
+          "textRuns": 3,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 3,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "DECODER_SKIPS_TEXT_BOX": 26
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_SKIPS_TEXT_BOX": 3
+        },
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 3
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 3
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 0.5,
+        "textEditable": 0.5,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0.25,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.7815
+      }
+    },
+    {
+      "id": "ext-hwpxlib-multi-column",
+      "category": "multi-column-layout",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 126,
+      "anchored": 126,
+      "textEditable": 126,
+      "charStyleEditable": 125,
+      "paragraphs": 127,
+      "paraStyleEditable": 126,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 140,
+      "editableCharacters": 140,
+      "byContainer": {
+        "body": {
+          "textRuns": 126,
+          "textEditable": 126
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.9921,
+        "paraStyleEditable": 0.9921,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-header-footer",
+      "category": "header-footer",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 4,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 9,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_HEADER_FOOTER": 9
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_HEADER_FOOTER": 2
+        },
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 2,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.3333,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0.25,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0
+      }
+    },
+    {
+      "id": "ext-hwpxlib-page-functions",
+      "category": "page-numbering",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 2,
+      "paragraphs": 3,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 14,
+      "editableCharacters": 14,
+      "byContainer": {
+        "body": {
+          "textRuns": 3,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.6667,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-sample1",
+      "category": "document-baseline",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 6,
+      "anchored": 6,
+      "textEditable": 6,
+      "charStyleEditable": 2,
+      "paragraphs": 3,
+      "paraStyleEditable": 2,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 11,
+      "editableCharacters": 11,
+      "byContainer": {
+        "body": {
+          "textRuns": 6,
+          "textEditable": 6
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 4
+        },
+        "paraStyle": {
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0.3333,
+        "paraStyleEditable": 0.6667,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-simple-table",
+      "category": "table-span",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 6,
+      "anchored": 6,
+      "textEditable": 5,
+      "charStyleEditable": 0,
+      "paragraphs": 7,
+      "paraStyleEditable": 0,
+      "tableCells": 5,
+      "tableCellsEditable": 5,
+      "tableCellStyleEditable": 3,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 5,
+      "editableCharacters": 5,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 5,
+          "textEditable": 5
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 5
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 5,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "table_patch: 직사각형 표에만 행을 추가할 수 있습니다.": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.8333,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-equation",
+      "category": "equations",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-hwpxlib-picture",
+      "category": "images",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 0,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1
+        },
+        "charStyle": {},
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-hwpxlib-change-track",
+      "category": "change-tracking",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 0,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 0,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 7,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {
+        "hp:deleteBegin": 1,
+        "hp:deleteEnd": 1,
+        "hp:insertBegin": 1,
+        "hp:insertEnd": 1
+      },
+      "nonEditableCharactersByReason": {
+        "DECODER_MIXED_INLINE_CONTENT": 7
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_MIXED_INLINE_CONTENT": 1
+        },
+        "text": {},
+        "charStyle": {},
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_MIXED_INLINE_CONTENT": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 0,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0
+      }
+    },
+    {
+      "id": "ext-hwpxlib-dutmal",
+      "category": "ruby-text",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-hwpxlib-page-size",
+      "category": "page-setup",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 1,
+      "charStyleEditable": 0,
+      "paragraphs": 1,
+      "paraStyleEditable": 1,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
+        },
+        "paraStyle": {},
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 1,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-pyhwpx-table-page-break-cell",
+      "category": "table-pagination",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 69,
+      "anchored": 69,
+      "textEditable": 68,
+      "charStyleEditable": 3,
+      "paragraphs": 69,
+      "paraStyleEditable": 3,
+      "tableCells": 6,
+      "tableCellsEditable": 6,
+      "tableCellStyleEditable": 6,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 319,
+      "editableCharacters": 319,
+      "byContainer": {
+        "body": {
+          "textRuns": 4,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 65,
+          "textEditable": 65
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 65
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 65
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.9855,
+        "charStyleEditable": 0.0435,
+        "paraStyleEditable": 0.0435,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-merge-3x3",
+      "category": "table-span",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 10,
+      "anchored": 10,
+      "textEditable": 9,
+      "charStyleEditable": 0,
+      "paragraphs": 11,
+      "paraStyleEditable": 0,
+      "tableCells": 4,
+      "tableCellsEditable": 4,
+      "tableCellStyleEditable": 3,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 36,
+      "editableCharacters": 36,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 9,
+          "textEditable": 9
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 9
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 9,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "table_patch: 직사각형 표에만 행을 추가할 수 있습니다.": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.9,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-merge-2x2",
+      "category": "table-span",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 5,
+      "anchored": 5,
+      "textEditable": 4,
+      "charStyleEditable": 0,
+      "paragraphs": 6,
+      "paraStyleEditable": 0,
+      "tableCells": 1,
+      "tableCellsEditable": 1,
+      "tableCellStyleEditable": 1,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 16,
+      "editableCharacters": 16,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 4,
+          "textEditable": 4
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 4
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 4,
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.8,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-list-bullet-l2",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 3,
+      "paragraphs": 4,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 15,
+      "editableCharacters": 15,
+      "byContainer": {
+        "body": {
+          "textRuns": 3,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {},
+        "paraStyle": {
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 1,
+        "paraStyleEditable": 0.75,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-list-number-l3",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 3,
+      "anchored": 3,
+      "textEditable": 3,
+      "charStyleEditable": 3,
+      "paragraphs": 4,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 15,
+      "editableCharacters": 15,
+      "byContainer": {
+        "body": {
+          "textRuns": 3,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {},
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {},
+        "charStyle": {},
+        "paraStyle": {
+          "NO_TEXT_NODE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 1,
+        "charStyleEditable": 1,
+        "paraStyleEditable": 0.75,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-memos",
+      "category": "memos",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 7,
+      "anchored": 5,
+      "textEditable": 5,
+      "charStyleEditable": 1,
+      "paragraphs": 5,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 22,
+      "editableCharacters": 16,
+      "byContainer": {
+        "body": {
+          "textRuns": 5,
+          "textEditable": 5
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 2,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "DECODER_SKIPS_FIELD_SUBLIST": 6
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_SKIPS_FIELD_SUBLIST": 2
+        },
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 4
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FIELD_SUBLIST": 2
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 0.7143,
+        "textEditable": 0.7143,
+        "charStyleEditable": 0.1429,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.7273
+      }
+    },
+    {
+      "id": "ext-pyhwpx-foot-endnotes",
+      "category": "footnotes-endnotes",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 6,
+      "anchored": 4,
+      "textEditable": 4,
+      "charStyleEditable": 2,
+      "paragraphs": 5,
+      "paraStyleEditable": 3,
+      "tableCells": 0,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 0,
+      "tableStructureEditable": 0,
+      "characters": 22,
+      "editableCharacters": 14,
+      "byContainer": {
+        "body": {
+          "textRuns": 4,
+          "textEditable": 4
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 2,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 8
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2
+        },
+        "text": {},
+        "charStyle": {
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 2
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_FOOTNOTE_ENDNOTE": 2
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 0.6667,
+        "textEditable": 0.6667,
+        "charStyleEditable": 0.3333,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": null,
+        "tableStructureEditable": null,
+        "characterWeighted": 0.6364
+      }
+    },
+    {
+      "id": "ext-pyhwpx-text-box-fields",
+      "category": "form-fields",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 19,
+      "anchored": 13,
+      "textEditable": 12,
+      "charStyleEditable": 4,
+      "paragraphs": 17,
+      "paraStyleEditable": 9,
+      "tableCells": 1,
+      "tableCellsEditable": 1,
+      "tableCellStyleEditable": 1,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 35,
+      "editableCharacters": 14,
+      "byContainer": {
+        "body": {
+          "textRuns": 12,
+          "textEditable": 11
+        },
+        "tableCell": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 6,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "DECODER_SKIPS_TEXT_BOX": 21,
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {
+          "DECODER_SKIPS_TEXT_BOX": 6
+        },
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 1,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 7
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 6,
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 0.6842,
+        "textEditable": 0.6316,
+        "charStyleEditable": 0.2105,
+        "paraStyleEditable": 0.5294,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 0.4
+      }
+    },
+    {
+      "id": "ext-pyhwpx-cell-border-vmerge",
+      "category": "table-span",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 10,
+      "paraStyleEditable": 0,
+      "tableCells": 8,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {},
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "NO_TEXT_NODE": 9
+        },
+        "tableCell": {
+          "NO_TEXT_NODE": 8
+        },
+        "tableStructure": {
+          "NO_SAFE_CELL_SELECTION": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 0,
+        "tableStructureEditable": 0,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-pyhwpx-fill-image",
+      "category": "cell-image-fill",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 1,
+      "anchored": 1,
+      "textEditable": 0,
+      "charStyleEditable": 0,
+      "paragraphs": 8,
+      "paraStyleEditable": 0,
+      "tableCells": 6,
+      "tableCellsEditable": 0,
+      "tableCellStyleEditable": 0,
+      "tables": 1,
+      "tableStructureEditable": 0,
+      "characters": 0,
+      "editableCharacters": 0,
+      "byContainer": {
+        "body": {
+          "textRuns": 1,
+          "textEditable": 0
+        },
+        "tableCell": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {},
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "NO_TEXT_NODE": 7
+        },
+        "tableCell": {
+          "NO_TEXT_NODE": 6
+        },
+        "tableStructure": {
+          "NO_SAFE_CELL_SELECTION": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0,
+        "charStyleEditable": 0,
+        "paraStyleEditable": 0,
+        "tableCellsEditable": 0,
+        "tableStructureEditable": 0,
+        "characterWeighted": null
+      }
+    },
+    {
+      "id": "ext-pyhwpx-form-fields-spanning",
+      "category": "form-fields",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 22,
+      "anchored": 22,
+      "textEditable": 20,
+      "charStyleEditable": 4,
+      "paragraphs": 15,
+      "paraStyleEditable": 9,
+      "tableCells": 2,
+      "tableCellsEditable": 2,
+      "tableCellStyleEditable": 1,
+      "tables": 2,
+      "tableStructureEditable": 1,
+      "characters": 52,
+      "editableCharacters": 52,
+      "byContainer": {
+        "body": {
+          "textRuns": 16,
+          "textEditable": 14
+        },
+        "tableCell": {
+          "textRuns": 6,
+          "textEditable": 6
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 2
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 6,
+          "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 10
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 2,
+          "capability: TABLE_CELL_STRUCTURE": 4
+        },
+        "tableCell": {},
+        "tableStructure": {
+          "NO_SAFE_CELL_SELECTION": 1
+        }
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.9091,
+        "charStyleEditable": 0.1818,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 0.5,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-auto-grow-cell",
+      "category": "table-pagination",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 5,
+      "anchored": 5,
+      "textEditable": 4,
+      "charStyleEditable": 3,
+      "paragraphs": 5,
+      "paraStyleEditable": 3,
+      "tableCells": 1,
+      "tableCellsEditable": 1,
+      "tableCellStyleEditable": 1,
+      "tables": 1,
+      "tableStructureEditable": 1,
+      "characters": 59,
+      "editableCharacters": 59,
+      "byContainer": {
+        "body": {
+          "textRuns": 4,
+          "textEditable": 3
+        },
+        "tableCell": {
+          "textRuns": 1,
+          "textEditable": 1
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 1
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
+          "capability: TABLE_CELL_STRUCTURE": 1
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.8,
+        "charStyleEditable": 0.6,
+        "paraStyleEditable": 0.6,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-paragraph-margins",
+      "category": "paragraph-layout",
+      "source": "file",
+      "outcome": "measured",
+      "textRuns": 17,
+      "anchored": 17,
+      "textEditable": 9,
+      "charStyleEditable": 1,
+      "paragraphs": 26,
+      "paraStyleEditable": 1,
+      "tableCells": 8,
+      "tableCellsEditable": 8,
+      "tableCellStyleEditable": 8,
+      "tables": 8,
+      "tableStructureEditable": 8,
+      "characters": 80,
+      "editableCharacters": 80,
+      "byContainer": {
+        "body": {
+          "textRuns": 9,
+          "textEditable": 1
+        },
+        "tableCell": {
+          "textRuns": 8,
+          "textEditable": 8
+        },
+        "headerFooter": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "note": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "textBox": {
+          "textRuns": 0,
+          "textEditable": 0
+        },
+        "field": {
+          "textRuns": 0,
+          "textEditable": 0
+        }
+      },
+      "mixedContentChildren": {},
+      "nonEditableCharactersByReason": {
+        "NOT_LISTED_PARAGRAPH_HAS_TABLE": 0
+      },
+      "rejectionReasons": {
+        "anchor": {},
+        "text": {
+          "NOT_LISTED_PARAGRAPH_HAS_TABLE": 8
+        },
+        "charStyle": {
+          "capability: TABLE_CELL_STRUCTURE": 8
+        },
+        "paraStyle": {
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 8,
+          "capability: TABLE_CELL_STRUCTURE": 8,
+          "NO_TEXT_NODE": 9
+        },
+        "tableCell": {},
+        "tableStructure": {}
+      },
+      "ratios": {
+        "anchored": 1,
+        "textEditable": 0.5294,
+        "charStyleEditable": 0.0588,
+        "paraStyleEditable": 0.0385,
+        "tableCellsEditable": 1,
+        "tableStructureEditable": 1,
+        "characterWeighted": 1
+      }
+    }
+  ]
+}
