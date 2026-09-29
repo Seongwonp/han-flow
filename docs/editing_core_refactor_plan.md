@@ -2,6 +2,8 @@
 
 상태: 제안 — 1단계(XML scanner 통합, `src/core/editing/xml_scan.ts`) 완료, tree 전환 미착수
 
+실제 한/글 문서 편집 가능 비율 기준선과 우선 해제 순서: [편집 가능 비율 기준선](editing_coverage.md)
+
 ## 1. 현재 구조
 
 - **byte offset 위 문자열 patch**: 모든 편집 command는 section·header XML 원문 문자열을

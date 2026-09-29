@@ -42,6 +42,11 @@ jobs:
       - name: Public HWPX corpus
         run: npm run verify:corpus
 
+      # 편집 가능 비율은 아직 기준선 측정 단계라 관문으로 쓰지 않는다.
+      - name: Editing coverage (informational)
+        continue-on-error: true
+        run: npm run corpus:editing-coverage
+
       - name: Production build
         run: npm run build
 

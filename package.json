@@ -135,6 +135,7 @@
     "verify:matrix": "node scripts/verify_public_matrix.mjs",
     "verify:corpus": "node scripts/verify_public_corpus.mjs",
     "corpus:intake": "node scripts/corpus/intake_external_fixture.mjs",
+    "corpus:editing-coverage": "node scripts/corpus/editing_coverage.mjs",
     "verify:hwp-matrix": "node scripts/verify_hwp_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
     "fixture:v3-acceptance": "node scripts/create_v3_acceptance_bundle.mjs",

@@ -26,18 +26,23 @@ const compilerOptions = {
 
 let core
 
-function loadCore() {
-  if (core) return core
+// 저장소 기준 상대 경로의 TypeScript module을 CommonJS로 transpile해 불러온다.
+export function loadTypeScriptModule(relativePath) {
   if (!require.extensions['.ts']) {
     require.extensions['.ts'] = (module, fileName) => {
       const source = readFileSync(fileName, 'utf8')
       module._compile(ts.transpileModule(source, { compilerOptions, fileName }).outputText, fileName)
     }
   }
+  return require(resolve(repositoryRoot, relativePath))
+}
+
+function loadCore() {
+  if (core) return core
   core = {
-    HwpxSourcePackage: require(resolve(repositoryRoot, 'src/core/parser/source_package.ts')).HwpxSourcePackage,
-    decodeViewerDocument: require(resolve(repositoryRoot, 'src/core/parser/viewer_decoder.ts')).decodeViewerDocument,
-    paginateViewerDocument: require(resolve(repositoryRoot, 'src/core/layout/pagination.ts')).paginateViewerDocument
+    HwpxSourcePackage: loadTypeScriptModule('src/core/parser/source_package.ts').HwpxSourcePackage,
+    decodeViewerDocument: loadTypeScriptModule('src/core/parser/viewer_decoder.ts').decodeViewerDocument,
+    paginateViewerDocument: loadTypeScriptModule('src/core/layout/pagination.ts').paginateViewerDocument
   }
   return core
 }
