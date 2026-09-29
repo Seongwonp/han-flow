@@ -2,20 +2,53 @@ import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
 import { EditingOperationError } from './editing_error'
 import {
+  encodeHwpxTextContent,
   HwpxEditConflictError,
   HwpxLossReport,
+  hwpxTextElementSource,
+  hwpxTextOrdinal,
+  invalidateHwpxTextIndex,
   listHwpxTextAnchors,
-  rewriteHwpxTextElement
+  locateHwpxTextElement,
+  splitHwpxTextContent
 } from './text_patch'
+import { buildLossReport } from './xml_scan'
+import { putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
-  attribute,
-  buildLossReport,
-  nearestAncestor,
-  scanXmlElements,
-  setAttribute,
-  targetOrdinal,
-  XmlElementSpan
-} from './xml_scan'
+  elementCloseTag,
+  elementOpenTag,
+  findDescendantSourceElements,
+  findSourceElements,
+  getSourceAttribute,
+  nearestSourceAncestor,
+  parseSourceFragment,
+  readTagAttribute,
+  serializeSourceNode,
+  SourceElement,
+  SourceNode,
+  SourceTree,
+  spliceSourceChildren,
+  textRaw,
+  writeTagAttribute
+} from './source_tree'
+
+/**
+ * 문단 구조 command: 문단 분할(Enter), 경계 병합(문단 맨 앞 Backspace·맨 끝 Delete), 여러 문단 범위 치환.
+ *
+ * section source tree(`package_trees.ts` cache)에서 `hp:p`·`hp:run`·`hp:t` node를 찾아 교체 fragment를 만든다. 손대지 않는
+ * run과 문단은 node의 현재 원문 표기를 그대로 쓰고, 분할·치환 경계의 `hp:t`는 {@link splitHwpxTextContent}로 원문 표기를
+ * 잘라 남긴다. 따라서 지우지 않은 부분의 inline `hp:tab`(attribute 포함)·`hp:lineBreak`·entity 표기·원문 CR/LF는 byte
+ * 그대로다. 새로 넣는 text만 기본 escape(`\t` → `&#9;`, `\n` → `<hp:lineBreak/>`)로 쓴다.
+ *
+ * command·inverse는 전과 같은 `replace-paragraph-fragment`(원문 fragment 교체)다. inverse가 바뀌기 전 fragment bytes를
+ * 그대로 들고 있어 실행 취소는 언제나 원래 bytes를 복원한다. 적용은 tree에서 fragment에 해당하는 형제 node를 떼고
+ * 교체 fragment를 조각 tree로 붙인 뒤 cache를 새 package로 옮긴다.
+ *
+ * `hp:linesegarray` 정책(전환 전과 같음): 분할·병합·범위 치환으로 새로 만든 문단에는 `hp:linesegarray`를 쓰지 않는다
+ * (줄 배치 cache 무효화 — 한/글이 열 때 다시 계산한다). 영향받지 않은 문단의 `hp:linesegarray`는 그대로 두고, 실행 취소는
+ * 원래 fragment와 함께 되살린다. 새로 만든 문단은 `hp:run`만 이어 쓰므로 문단 자식 사이·run 안 `hp:t` 앞뒤의 공백
+ * text도 쓰지 않는다.
+ */
 
 export interface ReplaceParagraphFragmentCommand {
   type: 'replace-paragraph-fragment'
@@ -51,103 +84,106 @@ export interface ParagraphPatchResult {
 }
 
 interface ParagraphContext {
-  xml: string
-  spans: XmlElementSpan[]
-  textNode: XmlElementSpan
-  run: XmlElementSpan
-  paragraph: XmlElementSpan
-  scope: XmlElementSpan
+  tree: SourceTree
+  textNode: SourceElement
+  run: SourceElement
+  paragraph: SourceElement
+  scope: SourceElement
 }
+
+const RUN_CONTENT = new Set(['hp:t', 'hp:lineBreak', 'hp:tab'])
 
 function locateParagraph(
   sourcePackage: HwpxSourcePackage,
   sectionPath: string,
   textNodeId: string
 ): ParagraphContext {
-  if (!listHwpxTextAnchors(sourcePackage, sectionPath).some((anchor) => anchor.textNodeId === textNodeId)) {
-    throw new HwpxEditConflictError(`문단 anchor를 찾을 수 없습니다: ${textNodeId}`)
-  }
-  const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
-  const spans = scanXmlElements(xml)
-  const textNode = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId)]
-  if (!textNode) throw new HwpxEditConflictError(`문단 anchor ordinal을 찾을 수 없습니다: ${textNodeId}`)
-  const run = nearestAncestor(textNode, 'hp:run')
-  const paragraph = nearestAncestor(textNode, 'hp:p')
-  if (!run || !paragraph || run.parent?.start !== paragraph.start || !paragraph.parent) {
+  // section 경로 검사·오류 message를 전과 같게 하려고 anchor 목록을 먼저 조회한다(package별 cache).
+  listHwpxTextAnchors(sourcePackage, sectionPath)
+  const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
+  if (!located) throw new HwpxEditConflictError(`문단 anchor를 찾을 수 없습니다: ${textNodeId}`)
+  const { tree, element: textNode } = located
+  const run = nearestSourceAncestor(textNode, 'hp:run')
+  const paragraph = nearestSourceAncestor(textNode, 'hp:p')
+  if (!run || !paragraph || run.parent !== paragraph || !paragraph.parent) {
     throw new HwpxEditConflictError('지원하는 일반 텍스트 문단 구조를 찾을 수 없습니다.')
   }
   const scope = paragraph.parent
   if (scope.name === 'hp:subList') {
-    const cell = nearestAncestor(paragraph, 'hp:tc')
-    const cellSpan = cell && spans.find(
-      (span) => span.name === 'hp:cellSpan' && span.parent?.start === cell.start
+    const cell = nearestSourceAncestor(paragraph, 'hp:tc')
+    const cellSpan = cell?.children.find(
+      (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:cellSpan'
     )
-    const cellTag = cell ? xml.slice(cell.start, cell.openEnd) : ''
-    const spanTag = cellSpan ? xml.slice(cellSpan.start, cellSpan.openEnd) : ''
     if (
       !cell ||
-      scope.parent?.start !== cell.start ||
-      attribute(cellTag, 'header') === '1' ||
-      Number(attribute(spanTag, 'rowSpan') ?? '1') !== 1 ||
-      Number(attribute(spanTag, 'colSpan') ?? '1') !== 1
+      scope.parent !== cell ||
+      getSourceAttribute(tree, cell, 'header') === '1' ||
+      Number((cellSpan && getSourceAttribute(tree, cellSpan, 'rowSpan')) ?? '1') !== 1 ||
+      Number((cellSpan && getSourceAttribute(tree, cellSpan, 'colSpan')) ?? '1') !== 1
     ) {
       throw new HwpxEditConflictError('병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
     }
   } else if (scope.name !== 'hs:sec') {
     throw new HwpxEditConflictError('최상위 문단 또는 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
   }
-  return { xml, spans, textNode, run, paragraph, scope }
+  return { tree, textNode, run, paragraph, scope }
 }
 
-function assertSimpleParagraph(context: ParagraphContext): XmlElementSpan[] {
-  const { xml, spans, paragraph } = context
-  const children = spans.filter((span) => span.parent?.start === paragraph.start)
-  if (children.some((span) => span.name !== 'hp:run' && span.name !== 'hp:linesegarray')) {
+/** element가 아닌 형제(text·comment·CDATA·PI)가 공백 text뿐이면 true. */
+function isBlankNode(tree: SourceTree, node: SourceNode): boolean {
+  return node.kind === 'text' && !textRaw(tree, node).trim()
+}
+
+/**
+ * 문단이 `hp:run`(+ `hp:linesegarray`)만으로 되어 있고 각 run이 `hp:t` 하나(와 앞뒤 공백)만 가지는지 확인하고
+ * run 목록을 돌려준다. 검사 순서와 오류 message는 전환 전과 같다.
+ */
+function assertSimpleParagraph(context: ParagraphContext): SourceElement[] {
+  const { tree, paragraph } = context
+  const children = paragraph.children.filter((child): child is SourceElement => child.kind === 'element')
+  if (children.some((child) => child.name !== 'hp:run' && child.name !== 'hp:linesegarray')) {
     throw new HwpxEditConflictError('제어·표·도형이 섞인 문단은 아직 나눌 수 없습니다.')
   }
-  const runs = children.filter((span) => span.name === 'hp:run')
+  const runs = children.filter((child) => child.name === 'hp:run')
   if (!runs.length) throw new HwpxEditConflictError('텍스트 run이 없는 문단은 나눌 수 없습니다.')
-  let paragraphCursor = paragraph.openEnd
-  for (const child of children) {
-    if (xml.slice(paragraphCursor, child.start).trim()) {
-      throw new HwpxEditConflictError('알 수 없는 문단 콘텐츠가 있어 나눌 수 없습니다.')
-    }
-    paragraphCursor = child.end
-  }
-  if (xml.slice(paragraphCursor, paragraph.closeStart).trim()) {
+  if (paragraph.children.some((child) => child.kind !== 'element' && !isBlankNode(tree, child))) {
     throw new HwpxEditConflictError('알 수 없는 문단 콘텐츠가 있어 나눌 수 없습니다.')
   }
   for (const run of runs) {
-    const descendants = spans.filter((span) => span.start >= run.openEnd && span.end <= run.closeStart)
-    const directTexts = descendants.filter((span) => span.name === 'hp:t' && span.parent?.start === run.start)
+    const directTexts = run.children.filter(
+      (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:t'
+    )
     if (
       directTexts.length !== 1 ||
-      descendants.some((span) => !['hp:t', 'hp:lineBreak', 'hp:tab'].includes(span.name))
+      !everyDescendantElement(run, (element) => RUN_CONTENT.has(element.name))
     ) {
       throw new HwpxEditConflictError('복합 run이 있는 문단은 아직 나눌 수 없습니다.')
     }
-    const text = directTexts[0]
-    if (
-      xml.slice(run.openEnd, text.start).trim() ||
-      xml.slice(text.end, run.closeStart).trim()
-    ) {
+    if (run.children.some((child) => child !== directTexts[0] && !isBlankNode(tree, child))) {
       throw new HwpxEditConflictError('알 수 없는 run 콘텐츠가 있어 나눌 수 없습니다.')
     }
   }
   return runs
 }
 
-function nextParagraphOpenTag(xml: string, spans: XmlElementSpan[], paragraph: XmlElementSpan): string {
-  let openTag = xml.slice(paragraph.start, paragraph.openEnd)
-  for (const name of ['pageBreak', 'columnBreak']) {
-    if (attribute(openTag, name) !== undefined) openTag = setAttribute(openTag, name, '0')
+function everyDescendantElement(element: SourceElement, predicate: (element: SourceElement) => boolean): boolean {
+  for (const child of element.children) {
+    if (child.kind !== 'element') continue
+    if (!predicate(child) || !everyDescendantElement(child, predicate)) return false
   }
-  const id = attribute(openTag, 'id')
+  return true
+}
+
+function nextParagraphOpenTag(tree: SourceTree, paragraph: SourceElement): string {
+  let openTag = elementOpenTag(tree, paragraph)
+  for (const name of ['pageBreak', 'columnBreak']) {
+    if (readTagAttribute(openTag, name) !== undefined) openTag = writeTagAttribute(openTag, name, '0')
+  }
+  const id = readTagAttribute(openTag, 'id')
   if (id === undefined) return openTag
   if (!/^\d+$/.test(id)) throw new HwpxEditConflictError('숫자가 아닌 문단 ID는 아직 나누지 않습니다.')
-  const ids = spans
-    .filter((span) => span.name === 'hp:p')
-    .map((span) => attribute(xml.slice(span.start, span.openEnd), 'id'))
+  const ids = findSourceElements(tree, 'hp:p')
+    .map((candidate) => getSourceAttribute(tree, candidate, 'id'))
     .filter((candidate): candidate is string => candidate !== undefined)
   if (ids.some((candidate) => !/^\d+$/.test(candidate))) {
     throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 section은 아직 나누지 않습니다.')
@@ -157,41 +193,70 @@ function nextParagraphOpenTag(xml: string, spans: XmlElementSpan[], paragraph: X
     throw new HwpxEditConflictError('문단 ID가 안전한 정수 범위를 벗어났습니다.')
   }
   const nextId = numericIds.reduce((maximum, candidate) => Math.max(maximum, candidate), -1) + 1
-  return setAttribute(openTag, 'id', String(nextId))
+  return writeTagAttribute(openTag, 'id', String(nextId))
 }
 
-function changedTextRun(context: ParagraphContext, text: string): string {
-  const { xml, run, textNode } = context
-  return (
-    xml.slice(run.start, run.openEnd) +
-    rewriteHwpxTextElement(
-      xml.slice(textNode.start, textNode.openEnd),
-      xml.slice(textNode.closeStart, textNode.end),
-      text
-    ) +
-    xml.slice(run.closeStart, run.end)
-  )
+/** run 여는·닫는 tag 원문 사이에 `hp:t`를 주어진 원문 내용으로 다시 쓴 run(run 안 공백 text는 쓰지 않는다). */
+function changedTextRun(context: ParagraphContext, content: string): string {
+  const { tree, run, textNode } = context
+  return elementOpenTag(tree, run) + hwpxTextElementSource(tree, textNode, content) + elementCloseTag(tree, run)
 }
 
-function paragraphTextNodes(context: ParagraphContext): XmlElementSpan[] {
-  return context.spans.filter(
-    (span) =>
-      span.name === 'hp:t' &&
-      span.start >= context.paragraph.openEnd &&
-      span.end <= context.paragraph.closeStart
-  )
+/** 문단 안의 `hp:t`(깊이 무관, 문서 순서). */
+function paragraphTextNodes(context: ParagraphContext): SourceElement[] {
+  return findDescendantSourceElements(context.paragraph, 'hp:t')
 }
 
-function textNodeIdForSpan(
-  sectionPath: string,
-  spans: XmlElementSpan[],
-  target: XmlElementSpan
-): string {
-  const ordinal = spans.filter((span) => span.name === 'hp:t').findIndex(
-    (span) => span.start === target.start
-  )
+function textNodeIdFor(sourcePackage: HwpxSourcePackage, sectionPath: string, element: SourceElement): string {
+  const ordinal = hwpxTextOrdinal(sourcePackage, sectionPath, element)
   if (ordinal < 0) throw new HwpxEditConflictError('문단 text ordinal을 찾을 수 없습니다.')
   return `${sectionPath}#hp:t:${ordinal}`
+}
+
+/** 같은 부모의 `hp:p` 형제 목록. */
+function scopedParagraphs(scope: SourceElement): SourceElement[] {
+  return scope.children.filter(
+    (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:p'
+  )
+}
+
+/** 같은 부모 안 `first`부터 `last`까지(양 끝 포함) 형제 node. */
+function siblingRange(first: SourceElement, last: SourceElement): SourceNode[] {
+  const siblings = first.parent!.children
+  return siblings.slice(siblings.indexOf(first), siblings.indexOf(last) + 1)
+}
+
+/**
+ * 문서 순서로 `first` 끝과 `second` 시작 사이의 원문 표기. 같은 부모의 형제가 아니면(한쪽이 다른 문단의 표 cell 안 문단 등)
+ * 그 사이에 조상 element의 tag가 반드시 있으므로 비어 있지 않은 표시 문자열을 돌려준다(전환 전 문자열 slice와 같은 판정).
+ */
+function betweenSource(tree: SourceTree, first: SourceElement, second: SourceElement): string {
+  if (!first.parent || first.parent !== second.parent) return '<nested>'
+  return siblingRange(first, second)
+    .slice(1, -1)
+    .map((node) => serializeSourceNode(tree, node))
+    .join('')
+}
+
+function nodesSource(tree: SourceTree, nodes: readonly SourceNode[]): string {
+  return nodes.map((node) => serializeSourceNode(tree, node)).join('')
+}
+
+/** 문서 순서(여는 tag 위치)로 `left`가 `right`보다 뒤이면 양수. 조상은 자손보다 앞이다. */
+function compareDocumentOrder(left: SourceElement, right: SourceElement): number {
+  const path = (node: SourceElement): number[] => {
+    const indexes: number[] = []
+    for (let current: SourceElement | undefined = node; current?.parent; current = current.parent) {
+      indexes.unshift(current.parent.children.indexOf(current))
+    }
+    return indexes
+  }
+  const leftPath = path(left)
+  const rightPath = path(right)
+  for (let index = 0; index < Math.min(leftPath.length, rightPath.length); index += 1) {
+    if (leftPath[index] !== rightPath[index]) return leftPath[index] - rightPath[index]
+  }
+  return leftPath.length - rightPath.length
 }
 
 export function planSplitParagraph(
@@ -207,30 +272,28 @@ export function planSplitParagraph(
   const anchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
     (candidate) => candidate.textNodeId === normalized.start.textNodeId
   )!
-  const targetIndex = runs.findIndex((run) => run.start === context.run.start)
+  const targetIndex = runs.indexOf(context.run)
   if (targetIndex < 0) throw new HwpxEditConflictError('문단의 대상 run을 찾을 수 없습니다.')
 
-  const beforeRuns = runs.slice(0, targetIndex).map((run) => context.xml.slice(run.start, run.end))
-  const afterRuns = runs.slice(targetIndex + 1).map((run) => context.xml.slice(run.start, run.end))
-  const leftRun = changedTextRun(context, anchor.text.slice(0, normalized.start.offset))
-  const rightRun = changedTextRun(context, anchor.text.slice(normalized.end.offset))
-  const paragraphClose = context.xml.slice(context.paragraph.closeStart, context.paragraph.end)
-  const firstParagraph =
-    context.xml.slice(context.paragraph.start, context.paragraph.openEnd) +
-    beforeRuns.join('') + leftRun + paragraphClose
-  const secondParagraph =
-    nextParagraphOpenTag(context.xml, context.spans, context.paragraph) +
-    rightRun + afterRuns.join('') + paragraphClose
-  const expectedFragment = context.xml.slice(context.paragraph.start, context.paragraph.end)
-  const replacementFragment = firstParagraph + secondParagraph
+  const { tree, paragraph } = context
+  const beforeRuns = nodesSource(tree, runs.slice(0, targetIndex))
+  const afterRuns = nodesSource(tree, runs.slice(targetIndex + 1))
+  // 선택 범위 [start, end)를 지우고 앞·뒤 원문 조각을 두 run에 나눠 담는다.
+  const left = splitHwpxTextContent(tree, context.textNode, normalized.start.offset).before
+  const right = splitHwpxTextContent(tree, context.textNode, normalized.end.offset).after
+  const leftRun = changedTextRun(context, left)
+  const rightRun = changedTextRun(context, right)
+  const paragraphClose = elementCloseTag(tree, paragraph)
+  const firstParagraph = elementOpenTag(tree, paragraph) + beforeRuns + leftRun + paragraphClose
+  const secondParagraph = nextParagraphOpenTag(tree, paragraph) + rightRun + afterRuns + paragraphClose
   const rightTextNodeId = `${selection.sectionPath}#hp:t:${anchor.ordinal + 1}`
   return {
     command: {
       type: 'replace-paragraph-fragment',
       sectionPath: selection.sectionPath,
       textNodeId: normalized.start.textNodeId,
-      expectedFragment,
-      replacementFragment
+      expectedFragment: serializeSourceNode(tree, paragraph),
+      replacementFragment: firstParagraph + secondParagraph
     },
     selectionAfter: {
       sectionPath: selection.sectionPath,
@@ -260,74 +323,53 @@ export function planMergeParagraph(
   const currentAnchor = listHwpxTextAnchors(sourcePackage, selection.sectionPath).find(
     (candidate) => candidate.textNodeId === normalized.start.textNodeId
   )!
-  if (
-    direction === 'previous' &&
-    (currentTexts[0]?.start !== current.textNode.start || normalized.start.offset !== 0)
-  ) {
+  if (direction === 'previous' && (currentTexts[0] !== current.textNode || normalized.start.offset !== 0)) {
     throw new HwpxEditConflictError('이전 문단 병합은 문단 맨 앞에서만 지원합니다.')
   }
   if (
     direction === 'next' &&
-    (
-      currentTexts[currentTexts.length - 1]?.start !== current.textNode.start ||
-      normalized.start.offset !== currentAnchor.text.length
-    )
+    (currentTexts[currentTexts.length - 1] !== current.textNode ||
+      normalized.start.offset !== currentAnchor.text.length)
   ) {
     throw new HwpxEditConflictError('다음 문단 병합은 문단 맨 끝에서만 지원합니다.')
   }
 
-  const scopedParagraphs = current.spans.filter(
-    (span) => span.name === 'hp:p' && span.parent?.start === current.scope.start
-  )
-  const currentIndex = scopedParagraphs.findIndex(
-    (paragraph) => paragraph.start === current.paragraph.start
-  )
-  const neighborIndex = currentIndex + (direction === 'previous' ? -1 : 1)
-  const neighborParagraph = scopedParagraphs[neighborIndex]
+  const paragraphs = scopedParagraphs(current.scope)
+  const currentIndex = paragraphs.indexOf(current.paragraph)
+  const neighborParagraph = paragraphs[currentIndex + (direction === 'previous' ? -1 : 1)]
   if (currentIndex < 0 || !neighborParagraph) {
-    throw new EditingOperationError(
-      'EDITING_NOT_APPLICABLE',
-      '병합할 인접 문단이 없습니다.'
-    )
+    throw new EditingOperationError('EDITING_NOT_APPLICABLE', '병합할 인접 문단이 없습니다.')
   }
-  const neighborText = current.spans.find(
-    (span) =>
-      span.name === 'hp:t' &&
-      span.start >= neighborParagraph.openEnd &&
-      span.end <= neighborParagraph.closeStart
-  )
+  const neighborText = findDescendantSourceElements(neighborParagraph, 'hp:t')[0]
   if (!neighborText) throw new HwpxEditConflictError('인접 문단에 text anchor가 없습니다.')
   const neighbor = locateParagraph(
     sourcePackage,
     selection.sectionPath,
-    textNodeIdForSpan(selection.sectionPath, current.spans, neighborText)
+    textNodeIdFor(sourcePackage, selection.sectionPath, neighborText)
   )
   assertSimpleParagraph(neighbor)
 
   const first = direction === 'previous' ? neighbor : current
   const second = direction === 'previous' ? current : neighbor
-  if (current.xml.slice(first.paragraph.end, second.paragraph.start).trim()) {
+  const { tree } = current
+  if (betweenSource(tree, first.paragraph, second.paragraph).trim()) {
     throw new HwpxEditConflictError('두 문단 사이에 보존해야 할 콘텐츠가 있어 병합할 수 없습니다.')
   }
   const firstRuns = assertSimpleParagraph(first)
   const secondRuns = assertSimpleParagraph(second)
+  // run은 원문 표기 그대로 이어 붙인다(경계 `hp:t`의 inline `hp:tab`·entity 표기도 그대로).
   const mergedFragment =
-    current.xml.slice(first.paragraph.start, first.paragraph.openEnd) +
-    firstRuns.map((run) => current.xml.slice(run.start, run.end)).join('') +
-    secondRuns.map((run) => current.xml.slice(run.start, run.end)).join('') +
-    current.xml.slice(first.paragraph.closeStart, first.paragraph.end)
-  const expectedFragment = current.xml.slice(first.paragraph.start, second.paragraph.end)
-  const locatorTextNodeId = textNodeIdForSpan(
-    selection.sectionPath,
-    current.spans,
-    paragraphTextNodes(first)[0]
-  )
+    elementOpenTag(tree, first.paragraph) +
+    nodesSource(tree, firstRuns) +
+    nodesSource(tree, secondRuns) +
+    elementCloseTag(tree, first.paragraph)
+  const locatorTextNodeId = textNodeIdFor(sourcePackage, selection.sectionPath, paragraphTextNodes(first)[0])
   return {
     command: {
       type: 'replace-paragraph-fragment',
       sectionPath: selection.sectionPath,
       textNodeId: locatorTextNodeId,
-      expectedFragment,
+      expectedFragment: nodesSource(tree, siblingRange(first.paragraph, second.paragraph)),
       replacementFragment: mergedFragment
     },
     selectionAfter: { ...selection }
@@ -342,7 +384,7 @@ export function selectionSpansParagraphs(
   if (normalized.start.textNodeId === normalized.end.textNodeId) return false
   const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
   const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
-  return start.paragraph.start !== end.paragraph.start
+  return start.paragraph !== end.paragraph
 }
 
 export function planReplaceParagraphSelection(
@@ -353,95 +395,72 @@ export function planReplaceParagraphSelection(
   const normalized = normalizeEditorSelection(sourcePackage, selection)
   const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
   const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
-  if (start.paragraph.start === end.paragraph.start) {
+  if (start.paragraph === end.paragraph) {
     throw new HwpxEditConflictError('같은 문단 선택은 text range command를 사용해야 합니다.')
   }
-  if (start.paragraph.start > end.paragraph.start) {
+  if (compareDocumentOrder(start.paragraph, end.paragraph) > 0) {
     throw new HwpxEditConflictError('정규화된 문단 선택 순서가 올바르지 않습니다.')
   }
-  if (start.scope.start !== end.scope.start) {
+  if (start.scope !== end.scope) {
     throw new HwpxEditConflictError('서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.')
   }
-  const scopedParagraphs = start.spans.filter(
-    (span) => span.name === 'hp:p' && span.parent?.start === start.scope.start
-  )
-  const startParagraphIndex = scopedParagraphs.findIndex(
-    (paragraph) => paragraph.start === start.paragraph.start
-  )
-  const endParagraphIndex = scopedParagraphs.findIndex(
-    (paragraph) => paragraph.start === end.paragraph.start
-  )
+  const paragraphs = scopedParagraphs(start.scope)
+  const startParagraphIndex = paragraphs.indexOf(start.paragraph)
+  const endParagraphIndex = paragraphs.indexOf(end.paragraph)
   if (startParagraphIndex < 0 || endParagraphIndex <= startParagraphIndex) {
     throw new HwpxEditConflictError('여러 문단 selection 범위를 찾을 수 없습니다.')
   }
-  const selectedParagraphs = scopedParagraphs.slice(startParagraphIndex, endParagraphIndex + 1)
-  const contexts = selectedParagraphs.map((paragraph) => {
-    const text = start.spans.find(
-      (span) =>
-        span.name === 'hp:t' &&
-        span.start >= paragraph.openEnd &&
-        span.end <= paragraph.closeStart
-    )
+  const contexts = paragraphs.slice(startParagraphIndex, endParagraphIndex + 1).map((paragraph) => {
+    const text = findDescendantSourceElements(paragraph, 'hp:t')[0]
     if (!text) throw new HwpxEditConflictError('selection 문단에 text anchor가 없습니다.')
     const context = locateParagraph(
       sourcePackage,
       selection.sectionPath,
-      textNodeIdForSpan(selection.sectionPath, start.spans, text)
+      textNodeIdFor(sourcePackage, selection.sectionPath, text)
     )
     assertSimpleParagraph(context)
     return context
   })
+  const { tree } = start
   for (let index = 1; index < contexts.length; index += 1) {
-    if (start.xml.slice(contexts[index - 1].paragraph.end, contexts[index].paragraph.start).trim()) {
+    if (betweenSource(tree, contexts[index - 1].paragraph, contexts[index].paragraph).trim()) {
       throw new HwpxEditConflictError('선택 문단 사이에 보존해야 할 콘텐츠가 있습니다.')
     }
   }
 
   const startRuns = assertSimpleParagraph(start)
   const endRuns = assertSimpleParagraph(end)
-  const startRunIndex = startRuns.findIndex((run) => run.start === start.run.start)
-  const endRunIndex = endRuns.findIndex((run) => run.start === end.run.start)
+  const startRunIndex = startRuns.indexOf(start.run)
+  const endRunIndex = endRuns.indexOf(end.run)
   if (startRunIndex < 0 || endRunIndex < 0) {
     throw new HwpxEditConflictError('selection 경계 run을 찾을 수 없습니다.')
   }
   const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
-  const startAnchorIndex = anchors.findIndex(
-    (anchor) => anchor.textNodeId === normalized.start.textNodeId
-  )
-  const endAnchorIndex = anchors.findIndex(
-    (anchor) => anchor.textNodeId === normalized.end.textNodeId
-  )
+  const startAnchorIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.start.textNodeId)
+  const endAnchorIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.end.textNodeId)
   const startAnchor = anchors[startAnchorIndex]
   const endAnchor = anchors[endAnchorIndex]
   if (!startAnchor || !endAnchor) throw new HwpxEditConflictError('selection text anchor를 찾을 수 없습니다.')
 
-  const prefixRuns = startRuns
-    .slice(0, startRunIndex)
-    .map((run) => start.xml.slice(run.start, run.end))
-  const suffixRuns = endRuns
-    .slice(endRunIndex + 1)
-    .map((run) => start.xml.slice(run.start, run.end))
+  // 시작 hp:t는 [0, start) 원문 조각 + 새 text, 끝 hp:t는 [end, …) 원문 조각만 남긴다.
   const changedStartRun = changedTextRun(
     start,
-    startAnchor.text.slice(0, normalized.start.offset) + insert
+    splitHwpxTextContent(tree, start.textNode, normalized.start.offset).before + encodeHwpxTextContent(insert)
   )
-  const changedEndRun = changedTextRun(
-    end,
-    endAnchor.text.slice(normalized.end.offset)
-  )
+  const changedEndRun = changedTextRun(end, splitHwpxTextContent(tree, end.textNode, normalized.end.offset).after)
   const replacementFragment =
-    start.xml.slice(start.paragraph.start, start.paragraph.openEnd) +
-    prefixRuns.join('') +
+    elementOpenTag(tree, start.paragraph) +
+    nodesSource(tree, startRuns.slice(0, startRunIndex)) +
     changedStartRun +
     changedEndRun +
-    suffixRuns.join('') +
-    start.xml.slice(start.paragraph.closeStart, start.paragraph.end)
+    nodesSource(tree, endRuns.slice(endRunIndex + 1)) +
+    elementCloseTag(tree, start.paragraph)
   return {
     command: {
       type: 'replace-paragraph-fragment',
       sectionPath: selection.sectionPath,
       textNodeId: normalized.start.textNodeId,
-      expectedFragment: start.xml.slice(start.paragraph.start, end.paragraph.end),
+      expectedFragment: nodesSource(tree, siblingRange(start.paragraph, end.paragraph)),
       replacementFragment
     },
     selectionAfter: {
@@ -457,24 +476,42 @@ export function planReplaceParagraphSelection(
   }
 }
 
+/**
+ * `textNodeId`가 든 문단부터 이어지는 형제 node의 원문이 `expectedFragment`와 node 경계에서 정확히 같으면 그 node들을
+ * `replacementFragment`를 읽은 조각 node로 바꾼다. 바뀐 section tree와 cache는 새 package로 옮긴다.
+ */
 export function applyReplaceParagraphFragmentCommand(
   sourcePackage: HwpxSourcePackage,
   command: ReplaceParagraphFragmentCommand
 ): ParagraphPatchResult {
   if (command.type !== 'replace-paragraph-fragment') throw new Error('지원하지 않는 문단 command입니다.')
   const context = locateParagraph(sourcePackage, command.sectionPath, command.textNodeId)
-  const actual = context.xml.slice(
-    context.paragraph.start,
-    context.paragraph.start + command.expectedFragment.length
-  )
+  const { tree, paragraph } = context
+  const parent = paragraph.parent!
+  const startIndex = parent.children.indexOf(paragraph)
+  let actual = ''
+  let endIndex = startIndex
+  while (actual.length < command.expectedFragment.length && endIndex < parent.children.length) {
+    actual += serializeSourceNode(tree, parent.children[endIndex])
+    endIndex += 1
+  }
   if (actual !== command.expectedFragment) {
     throw new HwpxEditConflictError('문단 fragment가 변경되어 command를 적용할 수 없습니다.')
   }
-  const nextXml =
-    context.xml.slice(0, context.paragraph.start) +
-    command.replacementFragment +
-    context.xml.slice(context.paragraph.start + command.expectedFragment.length)
-  const nextPackage = sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml, 'utf8'))
+  let replacement: SourceNode[]
+  try {
+    replacement = parseSourceFragment(command.replacementFragment)
+  } catch {
+    throw new HwpxEditConflictError('문단 fragment가 올바른 XML이 아니어서 command를 적용할 수 없습니다.')
+  }
+
+  // 검증을 모두 끝낸 뒤 cache를 떼어 내고 tree를 제자리에서 고친다.
+  const trees = takePackageTrees(sourcePackage)
+  spliceSourceChildren(tree, parent, startIndex, endIndex - startIndex, replacement)
+  // 문단 구조가 바뀌어 `hp:t` 개수·순서가 달라졌다. 다음 조회가 tree에서 색인을 다시 만든다.
+  invalidateHwpxTextIndex(tree)
+  const nextPackage = withSerializedTree(sourcePackage, command.sectionPath, tree)
+  putPackageTrees(nextPackage, trees)
   return {
     package: nextPackage,
     inverse: {

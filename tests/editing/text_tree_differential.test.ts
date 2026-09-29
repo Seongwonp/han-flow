@@ -2,27 +2,28 @@ import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { parseSourceTree, serializeSourceTree } from '../../src/core/editing/source_tree'
+import { putPackageTrees, takePackageTrees } from '../../src/core/editing/package_trees'
 import {
   applyReplaceTextCommand,
+  encodeHwpxTextContent,
   forgetHwpxTextTree,
   HwpxTextAnchor,
   listHwpxTextAnchors,
   ReplaceTextCommand
 } from '../../src/core/editing/text_patch'
-import {
-  legacyApplyReplaceTextCommand,
-  legacyListHwpxTextAnchors
-} from '../../src/core/editing/text_patch_legacy'
-import { isSurrogateBoundarySafe } from '../../src/core/editing/xml_scan'
+import { isSurrogateBoundarySafe, scanXmlElements } from '../../src/core/editing/xml_scan'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
 
-// 1단계 tree 전환 관문.
+// 1단계 tree 전환 관문(2단계에서 전환 전 문자열 구현 `text_patch_legacy.ts`를 지우고 명세 oracle로 바꿈).
 // 1) identity: 열리는 모든 공개 fixture의 section XML과 header.xml이 parse → serialize 뒤 byte 단위로 같다.
-// 2) differential: fixture마다 정해진 text 편집 순서를 새 tree 경로(`text_patch`)와 전환 전 문자열 경로
-//    (`text_patch_legacy`)에 똑같이 적용해 매 단계 section XML bytes·inverse·anchor가 같고, inverse를 역순으로
-//    적용하면 원래 bytes(`<hp:t/>` 포함)로 돌아오는지 확인한다. tree 경로는 cache된 tree를 이어 쓰므로
-//    연속 편집(cache hit)과 첫 편집(cache miss)을 모두 거친다.
+// 2) differential: fixture마다 정해진 text 편집 순서를 tree 경로(`text_patch`)에 적용한다. 편집 전 hp:t 내용이
+//    기본 표기(`encodeHwpxTextContent`)이면 결과는 전환 전 경로의 명세, 즉 `scanXmlElements`로 찾은 hp:t element
+//    전체를 논리 text의 기본 표기로 다시 쓴 section과 byte 단위로 같아야 하고 inverse도 명세 그대로여야 한다
+//    ({@link canonicalRewrite}). 기본 표기가 아닌 hp:t(attribute 있는 `hp:tab`, 비표준 entity, CR/LF)는 범위 밖
+//    원문을 보존하므로 명세와 다르다. inverse를 역순으로 적용하면 모든 경우 원래 bytes(`<hp:t/>` 포함)로 돌아온다.
+//    tree 경로는 cache된 tree를 이어 쓰므로 연속 편집(cache hit)과 첫 편집(cache miss)을 모두 거친다.
+// 3) no-op identity: 모든 fixture의 모든 편집 가능 anchor에 빈 편집을 적용해도 section bytes가 그대로다.
 
 interface ManifestFixture {
   id: string
@@ -100,7 +101,24 @@ describe('source tree identity와 text 편집 differential', () => {
     ]
     return create(directory, fixture.options ?? fixture.fileName)
   }
-  const totals = { fixtures: 0, identityEntries: 0, anchors: 0, selfClosingAnchors: 0, edits: 0, undos: 0 }
+  const totals = {
+    fixtures: 0,
+    identityEntries: 0,
+    anchors: 0,
+    selfClosingAnchors: 0,
+    edits: 0,
+    canonicalEdits: 0,
+    divergentEdits: 0,
+    undos: 0,
+    noopAnchors: 0
+  }
+
+  /** `hp:t` ordinal의 현재 내용 원문(자기 닫힘이면 빈 문자열). */
+  function textContentSource(sourcePackage: HwpxSourcePackage, sectionPath: string, ordinal: number): string {
+    const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
+    const element = scanXmlElements(xml).filter((span) => span.name === 'hp:t')[ordinal]
+    return element.closeStart > element.openEnd ? xml.slice(element.openEnd, element.closeStart) : ''
+  }
 
   afterAll(() => {
     rmSync(directory, { recursive: true, force: true })
@@ -110,58 +128,99 @@ describe('source tree identity와 text 편집 differential', () => {
   })
 
   /**
-   * anchor 하나에 EDIT_STEPS를 차례로 적용하고 역순 inverse로 되돌리며 두 경로를 비교한다.
-   * `byteExactUndo`가 true이면 되돌린 section이 원래 bytes와 같아야 한다. 원문 hp:t가 기본 escape가 아닌
-   * 표기(`&#x41;`, 줄바꿈 문자, attribute 있는 `<hp:tab/>` 등)를 쓰면 두 경로 모두 논리 text로 되돌리므로 false로 둔다.
-   * 반환값은 되돌린 뒤 section bytes.
+   * 전환 전 문자열 경로의 명세: hp:t element 전체를 논리 text의 기본 표기로 다시 쓴다. 자기 닫힘 `<hp:t/>`는 text가
+   * 있으면 같은 attribute의 열린 tag로 펼치고, `restoreSelfClosingTag`가 있고 결과가 비면 그 tag로 되돌린다.
    */
-  function runDifferential(
-    original: HwpxSourcePackage,
-    sectionPath: string,
-    anchor: HwpxTextAnchor,
-    byteExactUndo = true
-  ): Buffer {
+  function canonicalRewrite(
+    sourcePackage: HwpxSourcePackage,
+    command: Omit<ReplaceTextCommand, 'revision'>,
+    ordinal: number,
+    text: string
+  ): { section: Buffer; inverse: Omit<ReplaceTextCommand, 'revision'> } {
+    const xml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
+    const span = scanXmlElements(xml).filter((candidate) => candidate.name === 'hp:t')[ordinal]
+    const openTag = xml.slice(span.start, span.openEnd)
+    const nextText = text.slice(0, command.from) + command.insert + text.slice(command.to)
+    let replacement: string
+    let restoreSelfClosingTag: string | undefined
+    if (span.openEnd === span.end) {
+      replacement = nextText ? `${openTag.replace(/\s*\/\s*>$/, '>')}${encodeHwpxTextContent(nextText)}</hp:t>` : openTag
+      if (nextText) restoreSelfClosingTag = openTag
+    } else if (command.restoreSelfClosingTag !== undefined && nextText === '') {
+      replacement = command.restoreSelfClosingTag
+    } else {
+      replacement = openTag + encodeHwpxTextContent(nextText) + xml.slice(span.closeStart, span.end)
+    }
+    return {
+      section: Buffer.from(xml.slice(0, span.start) + replacement + xml.slice(span.end), 'utf8'),
+      inverse: {
+        type: 'replace-text',
+        sectionPath: command.sectionPath,
+        textNodeId: command.textNodeId,
+        from: command.from,
+        to: command.from + command.insert.length,
+        insert: text.slice(command.from, command.to),
+        ...(restoreSelfClosingTag !== undefined ? { restoreSelfClosingTag } : {})
+      }
+    }
+  }
+
+  /** cache된 tree에서 나온 anchor 목록이 section을 새로 parse한 결과와 같은지 확인한다(cache는 되돌려 둔다). */
+  function expectFreshAnchors(sourcePackage: HwpxSourcePackage, sectionPath: string): void {
+    const cached = listHwpxTextAnchors(sourcePackage, sectionPath)
+    const trees = takePackageTrees(sourcePackage)
+    expect(listHwpxTextAnchors(sourcePackage, sectionPath)).toEqual(cached)
+    putPackageTrees(sourcePackage, trees)
+  }
+
+  /**
+   * anchor 하나에 EDIT_STEPS를 차례로 적용하고 역순 inverse로 되돌린다. 편집 전 hp:t 내용이 기본 표기인 단계는
+   * section bytes·inverse가 {@link canonicalRewrite}와 같아야 한다. 되돌린 section은 언제나 원래 bytes와 같아야 한다.
+   * 반환값은 편집 단계 가운데 기본 표기가 아니어서 명세와 달라진(원문을 보존한) 단계 수.
+   */
+  function runDifferential(original: HwpxSourcePackage, sectionPath: string, anchor: HwpxTextAnchor): number {
     const originalSection = original.readEntry(sectionPath)
+    const originalAnchors = listHwpxTextAnchors(original, sectionPath)
     let treePackage = original
-    let legacyPackage = original
     // 두 번째 anchor부터는 앞 anchor가 원래 package의 cache를 옮겨 갔으므로 다시 parse한다(cache miss 경로).
     forgetHwpxTextTree(original)
     let text = anchor.text
     const inverses: ReplaceTextCommand[] = []
+    let divergent = 0
     totals.anchors += 1
     for (const step of EDIT_STEPS) {
       const edit = step(text)
       const base = { type: 'replace-text' as const, sectionPath, textNodeId: anchor.textNodeId, ...edit }
+      const canonical = textContentSource(treePackage, sectionPath, anchor.ordinal) === encodeHwpxTextContent(text)
+      const expected = canonicalRewrite(treePackage, base, anchor.ordinal, text)
       const tree = applyReplaceTextCommand(treePackage, { ...base, revision: treePackage.revision })
-      const legacy = legacyApplyReplaceTextCommand(legacyPackage, { ...base, revision: legacyPackage.revision })
-      expect(tree.package.readEntry(sectionPath).equals(legacy.package.readEntry(sectionPath))).toBe(true)
-      expect(tree.package.revision).toBe(legacy.package.revision)
-      expect(tree.inverse).toEqual(legacy.inverse)
-      expect(tree.anchor).toEqual(legacy.anchor)
-      expect(tree.lossReport).toEqual(legacy.lossReport)
+      expect(tree.anchor.text).toBe(text.slice(0, edit.from) + edit.insert + text.slice(edit.to))
+      const { revision: _revision, insertSource, ...inverse } = tree.inverse
+      expect(inverse).toEqual(expected.inverse)
+      if (canonical) {
+        expect(tree.package.readEntry(sectionPath).equals(expected.section)).toBe(true)
+        expect(insertSource).toBeUndefined()
+        totals.canonicalEdits += 1
+      } else {
+        divergent += 1
+        totals.divergentEdits += 1
+      }
       // cache에서 나온 anchor 목록이 새로 parse한 결과와 같다.
-      expect(listHwpxTextAnchors(tree.package, sectionPath)).toEqual(
-        legacyListHwpxTextAnchors(tree.package, sectionPath)
-      )
+      expectFreshAnchors(tree.package, sectionPath)
       if (tree.inverse.restoreSelfClosingTag !== undefined) totals.selfClosingAnchors += 1
       inverses.unshift(tree.inverse)
       treePackage = tree.package
-      legacyPackage = legacy.package
       text = tree.anchor.text
       totals.edits += 1
     }
     for (const inverse of inverses) {
       const tree = applyReplaceTextCommand(treePackage, { ...inverse, revision: treePackage.revision })
-      const legacy = legacyApplyReplaceTextCommand(legacyPackage, { ...inverse, revision: legacyPackage.revision })
-      expect(tree.package.readEntry(sectionPath).equals(legacy.package.readEntry(sectionPath))).toBe(true)
       treePackage = tree.package
-      legacyPackage = legacy.package
       totals.undos += 1
     }
-    expect(treePackage.readEntry(sectionPath).equals(legacyPackage.readEntry(sectionPath))).toBe(true)
-    if (byteExactUndo) expect(treePackage.readEntry(sectionPath).equals(originalSection)).toBe(true)
-    expect(listHwpxTextAnchors(treePackage, sectionPath)).toEqual(legacyListHwpxTextAnchors(original, sectionPath))
-    return treePackage.readEntry(sectionPath)
+    expect(treePackage.readEntry(sectionPath).equals(originalSection)).toBe(true)
+    expect(listHwpxTextAnchors(treePackage, sectionPath)).toEqual(originalAnchors)
+    return divergent
   }
 
   test('비교 대상에 synthetic·external fixture가 모두 있다', () => {
@@ -186,19 +245,50 @@ describe('source tree identity와 text 편집 differential', () => {
   )
 
   test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
-    '%s: text 편집이 전환 전 문자열 경로와 같은 bytes를 만들고 undo가 원문을 복원한다',
+    '%s: 기본 표기 hp:t의 text 편집이 전환 전 경로의 명세와 같은 bytes를 만들고 undo가 원문을 복원한다',
     async (_id, fixture) => {
       const original = await HwpxSourcePackage.open(fixturePath(fixture))
       const index = await original.index()
       const all = index.sectionPaths.flatMap((sectionPath) =>
-        legacyListHwpxTextAnchors(original, sectionPath).map((anchor) => ({ sectionPath, anchor }))
+        listHwpxTextAnchors(original, sectionPath).map((anchor) => ({ sectionPath, anchor }))
       )
-      for (const { sectionPath, anchor } of pickAnchors(all)) runDifferential(original, sectionPath, anchor)
+      // 공개 corpus의 편집 가능 hp:t는 모두 기본 표기이므로 모든 단계가 전환 전 경로의 명세와 같다.
+      for (const { sectionPath, anchor } of pickAnchors(all)) expect(runDifferential(original, sectionPath, anchor)).toBe(0)
     },
     120_000
   )
 
-  test('hp:tab·entity 표기·CRLF·편집 불가 형제가 섞인 section도 두 경로가 같은 bytes를 만든다', async () => {
+  test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
+    '%s: 모든 편집 가능 anchor에 빈 편집을 적용해도 section bytes가 그대로다',
+    async (_id, fixture) => {
+      const original = await HwpxSourcePackage.open(fixturePath(fixture))
+      const index = await original.index()
+      for (const sectionPath of index.sectionPaths) {
+        const originalSection = original.readEntry(sectionPath)
+        let current = original
+        for (const anchor of listHwpxTextAnchors(original, sectionPath)) {
+          for (const offset of new Set([0, safeOffset(anchor.text, Math.floor(anchor.text.length / 2)), anchor.text.length])) {
+            const result = applyReplaceTextCommand(current, {
+              type: 'replace-text',
+              revision: current.revision,
+              sectionPath,
+              textNodeId: anchor.textNodeId,
+              from: offset,
+              to: offset,
+              insert: ''
+            })
+            expect(result.package.readEntry(sectionPath).equals(originalSection)).toBe(true)
+            expect(result.anchor.text).toBe(anchor.text)
+            current = result.package
+          }
+          totals.noopAnchors += 1
+        }
+      }
+    },
+    120_000
+  )
+
+  test('hp:tab·entity 표기·CRLF·편집 불가 형제가 섞인 section: 기본 표기만 명세와 같고 undo는 모두 원문을 복원한다', async () => {
     const base = await HwpxSourcePackage.open(generators.createRoundTripHwpx(directory, 'differential-handmade.hwpx'))
     const sectionPath = 'Contents/section0.xml'
     const xml = [
@@ -211,31 +301,22 @@ describe('source tree identity와 text 편집 differential', () => {
       '</hs:sec>\r\n'
     ].join('')
     const original = base.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
-    const anchors = legacyListHwpxTextAnchors(original, sectionPath)
-    // CDATA·사용자 정의 entity·comment·열린 hp:tab을 가진 hp:t는 두 경로 모두 anchor로 노출하지 않는다.
+    const anchors = listHwpxTextAnchors(original, sectionPath)
+    // CDATA·사용자 정의 entity·comment·열린 hp:tab을 가진 hp:t는 anchor로 노출하지 않는다.
     expect(anchors.map((anchor) => anchor.ordinal)).toEqual([0, 1, 2, 6, 8])
-    expect(listHwpxTextAnchors(original, sectionPath)).toEqual(anchors)
-    // 기본 escape 표기인 anchor(빈 `<hp:t a='1' />`, `ok`, `<hp:t/>`)는 undo가 원래 bytes로 돌아온다.
-    const canonical = new Set([1, 6, 8])
-    const undone = anchors.map((anchor) =>
-      runDifferential(original, sectionPath, anchor, canonical.has(anchor.ordinal)).toString('utf8')
-    )
-    // 알려진 한계(전환 전과 동일): 기본 escape가 아닌 표기는 undo 뒤 논리 text의 기본 표기로 남는다.
-    expect(undone[0]).toContain('<hp:t>탭&#9;뒤A\'&#13;&gt;</hp:t>')
-    expect(undone[2]).toContain('<hp:t>줄<hp:lineBreak/>바꿈&#13;<hp:lineBreak/>둘</hp:t>')
+    const divergent = anchors.map((anchor) => runDifferential(original, sectionPath, anchor))
+    // 기본 표기 anchor(빈 `<hp:t a='1' />`, `ok`, `<hp:t/>`)는 모든 단계가 명세와 같다.
+    // 기본 표기가 아닌 anchor는 원문 표기가 남아 있는 동안(전체 삭제 전까지)만 달라진다.
+    expect(divergent).toEqual([5, 0, 5, 0, 0])
 
-    // 알려진 동작(전환 전과 동일, 정책 변경은 별도 단계): 편집한 hp:t의 내용은 논리 text에서 다시 쓰므로
-    // 내용이 그대로인 빈 편집도 attribute가 있는 `<hp:tab .../>`을 `&#9;`로, 원문 entity 표기를 기본 escape로 바꾼다.
-    const edited = applyReplaceTextCommand(original, {
-      type: 'replace-text',
-      revision: original.revision,
-      sectionPath,
-      textNodeId: anchors[0].textNodeId,
-      from: 0,
-      to: 0,
-      insert: ''
-    })
-    expect(edited.package.readEntry(sectionPath).toString('utf8')).toContain('<hp:t>탭&#9;뒤A\'&#13;&gt;</hp:t>')
+    // 전환 전 경로는 빈 편집에도 hp:t 전체를 기본 표기로 다시 썼다(`<hp:tab .../>` → `&#9;`, `&#x41;` → `A`).
+    const noop = { type: 'replace-text' as const, sectionPath, textNodeId: anchors[0].textNodeId, from: 0, to: 0, insert: '' }
+    expect(canonicalRewrite(original, noop, 0, anchors[0].text).section.toString('utf8')).toContain(
+      "<hp:t>탭&#9;뒤A'&#13;&gt;</hp:t>"
+    )
+    // tree 경로는 byte 단위로 그대로다.
+    const edited = applyReplaceTextCommand(original, { ...noop, revision: original.revision })
+    expect(edited.package.readEntry(sectionPath).equals(original.readEntry(sectionPath))).toBe(true)
   })
 
   test('빈 <hp:t/>를 펼치는 입력과 그 실행 취소도 differential 대상에 들어 있다', () => {

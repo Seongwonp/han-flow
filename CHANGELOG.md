@@ -85,6 +85,9 @@
 - 한/글이 빈 입력 칸으로 저장하는 자기 닫힘 `<hp:t/>`를 빈 text anchor로 인정해 입력 시 `<hp:t>…</hp:t>`로 펼치고 undo는 원래 tag bytes로 복원, viewer decoder와 편집 tokenizer의 `hp:t` ordinal·text를 공개 corpus 전체에서 교차 검증
 - 표 셀 text 편집을 구조 편집 조건에서 분리해 병합·머리글·여러 run 셀도 문단 하나 안에서 입력·삭제·치환 허용(행·열·병합·분할·셀 style·문단 나눔은 기존대로 일반 body 셀만, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용)
 - 편집 코어 tree 전환 1단계: 원문 범위를 보존하는 source tree와 serializer로 text 입력·삭제·치환을 옮기고(출력 bytes는 전환 전과 동일, 공개 corpus identity·differential 관문), package별 tree cache로 대형 section 입력 비용을 keystroke당 약 4.1ms에서 1.2ms로 단축
+- 텍스트 편집이 `hp:t`에서 바뀐 범위의 text node만 다시 써 inline `hp:tab`의 폭·채움 attribute, 비표준 entity 표기, 원문 CR/LF를 보존하고(빈 편집은 byte 단위로 동일), undo는 지운 범위의 원문 표기까지 복원
+- 편집 코어 tree 전환 2단계: 글자·문단·셀 모양 command를 section·header.xml source tree 연산으로 옮기고(공개 corpus 4,782 command differential에서 출력 bytes·inverse·오류가 전환 전과 동일, 다른 attribute 값 안의 이름·줄바꿈 값·분할 조각 entity 표기를 잘못 다루던 잠재 버그 수정), package 전체 tree cache로 대형 문서의 굵게 toggle 비용을 약 6.3ms에서 1.5ms로 단축
+- 편집 코어 tree 전환 3단계: 문단 분할(Enter)·경계 병합(Backspace·Delete)·여러 문단 범위 치환을 source tree로 옮겨 경계 `hp:t`의 inline `hp:tab` 폭·채움 attribute와 entity 표기를 보존하고(기본 표기 문단은 전환 전과 bytes·inverse·오류 동일, `hp:linesegarray`는 새로 만든 문단에서만 제거), 대형 section의 Enter+Backspace 비용을 약 18.9ms에서 5.4ms로 단축
 
 ### V2 HWP fixed-page
 

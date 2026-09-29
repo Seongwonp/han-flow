@@ -1,22 +1,50 @@
 import { HwpxSourcePackage } from '../parser/source_package'
 import {
-  escapeXmlText,
   HwpxEditConflictError,
   HwpxLossReport,
-  listHwpxTextAnchors
+  invalidateHwpxTextIndex,
+  listHwpxTextAnchors,
+  locateHwpxTextElement
 } from './text_patch'
+import { packageEntryTree, PackageTrees, putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
-  attribute,
-  buildLossReport,
-  findTagEnd,
-  isSurrogateBoundarySafe,
-  nearestAncestor,
-  replaceRange,
-  scanXmlElements,
-  setAttribute,
-  targetOrdinal,
-  XmlElementSpan
-} from './xml_scan'
+  elementCloseTag,
+  elementOpenTag,
+  escapeXmlAttribute,
+  findDescendantSourceElements,
+  findFirstSourceElement,
+  findSourceElements,
+  getSourceAttribute,
+  nearestSourceAncestor,
+  parseSourceFragment,
+  parseSourceTree,
+  rawTextOffset,
+  readTagAttribute,
+  replaceSourceNode,
+  serializeSourceNode,
+  serializeSourceTree,
+  setElementOpenTag,
+  setSourceAttribute,
+  SourceElement,
+  SourceNode,
+  SourceTree,
+  spliceSourceChildren,
+  textRaw,
+  writeTagAttribute
+} from './source_tree'
+import { buildLossReport, findTagEnd, isSurrogateBoundarySafe } from './xml_scan'
+
+/**
+ * 글자·문단 모양 command.
+ *
+ * section·header.xml을 package별 source tree cache(`package_trees.ts`)에서 읽는다. anchor의 `hp:t`에서 부모를 따라
+ * `hp:run`·`hp:p`를 찾고, `charPrIDRef`/`paraPrIDRef`는 따옴표를 인식하는 tree attribute API로 바꾼다. 새 definition은
+ * 원본 `hh:charPr`/`hh:paraPr`을 조각 tree로 복제해 자식 추가·삭제와 attribute 변경으로 고친 뒤, header tree의 collection
+ * 끝에 붙이고 `itemCnt`를 갱신한다. 손대지 않은 byte는 원문 그대로이고, inverse는 바꾼 tag·조각 원문을 들고 있어
+ * byte 단위로 되돌린다.
+ */
+
+const HEADER_PATH = 'Contents/header.xml'
 
 export type ParagraphAlignment = 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFY'
 
@@ -88,21 +116,26 @@ export interface StylePatchResult {
 }
 
 interface TextStyleContext {
-  textNode: XmlElementSpan
-  run: XmlElementSpan
-  paragraph: XmlElementSpan
+  tree: SourceTree
+  textNode: SourceElement
+  run: SourceElement
+  paragraph: SourceElement
 }
 
 interface StyleDefinition {
   id: string
-  span: XmlElementSpan
-  xml: string
+  element: SourceElement
 }
 
 interface StyleCollection {
-  span: XmlElementSpan
-  openTag: string
+  element: SourceElement
   definitions: StyleDefinition[]
+}
+
+/** 복제한 definition 조각. `tree.children`은 `[element]`이고 원본 header tree와 독립적으로 고친다. */
+interface DefinitionDraft {
+  tree: SourceTree
+  element: SourceElement
 }
 
 function locateTextStyleContext(
@@ -111,62 +144,80 @@ function locateTextStyleContext(
   textNodeId: string,
   target: 'character' | 'paragraph'
 ): TextStyleContext {
-  if (!listHwpxTextAnchors(sourcePackage, sectionPath).some((anchor) => anchor.textNodeId === textNodeId)) {
-    throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
-  }
-
-  const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
-  const ordinal = targetOrdinal(sectionPath, textNodeId)
-  const textNodes = scanXmlElements(xml).filter((span) => span.name === 'hp:t')
-  const textNode = textNodes[ordinal]
-  if (!textNode) throw new HwpxEditConflictError(`style anchor ordinal을 찾을 수 없습니다: ${textNodeId}`)
-  const run = nearestAncestor(textNode, 'hp:run')
-  const paragraph = nearestAncestor(textNode, 'hp:p')
-  if (!run || !paragraph || run.parent?.start !== paragraph.start || paragraph.parent?.name !== 'hs:sec') {
+  // 목록 조회는 section 경로 검증과 오류 message를 전환 전과 같게 유지한다(cache된 tree를 쓰므로 다시 parse하지 않는다).
+  listHwpxTextAnchors(sourcePackage, sectionPath)
+  const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
+  if (!located) throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
+  const { tree, element: textNode } = located
+  const run = nearestSourceAncestor(textNode, 'hp:run')
+  const paragraph = nearestSourceAncestor(textNode, 'hp:p')
+  if (!run || !paragraph || run.parent !== paragraph || paragraph.parent?.name !== 'hs:sec') {
     throw new HwpxEditConflictError('첫 style 편집은 최상위 일반 문단의 단일 run만 지원합니다.')
   }
-  const runDescendants = scanXmlElements(xml).filter(
-    (span) => span.start >= run.openEnd && span.end <= run.closeStart
-  )
-  if (target === 'character' && (
-    runDescendants.filter((span) => span.name === 'hp:t').length !== 1 ||
-    runDescendants.some((span) => span.name !== 'hp:t')
-  )) {
-    throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
+  if (target === 'character') {
+    const descendants = findAllDescendantElements(run)
+    if (descendants.filter((element) => element.name === 'hp:t').length !== 1 || descendants.some((element) => element.name !== 'hp:t')) {
+      throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
+    }
   }
-  return { textNode, run, paragraph }
+  return { tree, textNode, run, paragraph }
 }
 
-function directChildren(spans: XmlElementSpan[], parent: XmlElementSpan, name: string): XmlElementSpan[] {
-  return spans.filter((span) => span.name === name && span.parent?.start === parent.start)
+function findAllDescendantElements(node: SourceElement): SourceElement[] {
+  const result: SourceElement[] = []
+  const visit = (children: readonly SourceNode[]): void => {
+    for (const child of children) {
+      if (child.kind !== 'element') continue
+      result.push(child)
+      visit(child.children)
+    }
+  }
+  visit(node.children)
+  return result
+}
+
+function directChildElements(parent: SourceElement, name: string): SourceElement[] {
+  return parent.children.filter(
+    (child): child is SourceElement => child.kind === 'element' && child.name === name
+  )
 }
 
 function styleCollection(
-  headerXml: string,
+  headerTree: SourceTree,
   collectionName: 'hh:charProperties' | 'hh:paraProperties',
   definitionName: 'hh:charPr' | 'hh:paraPr'
 ): StyleCollection {
-  const spans = scanXmlElements(headerXml)
-  const collection = spans.find((span) => span.name === collectionName)
+  const collection = findSourceElements(headerTree, collectionName)[0]
   if (!collection) throw new HwpxEditConflictError(`HWPX style collection이 없습니다: ${collectionName}`)
-  const definitions = directChildren(spans, collection, definitionName).map((span) => {
-    const xml = headerXml.slice(span.start, span.end)
-    const id = attribute(headerXml.slice(span.start, span.openEnd), 'id')
+  const definitions = directChildElements(collection, definitionName).map((element) => {
+    const id = getSourceAttribute(headerTree, element, 'id')
     if (id === undefined) throw new HwpxEditConflictError(`${definitionName} ID가 없습니다.`)
-    return { id, span, xml }
+    return { id, element }
   })
   if (!definitions.length) throw new HwpxEditConflictError(`${definitionName} definition이 없습니다.`)
-  return {
-    span: collection,
-    openTag: headerXml.slice(collection.start, collection.openEnd),
-    definitions
-  }
+  return { element: collection, definitions }
 }
 
+/** definition의 비교용 표기: `id`를 자리표시자로 바꾸고 tag 사이 공백을 없앤다. */
 function definitionSignature(xml: string): string {
   const openEnd = findTagEnd(xml, 0)
-  const openTag = setAttribute(xml.slice(0, openEnd), 'id', '__HAN_FLOW_STYLE_ID__')
+  const openTag = writeTagAttribute(xml.slice(0, openEnd), 'id', '__HAN_FLOW_STYLE_ID__')
   return (openTag + xml.slice(openEnd)).replace(/>\s+</g, '><').trim()
+}
+
+/**
+ * header tree의 definition element별 비교 표기 cache. definition element는 제자리에서 바뀌지 않으므로(복제본만 고치고,
+ * 추가·삭제는 node 단위) element 객체를 key로 쓴다. 연속 style 명령이 definition 전체를 매번 다시 비교하지 않게 한다.
+ */
+const signatures = new WeakMap<SourceElement, string>()
+
+function storedDefinitionSignature(tree: SourceTree, element: SourceElement): string {
+  let signature = signatures.get(element)
+  if (signature === undefined) {
+    signature = definitionSignature(serializeSourceNode(tree, element))
+    signatures.set(element, signature)
+  }
+  return signature
 }
 
 function nextStyleId(definitions: readonly StyleDefinition[]): string {
@@ -180,14 +231,41 @@ function nextStyleId(definitions: readonly StyleDefinition[]): string {
 }
 
 function updateCollectionCount(openTag: string, nextCount: number): string {
-  return attribute(openTag, 'itemCnt') === undefined
+  return readTagAttribute(openTag, 'itemCnt') === undefined
     ? openTag
-    : setAttribute(openTag, 'itemCnt', String(nextCount))
+    : writeTagAttribute(openTag, 'itemCnt', String(nextCount))
 }
 
-function setDefinitionId(xml: string, id: string): string {
-  const openEnd = findTagEnd(xml, 0)
-  return setAttribute(xml.slice(0, openEnd), 'id', id) + xml.slice(openEnd)
+function createDraft(xml: string): DefinitionDraft {
+  const tree = parseSourceTree(xml)
+  const element = tree.children[0]
+  if (tree.children.length !== 1 || element.kind !== 'element') throw new Error('style definition 원문이 올바르지 않습니다.')
+  return { tree, element }
+}
+
+/**
+ * OWPML 자식 순서(`order`)를 따라 `xml` 조각을 넣는다. `name`보다 뒤에 와야 하는 이름 가운데 definition 안에서
+ * 문서 순서로 처음 나오는 element 바로 앞에 넣고, 없으면 definition 끝에 붙인다. 넣은 첫 element를 돌려준다.
+ */
+function insertOrderedChild(draft: DefinitionDraft, order: readonly string[], name: string, xml: string): SourceElement {
+  const nodes = parseSourceFragment(xml)
+  const index = order.indexOf(name)
+  let parent = draft.element
+  let position = draft.element.children.length
+  for (const later of order.slice(index + 1)) {
+    const found = findFirstSourceElement(draft.element, `hh:${later}`)
+    if (found) {
+      parent = found.parent!
+      position = parent.children.indexOf(found)
+      break
+    }
+  }
+  spliceSourceChildren(draft.tree, parent, position, 0, nodes)
+  return nodes[0] as SourceElement
+}
+
+function removeSourceElements(draft: DefinitionDraft, name: string): void {
+  for (const element of findDescendantSourceElements(draft.element, name)) replaceSourceNode(draft.tree, element, [])
 }
 
 const characterChildOrder = [
@@ -195,161 +273,133 @@ const characterChildOrder = [
   'strikeout', 'outline', 'shadow', 'emboss', 'engrave', 'supscript', 'subscript'
 ]
 
-function characterChildPattern(name: string): RegExp {
-  return new RegExp(`<hh:${name}(?:\\s[^>]*)?\\s*\\/>|<hh:${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/hh:${name}>`, 'g')
+function setEmptyCharacterChild(draft: DefinitionDraft, name: 'italic' | 'bold', enabled: boolean): void {
+  removeSourceElements(draft, `hh:${name}`)
+  if (enabled) insertOrderedChild(draft, characterChildOrder, name, `<hh:${name}/>`)
 }
 
-function insertCharacterChild(xml: string, name: string, fragment: string): string {
-  const index = characterChildOrder.indexOf(name)
-  for (const later of characterChildOrder.slice(index + 1)) {
-    const match = characterChildPattern(later).exec(xml)
-    if (match) return replaceRange(xml, match.index, match.index, fragment)
-  }
-  return xml.replace(/<\/hh:charPr>\s*$/, `${fragment}</hh:charPr>`)
-}
-
-function setEmptyCharacterChild(xml: string, name: 'italic' | 'bold', enabled: boolean): string {
-  const withoutElement = xml.replace(characterChildPattern(name), '')
-  return enabled ? insertCharacterChild(withoutElement, name, `<hh:${name}/>`): withoutElement
-}
-
-function setLineDecoration(
-  xml: string,
-  name: 'underline' | 'strikeout',
-  enabled: boolean
-): string {
-  const pattern = characterChildPattern(name)
-  const existing = xml.match(pattern)?.[0]
+function setLineDecoration(draft: DefinitionDraft, name: 'underline' | 'strikeout', enabled: boolean): void {
+  const existing = findFirstSourceElement(draft.element, `hh:${name}`)
   if (existing) {
-    const openEnd = findTagEnd(existing, 0)
-    let openTag = existing.slice(0, openEnd)
     if (name === 'underline') {
-      openTag = setAttribute(openTag, 'type', enabled ? 'BOTTOM' : 'NONE')
-      if (enabled) openTag = setAttribute(openTag, 'shape', 'SOLID')
+      setSourceAttribute(draft.tree, existing, 'type', enabled ? 'BOTTOM' : 'NONE')
+      if (enabled) setSourceAttribute(draft.tree, existing, 'shape', 'SOLID')
     } else {
-      openTag = setAttribute(openTag, 'shape', enabled ? 'SOLID' : 'NONE')
+      setSourceAttribute(draft.tree, existing, 'shape', enabled ? 'SOLID' : 'NONE')
     }
-    return xml.replace(existing, openTag + existing.slice(openEnd))
+    return
   }
-  if (!enabled) return xml
+  if (!enabled) return
   const fragment = name === 'underline'
     ? '<hh:underline type="BOTTOM" shape="SOLID" color="#000000"/>'
     : '<hh:strikeout shape="SOLID" color="#000000"/>'
-  return insertCharacterChild(xml, name, fragment)
+  insertOrderedChild(draft, characterChildOrder, name, fragment)
 }
 
 function setCharacterStyleAttributes(
-  xml: string,
+  draft: DefinitionDraft,
   options: Pick<ApplyCharacterStyleCommand, 'height' | 'color'>
-): string {
-  const openEnd = findTagEnd(xml, 0)
-  let openTag = xml.slice(0, openEnd)
-  if (options.height !== undefined) openTag = setAttribute(openTag, 'height', String(options.height))
-  if (options.color !== undefined) openTag = setAttribute(openTag, 'textColor', options.color.toUpperCase())
-  return openTag + xml.slice(openEnd)
+): void {
+  if (options.height !== undefined) setSourceAttribute(draft.tree, draft.element, 'height', String(options.height))
+  if (options.color !== undefined) setSourceAttribute(draft.tree, draft.element, 'textColor', options.color.toUpperCase())
 }
 
-function hangulFontIds(headerXml: string): Set<string> {
-  const spans = scanXmlElements(headerXml)
-  const fontface = spans.find((span) =>
-    span.name === 'hh:fontface' &&
-    attribute(headerXml.slice(span.start, span.openEnd), 'lang') === 'HANGUL'
+function hangulFontIds(headerTree: SourceTree): Set<string> {
+  const fontface = findSourceElements(headerTree, 'hh:fontface').find(
+    (element) => getSourceAttribute(headerTree, element, 'lang') === 'HANGUL'
   )
   if (!fontface) return new Set()
-  return new Set(directChildren(spans, fontface, 'hh:font').map((font) =>
-    attribute(headerXml.slice(font.start, font.openEnd), 'id')
-  ).filter((id): id is string => id !== undefined))
+  return new Set(
+    directChildElements(fontface, 'hh:font')
+      .map((font) => getSourceAttribute(headerTree, font, 'id'))
+      .filter((id): id is string => id !== undefined)
+  )
 }
 
-function setCharacterFontRef(xml: string, fontId?: string): string {
-  if (fontId === undefined) return xml
-  const pattern = characterChildPattern('fontRef')
-  const existing = xml.match(pattern)?.[0]
+function setCharacterFontRef(draft: DefinitionDraft, fontId?: string): void {
+  if (fontId === undefined) return
+  const existing = findFirstSourceElement(draft.element, 'hh:fontRef')
   if (existing) {
-    const openEnd = findTagEnd(existing, 0)
-    return xml.replace(
-      existing,
-      setAttribute(existing.slice(0, openEnd), 'hangul', fontId) + existing.slice(openEnd)
-    )
+    setSourceAttribute(draft.tree, existing, 'hangul', fontId)
+    return
   }
-  return insertCharacterChild(xml, 'fontRef', `<hh:fontRef hangul="${fontId}"/>`)
-}
-
-function setAlignment(xml: string, align: ParagraphAlignment): string {
-  const alignPattern = /<hh:align(?:\s[^>]*)?\s*\/>/
-  const existing = xml.match(alignPattern)?.[0]
-  if (existing) return xml.replace(existing, setAttribute(existing, 'horizontal', align))
-  return insertParagraphChild(xml, 'align', `<hh:align horizontal="${align}"/>`)
+  insertOrderedChild(draft, characterChildOrder, 'fontRef', `<hh:fontRef hangul="${escapeXmlAttribute(fontId)}"/>`)
 }
 
 const paragraphChildOrder = ['align', 'heading', 'breakSetting', 'margin', 'lineSpacing', 'border', 'autoSpacing']
 
-function paragraphChildPattern(name: string): RegExp {
-  return new RegExp(`<hh:${name}(?:\\s[^>]*)?\\s*\\/>|<hh:${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/hh:${name}>`)
+function setAlignment(draft: DefinitionDraft, align: ParagraphAlignment): void {
+  const existing = findFirstSourceElement(draft.element, 'hh:align')
+  if (existing) setSourceAttribute(draft.tree, existing, 'horizontal', align)
+  else insertOrderedChild(draft, paragraphChildOrder, 'align', `<hh:align horizontal="${align}"/>`)
 }
 
-function insertParagraphChild(xml: string, name: string, fragment: string): string {
-  const index = paragraphChildOrder.indexOf(name)
-  for (const later of paragraphChildOrder.slice(index + 1)) {
-    const match = paragraphChildPattern(later).exec(xml)
-    if (match) return replaceRange(xml, match.index, match.index, fragment)
-  }
-  return xml.replace(/<\/hh:paraPr>\s*$/, `${fragment}</hh:paraPr>`)
-}
+const DEFAULT_MARGIN =
+  '<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/>' +
+  '<hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>'
 
-function setHwpValueElement(xml: string, name: 'intent' | 'prev' | 'next', value: number): string {
-  const pattern = new RegExp(`<hc:${name}(?:\\s[^>]*)?\\s*\\/>`)
-  const existing = xml.match(pattern)?.[0]
+function setHwpValueElement(draft: DefinitionDraft, margin: SourceElement, name: 'intent' | 'prev' | 'next', value: number): void {
+  const existing = findFirstSourceElement(margin, `hc:${name}`)
   if (existing) {
-    return xml.replace(existing, setAttribute(setAttribute(existing, 'value', String(value)), 'unit', 'HWPUNIT'))
+    setSourceAttribute(draft.tree, existing, 'value', String(value))
+    setSourceAttribute(draft.tree, existing, 'unit', 'HWPUNIT')
+    return
   }
-  return xml.replace(/<\/hh:margin>\s*$/, `<hc:${name} value="${value}" unit="HWPUNIT"/></hh:margin>`)
+  spliceSourceChildren(draft.tree, margin, margin.children.length, 0, parseSourceFragment(
+    `<hc:${name} value="${value}" unit="HWPUNIT"/>`
+  ))
 }
 
 function setParagraphMetrics(
-  xml: string,
+  draft: DefinitionDraft,
   options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'indent' | 'marginBefore' | 'marginAfter'>
-): string {
-  let mutated = xml
+): void {
   if (options.indent !== undefined || options.marginBefore !== undefined || options.marginAfter !== undefined) {
-    const pattern = paragraphChildPattern('margin')
-    const existing = mutated.match(pattern)?.[0]
-    let margin = existing ?? '<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin>'
-    if (options.indent !== undefined) margin = setHwpValueElement(margin, 'intent', options.indent)
-    if (options.marginBefore !== undefined) margin = setHwpValueElement(margin, 'prev', options.marginBefore)
-    if (options.marginAfter !== undefined) margin = setHwpValueElement(margin, 'next', options.marginAfter)
-    mutated = existing ? mutated.replace(existing, margin) : insertParagraphChild(mutated, 'margin', margin)
+    const margin = findFirstSourceElement(draft.element, 'hh:margin') ??
+      insertOrderedChild(draft, paragraphChildOrder, 'margin', DEFAULT_MARGIN)
+    if (options.indent !== undefined) setHwpValueElement(draft, margin, 'intent', options.indent)
+    if (options.marginBefore !== undefined) setHwpValueElement(draft, margin, 'prev', options.marginBefore)
+    if (options.marginAfter !== undefined) setHwpValueElement(draft, margin, 'next', options.marginAfter)
   }
   if (options.lineSpacing !== undefined) {
-    const pattern = paragraphChildPattern('lineSpacing')
-    const existing = mutated.match(pattern)?.[0]
-    const lineSpacing = existing
-      ? setAttribute(
-          setAttribute(setAttribute(existing, 'type', 'PERCENT'), 'value', String(options.lineSpacing)),
-          'unit',
-          'HWPUNIT'
-        )
-      : `<hh:lineSpacing type="PERCENT" value="${options.lineSpacing}" unit="HWPUNIT"/>`
-    mutated = existing
-      ? mutated.replace(existing, lineSpacing)
-      : insertParagraphChild(mutated, 'lineSpacing', lineSpacing)
+    const existing = findFirstSourceElement(draft.element, 'hh:lineSpacing')
+    if (existing) {
+      setSourceAttribute(draft.tree, existing, 'type', 'PERCENT')
+      setSourceAttribute(draft.tree, existing, 'value', String(options.lineSpacing))
+      setSourceAttribute(draft.tree, existing, 'unit', 'HWPUNIT')
+    } else {
+      insertOrderedChild(
+        draft,
+        paragraphChildOrder,
+        'lineSpacing',
+        `<hh:lineSpacing type="PERCENT" value="${options.lineSpacing}" unit="HWPUNIT"/>`
+      )
+    }
   }
-  return mutated
 }
 
-function assertParagraphStructurePreserved(before: string, after: string): void {
-  const tabPrBefore = attribute(before.slice(0, findTagEnd(before, 0)), 'tabPrIDRef')
-  const tabPrAfter = attribute(after.slice(0, findTagEnd(after, 0)), 'tabPrIDRef')
-  const headingBefore = before.match(paragraphChildPattern('heading'))?.[0]
-  const headingAfter = after.match(paragraphChildPattern('heading'))?.[0]
-  if (tabPrBefore !== tabPrAfter || headingBefore !== headingAfter) {
+function paragraphStructure(tree: SourceTree, element: SourceElement): string {
+  const heading = findFirstSourceElement(element, 'hh:heading')
+  return JSON.stringify([
+    getSourceAttribute(tree, element, 'tabPrIDRef') ?? null,
+    heading ? serializeSourceNode(tree, heading) : null
+  ])
+}
+
+function assertParagraphStructurePreserved(before: DefinitionDraft, after: DefinitionDraft): void {
+  if (paragraphStructure(before.tree, before.element) !== paragraphStructure(after.tree, after.element)) {
     throw new HwpxEditConflictError('문단 모양 변경 중 탭 또는 목록 구조가 달라져 적용을 중단했습니다.')
   }
 }
 
-function insertionGap(headerXml: string, collection: StyleCollection): string {
-  const last = collection.definitions[collection.definitions.length - 1]
-  const gap = headerXml.slice(last.span.end, collection.span.closeStart)
+/** collection의 마지막 definition 뒤 공백(새 definition 뒤에도 같은 들여쓰기를 둔다). 공백이 아니면 빈 문자열. */
+function insertionGap(headerTree: SourceTree, collection: StyleCollection): string {
+  const last = collection.definitions[collection.definitions.length - 1].element
+  const children = collection.element.children
+  const gap = children
+    .slice(children.indexOf(last) + 1)
+    .map((node) => serializeSourceNode(headerTree, node))
+    .join('')
   return /^\s*$/.test(gap) ? gap : ''
 }
 
@@ -361,7 +411,47 @@ function noChange(sourcePackage: HwpxSourcePackage): StylePatchResult {
   }
 }
 
-function applyStyleDefinition(
+/** tree에 바로 적용할 수 있게 검증을 끝낸 header definition 추가·제거. */
+interface HeaderTreeChange {
+  tree: SourceTree
+  apply: () => void
+}
+
+/** 편집한 tree를 새 package에 쓰는 단계. header를 먼저, section을 다음에 쓴다(전환 전 revision 순서와 같다). */
+function commitTrees(
+  sourcePackage: HwpxSourcePackage,
+  trees: PackageTrees,
+  sectionPath: string,
+  sectionTree: SourceTree,
+  headerTree: SourceTree | undefined
+): { package: HwpxSourcePackage; modifiedEntries: string[] } {
+  let nextPackage = sourcePackage
+  const modifiedEntries: string[] = []
+  if (headerTree) {
+    nextPackage = withSerializedTree(nextPackage, HEADER_PATH, headerTree)
+    modifiedEntries.push(HEADER_PATH)
+  }
+  nextPackage = withSerializedTree(nextPackage, sectionPath, sectionTree)
+  modifiedEntries.push(sectionPath)
+  putPackageTrees(nextPackage, trees)
+  return { package: nextPackage, modifiedEntries }
+}
+
+interface StagedStyle {
+  context: TextStyleContext
+  trees: PackageTrees
+  headerTree?: SourceTree
+  referenceTag: string
+  nextReferenceTag: string
+  headerMutation?: HeaderStyleMutation
+}
+
+/**
+ * 원본 definition을 복제해 `mutate`로 고치고, 같은 definition이 있으면 재사용하고 없으면 collection 끝에 붙인 뒤
+ * run·문단의 reference attribute를 바꾼다. 모든 검증을 마친 뒤 tree cache를 떼어 내고 tree를 고친다.
+ * 바뀔 것이 없으면 undefined.
+ */
+function stageStyleDefinition(
   sourcePackage: HwpxSourcePackage,
   options: {
     sectionPath: string
@@ -370,96 +460,69 @@ function applyStyleDefinition(
     collectionName: 'hh:charProperties' | 'hh:paraProperties'
     definitionName: 'hh:charPr' | 'hh:paraPr'
     referenceAttribute: 'charPrIDRef' | 'paraPrIDRef'
-    mutate: (definitionXml: string) => string
+    mutate: (draft: DefinitionDraft) => void
   }
-): StylePatchResult {
-  const context = locateTextStyleContext(
-    sourcePackage,
-    options.sectionPath,
-    options.textNodeId,
-    options.target
-  )
-  const sectionXml = sourcePackage.readEntry(options.sectionPath).toString('utf8')
-  const referenceSpan = options.target === 'character' ? context.run : context.paragraph
-  const referenceTag = sectionXml.slice(referenceSpan.start, referenceSpan.openEnd)
-  const currentId = attribute(referenceTag, options.referenceAttribute)
+): StagedStyle | undefined {
+  const context = locateTextStyleContext(sourcePackage, options.sectionPath, options.textNodeId, options.target)
+  const sectionTree = context.tree
+  const referenceElement = options.target === 'character' ? context.run : context.paragraph
+  const referenceTag = elementOpenTag(sectionTree, referenceElement)
+  const currentId = getSourceAttribute(sectionTree, referenceElement, options.referenceAttribute)
   if (currentId === undefined) {
     throw new HwpxEditConflictError(`${options.referenceAttribute}가 없는 문단은 아직 편집할 수 없습니다.`)
   }
 
-  const headerPath = 'Contents/header.xml'
-  const headerXml = sourcePackage.readEntry(headerPath).toString('utf8')
-  const collection = styleCollection(headerXml, options.collectionName, options.definitionName)
+  const headerTree = packageEntryTree(sourcePackage, HEADER_PATH)
+  const collection = styleCollection(headerTree, options.collectionName, options.definitionName)
   const base = collection.definitions.find((definition) => definition.id === currentId)
   if (!base) {
     throw new HwpxEditConflictError(`${options.definitionName} reference를 찾을 수 없습니다: ${currentId}`)
   }
-  const mutatedBase = options.mutate(base.xml)
-  if (definitionSignature(mutatedBase) === definitionSignature(base.xml)) return noChange(sourcePackage)
+  const draft = createDraft(serializeSourceNode(headerTree, base.element))
+  options.mutate(draft)
+  const mutatedSignature = definitionSignature(serializeSourceTree(draft.tree))
+  if (mutatedSignature === storedDefinitionSignature(headerTree, base.element)) return undefined
 
   const equivalent = collection.definitions.find(
-    (definition) => definitionSignature(definition.xml) === definitionSignature(mutatedBase)
+    (definition) => storedDefinitionSignature(headerTree, definition.element) === mutatedSignature
   )
-  let nextHeaderXml = headerXml
-  let headerMutation: HeaderStyleMutation | undefined
   let nextId: string
-
+  let headerChange: (() => void) | undefined
+  let headerMutation: HeaderStyleMutation | undefined
   if (equivalent) {
     nextId = equivalent.id
   } else {
     nextId = nextStyleId(collection.definitions)
-    const definitionXml = setDefinitionId(mutatedBase, nextId)
-    const gap = insertionGap(headerXml, collection)
-    const fragment = definitionXml + gap
-    const nextCollectionOpenTag = updateCollectionCount(collection.openTag, collection.definitions.length + 1)
-    nextHeaderXml = replaceRange(
-      nextHeaderXml,
-      collection.span.start,
-      collection.span.openEnd,
-      nextCollectionOpenTag
-    )
-    const adjustedCloseStart =
-      collection.span.closeStart + nextCollectionOpenTag.length - collection.openTag.length
-    nextHeaderXml = replaceRange(nextHeaderXml, adjustedCloseStart, adjustedCloseStart, fragment)
+    setSourceAttribute(draft.tree, draft.element, 'id', nextId)
+    const fragment = serializeSourceTree(draft.tree) + insertionGap(headerTree, collection)
+    const collectionOpenTag = elementOpenTag(headerTree, collection.element)
+    const nextCollectionOpenTag = updateCollectionCount(collectionOpenTag, collection.definitions.length + 1)
+    const nodes = parseSourceFragment(fragment)
+    headerChange = () => {
+      setElementOpenTag(headerTree, collection.element, nextCollectionOpenTag)
+      spliceSourceChildren(headerTree, collection.element, collection.element.children.length, 0, nodes)
+    }
     headerMutation = {
-      headerPath,
+      headerPath: HEADER_PATH,
       collectionName: options.collectionName,
       expectedCollectionOpenTag: nextCollectionOpenTag,
-      replacementCollectionOpenTag: collection.openTag,
+      replacementCollectionOpenTag: collectionOpenTag,
       fragment,
       action: 'remove'
     }
   }
+  const nextReferenceTag = writeTagAttribute(referenceTag, options.referenceAttribute, nextId)
 
-  const nextReferenceTag = setAttribute(referenceTag, options.referenceAttribute, nextId)
-  const nextSectionXml = replaceRange(
-    sectionXml,
-    referenceSpan.start,
-    referenceSpan.openEnd,
-    nextReferenceTag
-  )
-  let nextPackage = sourcePackage
-  const modifiedEntries: string[] = []
-  if (nextHeaderXml !== headerXml) {
-    nextPackage = nextPackage.withEntry(headerPath, Buffer.from(nextHeaderXml, 'utf8'))
-    modifiedEntries.push(headerPath)
-  }
-  nextPackage = nextPackage.withEntry(options.sectionPath, Buffer.from(nextSectionXml, 'utf8'))
-  modifiedEntries.push(options.sectionPath)
-
+  const trees = takePackageTrees(sourcePackage)
+  headerChange?.()
+  setElementOpenTag(sectionTree, referenceElement, nextReferenceTag)
   return {
-    package: nextPackage,
-    inverse: {
-      type: 'restore-style',
-      target: options.target,
-      sectionPath: options.sectionPath,
-      textNodeId: options.textNodeId,
-      expectedReferenceTag: nextReferenceTag,
-      replacementReferenceTag: referenceTag,
-      headerMutation
-    },
-    lossReport: buildLossReport(sourcePackage, modifiedEntries),
-    changed: true
+    context,
+    trees,
+    headerTree: headerChange ? headerTree : undefined,
+    referenceTag,
+    nextReferenceTag,
+    headerMutation
   }
 }
 
@@ -496,7 +559,7 @@ export function applyCharacterStyleCommand(
   }
   if (command.fontId !== undefined) {
     if (!command.fontId || !hangulFontIds(
-      sourcePackage.readEntry('Contents/header.xml').toString('utf8')
+      packageEntryTree(sourcePackage, HEADER_PATH)
     ).has(command.fontId)) {
       throw new Error('문서에 선언되지 않은 한글 글꼴은 적용할 수 없습니다.')
     }
@@ -519,69 +582,83 @@ export function applyCharacterStyleCommand(
   }
   if (from > to) throw new HwpxEditConflictError('글자 style 범위의 시작이 끝보다 큽니다.')
 
-  const styled = applyStyleDefinition(sourcePackage, {
+  const staged = stageStyleDefinition(sourcePackage, {
     ...command,
     target: 'character',
     collectionName: 'hh:charProperties',
     definitionName: 'hh:charPr',
     referenceAttribute: 'charPrIDRef',
-    mutate: (definition) => {
-      let mutated = command.italic === undefined
-        ? definition
-        : setEmptyCharacterChild(definition, 'italic', command.italic)
-      mutated = command.bold === undefined ? mutated : setEmptyCharacterChild(mutated, 'bold', command.bold)
-      mutated = command.underline === undefined
-        ? mutated
-        : setLineDecoration(mutated, 'underline', command.underline)
-      mutated = command.strikeout === undefined
-        ? mutated
-        : setLineDecoration(mutated, 'strikeout', command.strikeout)
-      return setCharacterFontRef(setCharacterStyleAttributes(mutated, command), command.fontId)
+    mutate: (draft) => {
+      if (command.italic !== undefined) setEmptyCharacterChild(draft, 'italic', command.italic)
+      if (command.bold !== undefined) setEmptyCharacterChild(draft, 'bold', command.bold)
+      if (command.underline !== undefined) setLineDecoration(draft, 'underline', command.underline)
+      if (command.strikeout !== undefined) setLineDecoration(draft, 'strikeout', command.strikeout)
+      setCharacterStyleAttributes(draft, command)
+      setCharacterFontRef(draft, command.fontId)
     }
   })
-  if (!styled.changed || from === to || (from === 0 && to === anchor.text.length)) return styled
-
-  const originalSectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
-  const originalContext = locateTextStyleContext(
-    sourcePackage,
-    command.sectionPath,
-    command.textNodeId,
-    'character'
-  )
-  const originalRun = originalSectionXml.slice(originalContext.run.start, originalContext.run.end)
-  const contentStart = originalContext.textNode.openEnd - originalContext.run.start
-  const contentEnd = originalContext.textNode.closeStart - originalContext.run.start
-  const runOpenEnd = originalContext.run.openEnd - originalContext.run.start
-  const withText = (text: string, openTag?: string): string => {
-    const run = originalRun.slice(0, contentStart) + escapeXmlText(text) + originalRun.slice(contentEnd)
-    return openTag ? openTag + run.slice(runOpenEnd) : run
+  if (!staged) return noChange(sourcePackage)
+  const { context, trees } = staged
+  const sectionTree = context.tree
+  const partial = from !== to && !(from === 0 && to === anchor.text.length)
+  if (!partial) {
+    const committed = commitTrees(sourcePackage, trees, command.sectionPath, sectionTree, staged.headerTree)
+    return {
+      package: committed.package,
+      inverse: {
+        type: 'restore-style',
+        target: 'character',
+        sectionPath: command.sectionPath,
+        textNodeId: command.textNodeId,
+        expectedReferenceTag: staged.nextReferenceTag,
+        replacementReferenceTag: staged.referenceTag,
+        headerMutation: staged.headerMutation
+      },
+      lossReport: buildLossReport(sourcePackage, committed.modifiedEntries),
+      changed: true
+    }
   }
 
-  const styledSectionXml = styled.package.readEntry(command.sectionPath).toString('utf8')
-  const styledContext = locateTextStyleContext(
-    styled.package,
-    command.sectionPath,
-    command.textNodeId,
-    'character'
-  )
-  const styledOpenTag = styledSectionXml.slice(styledContext.run.start, styledContext.run.openEnd)
+  // 부분 선택: reference를 바꾼 run을 좌·선택·우 run으로 나눈다. 전환 전 경로와 같게 reference 변경과 분할을
+  // 서로 다른 revision으로 쓴다(header → section reference → section 분할).
+  const { run, textNode } = context
+  const styledRun = serializeSourceNode(sectionTree, run)
+  const originalRun = staged.referenceTag + styledRun.slice(staged.nextReferenceTag.length)
+  const index = run.children.indexOf(textNode)
+  const serializeNodes = (nodes: readonly SourceNode[]): string =>
+    nodes.map((node) => serializeSourceNode(sectionTree, node)).join('')
+  const beforeText = serializeNodes(run.children.slice(0, index)) + elementOpenTag(sectionTree, textNode)
+  const afterText = elementCloseTag(sectionTree, textNode) + serializeNodes(run.children.slice(index + 1)) +
+    elementCloseTag(sectionTree, run)
+  // 자른 조각은 원문 표기(entity 포함)를 그대로 쓴다. 선택 경계는 surrogate 검사를 통과했으므로 entity 경계다.
+  const raw = textNode.children
+    .map((node) => {
+      if (node.kind !== 'text') throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
+      return textRaw(sectionTree, node)
+    })
+    .join('')
+  const cutFrom = rawTextOffset(raw, from)
+  const cutTo = rawTextOffset(raw, to)
+  const withText = (piece: string, openTag: string): string => openTag + beforeText + piece + afterText
   const fragments: string[] = []
-  if (from > 0) fragments.push(withText(anchor.text.slice(0, from)))
-  fragments.push(withText(anchor.text.slice(from, to), styledOpenTag))
-  if (to < anchor.text.length) fragments.push(withText(anchor.text.slice(to)))
+  if (from > 0) fragments.push(withText(raw.slice(0, cutFrom), staged.referenceTag))
+  fragments.push(withText(raw.slice(cutFrom, cutTo), staged.nextReferenceTag))
+  if (to < anchor.text.length) fragments.push(withText(raw.slice(cutTo), staged.referenceTag))
   const splitFragment = fragments.join('')
-  const nextSectionXml = replaceRange(
-    styledSectionXml,
-    styledContext.run.start,
-    styledContext.run.end,
-    splitFragment
-  )
-  const nextPackage = styled.package.withEntry(
-    command.sectionPath,
-    Buffer.from(nextSectionXml, 'utf8')
-  )
+
+  let nextPackage = sourcePackage
+  const modifiedEntries: string[] = []
+  if (staged.headerTree) {
+    nextPackage = withSerializedTree(nextPackage, HEADER_PATH, staged.headerTree)
+    modifiedEntries.push(HEADER_PATH)
+  }
+  nextPackage = withSerializedTree(nextPackage, command.sectionPath, sectionTree)
+  modifiedEntries.push(command.sectionPath)
+  replaceSourceNode(sectionTree, run, parseSourceFragment(splitFragment))
+  invalidateHwpxTextIndex(sectionTree)
+  nextPackage = withSerializedTree(nextPackage, command.sectionPath, sectionTree)
+  putPackageTrees(nextPackage, trees)
   return {
-    ...styled,
     package: nextPackage,
     inverse: {
       type: 'restore-character-run',
@@ -589,8 +666,10 @@ export function applyCharacterStyleCommand(
       textNodeId: command.textNodeId,
       expectedFragment: splitFragment,
       replacementFragment: originalRun,
-      headerMutation: styled.inverse?.headerMutation
-    }
+      headerMutation: staged.headerMutation
+    },
+    lossReport: buildLossReport(sourcePackage, modifiedEntries),
+    changed: true
   }
 }
 
@@ -628,64 +707,85 @@ export function applyParagraphStyleCommand(
   ) {
     throw new Error('첫 줄 들여쓰기는 -72pt에서 72pt 사이여야 합니다.')
   }
-  return applyStyleDefinition(sourcePackage, {
+  const staged = stageStyleDefinition(sourcePackage, {
     ...command,
     target: 'paragraph',
     collectionName: 'hh:paraProperties',
     definitionName: 'hh:paraPr',
     referenceAttribute: 'paraPrIDRef',
-    mutate: (definition) => {
-      const aligned = command.align === undefined ? definition : setAlignment(definition, command.align)
-      const mutated = setParagraphMetrics(aligned, command)
-      assertParagraphStructurePreserved(definition, mutated)
-      return mutated
+    mutate: (draft) => {
+      const before = createDraft(serializeSourceTree(draft.tree))
+      if (command.align !== undefined) setAlignment(draft, command.align)
+      setParagraphMetrics(draft, command)
+      assertParagraphStructurePreserved(before, draft)
     }
   })
+  if (!staged) return noChange(sourcePackage)
+  const committed = commitTrees(sourcePackage, staged.trees, command.sectionPath, staged.context.tree, staged.headerTree)
+  return {
+    package: committed.package,
+    inverse: {
+      type: 'restore-style',
+      target: 'paragraph',
+      sectionPath: command.sectionPath,
+      textNodeId: command.textNodeId,
+      expectedReferenceTag: staged.nextReferenceTag,
+      replacementReferenceTag: staged.referenceTag,
+      headerMutation: staged.headerMutation
+    },
+    lossReport: buildLossReport(sourcePackage, committed.modifiedEntries),
+    changed: true
+  }
 }
 
-function applyHeaderStyleMutation(
+/**
+ * inverse의 header definition 추가·제거를 검증하고 tree에 적용할 함수를 만든다. 제거는 collection 끝의 원문이
+ * `fragment`와 byte 단위로 같아야 하고, 추가는 `fragment`를 collection 끝에 붙인다.
+ */
+function planHeaderStyleMutation(
   sourcePackage: HwpxSourcePackage,
   mutation?: HeaderStyleMutation
-): {
-  package: HwpxSourcePackage
-  modifiedEntries: string[]
-  inverse?: HeaderStyleMutation
-} {
-  if (!mutation) return { package: sourcePackage, modifiedEntries: [] }
-  const headerXml = sourcePackage.readEntry(mutation.headerPath).toString('utf8')
+): (HeaderTreeChange & { inverse: HeaderStyleMutation }) | undefined {
+  if (!mutation) return undefined
+  const tree = packageEntryTree(sourcePackage, mutation.headerPath)
   const collection = styleCollection(
-    headerXml,
+    tree,
     mutation.collectionName,
     mutation.collectionName === 'hh:charProperties' ? 'hh:charPr' : 'hh:paraPr'
-  )
-  if (collection.openTag !== mutation.expectedCollectionOpenTag) {
+  ).element
+  if (elementOpenTag(tree, collection) !== mutation.expectedCollectionOpenTag) {
     throw new HwpxEditConflictError('style collection count가 변경되어 안전하게 복원할 수 없습니다.')
   }
-  let nextHeaderXml = replaceRange(
-    headerXml,
-    collection.span.start,
-    collection.span.openEnd,
-    mutation.replacementCollectionOpenTag
-  )
-  const delta = mutation.replacementCollectionOpenTag.length - mutation.expectedCollectionOpenTag.length
-  const closeStart = collection.span.closeStart + delta
+  let change: () => void
   if (mutation.action === 'remove') {
-    const fragmentStart = nextHeaderXml.lastIndexOf(mutation.fragment, closeStart)
-    if (fragmentStart < collection.span.start || fragmentStart + mutation.fragment.length !== closeStart) {
+    const children = collection.children
+    let tail = ''
+    let start = children.length
+    while (start > 0 && tail.length < mutation.fragment.length) {
+      start -= 1
+      tail = serializeSourceNode(tree, children[start]) + tail
+    }
+    const excess = tail.length - mutation.fragment.length
+    const first = children[start]
+    if (!tail.endsWith(mutation.fragment) || (excess > 0 && first.kind !== 'text')) {
       throw new HwpxEditConflictError('추가한 style definition이 변경되어 안전하게 제거할 수 없습니다.')
     }
-    nextHeaderXml = replaceRange(
-      nextHeaderXml,
-      fragmentStart,
-      fragmentStart + mutation.fragment.length,
-      ''
-    )
+    // 조각이 공백 text node 중간에서 시작하면 그 앞부분은 남긴다.
+    const kept = excess > 0 ? parseSourceFragment(tail.slice(0, excess)) : []
+    change = () => {
+      setElementOpenTag(tree, collection, mutation.replacementCollectionOpenTag)
+      spliceSourceChildren(tree, collection, start, children.length - start, kept)
+    }
   } else {
-    nextHeaderXml = replaceRange(nextHeaderXml, closeStart, closeStart, mutation.fragment)
+    const nodes = parseSourceFragment(mutation.fragment)
+    change = () => {
+      setElementOpenTag(tree, collection, mutation.replacementCollectionOpenTag)
+      spliceSourceChildren(tree, collection, collection.children.length, 0, nodes)
+    }
   }
   return {
-    package: sourcePackage.withEntry(mutation.headerPath, Buffer.from(nextHeaderXml, 'utf8')),
-    modifiedEntries: [mutation.headerPath],
+    tree,
+    apply: change,
     inverse: {
       ...mutation,
       expectedCollectionOpenTag: mutation.replacementCollectionOpenTag,
@@ -706,34 +806,25 @@ export function applyRestoreStyleCommand(
     command.textNodeId,
     command.target
   )
-  const sectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
-  const referenceSpan = command.target === 'character' ? context.run : context.paragraph
-  const currentReferenceTag = sectionXml.slice(referenceSpan.start, referenceSpan.openEnd)
-  if (currentReferenceTag !== command.expectedReferenceTag) {
+  const referenceElement = command.target === 'character' ? context.run : context.paragraph
+  if (elementOpenTag(context.tree, referenceElement) !== command.expectedReferenceTag) {
     throw new HwpxEditConflictError('style reference가 변경되어 안전하게 복원할 수 없습니다.')
   }
-  const nextSectionXml = replaceRange(
-    sectionXml,
-    referenceSpan.start,
-    referenceSpan.openEnd,
-    command.replacementReferenceTag
-  )
+  const header = planHeaderStyleMutation(sourcePackage, command.headerMutation)
 
-  const restoredHeader = applyHeaderStyleMutation(sourcePackage, command.headerMutation)
-  let nextPackage = restoredHeader.package
-  const modifiedEntries = [...restoredHeader.modifiedEntries]
-
-  nextPackage = nextPackage.withEntry(command.sectionPath, Buffer.from(nextSectionXml, 'utf8'))
-  modifiedEntries.push(command.sectionPath)
+  const trees = takePackageTrees(sourcePackage)
+  header?.apply()
+  setElementOpenTag(context.tree, referenceElement, command.replacementReferenceTag)
+  const committed = commitTrees(sourcePackage, trees, command.sectionPath, context.tree, header?.tree)
   return {
-    package: nextPackage,
+    package: committed.package,
     inverse: {
       ...command,
       expectedReferenceTag: command.replacementReferenceTag,
       replacementReferenceTag: command.expectedReferenceTag,
-      headerMutation: restoredHeader.inverse
+      headerMutation: header?.inverse
     },
-    lossReport: buildLossReport(sourcePackage, modifiedEntries),
+    lossReport: buildLossReport(sourcePackage, committed.modifiedEntries),
     changed: true
   }
 }
@@ -751,35 +842,38 @@ export function applyRestoreCharacterRunCommand(
     command.textNodeId,
     'character'
   )
-  const sectionXml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
-  const actualFragment = sectionXml.slice(
-    context.run.start,
-    context.run.start + command.expectedFragment.length
-  )
-  if (actualFragment !== command.expectedFragment) {
+  // anchor run부터 이어지는 형제의 원문이 `expectedFragment`로 시작해야 한다(분할된 run 셋 또는 원래 run 하나).
+  const siblings = context.paragraph.children
+  const start = siblings.indexOf(context.run)
+  let actual = ''
+  let end = start
+  while (end < siblings.length && actual.length < command.expectedFragment.length) {
+    actual += serializeSourceNode(context.tree, siblings[end])
+    end += 1
+  }
+  const excess = actual.length - command.expectedFragment.length
+  if (!actual.startsWith(command.expectedFragment) || excess < 0 || (excess > 0 && siblings[end - 1].kind !== 'text')) {
     throw new HwpxEditConflictError('분할된 글자 run이 변경되어 안전하게 복원할 수 없습니다.')
   }
-  const nextSectionXml = replaceRange(
-    sectionXml,
-    context.run.start,
-    context.run.start + command.expectedFragment.length,
-    command.replacementFragment
+  const replacement = parseSourceFragment(
+    command.replacementFragment + (excess > 0 ? actual.slice(actual.length - excess) : '')
   )
-  const restoredHeader = applyHeaderStyleMutation(sourcePackage, command.headerMutation)
-  let nextPackage = restoredHeader.package.withEntry(
-    command.sectionPath,
-    Buffer.from(nextSectionXml, 'utf8')
-  )
-  const modifiedEntries = [...restoredHeader.modifiedEntries, command.sectionPath]
+  const header = planHeaderStyleMutation(sourcePackage, command.headerMutation)
+
+  const trees = takePackageTrees(sourcePackage)
+  header?.apply()
+  spliceSourceChildren(context.tree, context.paragraph, start, end - start, replacement)
+  invalidateHwpxTextIndex(context.tree)
+  const committed = commitTrees(sourcePackage, trees, command.sectionPath, context.tree, header?.tree)
   return {
-    package: nextPackage,
+    package: committed.package,
     inverse: {
       ...command,
       expectedFragment: command.replacementFragment,
       replacementFragment: command.expectedFragment,
-      headerMutation: restoredHeader.inverse
+      headerMutation: header?.inverse
     },
-    lossReport: buildLossReport(sourcePackage, modifiedEntries),
+    lossReport: buildLossReport(sourcePackage, committed.modifiedEntries),
     changed: true
   }
 }
