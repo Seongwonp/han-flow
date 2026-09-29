@@ -1,10 +1,36 @@
 # Han-Flow 장기 완성도 로드맵
 
-상태: **V3 자동 관문 완료·외부 승인 대기 — Sprint 4 corpus 확장 진행**
+상태: **V3 자동 관문 완료·외부 승인 대기 — Sprint 4·5 진행, Sprint 6 macOS 하드웨어 대기**
 
-기준일: 2026-09-13
+기준일: 2026-09-28
 
 ## 1. 제품 계약
+
+### 용어와 현재 상태
+
+`V1–V4`는 사용자에게 약속하는 제품 milestone이고 `Sprint N`은 그 milestone을 채우는 실행 단위다.
+V3-0~V3-6, V4-0 같은 번호는 Sprint 체계 도입(2026-08-20) 이전의 V3·V4 내부 slice 이름이다. 다른
+문서와 README는 아래 이름과 상태만 사용한다.
+
+| 이름 | 종류 | 대응 | 상태 |
+| --- | --- | --- | --- |
+| V1 — HWPX 뷰어 | 제품 milestone | Sprint 이전 | 완료 |
+| V2 — HWP 5.0 읽기 | 제품 milestone | Sprint 이전 | 완료 |
+| V3 — 제한적 HWPX 편집 | 제품 milestone | V3-0~6, Sprint 0~3 | 자동 관문 완료·외부 승인 대기(Windows 한/글 왕복·macOS 물리 IME) |
+| V4 — 사용자 배포 | 제품 milestone | V4-0, Sprint 5~7 | 준비 중 |
+| Sprint 0 — 기준선과 P0 방어 | 실행 단위 | V3 | 완료 |
+| Sprint 1 — V3 외부 승인 | 실행 단위 | V3 | 외부 승인 대기 |
+| Sprint 2 — 편집 기반 확장 | 실행 단위 | V3 | 완료 |
+| Sprint 3 — 실용적인 HWPX 편집 | 실행 단위 | V3 | 표·문단·글꼴 범위 완료, 찾기·바꾸기 미착수 |
+| Sprint 4 — 호환성 corpus | 실행 단위 | V3·V4 공통 | 진행 중(intake 계약 완료, 실제 파일 0종) |
+| Sprint 5 — Windows 배포 후보 | 실행 단위 | V4 | 진행 중(비서명 NSIS artifact) |
+| Sprint 6 — macOS 공개 배포 | 실행 단위 | V4 | macOS 하드웨어 대기 |
+| Sprint 7 — 외부 beta | 실행 단위 | V4 | 미착수 |
+| Sprint 8 — HWP 편집 재결정 | 실행 단위 | V4 이후 | 미착수 |
+
+날짜별 완료 기록은 [개발·검증 이력](verification_history.md)에 둔다.
+
+### 첫 안정판 범위
 
 Han-Flow의 첫 안정판은 Windows와 Apple Silicon Mac에서 HWP/HWPX를 안전하게 열고,
 검색·인쇄·PDF 변환을 제공하며, HWPX의 일반적인 텍스트와 서식을 원본 package 구조를
@@ -46,11 +72,14 @@ Han-Flow의 첫 안정판은 Windows와 Apple Silicon Mac에서 HWP/HWPX를 안�
 Windows를 일상적인 주 개발 환경으로 사용한다. parser, source package, 편집 transaction,
 React UI, public fixture와 Windows 한/글 왕복은 Windows에서 완결한다.
 
-macOS 전용 관문은 CI와 실제 Apple Silicon Mac으로 분리한다.
+자동 관문은 Windows·Linux CI가 맡고 macOS 전용 관문은 실제 Apple Silicon Mac에서만 수행한다.
 
-- Windows CI: `npm ci`, Jest, parser probe, production build
-- macOS CI: build와 package smoke
-- 실제 Mac: 물리 IME, Finder 연결, 글꼴·PDF, Developer ID, 공증, Gatekeeper와 DMG 설치
+- Windows CI(`windows-latest`): `npm ci`, Jest, typecheck, parser probe, `verify:corpus`, build,
+  `package:win`, 패키지 앱 HWPX·HWP matrix와 PDF E2E, 비서명 NSIS·unpacked artifact
+- Linux CI(`ubuntu-latest`): 같은 자동 관문과 `package:linux`, xvfb 패키지 앱 E2E, unpacked artifact
+- macOS CI: 없음. Windows·Linux CI 결과는 macOS 관문을 대체하지 않는다.
+- 실제 Mac: macOS 13+ 실행, 물리 IME, Finder 연결, 글꼴·PDF, Developer ID, 공증, Gatekeeper와 DMG 설치.
+  기존 개발 Mac이 고장 나 현재 하드웨어 대기 상태다.
 
 Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clone의 `npm ci`가 실패하면
 다른 검증보다 먼저 고친다.
@@ -140,6 +169,8 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 각 기능은 `Han-Flow 편집 → Han-Flow 재개봉 → 한/글 재개봉 → 한/글 저장 → Han-Flow
 역재개봉`을 통과해야 완료다.
 
+Sprint 3 후반·4와 병행할 편집 코어 tree 모델 전환은 [편집 코어 tree 모델 전환 계획](editing_core_refactor_plan.md)을 따른다.
+
 ### Sprint 4 — 호환성 corpus와 렌더링 품질
 
 예상: 6–10주, 다른 단계와 병행
@@ -156,6 +187,8 @@ Node.js 22와 npm 10을 저장소 개발 기준선으로 사용한다. clean clo
 - [ ] 나머지 다단 유형·각주·수식과 머리말·꼬리말 전용 variant 확장
 - [x] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
 - [ ] 개인정보 없는 공개 corpus 30–50개 확보
+- [x] 외부 fixture intake 계약(`source: file`, sha256·출처·라이선스·개인정보 없음 확인)
+- [ ] 실제 한/글 HWPX 20종 외부 fixture 반입 (현재 0종)
 
 측정 지표:
 
@@ -173,16 +206,19 @@ paint p95 1초 이내와 저장본 복구 경고 0이다. 글꼴 차이로 인�
 
 예상: 4–6주
 
-- Windows 11 x64 installer와 파일 연결
-- 한/글 병행 설치, IME와 DPI 100/125/150/200%
-- 다중 모니터, 시스템 글꼴 mapping과 PDF
-- code signing과 SmartScreen 전략
-- 설치·업데이트·제거와 rollback
+- [x] Windows Ctrl 단축키, 기본 메뉴 제거, 맑은 고딕·바탕 대체 체인(자동 테스트 기준)
+- [x] x64 비서명 NSIS 설치본과 파일 연결 설정, CI artifact
+- [ ] Windows 11 실기의 설치·파일 연결·단축키·글꼴 확인
+- [ ] 한/글 병행 설치, IME와 DPI 100/125/150/200%
+- [ ] 다중 모니터, 시스템 글꼴 mapping과 PDF
+- [ ] code signing과 SmartScreen 전략
+- [ ] 설치·업데이트·제거와 rollback
 
 ### Sprint 6 — macOS 공개 배포
 
-예상: 4–8주, Apple Silicon Mac 필수
+예상: 4–8주, Apple Silicon Mac 필수 — 현재 하드웨어 대기
 
+- Electron 44 기준 macOS 13 Ventura 이상 실행 확인(`minimumSystemVersion` 13.0)
 - Developer ID Application과 release 전용 설정
 - hardened runtime, 최소 entitlement와 secure timestamp
 - arm64 DMG·ZIP, notarization, stapling과 Gatekeeper
@@ -216,5 +252,14 @@ V3 외부 승인 뒤 결정하되, 기능 상태를 숨기지 않도록 release 
 ## 6. 변경 관리
 
 각 milestone은 같은 변경에서 코드, 테스트, capability matrix와 문서를 갱신한다. 완료 기록에는
-날짜, commit, 공개 fixture, 실행 명령, 결과와 남은 수동 관문을 남긴다. 성능 수치는 OS,
-architecture, cold/warm과 표본 수 없이 단독으로 인용하지 않는다.
+날짜, commit, 공개 fixture, 실행 명령, 결과와 남은 수동 관문을
+[개발·검증 이력](verification_history.md)에 남긴다. 성능 수치는 OS, architecture, cold/warm과
+표본 수 없이 단독으로 인용하지 않는다.
+
+매 milestone 공통 완료 규칙:
+
+1. 실제 fixture와 공개 synthetic fixture를 각각 통과한다.
+2. 개인정보나 본문을 로그·캡처·commit에 남기지 않는다.
+3. 기존 test, build와 공개 production matrix가 회귀하지 않는다.
+4. 구현과 같은 commit에서 관련 설계·결정 문서를 갱신한다.
+5. 완료 조건을 만족한 논리 단위로 한국어 commit을 만든다.

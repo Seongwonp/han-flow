@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
-import { basename, dirname, extname, join } from 'path'
+import { lstat, stat } from 'fs/promises'
+import { basename, dirname, extname, join, resolve } from 'path'
 import {
   EditingActionResult,
   EditingCharacterStyleRequest,
@@ -23,7 +24,7 @@ import { editingCapabilities } from '../core/editing/editing_capability'
 import { HwpxEditHistory } from '../core/editing/history'
 import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
-import { saveHwpxAs } from '../core/editing/save_as'
+import { HwpxSaveAsError, saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
 import {
   planDeleteTableColumn,
@@ -51,6 +52,85 @@ function assertHwpxPath(filePath: string): void {
       '편집 모드는 HWPX 문서만 지원합니다.'
     )
   }
+}
+
+export type SaveAsDestinationDecision = 'new' | 'replace' | 'protected' | 'invalid'
+
+export interface EditingSaveAsOptions {
+  /** OS 저장 대화상자가 기존 파일 교체를 이미 확인했을 때만 true. */
+  overwrite?: boolean
+}
+
+export const PROTECTED_DESTINATION_MESSAGE =
+  '열려 있는 원본 문서는 덮어쓸 수 없습니다. 다른 이름이나 다른 폴더를 선택해 주세요.'
+
+export const INVALID_DESTINATION_MESSAGE =
+  '저장 위치가 올바르지 않습니다. 폴더나 바로가기(심볼릭 링크)가 아닌 .hwpx 파일 이름을 지정해 주세요.'
+
+/** PDF 내보내기(writeFileAtomically) 실패를 PDF 맥락의 한국어 안내로 바꾼다. */
+export function pdfExportFailureMessage(reason: unknown): string {
+  if (reason instanceof HwpxSaveAsError) {
+    switch (reason.code) {
+      case 'HWPX_SAVE_PROTECTED_DESTINATION':
+        return '편집 중인 원본 문서 위치에는 PDF를 저장할 수 없습니다. 다른 .pdf 파일 이름을 지정해 주세요.'
+      case 'HWPX_SAVE_INVALID_DESTINATION':
+        return 'PDF 저장 위치가 올바르지 않습니다. 폴더나 바로가기(심볼릭 링크)가 아닌 .pdf 파일 이름을 지정해 주세요.'
+      case 'HWPX_SAVE_DESTINATION_EXISTS':
+        return '같은 이름의 파일이 이미 있어 PDF를 저장하지 않았습니다. 다른 이름을 지정해 주세요.'
+      case 'HWPX_SAVE_FILESYSTEM':
+        switch (reason.systemCode) {
+          case 'EACCES':
+          case 'EPERM':
+          case 'EROFS':
+          case 'EBUSY':
+            return 'PDF 저장 위치에 쓸 권한이 없거나 기존 PDF가 다른 프로그램에서 열려 있습니다. 파일을 닫거나 다른 위치를 선택해 주세요.'
+          case 'ENOSPC':
+          case 'EDQUOT':
+            return '저장 위치의 공간이 부족해 PDF를 저장하지 못했습니다.'
+          default:
+            return 'PDF 파일을 쓰지 못했습니다. 저장 위치와 파일 상태를 확인해 주세요.'
+        }
+    }
+  }
+  return reason instanceof Error ? reason.message : String(reason)
+}
+
+function samePath(left: string, right: string): boolean {
+  const a = resolve(left)
+  const b = resolve(right)
+  return process.platform === 'win32' || process.platform === 'darwin'
+    ? a.toLowerCase() === b.toLowerCase()
+    : a === b
+}
+
+export function saveAsFailureMessage(reason: unknown): string {
+  if (reason instanceof HwpxSaveAsError) {
+    switch (reason.code) {
+      case 'HWPX_SAVE_PROTECTED_DESTINATION':
+        return PROTECTED_DESTINATION_MESSAGE
+      case 'HWPX_SAVE_DESTINATION_EXISTS':
+        return '같은 이름의 파일이 이미 있어 저장하지 않았습니다. 교체를 확인했거나 다른 이름을 선택해 주세요.'
+      case 'HWPX_SAVE_INVALID_DESTINATION':
+        return INVALID_DESTINATION_MESSAGE
+      case 'HWPX_SAVE_FILESYSTEM':
+        switch (reason.systemCode) {
+          case 'EACCES':
+          case 'EPERM':
+          case 'EROFS':
+            return '저장 위치에 쓸 권한이 없거나 기존 파일이 다른 프로그램에서 열려 있습니다. 다른 위치를 선택하거나 파일을 닫고 다시 시도해 주세요.'
+          case 'EBUSY':
+            return '기존 파일이 다른 프로그램에서 사용 중이라 교체하지 못했습니다. 파일을 닫고 다시 시도해 주세요.'
+          case 'EXDEV':
+            return '저장 위치의 파일 시스템에서 원자적 교체를 지원하지 않아 저장하지 못했습니다. 다른 위치를 선택해 주세요.'
+          case 'ENOSPC':
+          case 'EDQUOT':
+            return '저장 위치의 공간이 부족해 저장하지 못했습니다.'
+          default:
+            return '저장 위치에 파일을 쓰지 못했습니다. 목적지와 파일 상태를 확인해 주세요.'
+        }
+    }
+  }
+  return '변경본을 검증해 저장하지 못했습니다. 목적지와 파일 상태를 확인해 주세요.'
 }
 
 function status(session: EditingSession) {
@@ -647,10 +727,50 @@ export class EditingSessionManager {
     )
   }
 
-  async saveAs(
+  /** 원본 보호 대상: 열려 있는 모든 편집 session의 원본 경로. PDF 내보내기도 같은 목록을 쓴다. */
+  protectedSourcePaths(): string[] {
+    return [...this.sessions.values()].map((session) => session.history.package.sourcePath)
+  }
+
+  /**
+   * 저장 대화상자에서 고른 경로를 어떻게 다룰지 결정한다.
+   * 원본(또는 다른 session의 원본)이면 protected, 일반 파일이 아니면(심볼릭 링크·폴더 등) invalid,
+   * 이미 있는 다른 파일이면 replace, 없으면 new. 목적지는 lstat으로 보므로 링크를 따라가지 않는다.
+   */
+  async saveAsDestinationDecision(
     senderId: number,
     sessionId: string,
     destinationPath: string
+  ): Promise<SaveAsDestinationDecision> {
+    this.requireSession(senderId, sessionId)
+    const protectedPaths = this.protectedSourcePaths()
+    if (protectedPaths.some((path) => samePath(path, destinationPath))) return 'protected'
+    let destinationStats: Awaited<ReturnType<typeof lstat>>
+    try {
+      destinationStats = await lstat(destinationPath)
+    } catch {
+      return 'new'
+    }
+    if (!destinationStats.isFile()) return 'invalid'
+    for (const path of protectedPaths) {
+      const protectedStats = await stat(path).catch(() => undefined)
+      if (
+        protectedStats &&
+        protectedStats.ino !== 0 &&
+        protectedStats.dev === destinationStats.dev &&
+        protectedStats.ino === destinationStats.ino
+      ) {
+        return 'protected'
+      }
+    }
+    return 'replace'
+  }
+
+  async saveAs(
+    senderId: number,
+    sessionId: string,
+    destinationPath: string,
+    options: EditingSaveAsOptions = {}
   ): Promise<EditingSavedResult> {
     return this.enqueue(senderId, async () => {
       const session = this.requireSession(senderId, sessionId)
@@ -663,13 +783,12 @@ export class EditingSessionManager {
       let result: Awaited<ReturnType<typeof saveHwpxAs>>
       const lossPolicy = session.history.saveLossPolicy
       try {
-        result = await saveHwpxAs(session.history.package, destinationPath)
-      } catch {
-        throw new EditingOperationError(
-          'EDITING_SAVE_FAILED',
-          '변경본을 검증해 저장하지 못했습니다. 목적지와 파일 상태를 확인해 주세요.',
-          'retry'
-        )
+        result = await saveHwpxAs(session.history.package, destinationPath, {
+          overwrite: options.overwrite === true,
+          protectedPaths: this.protectedSourcePaths()
+        })
+      } catch (reason) {
+        throw new EditingOperationError('EDITING_SAVE_FAILED', saveAsFailureMessage(reason), 'retry')
       }
       session.history.markSaved()
       return {

@@ -5,6 +5,10 @@
 > [제품 비전과 로드맵](vision_and_roadmap.md)을 기준으로 한다. V1은 read-only HWPX,
 > V2는 read-only HWP 5.0, 편집 설계는
 > [V3 HWPX 편집 전략](v3_editing_strategy.md), 공개 배포는 V4 범위다.
+>
+> 2026-09-28 기준 현재와 다른 점: 주 개발·자동 검증 환경은 Windows·Linux이고 macOS는 지원 OS
+> 중 하나다(1.3의 "맥 전용 앱" 방향은 폐기). 단축키는 macOS ⌘, Windows·Linux Ctrl이다. 아래 표의
+> `zustand`는 2026-08-21 제거했고 Electron은 44를 사용한다.
 
 기존 HWP 뷰어의 고질적인 문제인 'UI 깨짐'과 '느린 로딩'을 해결하기 위한 Han-Flow만의 고유한 전략입니다.
 

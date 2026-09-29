@@ -123,6 +123,7 @@ build/
 build/*
 !build/icon.png
 !build/icon.icns
+!build/icon.ico
 
 # Vite
 .vite/

@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import type { RendererEditingSession } from './renderer_state'
+import { rendererPlatform, shortcutLabel } from './keyboard_shortcuts'
 
 export interface RibbonStyleState {
   bold: boolean
@@ -26,6 +27,8 @@ export interface RibbonCellStyleState {
 
 interface ViewerToolbarProps {
   fileName: string
+  /** Electron `process.platform`. 생략하면 macOS 표기(⌘)를 쓴다. */
+  shortcutPlatform?: string
   editing: RendererEditingSession | null
   editingPending: number
   documentLoading: boolean
@@ -95,6 +98,7 @@ interface ViewerToolbarProps {
 export function ViewerToolbar(props: ViewerToolbarProps) {
   const {
     fileName,
+    shortcutPlatform = rendererPlatform(),
     editing,
     editingPending,
     documentLoading,
@@ -194,8 +198,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
         </div>
         <div className="viewer-ribbon-group">
           <div className="viewer-ribbon-controls">
-            <button aria-label="실행 취소" title="실행 취소 (⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={onUndoEditing} disabled={!editing.canUndo || pending}>↶</button>
-            <button aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" onMouseDown={(event) => event.preventDefault()} onClick={onRedoEditing} disabled={!editing.canRedo || pending}>↷</button>
+            <button aria-label="실행 취소" title={`실행 취소 (${shortcutLabel('Z', shortcutPlatform)})`} onMouseDown={(event) => event.preventDefault()} onClick={onUndoEditing} disabled={!editing.canUndo || pending}>↶</button>
+            <button aria-label="다시 실행" title={`다시 실행 (${shortcutLabel('Z', shortcutPlatform, { shift: true })})`} onMouseDown={(event) => event.preventDefault()} onClick={onRedoEditing} disabled={!editing.canRedo || pending}>↷</button>
           </div>
           <span className="viewer-ribbon-group-label">기록</span>
         </div>
@@ -212,8 +216,8 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
               {documentFonts.map((font) => <option key={font.id} value={font.id}>{font.family}</option>)}
             </select>
             <button aria-label="현재 텍스트 블록 굵게" title="굵게" aria-pressed={activeStyle?.bold ?? false} className="viewer-style-bold" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ bold: !(activeStyle?.bold ?? false) })} disabled={!characterStyleAvailable || pending}>B</button>
-            <button aria-label="현재 텍스트 블록 기울임" title="기울임 (⌘I)" aria-pressed={activeStyle?.italic ?? false} className="viewer-style-italic" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ italic: !(activeStyle?.italic ?? false) })} disabled={!characterStyleAvailable || pending}>I</button>
-            <button aria-label="현재 텍스트 블록 밑줄" title="밑줄 (⌘U)" aria-pressed={activeStyle?.underline ?? false} className="viewer-style-underline" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ underline: !(activeStyle?.underline ?? false) })} disabled={!characterStyleAvailable || pending}>U</button>
+            <button aria-label="현재 텍스트 블록 기울임" title={`기울임 (${shortcutLabel('I', shortcutPlatform)})`} aria-pressed={activeStyle?.italic ?? false} className="viewer-style-italic" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ italic: !(activeStyle?.italic ?? false) })} disabled={!characterStyleAvailable || pending}>I</button>
+            <button aria-label="현재 텍스트 블록 밑줄" title={`밑줄 (${shortcutLabel('U', shortcutPlatform)})`} aria-pressed={activeStyle?.underline ?? false} className="viewer-style-underline" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ underline: !(activeStyle?.underline ?? false) })} disabled={!characterStyleAvailable || pending}>U</button>
             <button aria-label="현재 텍스트 블록 취소선" title="취소선" aria-pressed={activeStyle?.strikeout ?? false} className="viewer-style-strikeout" onMouseDown={(event) => event.preventDefault()} onClick={() => onCharacterStyle({ strikeout: !(activeStyle?.strikeout ?? false) })} disabled={!characterStyleAvailable || pending}>S</button>
             <div className="viewer-style-size-control">
               <button aria-label="글자 크기 줄이기" title="글자 크기 줄이기" onMouseDown={(event) => event.preventDefault()} onClick={() => activeStyle && onCharacterStyle({ height: Math.max(500, activeStyle.height - 100) })} disabled={!characterStyleAvailable || !activeStyle || activeStyle.height <= 500 || pending}>A−</button>

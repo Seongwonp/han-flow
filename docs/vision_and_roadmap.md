@@ -1,6 +1,6 @@
 # Han-Flow 제품 비전과 로드맵
 
-기준일: 2026-09-13
+기준일: 2026-09-28
 
 ## 비전
 
@@ -13,7 +13,7 @@ Han-Flow는 “상용 오피스를 복제하는 프로젝트”가 아니라 Win
 1. 실제 문서에서 재현되는 정확성
 2. 첫 화면까지의 속도와 대형 문서 안정성
 3. 읽기·PDF·편집 각각의 명확한 품질 관문
-4. macOS다운 작은 사용 흐름
+4. Windows와 macOS 각 OS 관례에 맞는 작은 사용 흐름(주 개발·자동 검증은 Windows·Linux)
 5. 기능 수보다 회귀 fixture와 측정 가능한 완료 조건
 
 ## 스코프 원칙
@@ -25,9 +25,12 @@ Han-Flow는 “상용 오피스를 복제하는 프로젝트”가 아니라 Win
 - 실제 fixture의 본문, 캡처, 개인정보는 저장소와 자동화 로그에 남기지 않는다.
 - 한 milestone은 하나 이상의 실제 문서와 개인정보 없는 synthetic fixture로 끝낸다.
 
+`V1–V4`는 제품 milestone이고, 실행 단위인 `Sprint 0–8`과의 대응과 상태는
+[장기 완성도 로드맵 §1](long_term_roadmap.md#1-제품-계약)의 표 하나로 관리한다.
+
 ## V1 — HWPX 뷰어
 
-상태: **로컬 RC 완료**
+상태: **완료**(2026-07-23 로컬 RC)
 
 - [x] Finder, dialog, drag-and-drop HWPX 열기
 - [x] 문단·run style, 표·병합 cell·border/fill, 이미지
@@ -68,7 +71,7 @@ development-only semantic oracle로 유지한다. 자동 fallback은 두지 않�
 
 ## V3 — 편집
 
-상태: **자동 코드 관문 완료 — 실제 macOS IME·Windows 한/글 외부 승인 대기**
+상태: **자동 관문 완료·외부 승인 대기(Windows 한/글 왕복·macOS 물리 IME)** — Sprint 0·2 완료, Sprint 1 대기, Sprint 3 표·문단·글꼴 범위 완료
 
 V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기능으로 보지 않고 새 품질
 관문으로 시작한다.
@@ -91,17 +94,19 @@ V3의 편집은 V1 시기의 과거 `contentEditable` prototype을 완료된 기
 
 ## V4 — 사용자 배포
 
-상태: **V4-0 조사·배포 기준선 완료 — 인증서와 V3 외부 승인 대기**
+상태: **준비 중** — V4-0 조사 완료, Sprint 5 진행 중(비서명 NSIS artifact), Sprint 6 macOS 하드웨어 대기
 
-- Developer ID 서명, notarization, stapling
-- Apple Silicon arm64 macOS package
+- Windows x64 NSIS 설치본, code signing과 SmartScreen 대응(Sprint 5)
+- Developer ID 서명, notarization, stapling(Sprint 6)
+- Apple Silicon arm64 macOS package(macOS 13 이상, Electron 44 요구사항)
 - 자동 업데이트와 rollback 정책
 - 깨끗한 Mac 계정의 설치·첫 실행·기본 앱 UX
 - 개인정보 없는 실제 호환성 corpus와 release regression
 - 라이선스·third-party notice·HWP 공개 규격 고지
 - versioning, changelog, GitHub Release와 사용자 문서
 
-직접 배포는 `Developer ID Application → hardened runtime 서명 → arm64 dmg/zip → notarization →
+Windows는 CI가 비서명 NSIS 설치본을 artifact로 만들며 code signing 전까지 SmartScreen 경고가
+표시된다. macOS 직접 배포는 `Developer ID Application → hardened runtime 서명 → arm64 dmg/zip → notarization →
 stapling → Gatekeeper·깨끗한 계정 검증` 순서로 진행한다. 현재 앱은 arm64 `dir`과 ad-hoc
 서명뿐이며 updater는 runtime에 연결하지 않았고 2026-08-20 미사용 dependency도 제거했다. 인증서 없이 수행 가능한
 현재 상태 감사와 공식 자료 조사는 [V4 macOS 배포 전략](v4_release_strategy.md)에 기록했다.
@@ -116,9 +121,10 @@ Spotlight, Quick Look, AI, cloud sync는 V4 완료 조건이 아니다. 실제 �
 
 1. `RIGHT`·`MIRROR`와 비동일 너비 다단의 진행 순서·grid·간격을 fixture로 고정
 2. 각주·미주와 수식의 읽기 전용 원문 모델·화면 fallback·diagnostic 구현
-3. 공개 fixture를 30–50종으로 확장하고 core 추정과 production 실측을 함께 비교
-4. 공개 identity·편집 결과를 Windows 한/글에서 재열어 V3 외부 승인
-5. 실제 Apple Silicon Mac의 물리 두벌식 입력과 Developer ID 서명·공증 관문 진행
+3. 공개 fixture를 30–50종으로 확장하고 intake 계약으로 실제 한/글 HWPX를 반입(Sprint 4)
+4. 공개 identity·편집 결과를 Windows 한/글에서 재열어 V3 외부 승인(Sprint 1)
+5. Windows 실기 설치·단축키·글꼴 확인과 code signing 전략(Sprint 5)
+6. Mac 하드웨어 확보 뒤 물리 두벌식 입력과 Developer ID 서명·공증(Sprint 1·6)
 
 여러 run 문단 입력과 굵게·크기·색상은 V3 코드 관문에서 완료했다. 글꼴 family 편집,
 원본 in-place 덮어쓰기와 범용 crash recovery는 현재 안전한 Save As 계약을 약화시키지

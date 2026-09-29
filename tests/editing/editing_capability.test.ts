@@ -86,6 +86,45 @@ const document: ViewerDocument = {
             margin: { top: 0, right: 0, bottom: 0, left: 0 },
             header: false,
             paragraphs: [paragraph('merged-cell', [text(6, '병합')])]
+          },
+          {
+            row: 0,
+            column: 4,
+            rowSpan: 1,
+            columnSpan: 1,
+            width: 100,
+            height: 100,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            borderFillId: '1',
+            header: true,
+            paragraphs: [
+              paragraph('header-cell-p0', [text(7, '머리')]),
+              paragraph('header-cell-p1', [text(8, '글')])
+            ]
+          },
+          {
+            row: 0,
+            column: 5,
+            rowSpan: 1,
+            columnSpan: 1,
+            width: 100,
+            height: 100,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            borderFillId: '1',
+            header: false,
+            paragraphs: [paragraph('multi-run-cell', [text(9, '앞'), text(10, '')])]
+          },
+          {
+            row: 0,
+            column: 6,
+            rowSpan: 1,
+            columnSpan: 1,
+            width: 100,
+            height: 100,
+            margin: { top: 0, right: 0, bottom: 0, left: 0 },
+            header: false,
+            splitBottom: true,
+            paragraphs: [paragraph('split-cell', [text(11, '조각')])]
           }
         ] }]
       }])
@@ -132,18 +171,46 @@ describe('편집 capability', () => {
     })
   })
 
-  test('최상위 문단과 안전한 표 셀 text를 분리하고 병합 셀은 편집 대상에서 제외한다', () => {
+  test('최상위 문단과 표 셀 text를 분리하고 병합·머리글·여러 run 셀은 text 전용으로, 나뉜 셀 조각은 제외한다', () => {
     expect(listEditingAnchorContexts(document).map((context) => [
       context.textNodeId,
-      context.structure
+      context.structure,
+      context.cellStructureEditable
     ])).toEqual([
-      [`${sectionPath}#hp:t:0`, 'TOP_LEVEL_TEXT'],
-      [`${sectionPath}#hp:t:1`, 'TOP_LEVEL_TEXT'],
-      [`${sectionPath}#hp:t:2`, 'TOP_LEVEL_TEXT'],
-      [`${sectionPath}#hp:t:3`, 'TABLE_CELL_TEXT'],
-      [`${sectionPath}#hp:t:4`, 'TABLE_CELL_TEXT'],
-      [`${sectionPath}#hp:t:5`, 'TABLE_CELL_TEXT']
+      [`${sectionPath}#hp:t:0`, 'TOP_LEVEL_TEXT', undefined],
+      [`${sectionPath}#hp:t:1`, 'TOP_LEVEL_TEXT', undefined],
+      [`${sectionPath}#hp:t:2`, 'TOP_LEVEL_TEXT', undefined],
+      [`${sectionPath}#hp:t:3`, 'TABLE_CELL_TEXT', true],
+      [`${sectionPath}#hp:t:4`, 'TABLE_CELL_TEXT', true],
+      [`${sectionPath}#hp:t:5`, 'TABLE_CELL_TEXT', true],
+      [`${sectionPath}#hp:t:6`, 'TABLE_CELL_TEXT', false],
+      [`${sectionPath}#hp:t:7`, 'TABLE_CELL_TEXT', false],
+      [`${sectionPath}#hp:t:8`, 'TABLE_CELL_TEXT', false],
+      [`${sectionPath}#hp:t:9`, 'TABLE_CELL_TEXT', false],
+      [`${sectionPath}#hp:t:10`, 'TABLE_CELL_TEXT', false]
     ])
+  })
+
+  test.each([
+    ['병합 셀', 6],
+    ['머리글 셀', 7],
+    ['여러 run 셀', 9]
+  ])('%s은 text만 허용하고 셀 style·행열·문단 구조는 제한한다', (_label, ordinal) => {
+    const capability = editingCapabilities(document, selection(ordinal, 1))
+    expect(capability.selection.available).toBe(true)
+    expect(capability.text.available).toBe(true)
+    expect(capability.cellStyle).toEqual({ available: false, reason: 'TABLE_CELL_STRUCTURE' })
+    expect(capability.paragraphStructure).toEqual({ available: false, reason: 'TABLE_CELL_STRUCTURE' })
+    expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+  })
+
+  test('text 전용 셀은 같은 문단 안 run 사이만 선택하고 문단을 넘는 선택은 막는다', () => {
+    expect(editingCapabilities(document, selection(9, 0, 10, 0)).text.available).toBe(true)
+    expect(editingCapabilities(document, selection(7, 0, 8, 1)).text).toEqual({
+      available: false,
+      reason: 'CROSS_STRUCTURE_SELECTION'
+    })
   })
 
   test('같은 문단 여러 run은 텍스트·문단 모양만 허용하고 글자 모양·구조 편집은 제한한다', () => {

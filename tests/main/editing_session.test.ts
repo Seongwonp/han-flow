@@ -1,12 +1,17 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
-import { saveHwpxAs } from '../../src/core/editing/save_as'
+import { HwpxSaveAsError, saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
-import { EditingSessionManager } from '../../src/main/editing_session'
 import {
+  EditingSessionManager,
+  pdfExportFailureMessage,
+  saveAsFailureMessage
+} from '../../src/main/editing_session'
+import {
+  createCompatibilityHwpx,
   createRoundTripHwpx,
   createTableColumnHwpx
 } from '../fixtures/public/create_synthetic_hwpx'
@@ -965,6 +970,67 @@ describe('main process HWPX editing session', () => {
     expect(JSON.stringify(redone.document)).toContain('긴 설명 셀검증')
   })
 
+  test('병합·머리글 셀은 text commit·undo만 허용하고 표 구조·셀 style command는 거부한다', async () => {
+    const mergedFixture = createCompatibilityHwpx(directory, 'merged-header-cells.hwpx')
+    const manager = new EditingSessionManager(() => 'merged-header-session')
+    const sectionPath = 'Contents/section0.xml'
+    const source = await HwpxSourcePackage.open(mergedFixture)
+    const anchors = listHwpxTextAnchors(source, sectionPath)
+    const started = await manager.start(51, mergedFixture)
+    for (const [text, insert] of [['R', '병합셀'], ['H1', '머리글']] as const) {
+      const anchor = anchors.find((candidate) => candidate.text === text)!
+      const caret = (offset: number) => ({
+        sectionPath,
+        anchorTextNodeId: anchor.textNodeId,
+        anchorOffset: offset,
+        focusTextNodeId: anchor.textNodeId,
+        focusOffset: offset
+      })
+      const committed = await manager.commit(51, {
+        sessionId: started.sessionId,
+        transactionId: `type-${text}`,
+        sectionPath,
+        textNodeId: anchor.textNodeId,
+        from: text.length,
+        to: text.length,
+        insert,
+        selectionBefore: caret(text.length),
+        selectionAfter: caret(text.length + insert.length),
+        inputType: 'insertText',
+        timestamp: 1
+      })
+      expect(JSON.stringify(committed.document)).toContain(`"text":"${text}${insert}"`)
+      const undone = await manager.undo(51, started.sessionId)
+      expect(JSON.stringify(undone.document)).toContain(`"text":"${text}"`)
+      expect(undone.isDirty).toBe(false)
+
+      const request = {
+        sessionId: started.sessionId,
+        transactionId: `structure-${text}`,
+        selectionBefore: caret(0),
+        timestamp: 2
+      }
+      for (const action of [
+        () => manager.insertTableRowAfter(51, request),
+        () => manager.deleteTableRow(51, request),
+        () => manager.insertTableColumnAfter(51, request),
+        () => manager.deleteTableColumn(51, request),
+        () => manager.mergeTableCellRight(51, request),
+        () => manager.applyCellStyle(51, {
+          sessionId: started.sessionId,
+          transactionId: `cell-style-${text}`,
+          sectionPath,
+          textNodeId: anchor.textNodeId,
+          selection: caret(0),
+          backgroundColor: '#FFF2CC',
+          timestamp: 2
+        })
+      ]) {
+        await expect(action()).rejects.toMatchObject({ code: 'EDITING_UNSUPPORTED' })
+      }
+    }
+  })
+
   test('일반 body cell의 여러 문단 범위를 치환해 undo·redo하고 저장·재개봉한다', async () => {
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(fixture)
@@ -1205,9 +1271,108 @@ describe('main process HWPX editing session', () => {
     await expect(manager.saveAs(12, started.sessionId, existing)).rejects.toMatchObject({
       code: 'EDITING_SAVE_FAILED',
       recovery: 'retry',
-      message: expect.stringContaining('변경본을 검증해 저장하지 못했습니다')
+      message: expect.stringContaining('같은 이름의 파일이 이미 있어 저장하지 않았습니다')
     })
     expect(readFileSync(existing, 'utf8')).toBe('기존 파일')
     expect(await manager.undo(12, started.sessionId)).toMatchObject({ isDirty: false })
+  })
+
+  test('저장 목적지 결정은 원본을 보호하고 교체 확인된 기존 파일만 덮어쓴다', async () => {
+    const manager = new EditingSessionManager(() => 'overwrite-policy-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
+      (candidate) => candidate.text === '공개 헤더'
+    )!
+    const otherSource = join(directory, 'other-session-source.hwpx')
+    await saveHwpxAs(source, otherSource)
+    const started = await manager.start(13, fixture)
+    await manager.start(14, otherSource)
+    const selection = {
+      sectionPath: anchor.sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 0
+    }
+    await manager.commit(13, {
+      sessionId: started.sessionId,
+      transactionId: 'overwrite-policy-edit',
+      sectionPath: anchor.sectionPath,
+      textNodeId: anchor.textNodeId,
+      from: 0,
+      to: 0,
+      insert: 'Y',
+      selectionBefore: selection,
+      selectionAfter: { ...selection, anchorOffset: 1, focusOffset: 1 },
+      timestamp: 1
+    })
+
+    const fresh = join(directory, 'policy-fresh.hwpx')
+    const existing = join(directory, 'policy-existing.hwpx')
+    writeFileSync(existing, '교체 확인된 기존 파일')
+    expect(await manager.saveAsDestinationDecision(13, started.sessionId, fresh)).toBe('new')
+    expect(await manager.saveAsDestinationDecision(13, started.sessionId, existing)).toBe('replace')
+    expect(await manager.saveAsDestinationDecision(13, started.sessionId, fixture)).toBe('protected')
+    // 다른 창에서 편집 중인 원본도 보호한다.
+    expect(await manager.saveAsDestinationDecision(13, started.sessionId, otherSource)).toBe('protected')
+    // 심볼릭 링크 목적지는 따라가지 않고 대화상자 단계에서 invalid로 거부한다.
+    if (process.platform !== 'win32') {
+      const linkToSource = join(directory, 'policy-link-to-source.hwpx')
+      symlinkSync(fixture, linkToSource)
+      expect(await manager.saveAsDestinationDecision(13, started.sessionId, linkToSource)).toBe('invalid')
+      rmSync(linkToSource)
+    }
+    expect(manager.protectedSourcePaths()).toEqual([fixture, otherSource])
+
+    const originalBytes = readFileSync(fixture)
+    const otherBytes = readFileSync(otherSource)
+    for (const protectedPath of [fixture, otherSource]) {
+      await expect(
+        manager.saveAs(13, started.sessionId, protectedPath, { overwrite: true })
+      ).rejects.toMatchObject({
+        code: 'EDITING_SAVE_FAILED',
+        recovery: 'retry',
+        message: expect.stringContaining('원본 문서는 덮어쓸 수 없습니다')
+      })
+    }
+    expect(readFileSync(fixture).equals(originalBytes)).toBe(true)
+    expect(readFileSync(otherSource).equals(otherBytes)).toBe(true)
+
+    const saved = await manager.saveAs(13, started.sessionId, existing, { overwrite: true })
+    expect(saved).toMatchObject({ destinationPath: existing, isDirty: false })
+    const reopened = await HwpxSourcePackage.open(existing)
+    expect(
+      listHwpxTextAnchors(reopened, 'Contents/section0.xml').find(
+        (candidate) => candidate.textNodeId === anchor.textNodeId
+      )?.text
+    ).toBe('Y공개 헤더')
+  })
+
+  test('Save As 실패 원인별로 구체적인 한국어 안내를 돌려준다', () => {
+    const filesystem = (code: string) => new HwpxSaveAsError('HWPX_SAVE_FILESYSTEM', 'fs', code)
+    expect(saveAsFailureMessage(new HwpxSaveAsError('HWPX_SAVE_PROTECTED_DESTINATION', 'x')))
+      .toContain('원본 문서는 덮어쓸 수 없습니다')
+    expect(saveAsFailureMessage(new HwpxSaveAsError('HWPX_SAVE_DESTINATION_EXISTS', 'x')))
+      .toContain('같은 이름의 파일이 이미 있어')
+    expect(saveAsFailureMessage(filesystem('EACCES'))).toContain('쓸 권한이 없거나')
+    expect(saveAsFailureMessage(filesystem('EPERM'))).toContain('다른 프로그램에서 열려 있습니다')
+    expect(saveAsFailureMessage(filesystem('EXDEV'))).toContain('원자적 교체를 지원하지 않아')
+    expect(saveAsFailureMessage(filesystem('ENOSPC'))).toContain('공간이 부족해')
+    expect(saveAsFailureMessage(new Error('저장 검증 실패'))).toContain('변경본을 검증해 저장하지 못했습니다')
+    expect(saveAsFailureMessage(new HwpxSaveAsError('HWPX_SAVE_INVALID_DESTINATION', 'x')))
+      .toContain('바로가기(심볼릭 링크)')
+  })
+
+  test('PDF 내보내기 실패는 .hwpx가 아닌 PDF 맥락의 안내를 돌려준다', () => {
+    const protectedMessage = pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_PROTECTED_DESTINATION', 'x'))
+    expect(protectedMessage).toContain('PDF를 저장할 수 없습니다')
+    const invalidMessage = pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_INVALID_DESTINATION', 'x'))
+    expect(invalidMessage).toContain('.pdf 파일 이름')
+    expect(invalidMessage).toContain('심볼릭 링크')
+    for (const message of [protectedMessage, invalidMessage]) expect(message).not.toContain('.hwpx')
+    expect(pdfExportFailureMessage(new HwpxSaveAsError('HWPX_SAVE_FILESYSTEM', 'fs', 'ENOSPC')))
+      .toContain('PDF를 저장하지 못했습니다')
+    expect(pdfExportFailureMessage(new Error('PDF 렌더링 준비 시간이 초과되었습니다.')))
+      .toBe('PDF 렌더링 준비 시간이 초과되었습니다.')
   })
 })

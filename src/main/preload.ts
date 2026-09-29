@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
@@ -24,11 +24,21 @@ const invokeEditing = <T>(channel: string, ...args: unknown[]): Promise<T> =>
 
 // Custom APIs for renderer
 const api = {
+  platform: process.platform,
   getFonts: () => ipcRenderer.invoke('system:getFonts'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
   openNewWindow: () => ipcRenderer.invoke('window:openNew'),
-  openImage: () => ipcRenderer.invoke('dialog:openImage'),
+  // Electron 32부터 File.path가 제거되어 drag-and-drop 경로는 webUtils로만 얻을 수 있다.
+  // main은 renderer가 임의로 지정한 경로를 읽지 않으므로, 끌어 놓은 파일 경로를 main 허용목록에 등록한다.
+  // IPC는 보낸 순서대로 처리되므로 이어지는 document:import는 이 등록이 끝난 뒤 확인된다.
+  getPathForFile: (file: File): string => {
+    const filePath = webUtils.getPathForFile(file)
+    if (filePath) {
+      void ipcRenderer.invoke('document:registerDroppedPath', filePath).catch(() => undefined)
+    }
+    return filePath
+  },
   onOpenFile: (listener: (payload: { filePath: string; receivedAt: number }) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: { filePath: string; receivedAt: number }) => listener(payload)
     ipcRenderer.on('file:open', handler)

@@ -19,8 +19,15 @@ Han-Flow는 함초롬바탕·함초롬돋움 글꼴 파일을 앱에 번들하�
 
 1. 문서가 요구한 family 이름과 시스템 글꼴 이름의 정확한 일치
 2. 함초롬바탕 ↔ `HCR Batang`/`HANBatang`, 함초롬돋움 ↔ `HCR Dotum`/`HANDotum` 별칭
-3. 바탕·명조 계열은 `AppleMyungjo`, 돋움·고딕 계열은 `Apple SD Gothic Neo`
+3. 바탕·명조 계열은 `AppleMyungjo`, 돋움·고딕 계열은 `Apple SD Gothic Neo` (macOS)
 4. 설치된 Nanum 또는 Noto 계열 글꼴
+
+Windows에서는 3단계가 바탕·명조 계열 `바탕`(`Batang`), 돋움·고딕 계열 `맑은 고딕`(`Malgun Gothic`)이고,
+Linux에서는 Noto를 Nanum보다 먼저 고른다. Windows `font-list`는 locale에 따라 영문 또는 한글 family를
+돌려주므로 `바탕`/`Batang`, `돋움`/`Dotum`, `굴림`/`Gulim`, `맑은 고딕`/`Malgun Gothic` 같은 한/영 이름은
+같은 글꼴로 보고 대체로 집계하지 않는다. 한양신명조·휴먼명조 같은 한컴 글꼴은 명조 계열 체인으로
+대체된다. 체인의 어떤 글꼴도 설치되어 있지 않으면 다른 OS 글꼴 이름이 아니라 CSS generic
+`serif`/`sans-serif`로 해석한다. platform은 renderer가 preload의 `process.platform`을 넘긴다.
 
 별칭은 같은 글꼴의 이름 차이이므로 대체로 집계하지 않는다. 실제 다른 family를 사용한
 경우에는 상태 표시줄에 대체 수를 표시하고 상세 진단에 `요청 → 적용` 이름을 남긴다. 화면과

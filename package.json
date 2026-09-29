@@ -32,8 +32,49 @@
       "output": "release"
     },
     "files": ["out/**/*", "package.json"],
+    "linux": {
+      "target": ["dir"],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "executableName": "han-flow",
+      "fileAssociations": [
+        { "ext": "hwp", "name": "HWP 문서", "mimeType": "application/x-hwp" },
+        { "ext": "hwpx", "name": "HWPX 문서", "mimeType": "application/hwp+zip" }
+      ]
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, "dir"],
+      "icon": "build/icon.ico",
+      "artifactName": "Han-Flow-${version}-win-x64.${ext}",
+      "fileAssociations": [
+        {
+          "ext": "hwp",
+          "name": "HWP 문서",
+          "description": "HWP 문서",
+          "mimeType": "application/x-hwp",
+          "role": "Viewer"
+        },
+        {
+          "ext": "hwpx",
+          "name": "HWPX 문서",
+          "description": "HWPX 문서",
+          "mimeType": "application/hwp+zip",
+          "role": "Viewer"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Han-Flow",
+      "language": "1042",
+      "deleteAppDataOnUninstall": false
+    },
     "mac": {
       "category": "public.app-category.productivity",
+      "minimumSystemVersion": "13.0",
       "icon": "build/icon.icns",
       "identity": null,
       "target": ["dir"],
@@ -73,11 +114,14 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "icon:ico": "node scripts/build/make_ico.mjs",
     "typecheck": "tsc --noEmit && tsc -p src/renderer/tsconfig.json --noEmit",
-    "package:mac": "npm run build && electron-builder --mac dir",
-    "package:win": "npm run build && electron-builder --win dir --x64",
-    "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64",
-    "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal",
+    "package:mac": "npm run build && electron-builder --mac dir --publish never",
+    "package:win": "npm run build && electron-builder --win dir --x64 --publish never",
+    "package:win:installer": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:linux": "npm run build && electron-builder --linux dir --publish never",
+    "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64 --publish never",
+    "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal --publish never",
     "preview": "electron-vite preview",
     "test": "jest",
     "benchmark:decoder": "HAN_FLOW_BENCHMARK=1 jest --runInBand tests/performance/decoder_benchmark.test.ts",
@@ -90,6 +134,8 @@
     "verify:ime:mac:matrix": "npm run verify:ime:mac -- --scenario basic --surface paragraph && npm run verify:ime:mac -- --scenario basic --surface cell && npm run verify:ime:mac -- --scenario backspace --surface paragraph && npm run verify:ime:mac -- --scenario escape --surface paragraph && npm run verify:ime:mac -- --scenario range-forward --surface paragraph && npm run verify:ime:mac -- --scenario range-backward --surface paragraph && npm run verify:ime:mac -- --scenario history --surface paragraph",
     "verify:matrix": "node scripts/verify_public_matrix.mjs",
     "verify:corpus": "node scripts/verify_public_corpus.mjs",
+    "corpus:intake": "node scripts/corpus/intake_external_fixture.mjs",
+    "corpus:editing-coverage": "node scripts/corpus/editing_coverage.mjs",
     "verify:hwp-matrix": "node scripts/verify_hwp_matrix.mjs",
     "verify:pdf": "node scripts/verify_pdf.mjs",
     "fixture:v3-acceptance": "node scripts/create_v3_acceptance_bundle.mjs",
@@ -119,11 +165,11 @@
     "@rhwp/core": "0.7.19",
     "@types/adm-zip": "^0.5.8",
     "@types/jest": "^29.5.11",
-    "@types/node": "^20.10.4",
+    "@types/node": "^22.20.4",
     "@types/react": "^18.2.42",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.7.0",
-    "electron": "^28.1.0",
+    "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "electron-vite": "^2.3.0",
     "eslint": "^8.55.0",

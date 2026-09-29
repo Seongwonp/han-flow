@@ -1,5 +1,5 @@
 import AdmZip from 'adm-zip'
-import * as unzipper from 'unzipper'
+import { openHwpxZipDirectory, readEntryBounded } from './bounded_entry'
 import { parseOrderedXml } from './ordered_xml'
 import type { OrderedXmlNode } from './ordered_xml'
 import type { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
@@ -73,7 +73,7 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
   ) {}
 
   static async open(filePath: string): Promise<HwpxSourcePackage> {
-    const directory = await unzipper.Open.file(filePath)
+    const directory = await openHwpxZipDirectory(filePath)
     const metadata = directory.files.map((entry) => {
       const type: HwpxSourceEntryType = entry.type === 'Directory' ? 'directory' : 'file'
       return {
@@ -91,7 +91,10 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
     for (let index = 0; index < directory.files.length; index += 1) {
       const entry = directory.files[index]
       const entryMetadata = metadata[index]
-      const bytes = entryMetadata.type === 'directory' ? Buffer.alloc(0) : await entry.buffer()
+      const bytes = entryMetadata.type === 'directory'
+        ? Buffer.alloc(0)
+        : await readEntryBounded(entry, entryMetadata.uncompressedSize)
+      // readEntryBounded도 크기를 검사하지만, directory entry를 포함한 방어선으로 유지한다.
       if (bytes.byteLength !== entryMetadata.uncompressedSize) {
         throw new Error(
           `안전하지 않은 HWPX package입니다: 압축 해제 크기가 directory metadata와 다릅니다: ${entryMetadata.path}`

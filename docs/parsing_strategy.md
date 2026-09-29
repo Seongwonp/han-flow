@@ -1,5 +1,7 @@
 # V1 HWPX 파싱 전략: Pipeline & Schema
 
+기준일: 2026-09-28
+
 이 문서는 현재 동작하는 read-only HWPX decode 경로만 설명한다. V2의 HWP 5.0 binary는
 이 decoder에 섞지 않고 별도 `DocumentImporter` adapter로 연결했다. 후보와 공식 규격 출처는
 [V2 HWP 5.0 조사와 도입 전략](hwp_v2_strategy.md)을 참고한다.
@@ -8,7 +10,10 @@ HWPX는 ZIP 아카이브 안에 OWPML XML과 이미지 resource가 들어 있는
 원본 XML의 혼합 자식 순서를 보존하는 ordered AST를 거쳐 읽기 전용 `ViewerDocument`로
 변환한다.
 
-ZIP metadata preflight 뒤 XML은 ordered parser에 전달하기 전에 최대 깊이 256, node
+ZIP metadata preflight는 entry 경로·개수·선언 크기를 먼저 검사하고, 실제 압축 해제는
+`readEntryBounded`가 central directory 선언 크기와 절대 상한을 스트리밍 중 확인해 zip bomb을 전체
+inflate 전에 중단한다. main은 central directory index만 읽고 압축 해제와 section 디코딩은
+decoder worker 안에서 실행한다. 편집 session의 `HwpxSourcePackage`도 같은 bounded reader를 쓴다. 그 뒤 XML은 ordered parser에 전달하기 전에 최대 깊이 256, node
 1,000,000개, text 50,000,000자와 DOCTYPE 금지를 검사한다. 이미지 resource는 한꺼번에
 `Promise.all`로 확장하지 않고 순서대로 읽으며 최대 2,000개, 개별 32 MiB, 전체 192 MiB를
 적용한다. PNG·JPEG·GIF·BMP·WebP는 header에서 decoded dimension을 읽어 한 변 32,768px,
@@ -36,7 +41,9 @@ node 배열로 읽어 `text → image → text` 같은 run 내부 순서를 유�
 
 ## 2. 스타일 정보 맵핑 (JSON 스키마 예시)
 
-HWPX의 스타일(단락, 표, 글꼴)을 렌더링 엔진이 이해하기 쉬운 형태로 맵핑합니다.
+HWPX의 스타일(단락, 표, 글꼴)을 렌더링 엔진이 이해하기 쉬운 형태로 맵핑한다. 아래는 개념 예시이며
+실제 타입은 `ViewerDocument`의 `ViewerParaStyle`·`ViewerCharStyle`이다. 문서가 요구한 글꼴 family는
+renderer에서 OS별 대체 체인으로 해석한다([글꼴 전략](font_strategy.md)).
 
 ### 2.1 Paragraph Style (단락 스타일)
 ```json
@@ -91,8 +98,8 @@ width·gap을 읽어 `ViewerSection.columnLayout`으로 보존한다. 단 개수
 
 ## 4. 대형 문서
 
-section 20개 이상 또는 압축 전 2MiB 이상 section이 있으면 worker thread에서 디코딩한다.
-첫 section을 먼저 표시한 뒤 전체 모델로 교체하고, load ID로 취소되거나 늦게 도착한 작업을
+모든 HWPX 디코딩은 heap 한도와 요청별 timeout을 건 worker thread에서 실행한다. section 20개
+이상 또는 압축 전 2MiB 이상 section이 있으면 첫 section을 먼저 표시한 뒤 전체 모델로 교체하고, load ID로 취소되거나 늦게 도착한 작업을
 격리한다. 50페이지 초과 문서는 viewport 주변 페이지만 mount한다. resource reference 단위
 선별 로딩과 section 단위 누적 모델은 이후 최적화 후보이며 정확도를 희생하는 lazy decode는
 도입하지 않는다.

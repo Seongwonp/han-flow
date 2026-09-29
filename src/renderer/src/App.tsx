@@ -18,7 +18,7 @@ import {
 import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
-import { resolveDocumentFonts } from '../../core/fonts/font_resolver'
+import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateViewerDocument } from '../../core/layout/pagination'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
@@ -43,8 +43,10 @@ import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { ViewerToolbar } from './ViewerToolbar'
+import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
 const api = () => (window as any).api
+const shortcutPlatform = rendererPlatform()
 
 type RhwpAdapter = typeof import('./rhwp_fixed_page_adapter')
 let rhwpAdapter: Promise<RhwpAdapter> | null = null
@@ -62,7 +64,7 @@ function borderCss(border: ViewerCellStyle['left']): string {
 function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerDocument): CSSProperties {
   const style = document.charStyles[item.charStyleId]
   return {
-    fontFamily: style?.fontFamily ? `"${style.fontFamily}", "Apple SD Gothic Neo", sans-serif` : undefined,
+    fontFamily: style?.fontFamily ? `${cssFontFamilyName(style.fontFamily)}, ${KOREAN_SANS_STACK}` : undefined,
     fontSize: style ? `${style.height / 100}pt` : undefined,
     fontWeight: style?.bold ? 700 : 400,
     fontStyle: style?.italic ? 'italic' : 'normal',
@@ -89,6 +91,20 @@ export function isEditableTableCell(cell: ViewerTableCell, measurable = false): 
   )
 }
 
+export type TableCellEditingMode = 'structure' | 'text'
+
+/**
+ * 표 셀 편집 방식.
+ * - `'structure'`: 병합되지 않은 일반 body 셀. text와 문단 나눔·범위 치환, 행·열·셀 style command를 허용한다.
+ * - `'text'`: 병합·머리글 셀이나 여러 run 문단이 있는 셀. 문단 하나 안의 text 입력·삭제·치환만 허용한다.
+ * 쪽을 넘어 나뉜 셀 조각은 조각 사이 caret·선택 복원을 검증하지 않았으므로 편집하지 않는다.
+ */
+export function tableCellEditingMode(cell: ViewerTableCell, measurable = false): TableCellEditingMode | undefined {
+  if (measurable || cell.splitTop || cell.splitBottom) return undefined
+  if (isEditableTableCell(cell)) return 'structure'
+  return cell.paragraphs.some((paragraph) => isEditableTextParagraph(paragraph, true)) ? 'text' : undefined
+}
+
 export function tableCellRangeScope(tableId: string, cell: ViewerTableCell): string | undefined {
   const text = cell.paragraphs.flatMap((paragraph) => paragraph.content)
     .find((item): item is ViewerText => item.type === 'text' && Boolean(item.sourceAnchor))
@@ -97,10 +113,17 @@ export function tableCellRangeScope(tableId: string, cell: ViewerTableCell): str
     : undefined
 }
 
-export function tableCellParagraphLabel(index: number, count: number): string {
+export function tableCellParagraphLabel(index: number, count: number, textOnly = false): string {
+  const action = textOnly ? '글자 편집' : '편집'
   return count > 1
-    ? `HWPX 표 셀 ${index + 1}/${count} 문단 편집`
-    : 'HWPX 표 셀 편집'
+    ? `HWPX 표 셀 ${index + 1}/${count} 문단 ${action}`
+    : `HWPX 표 셀 ${action}`
+}
+
+/** 셀 안 입력 surface에서 시작한 click·key는 병합 셀 선택이 아니라 text 편집으로 둔다. */
+function fromEditorSurface(target: EventTarget | null): boolean {
+  return typeof (target as Element | null)?.closest === 'function' &&
+    Boolean((target as Element).closest('[data-editor-range-scope]'))
 }
 
 function Content({
@@ -158,6 +181,7 @@ interface ParagraphEditingProps {
     timestamp: number
   ) => void
   onParagraphStructureUnavailable: () => void
+  onHistory?: (direction: HistoryDirection) => void
   tableCellSelection?: TableCellSelection
   onTableCellSelectionChange: (selection: TableCellSelection) => void
 }
@@ -275,6 +299,7 @@ export function ParagraphView({
       allowMergeNext={index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
       allowParagraphStructure={activeEditing.allowParagraphStructure}
       onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
+      onHistory={activeEditing.onHistory}
       onBoundaryNavigate={(direction, selection) => {
         const host = editorHost()
         const currentAnchor = editableText.sourceAnchor
@@ -360,6 +385,7 @@ export function TableView({
       ? selectableMergedTableCell(table, cell)
       : undefined
     const selected = equalTableCellSelections(cellSelection, editing?.tableCellSelection)
+    const cellMode = editing ? tableCellEditingMode(cell, measurable) : undefined
     const selectCell = () => {
       if (!cellSelection || !editing) return
       globalThis.getSelection()?.removeAllRanges()
@@ -373,9 +399,12 @@ export function TableView({
       aria-selected={cellSelection ? selected : undefined}
       aria-label={cellSelection ? `병합 표 셀 ${cell.row + 1}행 ${cell.column + 1}열` : undefined}
       tabIndex={cellSelection ? 0 : undefined}
-      onClick={cellSelection ? selectCell : undefined}
+      onClick={cellSelection ? (event) => {
+        if (fromEditorSurface(event.target)) return
+        selectCell()
+      } : undefined}
       onKeyDown={cellSelection ? (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
         event.preventDefault()
         selectCell()
       } : undefined}
@@ -396,7 +425,7 @@ export function TableView({
       document={document}
       measurable={measurable}
       editing={
-        isEditableTableCell(cell, measurable) && editing
+        cellMode === 'structure' && editing
           ? {
               ...editing,
               surfaceLabel: tableCellParagraphLabel(paragraphIndex, cell.paragraphs.length),
@@ -407,7 +436,18 @@ export function TableView({
               allowParagraphMergePrevious: paragraphIndex > 0,
               allowParagraphMergeNext: paragraphIndex < cell.paragraphs.length - 1
             }
-          : undefined
+          : cellMode === 'text' && editing
+            ? {
+                ...editing,
+                surfaceLabel: tableCellParagraphLabel(paragraphIndex, cell.paragraphs.length, true),
+                allowMultipleRuns: true,
+                allowParagraphRange: false,
+                allowParagraphStructure: false,
+                rangeScope: undefined,
+                allowParagraphMergePrevious: false,
+                allowParagraphMergeNext: false
+              }
+            : undefined
       }
     />)}</td>
   })}</tr>)}</tbody></table>
@@ -882,7 +922,10 @@ export default function App() {
     if (!document) return
     setLayoutMeasurements(undefined)
     const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
-    void api().getFonts().then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts))).catch(() => setFontResolutions(resolveDocumentFonts(requested, [])))
+    const fontOptions = { platform: rendererPlatform() }
+    void api().getFonts()
+      .then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts, fontOptions)))
+      .catch(() => setFontResolutions(resolveDocumentFonts(requested, [], fontOptions)))
   }, [document])
   useEffect(() => {
     if (!effectiveDocument || !measurementRef.current) return
@@ -1533,6 +1576,11 @@ export default function App() {
       await recoverEditingFailure('다시 실행', reason)
     }
   }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
+  const routeNativeHistory = useCallback((direction: HistoryDirection) => {
+    if (editingTransient.current.isComposing) return
+    if (direction === 'redo') void redoEditing()
+    else void undoEditing()
+  }, [undoEditing, redoEditing])
   const saveEditingAs = useCallback(async () => {
     if (!editing?.isDirty || editingPending || editingTransient.current.isComposing) return
     setEditingPending((current) => current + 1)
@@ -1584,41 +1632,42 @@ export default function App() {
         closeSearch()
         return
       }
-      if (!event.metaKey) return
-      if (event.key.toLocaleLowerCase() === 'b' && editing && activeStyle && characterStyleAvailable) {
+      const action = resolveShortcut(event, shortcutPlatform)
+      if (!action) return
+      if (action === 'bold' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ bold: !activeStyle.bold })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'i' && editing && activeStyle && characterStyleAvailable) {
+      if (action === 'italic' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ italic: !activeStyle.italic })
         return
       }
-      if (event.key.toLocaleLowerCase() === 'u' && editing && activeStyle && characterStyleAvailable) {
+      if (action === 'underline' && editing && activeStyle && characterStyleAvailable) {
         event.preventDefault()
         void applyCharacterStyle({ underline: !activeStyle.underline })
         return
       }
-      if (event.key.toLocaleLowerCase() === 's' && editing) {
+      if (action === 'save' && editing) {
         event.preventDefault()
         void saveEditingAs()
         return
       }
-      if (event.key.toLocaleLowerCase() === 'z' && editing && !editingTransient.current.isComposing) {
+      if ((action === 'undo' || action === 'redo') && editing && !editingTransient.current.isComposing) {
         event.preventDefault()
-        if (event.shiftKey) void redoEditing()
+        if (action === 'redo') void redoEditing()
         else void undoEditing()
         return
       }
-      if (event.key.toLocaleLowerCase() === 'f' && fixedDocument) {
+      if (action === 'search' && fixedDocument) {
         event.preventDefault()
         openSearch()
         return
       }
-      if (event.key === '+' || event.key === '=') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
-      if (event.key === '-') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
-      if (event.key === '0') { event.preventDefault(); changeZoomAt(1) }
+      if (action === 'zoomIn') { event.preventDefault(); changeZoomAt(stepZoom(zoom, 1)) }
+      if (action === 'zoomOut') { event.preventDefault(); changeZoomAt(stepZoom(zoom, -1)) }
+      if (action === 'zoomReset') { event.preventDefault(); changeZoomAt(1) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -1647,8 +1696,9 @@ export default function App() {
   const chooseFile = async () => { const path = await api().openFile(); if (path) await openPath(path) }
   const onDrop = async (event: DragEvent) => {
     event.preventDefault()
-    const path = (event.dataTransfer.files[0] as any)?.path
-    if (/\.(?:hwp|hwpx)$/iu.test(path ?? '')) await openPath(path)
+    const file = event.dataTransfer.files[0]
+    const path: string | undefined = file ? api().getPathForFile(file) || undefined : undefined
+    if (path && /\.(?:hwp|hwpx)$/iu.test(path)) await openPath(path)
     else {
       setErrorCode('UNSUPPORTED_FILE_TYPE')
       setError('HWP 또는 HWPX 파일만 열 수 있습니다.')
@@ -1721,6 +1771,7 @@ export default function App() {
     >{section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>)}</div>}
     <ViewerToolbar
       fileName={fileName}
+      shortcutPlatform={shortcutPlatform}
       editing={editing}
       editingPending={editingPending}
       documentLoading={documentLoading}
@@ -1803,7 +1854,7 @@ export default function App() {
             key={paragraph.id}
             paragraph={paragraph}
             document={effectiveDocument}
-            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
+            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
           />)
           const body = page.columns && page.columnLayout
             ? <ViewerColumnFlow

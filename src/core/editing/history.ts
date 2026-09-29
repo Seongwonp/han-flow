@@ -58,6 +58,21 @@ export class HwpxHistoryLimitError extends Error {
   readonly code = 'HWPX_HISTORY_LIMIT'
 }
 
+interface HeaderMutationPayload {
+  fragment: string
+  expectedCollectionOpenTag: string
+  replacementCollectionOpenTag: string
+}
+
+/** header.xml 변경을 동반하는 inverse command가 history에 더하는 byte 수. */
+function headerMutationBytes(mutation: HeaderMutationPayload | undefined): number {
+  return mutation
+    ? Buffer.byteLength(mutation.fragment, 'utf8') +
+        Buffer.byteLength(mutation.expectedCollectionOpenTag, 'utf8') +
+        Buffer.byteLength(mutation.replacementCollectionOpenTag, 'utf8')
+    : 0
+}
+
 function commandBytes(transaction: EditTransaction): number {
   return transaction.commands.reduce(
     (sum, command) => {
@@ -66,7 +81,8 @@ function commandBytes(transaction: EditTransaction): number {
         Buffer.byteLength(command.textNodeId, 'utf8') +
         64
       if (command.type === 'replace-text') {
-        return sum + common + Buffer.byteLength(command.insert, 'utf8')
+        return sum + common + Buffer.byteLength(command.insert, 'utf8') +
+          Buffer.byteLength(command.restoreSelfClosingTag ?? '', 'utf8')
       }
       if (command.type === 'replace-paragraph-fragment') {
         return (
@@ -83,12 +99,7 @@ function commandBytes(transaction: EditTransaction): number {
       }
       if (command.type === 'apply-cell-style') return sum + common + 48
       if (command.type === 'restore-cell-style') {
-        const headerBytes = command.headerMutation
-          ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
-            Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
-            Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
-          : 0
-        return sum + common + headerBytes +
+        return sum + common + headerMutationBytes(command.headerMutation) +
           Buffer.byteLength(command.expectedCellOpenTag, 'utf8') +
           Buffer.byteLength(command.replacementCellOpenTag, 'utf8')
       }
@@ -96,28 +107,18 @@ function commandBytes(transaction: EditTransaction): number {
         return sum + common + 32
       }
       if (command.type === 'restore-character-run') {
-        const headerBytes = command.headerMutation
-          ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
-            Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
-            Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
-          : 0
         return (
           sum +
           common +
-          headerBytes +
+          headerMutationBytes(command.headerMutation) +
           Buffer.byteLength(command.expectedFragment, 'utf8') +
           Buffer.byteLength(command.replacementFragment, 'utf8')
         )
       }
-      const headerBytes = command.headerMutation
-        ? Buffer.byteLength(command.headerMutation.fragment, 'utf8') +
-          Buffer.byteLength(command.headerMutation.expectedCollectionOpenTag, 'utf8') +
-          Buffer.byteLength(command.headerMutation.replacementCollectionOpenTag, 'utf8')
-        : 0
       return (
         sum +
         common +
-        headerBytes +
+        headerMutationBytes(command.headerMutation) +
         Buffer.byteLength(command.expectedReferenceTag, 'utf8') +
         Buffer.byteLength(command.replacementReferenceTag, 'utf8')
       )

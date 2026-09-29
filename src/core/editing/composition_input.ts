@@ -1,5 +1,6 @@
 import { EditorSelection } from './transaction'
 import { createEditorSelection } from './selection'
+import { isSurrogateBoundarySafe } from './xml_scan'
 
 export interface TextSelection {
   anchorOffset: number
@@ -36,22 +37,13 @@ function cloneSelection(selection: TextSelection): TextSelection {
   return { ...selection }
 }
 
-function isSurrogateBoundary(text: string, offset: number): boolean {
-  return !(
-    offset > 0 &&
-    offset < text.length &&
-    /[\uD800-\uDBFF]/.test(text[offset - 1]) &&
-    /[\uDC00-\uDFFF]/.test(text[offset])
-  )
-}
-
 function safePrefixLength(before: string, after: string): number {
   const limit = Math.min(before.length, after.length)
   let offset = 0
   while (offset < limit && before[offset] === after[offset]) offset += 1
   while (
     offset > 0 &&
-    (!isSurrogateBoundary(before, offset) || !isSurrogateBoundary(after, offset))
+    (!isSurrogateBoundarySafe(before, offset) || !isSurrogateBoundarySafe(after, offset))
   ) {
     offset -= 1
   }
@@ -69,8 +61,8 @@ function safeSuffixLength(before: string, after: string, prefixLength: number): 
   }
   while (
     length > 0 &&
-    (!isSurrogateBoundary(before, before.length - length) ||
-      !isSurrogateBoundary(after, after.length - length))
+    (!isSurrogateBoundarySafe(before, before.length - length) ||
+      !isSurrogateBoundarySafe(after, after.length - length))
   ) {
     length -= 1
   }

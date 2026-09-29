@@ -89,6 +89,760 @@
       "generator": "createInvalidHwpx",
       "fileName": "invalid-package.hwpx",
       "expected": { "outcome": "rejected", "errorCode": "HWPX_IMPORT_FAILED" }
+    },
+    {
+      "id": "ext-hwpxlib-table-scores",
+      "category": "table-basic",
+      "source": "file",
+      "file": "external/ext-hwpxlib-table-scores.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/tool/textextractor/Table.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "af13702617b11bc080d4c069578fcb3b6a7aa6142590cacc72507cbd6324ea41",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 24,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-para-heads",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "file": "external/ext-hwpxlib-para-heads.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/tool/textextractor/ParaHead.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "ac351385ba4d084eb93e898274ea5eb6928cd7d39db6ab890539c368e7dfc96b",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 15,
+        "bulletParagraphs": 4,
+        "numberedParagraphs": 11,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-rect-in-para",
+      "category": "inline-shapes",
+      "source": "file",
+      "file": "external/ext-hwpxlib-rect-in-para.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/tool/textextractor/RectInPara.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "437617ea8f91abe66af6f2b05ab92ce36894fa6b44ab0b49c66c3f8edd0587b5",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-multi-column",
+      "category": "multi-column-layout",
+      "source": "file",
+      "file": "external/ext-hwpxlib-multi-column.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/MultiColumn.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "c5f0933d6d1fe0a2defd9be7ed3cb3839b16b7f2eabb85b1294f98a3a13badd3",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 2,
+        "multiColumnSections": 1,
+        "declaredColumns": 3,
+        "estimatedPages": 2
+      }
+    },
+    {
+      "id": "ext-hwpxlib-header-footer",
+      "category": "header-footer",
+      "source": "file",
+      "file": "external/ext-hwpxlib-header-footer.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/HeaderFooter.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "0920b3b519d6bd316b83f549d14ebeb5f49ea5a10f2d7895da8186f2610aa671",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-page-functions",
+      "category": "page-numbering",
+      "source": "file",
+      "file": "external/ext-hwpxlib-page-functions.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/PageFunctions.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "b2471d9869a457edf30e66496ee46525548cd6732b9699f0db309de061bccf5c",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-sample1",
+      "category": "document-baseline",
+      "source": "file",
+      "file": "external/ext-hwpxlib-sample1.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/sample1.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "516db143466d3bc43e6808d4d5dc9da63abf014ec637ef01594f27998a0bd6c2",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-simple-table",
+      "category": "table-span",
+      "source": "file",
+      "file": "external/ext-hwpxlib-simple-table.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimpleTable.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "502d75c289813ce4b99648ecbc3cbe333bd8acd78e9f4b4b370566f308c1e6de",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 5,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-equation",
+      "category": "equations",
+      "source": "file",
+      "file": "external/ext-hwpxlib-equation.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimpleEquation.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "15091aadf5dc5ac451383472afbdf02af75c225db894f3f9ace621634db9d57a",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-picture",
+      "category": "images",
+      "source": "file",
+      "file": "external/ext-hwpxlib-picture.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimplePicture.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "7ed3bdf89986fd88fdbcd92eaeac3f852aa6984fb1f7ddf4dd4f582afe20084c",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 1,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-change-track",
+      "category": "change-tracking",
+      "source": "file",
+      "file": "external/ext-hwpxlib-change-track.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/ChangeTrack.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "05e6384795611406b29302cf62326b6d1f0a9399d2fbc201fcbe459aa730e356",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-dutmal",
+      "category": "ruby-text",
+      "source": "file",
+      "file": "external/ext-hwpxlib-dutmal.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimpleDutmal.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "fec6c42fea4be719c7dab45e83ff10e42dea9bf8c99b6b5f3791e89a5565d99f",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-hwpxlib-page-size",
+      "category": "page-setup",
+      "source": "file",
+      "file": "external/ext-hwpxlib-page-size.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/PageSize_Margin.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "7ac9b4db7bb901b1039bf97685db56392358aa545847ffaddb949cc4ad594e4d",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-table-page-break-cell",
+      "category": "table-pagination",
+      "source": "file",
+      "file": "external/ext-pyhwpx-table-page-break-cell.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/table_page_break_cell.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "40c679ef8a8cfa415645f6983f4e377b73e016542a24957449e6dfe0d35d75c7",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 6,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-merge-3x3",
+      "category": "table-span",
+      "source": "file",
+      "file": "external/ext-pyhwpx-merge-3x3.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/merge_3x3_a1c2.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "80d5e0b861aef912822bb7af226bed901e5e9a8a742e32b6a2bcf22625854ac7",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 4,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-merge-2x2",
+      "category": "table-span",
+      "source": "file",
+      "file": "external/ext-pyhwpx-merge-2x2.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/merge_2x2_whole.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "869844e4f77c2e3ec205792f654551d24f76f84a42a6b4e74b63a45a0d688b31",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 1,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-list-bullet-l2",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "file": "external/ext-pyhwpx-list-bullet-l2.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/list_bullet_level2.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "861765ea048a009c1818e995c2ee15dce3c0a5564bd9ebd0cf25039d3adee462",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 3,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-list-number-l3",
+      "category": "lists-and-numbering",
+      "source": "file",
+      "file": "external/ext-pyhwpx-list-number-l3.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/list_number_level3.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "5974fdb5c80250db61d98ee0119e8db7064ac01cdf8c6037c1a4371a3f076a63",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 3,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 3,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-memos",
+      "category": "memos",
+      "source": "file",
+      "file": "external/ext-pyhwpx-memos.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/memos_numbered.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "6028c9425679b42d48474538893d524ccc023865a446cab015cc6a213743bf95",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-foot-endnotes",
+      "category": "footnotes-endnotes",
+      "source": "file",
+      "file": "external/ext-pyhwpx-foot-endnotes.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/notes_inst_id.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "2921d6fa71357780a3c3bef8b4e73997506ad773fa23e3d844ef2dca86d59bc6",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-text-box-fields",
+      "category": "form-fields",
+      "source": "file",
+      "file": "external/ext-pyhwpx-text-box-fields.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/text_box_fields_before.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "eca30062c1ac79074eba20ff8c856aeeb56915dfe4fe6c3ca7e9373f49244d1b",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 1,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-cell-border-vmerge",
+      "category": "table-span",
+      "source": "file",
+      "file": "external/ext-pyhwpx-cell-border-vmerge.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/cell_border_vmerge_base.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "ae54ee279b3b13a6efb7b6e2eefc92a442408a5096605a72d290193fd9c2174b",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 8,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-fill-image",
+      "category": "cell-image-fill",
+      "source": "file",
+      "file": "external/ext-pyhwpx-fill-image.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/fill_image_left_top.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "f81a70e670f785b084ca226e82c04bd7f4096c7bf51d17f23ca05a4bf8449d53",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 6,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-form-fields-spanning",
+      "category": "form-fields",
+      "source": "file",
+      "file": "external/ext-pyhwpx-form-fields-spanning.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/form_fields_spanning_before.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "3c5e6d6d1f24ae4dd5f9b0535642591b8cea41a6e1b24b334687631868e71a6f",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 2,
+        "cells": 2,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-auto-grow-cell",
+      "category": "table-pagination",
+      "source": "file",
+      "file": "external/ext-pyhwpx-auto-grow-cell.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/auto_grow_cell_filled.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "5593e683a01c4458f2329c5f572ce57aa52d6c69a185c493507c7bbe2ca93e1c",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 1,
+        "cells": 1,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
+    },
+    {
+      "id": "ext-pyhwpx-paragraph-margins",
+      "category": "paragraph-layout",
+      "source": "file",
+      "file": "external/ext-pyhwpx-paragraph-margins.hwpx",
+      "origin": {
+        "url": "https://github.com/airmang/python-hwpx/blob/7d5ce2b481eaf8963a4c1ee09e58ef12918c6ae5/tests/fixtures/hancom_saved/formfit_paragraph_margins.hwpx",
+        "publisher": "airmang/python-hwpx",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-09-29",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "ccc6f0180b5944f2263cdc2ce4a181b1df5d143878999d008a7ba715295e2f97",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 8,
+        "cells": 8,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 0,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1
+      }
     }
   ]
 }

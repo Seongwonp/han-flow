@@ -4,7 +4,9 @@
 
 ### Sprint 0 재현성과 P0 방어
 
+- ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고, 크기와 무관하게 모든 HWPX 디코딩을 decoder worker로 옮겨 요청(첫 section·background 전체)마다 heap 한도·wall-clock timeout·구조화된 오류 code 적용
 - Node.js 22·npm 10 개발 계약과 Windows install/test/probe/build CI 추가
+- Linux `dir` 패키지 target과 xvfb 패키지 앱 matrix·HWP·PDF E2E, unpacked 앱 artifact를 올리는 Linux CI 추가
 - 단일 완료율을 폐기하고 capability별 외부 승인까지 추적하는 장기 로드맵 추가
 - HWPX read-only와 editing 경로의 entry·경로·암호화·압축 해제 제한 통합
 - Electron renderer sandbox와 명시적 context isolation 활성화
@@ -20,6 +22,20 @@
 - 손실성 초기 parser·normalization·renderer-engine·Zustand store와 구형 shared 타입 제거
 - 미사용 `zustand`·`katex`·`@types/katex`·`react-icons` dependency 제거
 - Windows x64 production `dir` package 명령과 OS별 V3 acceptance bundle 생성 지원
+- OS별 글꼴 대체 체인(Windows 맑은 고딕 우선, 바탕은 한국어 보조 글꼴 설치 시)과 한/영 family alias, 미설치 시 CSS generic fallback, 글꼴 목록 실패 시 Windows는 맑은 고딕만 반환(자동 테스트 기준, Windows 실기 검증 대기)
+- EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
+- Electron 44 요구사항에 맞춰 macOS 패키지 `minimumSystemVersion`을 13.0으로 지정
+- OS 파일 열기 경로를 포커스된 창(없으면 최근 창·새 창)으로 전달하고 대화상자를 요청한 창에 연결, `document:import`·`editing:start`는 main이 건넨 경로와 끌어 놓은 일반 문서 파일만 창별 허용목록(실제 경로 비교)으로 받으며 미사용 `dialog:openImage` 제거
+
+### Sprint 4 호환성 corpus
+
+- 한/글 저장본 공개 테스트 HWPX 26종(hwpxlib·python-hwpx, Apache-2.0)을 sha256·출처와 함께 external corpus로 반입, 전부 열림
+- 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
+- 편집 가능 비율 측정 `corpus:editing-coverage`(run·문단·표 셀·표 구조별 capability와 patch dry-run, 거부 사유 histogram)와 기준선 추가: 외부 26종 text 편집 79.5%·글자 가중 89.3%(빈 `<hp:t/>`·표 셀 text 해제 후 89.8%·92.8%)
+
+### Sprint 5 Windows 배포 후보
+
+- 결정적 `icon:ico` 생성기와 비서명 x64 NSIS 설치본 target(한국어·설치 경로 선택·파일 연결), Windows CI의 패키지 앱 matrix·HWP·PDF E2E와 설치본·unpacked artifact 업로드 추가
 
 ### V3 HWPX 편집 기반
 
@@ -60,8 +76,15 @@
 - style projection 뒤 stale DOM selection offset 방어와 run 수 변경 시 안전한 surface 재생성
 - `ApplyCharacterStyleCommand`의 5–72pt 글자 크기와 `#RRGGBB` 글자색
 - 글자 크기 증감·색상 선택 toolbar와 활성 source style 동기화
+- Windows·Linux Ctrl 단축키(Ctrl+Y 포함)·tooltip 표기와 contentEditable 네이티브 undo/redo의 앱 history 우회(자동 테스트 기준, Windows 실기 검증 대기)
 - 부분 글자 style·문단 정렬을 함께 적용한 package Save As·재개봉 통합 검증
 - V3 자동 코드 관문 완료와 macOS 실제 두벌식·Windows 한/글 외부 승인 matrix 분리
+- Save As를 같은 폴더 임시 파일로 쓰고, 새 파일은 hard link(목적지가 생기면 OS가 EEXIST로 거부)로, 교체를 확인한 기존 파일은 `rename`으로 원자적 게시하며 hard link 미지원 파일 시스템(exFAT·FAT32·일부 SMB)에서만 확인 후 `rename`으로 대체하고 열린 원본은 항상 거부(자동 테스트 기준, Windows 실기 검증 대기)
+- 저장·PDF 파일 권한을 0o600 대신 umask를 적용한 기본값으로 게시하고, PDF 내보내기도 편집 중인 원본·심볼릭 링크 목적지를 PDF 전용 안내와 함께 거부
+- 개발 빌드의 Windows·Linux에서 메뉴 없이 F12·Ctrl+Shift+I로 DevTools 열기
+- 한/글이 빈 입력 칸으로 저장하는 자기 닫힘 `<hp:t/>`를 빈 text anchor로 인정해 입력 시 `<hp:t>…</hp:t>`로 펼치고 undo는 원래 tag bytes로 복원, viewer decoder와 편집 tokenizer의 `hp:t` ordinal·text를 공개 corpus 전체에서 교차 검증
+- 표 셀 text 편집을 구조 편집 조건에서 분리해 병합·머리글·여러 run 셀도 문단 하나 안에서 입력·삭제·치환 허용(행·열·병합·분할·셀 style·문단 나눔은 기존대로 일반 body 셀만, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용)
+- 편집 코어 tree 전환 1단계: 원문 범위를 보존하는 source tree와 serializer로 text 입력·삭제·치환을 옮기고(출력 bytes는 전환 전과 동일, 공개 corpus identity·differential 관문), package별 tree cache로 대형 section 입력 비용을 keystroke당 약 4.1ms에서 1.2ms로 단축
 
 ### V2 HWP fixed-page
 

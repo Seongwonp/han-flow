@@ -1,967 +1,332 @@
-# Han-Flow 검증 이력
+# Han-Flow 개발·검증 이력
 
-이 문서는 구현 완료 주장에 대응하는 재현 명령, 입력 범위, 정량 결과와 발견한 결함을 날짜별로
-기록한다. 포트폴리오와 릴리스 회고에서는 이 문서를 요약 자료로 사용하고, 세부 설계 판단은
-연결된 기준선·bake-off·ADR을 근거로 사용한다.
+기준일: 2026-09-28
 
-실사용 문서는 저장소 밖에 두며 파일명 외 본문·캡처·생성 PDF는 커밋하지 않는다. 자동화 로그도
-페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다. 공개
-synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
+이 문서는 2026-09-28에 과거 개발 일지(2026-06 prototype·2026-09 작업 일지)와 실행 계획(milestone
+체크리스트)을 통합한 단일 이력이다. 날짜별로 커밋 제목, 검증한 내용과 남은 관문만 기록하며 최신
+항목이 위에 온다. 설계 판단의 세부 근거는 연결된 전략·기준선·ADR 문서에 둔다.
 
-## 2026-09-13 — 동일 너비 HWPX 다단 흐름과 Windows production 검증
+기록 규칙:
 
-`hp:p columnBreak="1"`을 문단 모델에 보존하고 동일 너비 `NEWSPAPER/LEFT` 구역을 왼쪽 단,
-오른쪽 단, 다음 페이지 순서로 나누는 pagination을 구현했다. 각 페이지는 기존 호환용 flat block과
-단별 block을 함께 가지며 renderer는 공통 간격의 CSS grid로 표시한다. 실측 layer도 단 폭으로
-문단을 다시 측정해 좁은 단의 줄바꿈 높이가 페이지 계산에서 빠지지 않게 했다. 지원하지 않는
-`PARALLEL` 변형은 기존 fallback diagnostic과 단일 흐름을 유지한다.
+- 실사용 문서는 저장소 밖에 두고 파일명 외 본문·캡처·생성 PDF는 커밋하지 않는다. 자동화 로그도
+  페이지 수, 구조 count, 비공백 문자 수, 시간·메모리와 안정적 오류 코드만 남긴다.
+- 공개 synthetic fixture는 생성 코드와 SHA-256 manifest를 함께 커밋한다.
+- 현재 commit에서 재현할 수 없는 수치(과거 Mac, private 문서)는 아래 별도 절에 두고 현재 상태로
+  인용하지 않는다([장기 로드맵 §2](long_term_roadmap.md#2-완료-판정-방식)).
+- 현재 git 이력은 재임포트된 것이며 root commit은 `8364d36`(2026-08-02)이다. 그 이전 항목의 commit
+  hash는 현재 저장소에 없으므로 "(재임포트 이전 이력, hash 미상)"으로 표시한다.
 
-공개 core corpus 9/9는 111,424 bytes, section 88개, 다단 section 1개·선언 단 2개·diagnostic
-0개와 추정 2,512쪽을 통과했다. 독립 report SHA-256은
-`10A806F944CFF272584AD3CFF260E5165CE2AE695AFBC42BC51828C2500F8A79`로 일치했다. 새 Windows
-x64 package의 production matrix 6종도 통과했다. 다단 fixture는 DOM 실측 1쪽에 단 2개,
-양쪽 비공백 문자 17·43개, overflow 0을 기록했다. 첫 production 시도에서 지나치게 좁은 synthetic
-용지가 만든 실제 줄바꿈 overflow를 발견해, 단 폭 실측 구현과 현실적인 fixture 폭으로 수정했다.
+## 현재 재현 가능한 결과
 
-## 2026-09-08 — 다단 레이아웃 읽기 전용 모델과 손실 진단
+로컬 수치는 HEAD `c7a999c`를 Linux·Node.js 22.22.2에서 실행한 값이다. CI 수치는 마지막으로 완료된
+`492dd02`(2026-09-28) run이며 HEAD run은 작성 시점에 진행 중이었다.
 
-HWPX `hp:colPr`의 type·layout·단 개수·동일 너비·공통 간격과 개별 단 정의를
-`ViewerSection.columnLayout`에 보존했다. 유효하지 않은 단 개수와 불완전한 비동일 너비 정의를
-별도 code로 진단하고, 2단 이상은 현재 단별 조판 미지원 사실을
-`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`으로 명시해 열기 성공과 시각 충실도를 구분했다.
+| 관문 | 명령·환경 | 결과 |
+| --- | --- | --- |
+| Jest | `npm test -- --runInBand` | 43 suites passed·2 skipped, 292 passed·12 skipped |
+| parser probe | `npm run test:probe` | 18 passed |
+| 공개 HWPX corpus | `npm run verify:corpus` | 9/9(거부 기대 1종 포함), 111,424 bytes, 88 sections, 7 tables, 29 cells, 15 resources, 다단 section 1, core 추정 2,512쪽, 외부 file fixture 0 |
+| Windows CI | `windows-latest` run 47 | test·typecheck·probe·corpus·build·`package:win`, 패키지 앱 HWPX matrix·HWP matrix·HWP PDF, 비서명 NSIS와 unpacked artifact 업로드 통과 |
+| Linux CI | `ubuntu-latest`·xvfb run 3 | 같은 자동 관문과 `package:linux`, 패키지 앱 E2E 3종, unpacked artifact 업로드 통과 |
+| macOS CI | 없음 | Apple Silicon 하드웨어 확보 후 수동 관문으로 진행 |
 
-동일 너비 2단과 600 HWPUNIT 간격을 가진 `multi-column-layout` fixture를 추가했다. 공개 HWPX
-9종은 111,302 bytes, section 88개, 다단 section 1개·선언 단 2개·diagnostic 1개, table 7개,
-cell 29개, resource 15개와 core 추정 2,511쪽으로 모두 통과했다. 독립 report SHA-256은
-`7D33EC615F203271AE1E34C8D230C1A3D9F029592C17C7FC28C83EDE18F314FF`로 일치했다. 실제 단별
-흐름 조판과 각주·수식 모델은 다음 호환성 slice로 남긴다.
+Linux CI 패키지 앱 E2E 세부:
 
-## 2026-09-08 — 글머리표·번호 목록 공개 corpus 확장
-
-현재 decoder가 `ViewerHeadingStyle`과 paragraph `marker`로 실제 보존하는 목록 구조를 전용 공개
-HWPX로 분리했다. `list-markers`는 일반 문단, 글머리표 2개와 DIGIT 번호 2개를 포함하며 Jest는
-marker 순서 `없음, -, -, 1., 2.`와 bullet·numbering heading 정의를 확인한다. corpus manifest는
-marker 4개, bullet 2개와 numbering 2개를 exact 값으로 판정한다.
-
-확장된 HWPX 8종이 모두 통과했다. 합계는 109,893 bytes, section 87개, marker 문단 13개
-(bullet 5·numbering 8), table 7개, cell 29개, resource 15개와 core 추정 2,510쪽이다. 독립 두
-JSON report의 SHA-256은
-`85F82D921D2EB273D41E7E0208CAB155D51C8261B0BD8698B87D492162AFEB55`로 일치했다. 다단·각주·수식은
-현재 전용 document model이 없어 열기 성공만으로 구조 보존을 주장하지 않고 후속 구현으로 남겼다.
-
-## 2026-09-08 — 공개 fixture 상위 catalog와 Windows HWP 결정성 복구
-
-`fixture_catalog.json`에 HWPX 7종과 HWP 1종의 ID·형식·category·실행 pipeline을 통합했다.
-`verify:corpus`는 HWPX manifest 전체와 고정 HWP manifest의 ID를 GUI 실행 전에 교차 검증한다.
-production DOM matrix도 코드에 fixture를 다시 적지 않고 catalog의 `hwpx-production` 5종을
-선택하며 기존 `name`과 함께 동일한 `fixtureId`를 보고한다. Windows production 앱에서 5종이
-통과했고 대형 문서는 실측 19,503쪽 중 DOM 12쪽만 mount되어 virtualization을 유지했다.
-
-Windows에서 드러난 확장자 없는 Electron shim, `@rhwp/core` 절대 경로 dynamic import와 macOS
-기본 앱 경로 고정 문제를 수정했다. HWP 생성 이미지도 OS별 Canvas raster 대신 고정 공개 PNG
-bytes로 바꿨다. 독립 두 생성본은 6,656 bytes와 SHA-256
-`2400FCEE7AA03235870701AEEA044D084A652BDFB60EFA52264F1774D8725317`이 일치했다. 최종 HWP
-matrix는 catalog ID `synthetic-layout`, 생성 결정성, 두 parser, 2쪽·표 1개·셀 9개·이미지 1개,
-반복 머리말 2회, PDF 2쪽·텍스트 보존 98.6%와 오류 5종을 모두 통과했다.
-
-## 2026-09-08 — Sprint 4 공개 HWPX corpus manifest와 결정적 report
-
-기존 production matrix에 흩어진 공개 HWPX 입력을 별도 JSON manifest로 분리하고, GUI 없이
-source package·decoder·pagination을 빠르게 검증하는 `npm run verify:corpus`를 추가했다. 허용
-generator 목록, 중복 ID, category, 기대 outcome·구조 count와 오류 code를 fixture 생성 전에
-검증한다. report에는 본문과 로컬 경로를 넣지 않고 content fingerprint, byte 크기, 구조·문자 수,
-diagnostic과 core `estimatedPages`만 기록한다.
-
-baseline, 긴 cell, 이미지·rowSpan, 3×3 열, round-trip sentinel, 80-section 대형 문서와 손상
-package 7종이 모두 통과했다. 합계는 section 86개, table 7개, cell 29개, resource 15개와 core
-추정 2,509쪽이다. ZIP timestamp를 제외한 entry content fingerprint를 사용해 독립 두 실행의 JSON
-SHA-256 `A7D91650EBD73ABC84CAA299FE9634233C4B2901BC2B536012D66B5E5BF13FD4` 일치를 확인했다.
-manifest·판정기 probe 3종을 포함한 privacy-safe parser probe는 11종 통과했다. Windows CI에도
-같은 corpus 명령을 추가했다. production DOM 실측과 HWP matrix는 의미가 다른 기존 관문으로
-계속 분리한다.
-
-## 2026-09-07 — Windows production 표 구조 승인 번들 확장
-
-Windows x64 production 앱에서 실제 리본을 사용해 3×3 공개 fixture의 행 추가·삭제, 열
-추가·삭제, 오른쪽 1×2 병합과 병합 cell 선택 기반 분할을 자동 실행하는 E2E probe를 추가했다.
-행·열 action의 undo/redo와 분할 undo/redo를 각각 확인한 뒤 결과를 다른 이름으로 저장하고 새
-앱 session에서 다시 열었다. probe는 UI 결과뿐 아니라 재개봉한 표의 행·열, 행별 cell 수와 모든
-`colSpan`도 원문 없이 기록한다.
-
-Windows 10.0.26200 x64의 `Han-Flow.exe`에서 모든 action과 원본 hash 불변, `table-structure`
-저장 안내, dirty 해제와 재개봉을 통과했다. 최종 결과는 3행 × 3열, 행별 cell 3·3·3, 모든
-`colSpan=1`, 1쪽과 overflow 0이었다. 승인 bundle에 구조 편집 전·후 HWPX 두 개와 WIN-09~10을
-추가했으며 PowerShell 무결성 검사에서 일곱 HWPX가 모두 통과했다. Windows 한/글의 복구 경고와
-역재개봉 판정은 설치 후 실행할 외부 수동 관문으로 남긴다.
-
-## 2026-09-05 — Sprint 3 제한된 수평 1×2 셀 분할
-
-`TableCellSelection`으로 고른 읽기 전용 병합 body cell을 두 논리 cell로 되돌리는 제한된 분할을
-구현했다. main은 현재 projection의 table·cell identity를 대조하고 core는 source `textNodeId`
-ancestry, 주소와 `rowSpan=1`·`colSpan=2`를 다시 검증한다. 선택 행 외 모든 행에서 대응하는 두 열의
-width가 일관될 때만 왼쪽 geometry를 복원하고, 같은 모양과 새 paragraph ID를 가진 빈 오른쪽
-cell을 만든다. 기존 문단은 왼쪽에 원래 순서대로 보존한다.
-
-공개 3×3 fixture에서 병합 후 분할, 문단·열 주소·너비, 빈 오른쪽 cell, exact inverse와 redo를
-검증했다. stale 좌표와 불일치 width는 source 변경 전에 차단한다. main session, 리본 action,
-`table-structure` loss policy, undo/redo, Save As와 재개봉도 통과했다. TypeScript typecheck와 Jest
-37 suites·223 tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe
-8개 통과를 확인했다.
-
-## 2026-09-05 — Sprint 3 병합 cell 선택 기반
-
-읽기 전용 병합 body cell을 click 또는 Enter·Space로 선택하는 `TableCellSelection`과 outline을
-구현했다. selection은 source `textNodeId`, table·cell identity와 논리 row·column을 보관한다.
-text caret과 cell selection은 상호 배타적이며, 문서 재투영에서 anchor·identity·span이 달라지면
-pure reconciliation이 stale selection을 해제한다. 파일 교체와 편집 종료는 reducer reset으로
-selection을 함께 정리한다.
-
-전용 테스트에서 병합 body cell만 target이 되는 조건, header·rowSpan·continuation·anchor 없음
-차단, current/stale projection과 reducer reset을 검증했다. renderer 정적 회귀는 접근 가능한
-keyboard target, `aria-selected`와 선택 outline을 확인했다. TypeScript typecheck와 Jest 37
-suites·220 tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe
-8개 통과를 확인했다.
-
-## 2026-09-05 — Sprint 3 제한된 오른쪽 1×2 셀 병합
-
-현재 안전한 body cell과 바로 오른쪽 cell의 모양·height·margin·vertical alignment가 같을 때
-왼쪽 원점 cell로 병합하는 table fragment command를 구현했다. 오른쪽 direct paragraph는 원래
-순서대로 이동하고 `colSpan=2`와 두 width의 합을 적용한다. logical `colCnt`, table width와 다른
-cell 주소는 유지하며 geometry가 바뀐 병합 cell의 stale `linesegarray`는 제거한다.
-
-공개 3×3 fixture에서 text 순서, span·width, 다른 주소 불변, 병합 후 읽기 전용 projection,
-exact inverse와 redo를 검증했다. 마지막·머리글·서로 다른 모양 cell과 기존 병합 표는 fail-closed한다.
-main session과 리본, selection 해제·undo 복원, `table-structure` loss policy, Save As와 재개봉도
-통과했다. TypeScript typecheck와 Jest 36 suites·216 tests 통과(2 suites·11 tests skip), Electron
-production build와 privacy-safe probe 8개 통과를 확인했다.
-
-## 2026-09-05 — Sprint 3 현재 열 삭제와 selection 재배치
-
-단순 직사각형 표의 선택 열을 모든 direct row와 반복 머리글에서 함께 제거하고 `colCnt`, 뒤쪽
-`colAddr`와 표 전체 너비를 원자적으로 감소시키는 command를 추가했다. 중간 열은 오른쪽 cell,
-마지막 열은 왼쪽 cell의 첫 text로 selection을 옮기며, 삭제되는 text prefix 수를 반영한 살아남은
-anchor를 inverse locator로 사용한다. 마지막 하나뿐인 열, 불균일 너비와 병합·span은 fail-closed한다.
-
-다중 열 공개 fixture에서 중간·마지막 열 삭제, 주소·너비, selection projection, exact inverse와
-redo를 검증했다. main session과 리본, `table-structure` loss policy, undo/redo, Save As와 재개봉도
-통과했다. TypeScript typecheck와 Jest 36 suites·213 tests 통과(2 suites·11 tests skip), Electron
-production build와 privacy-safe probe 8개 통과를 확인했다.
-
-## 2026-09-05 — Sprint 3 안전한 오른쪽 열 추가 기반
-
-단순 직사각형 표에서 현재 열 오른쪽에 빈 열을 추가하는 table fragment command를 구현했다.
-모든 direct row와 반복 머리글의 대응 cell을 행별 geometry·margin·style과 함께 복제하되 text와
-`linesegarray`는 비우고 paragraph ID를 다시 만든다. `colCnt`, 뒤쪽 `colAddr`와 표 전체 너비를
-원자적으로 갱신하며 불균일 열 너비, 병합·span·중첩·복합 콘텐츠는 fail-closed한다.
-
-다중 열 공개 fixture에서 머리글 포함 cell 복제, 빈 text projection, ID·주소·너비와 앞선 행의
-추가 text 수를 반영한 selection ordinal을 검증했다. main session과 리본, `table-structure` loss
-policy, exact undo/redo, Save As와 재개봉도 통과했다. TypeScript typecheck와 Jest 36 suites·210
-tests 통과(2 suites·11 tests skip), Electron production build와 privacy-safe probe 8개 통과를
-확인했다.
-
-## 2026-09-04 — Sprint 3 표 행 삭제와 selection 재배치
-
-단순 직사각형 표의 현재 body 행을 삭제하고 table count·높이·뒤쪽 cell 주소를 원자적으로 줄이는
-command를 추가했다. 삭제된 anchor 대신 다음 body 행, 마지막 행이면 이전 body 행의 첫 text로
-selection을 옮기며 같은 anchor를 inverse locator로 사용한다. 반복 머리글과 마지막 body 행 삭제는
-fail-closed한다.
-
-공개 fixture에서 중간 행 삭제, 뒤쪽 행 주소와 높이, 마지막 body 행 보호, exact inverse와 redo를
-검증했다. main session은 selection 이동·복원, undo/redo, Save As와 재개봉까지 확인했다.
-TypeScript typecheck와 Jest 36 suites·206 tests 통과(2 suites·11 tests skip)를 확인했다.
-Electron production build와 privacy-safe probe 8개도 모두 통과했다.
-
-## 2026-09-04 — Sprint 3 안전한 표 행 추가 기반
-
-병합·중첩·복합 콘텐츠가 없는 직사각형 표에서 현재 body 셀 아래에 같은 모양의 빈 행을 추가하는
-table fragment command를 구현했다. source topology의 row/column count, cell 주소와 span을 모두
-검증하고, 새 행 이후 `rowAddr`, `rowCnt`와 표 전체 높이를 함께 갱신한다. 반복 머리글은 유지하며 머리글 기준
-추가, row/cell 고유 ID, 이미지·제어 문자 등 복합 셀이 있는 표는 fail-closed한다.
-
-공개 fixture에서 빈 text projection, 뒤쪽 행 보존, exact inverse와 redo를 검증했다. main session은
-selection 유지, `table-structure` loss policy, undo/redo, Save As와 재개봉까지 확인했다.
-TypeScript typecheck와 Jest 36 suites·204 tests 통과(2 suites·11 tests skip)를 확인했다.
-Electron production build와 privacy-safe probe 8개도 모두 통과했다.
-
-## 2026-09-04 — Sprint 3 표 셀 테두리·배경 편집 기반
-
-병합되지 않은 일반 body cell에서 기존 borderFill 정의를 새 ID로 복제하고 선택한 셀의
-`borderFillIDRef`만 교체하도록 구현했다. 배경색과 사방 테두리 색·두께·없음을 리본에서 적용하며,
-공유 원본 style과 다른 셀은 수정하지 않는다. 머리글·rowSpan·columnSpan·continuation과 단색
-winBrush 또는 사방 border가 불완전한 source는 fail-closed한다.
-
-전용 테스트는 header·section 동시 변경, unknown XML sentinel 보존, projection, exact inverse,
-redo, 제한 구조 차단을 검증한다. main session에서는 selection capability, undo/redo,
-`table-cell-style` loss policy, Save As와 재개봉까지 확인했다. TypeScript typecheck와
-Jest 35 suites·200 tests 통과(2 suites·11 tests skip)를 확인했다. Electron production build와
-privacy-safe probe 8개도 모두 통과했다.
-
-## 2026-09-04 — Sprint 3 여러 문단 표 cell 구조 편집
-
-병합·span·반복 머리글·continuation이 없는 일반 body cell에서, 모든 문단이 단일 source text
-run이면 cell별 range scope를 공유하도록 capability와 renderer surface를 확장했다. core는 실제
-`hp:tc > hp:subList` 경계와 header·cellSpan을 검증해 같은 cell 안에서만 문단 횡단 selection,
-Enter 분할과 경계 병합을 허용한다.
-
-공개 synthetic HWPX의 일반 cell에 여러 문단을 추가해 범위 치환, 양 끝 run style 보존,
-Enter 분할, 양방향 경계 병합, 다른 cell 차단과 inverse byte 복원을 검증했다. main session에서는
-문단 횡단 transaction의 undo/redo, Save As와 package 재개봉까지 확인했다. 반복 머리글이 섞인
-요청이 일반 run fallback으로 우회되지 않는 회귀도 추가했다. 전체 검증은 TypeScript typecheck,
-Jest 34 suites·196 tests 통과(2 suites·11 tests skip), Electron production build와
-privacy-safe probe 8개를 통과했다.
-
-## 2026-09-01 — Sprint 3 문단 모양과 탭·목록 구조 보존
-
-정렬·줄 간격·문단 앞뒤 간격·첫 줄 들여쓰기 command가 기존 paraPr를 복제할 때
-`tabPrIDRef`와 `hh:heading`을 byte 의미 그대로 유지하는 불변식을 추가했다. 글자 모양에 필요한
-단순 run 제한을 문단 모양에서 분리해 `hp:tab`이 포함된 최상위 일반 문단도 모양을 바꿀 수 있다.
-decoder는 탭 정의 ID를 projection하고 저장 안내는 기존 탭·글머리표·번호 구조 보존 범위를 알린다.
-새 탭 위치나 목록 definition을 만드는 기능은 이번 검증 범위가 아니다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 34 suite·189 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다. 공개 fixture에서 인라인 탭,
-bullet heading, tabPr 참조, 정렬 자식 순서와 undo inverse의 header·section byte 복원을 확인했다.
-
-## 2026-09-01 — Sprint 2 atomic history와 저장 revision 추적
-
-main editing session의 selection 선반영을 제거하고 transaction selection 동기화와 command apply를
-`commitSynchronized` 한 연산으로 묶었다. 중간 command conflict와 history byte limit에서는
-package identity, selection, undo/redo stack, 추정 bytes와 dirty/savepoint가 모두 호출 전 상태를
-유지한다. undo 뒤 실패한 새 branch도 기존 redo를 보존하며 성공한 no-op은 selection만 동기화하고
-history entry를 만들지 않는다.
-
-history와 IPC에 현재 package mutation `revision`과 마지막 검증 저장의 `savedRevision`을 분리했다.
-저장 성공 뒤에만 saved revision이 이동하며 undo/redo로 저장 logical state를 다시 방문하면 현재
-revision이 달라도 dirty가 해제된다. renderer 상태바와 저장 완료 안내는 두 revision을 노출한다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 30 suite·176 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다.
-
-## 2026-09-01 — Sprint 2 구조 capability와 stale selection 복구
-
-ViewerDocument의 editable anchor를 최상위 일반 텍스트와 단순 표 body cell로 분류하고 text,
-글자 모양, 문단 모양과 문단 구조 capability를 selection마다 계산한다. 같은 문단의 여러 run은
-text와 문단 모양, 여러 문단은 text 범위 치환만 허용한다. 표 셀은 text·내부 줄바꿈만 허용하며
-Enter split, 경계 merge와 style control을 요청 전에 차단하고 구체적인 제한 이유를 표시한다.
-
-편집 결과 selection은 새 projection에서 anchor·scope·text 길이를 다시 검증한다. 범위를 벗어난
-offset은 surrogate pair를 가르지 않는 UTF-16 경계로 보정하고 한 endpoint만 남으면 collapse,
-둘 다 사라지면 안전하게 해제한다. conflict 뒤에는 main session의 현재 document·revision과
-selection을 `editing:refresh`로 다시 받아 renderer 상태를 복구한다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 30 suite·174 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다.
-
-## 2026-09-01 — Sprint 2 capability와 편집 오류 contract 1차
-
-main 편집 IPC의 성공·실패를 명시적인 envelope로 통일하고 conflict, unsupported, invalid request,
-not applicable, session expired, history limit, save failure와 internal code를 추가했다. 오류에는
-복구 정책을 함께 싣고 분류되지 않은 내부 오류의 원문·파일 경로는 renderer에 전달하지 않는다.
-Electron이 reject message 앞에 문구를 추가해도 고정 marker 뒤 payload만 복원한다.
-
-renderer는 code별로 지원 제한, 변경되지 않은 conflict, 세션 종료와 dirty가 유지된 저장 실패를
-구분한다. 인접 문단이 없는 merge의 기존 문자열 비교를 제거했고, 여러 run selection에서는 아직
-지원하지 않는 글자 모양 control과 단축키를 사전에 비활성화한다. 단위 테스트는 오류 분류,
-transport 복원, 내부 정보 비노출, no-op와 capability 경계를 검증한다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 30 suite·167 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다.
-
-## 2026-08-22 — Sprint 2 공통 paragraph editing host
-
-HWPX page 묶음을 renderer의 공통 selection host로 승격했다. editable surface는 source anchor와
-range scope를 노출하며 같은 section의 최상위 일반 문단만 scope를 공유한다. 표 셀 문단은 고유
-scope로 격리해 최상위 문단 구조 치환과 섞이지 않는다.
-
-native pointer drag selection을 공통 host에서 모델 selection으로 읽고 history 재투영에서는 양 끝
-anchor·offset·방향을 복원한다. 좌우 경계 이동과 Shift+방향키 확장은 공통 surface 순서를 사용해
-여러 run·문단을 넘는다. native selection 색을 명시하고 입력·삭제·plain-text paste와 조합 종료를
-기존 `commitRange`에 연결했다. 실제 macOS 두벌식 여러 문단 조합은 물리 matrix에 남아 있다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 27 suite·155 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다. selection 단위 테스트는 문단 경계
-이동, 역방향 다중 문단 Shift 확장, 최상위·표 셀 scope 격리를 포함한다.
-
-## 2026-08-22 — Sprint 2 여러 문단 범위 치환 코어
-
-서로 다른 최상위 일반 텍스트 문단의 selection을 paragraph fragment command 하나로 치환하는
-planner를 추가했다. 시작 prefix와 입력, 끝 suffix를 앞 문단 모양 아래 합치고 중간 문단을
-제거한다. 양 끝 경계 run의 char style, 시작 이전·끝 이후 run, inline line break와 caret anchor를
-보존하며 모든 stale `hp:linesegarray`는 결과 fragment에서 제외한다.
-
-세 문단 공개 fixture에서 순방향 치환, 역방향 selection undo/redo와 원문 byte 복원을 검증했다.
-main session은 기존 `commitRange` IPC로 여러 문단 치환 → undo → redo → Save As → 재개봉을
-통과했다. 기존 표 셀·중첩 multi-run 테스트도 유지했다. 공통 paragraph host, pointer drag와
-selection 시각 표시는 아직 renderer에 연결하지 않았다.
-
-검증 결과는 TypeScript typecheck 통과, Jest 26 suite·151 test 통과(2 suite·11 test skip),
-privacy-safe probe 8개 통과, Electron production build 통과다.
-
-## 2026-08-22 — Sprint 2 문단 경계 Backspace/Delete merge
-
-최상위 일반 텍스트 문단의 첫 run 시작 Backspace와 마지막 run 끝 Delete를 인접 문단 merge
-command에 연결했다. 두 방향은 앞 문단의 문단 모양과 양쪽의 모든 글자 run을 보존하는 동일한
-replacement fragment를 생성하며 stale `hp:linesegarray`를 제거한다. 현재 caret text node ID와
-offset은 유지하고 inverse는 두 원문 문단 bytes를 정확히 복원한다.
-
-여러 run과 inline line break가 있는 공개 fixture에서 양방향 결과 일치, 경계 검증, 중간 XML
-element fail-closed와 history undo/redo를 통과했다. main session은 Backspace merge → undo → redo →
-Save As → 재개봉을 검증했다. 표 셀·복합 문단 구조 편집과 여러 문단 선택은 후속 관문이다.
-
-## 2026-08-21 — Sprint 2 최상위 문단 Enter split
-
-최상위 일반 텍스트 `hp:p`를 caret 또는 단일 run selection에서 둘로 나누는 source-preserving
-paragraph fragment command를 추가했다. 여러 run의 기존 XML과 char style은 앞뒤 문단에
-분배하고 빈 `hp:t` anchor를 유지한다. 새 fragment에서는 stale `hp:linesegarray`를 제거하며,
-inverse는 원래 문단 fragment bytes를 복원한다. renderer의 `insertParagraph`는 제한된 IPC를
-거쳐 main-process history 한 단위로 commit한다.
-
-여러 run·inline line break가 있는 공개 fixture에서 selection 제거, 새 숫자 문단 ID, cache 제거,
-selection 이동과 byte-exact undo/redo를 검증했다. main session에서는 Enter split → undo → redo →
-Save As → 재개봉을 통과했다. 표 셀·복합 문단 Enter와 Backspace/Delete merge는 후속 관문이다.
-
-## 2026-08-21 — Sprint 2 HWPX inline 줄 나눔
-
-`hp:t` 혼합 콘텐츠에서 `hp:lineBreak`와 `hp:tab`을 각각 논리 `\n`·`\t`로 읽고, 편집된 줄바꿈을
-`<hp:lineBreak/>`로 다시 저장하도록 source anchor와 viewer projection을 일치시켰다. 알 수 없는
-inline element는 양쪽 모두 편집 불가로 유지한다. renderer의 Shift+Enter는 native DOM 변형을
-막고 `insertLineBreak` transaction을 직접 commit한다.
-
-타입 검사와 text patch, decoder, range edit, transaction/history 핵심 테스트를 통과했다. 일반
-Enter 문단 split, 경계 Backspace/Delete merge, stale `hp:linesegarray`의 구조적 무효화는 다음
-paragraph fragment command 관문으로 남긴다.
-
-## 2026-08-21 — Windows production package와 V3 자동 승인 bundle
-
-acceptance bundle 생성기의 macOS 실행 파일 하드코딩을 제거하고 Windows에서는
-`release/win-unpacked/Han-Flow.exe`를 사용하도록 변경했다. Windows 10.0.26200 x64에서
-1.0.0-rc.1 `dir` package를 생성했으며 unpacked 논리 크기는 279,556,778 bytes다.
-
-Windows packaged 앱에서 일반 문단과 표 cell 편집, 전체 제한 style, undo/redo, Save As와
-저장본 재열기를 실행했다. 별도 dirty close probe는 버리기와 저장을 모두 통과했고 저장 경로는
-원본 hash 불변, 저장본 3쪽과 overflow 0을 확인했다.
-
-| 관문 | 결과 |
+| fixture | 결과 |
 | --- | --- |
-| Windows package | x64 `Han-Flow.exe`, production build 성공 |
-| identity | 5 entries, source/container SHA-256 동일 |
-| 일반 편집·style | 모든 probe flag true, 원본 불변 |
-| 표 cell | `table-cell`, 저장본 3쪽·이미지 4개·overflow 0 |
-| dirty discard/save | 두 경로 통과, save 결과 3쪽·overflow 0 |
-| bundle integrity | PowerShell SHA-256 다섯 파일 `[PASS]` |
+| baseline | 3쪽, 이미지 4개, overflow 0 |
+| cell-continuation | 2쪽, overflow 0 |
+| images-rowspan | 1쪽, 이미지 12개, overflow 0 |
+| multi-column-layout | 1쪽, 단 2개, 본문 17·43자 |
+| large-progressive | 15,003쪽 중 DOM 12개 mount (Noto CJK 글꼴 기준) |
+| invalid-package | crash 없는 사용자 오류 |
+| HWP `synthetic-layout` | 5.0.3.2, 2쪽, 표 1·셀 9·이미지 1, 반복 머리말 2회, 결정적 생성, 오류 5종 |
+| HWP PDF | 2쪽 A4, 텍스트 보존 98.6% |
 
-한컴오피스/Windows 한/글 설치는 발견되지 않았다. 따라서 WIN-01~08의 복구 경고·육안 style
-판정과 한/글 재저장 후 Han-Flow 역재개봉은 외부 수동 관문으로 남긴다.
+대형 문서의 페이지 수는 대체 글꼴 metric에 따라 달라진다(Linux 15,003쪽, 로컬 Windows 19,503쪽,
+V1 당시 macOS 9,767쪽). 판정 기준은 DOM mount 12개와 overflow 0이다.
 
-## 2026-08-21 — Sprint 0 legacy inventory와 자동 관문 완료
+## 남은 수동·외부 관문
 
-main·decoder worker·preload·renderer의 production 진입점과 Jest·scripts 참조를 대조했다.
-도달 불가능한 초기 `parser.ts`, `normalization.ts`, `renderer-engine`, Zustand store와 이들만
-사용한 `shared/types.ts`를 삭제했다. 현재 코드에서 import가 없던 `zustand`, `katex`,
-`@types/katex`, `react-icons`도 package와 lockfile에서 제거했다.
+| 관문 | 소속 | 상태 |
+| --- | --- | --- |
+| Windows 한/글 WIN-01~10 재열기와 한/글 재저장 후 역재개봉 | V3 / Sprint 1 | 한/글 미설치로 대기 |
+| 실제 Mac 물리 두벌식 입력 matrix | V3 / Sprint 1 | Mac 하드웨어 대기 |
+| Windows 실기의 Ctrl 단축키·맑은 고딕 대체·exFAT Save As | Sprint 5 | 자동 테스트 기준만 통과 |
+| 실제 한/글 HWPX 외부 fixture 20종 | Sprint 4 | intake 계약 완료, 반입 0종 |
+| 개인정보 없는 공개 corpus 30–50종 | Sprint 4 | HWPX 9종·HWP 1종 |
+| Windows code signing·설치·제거·DPI | Sprint 5 | 비서명 NSIS만 존재 |
+| macOS 13+ 실행, Developer ID 서명·공증·Gatekeeper | Sprint 6 | Mac 하드웨어·인증서 대기 |
 
-과거 구현은 ZIP·resource 상한 없이 전체 base64를 만들고 unknown package 구조를 버리며,
-snapshot deep copy와 직접 구조 변경을 사용하므로 experimental 사본으로도 유지하지 않는다.
-현재 보기·편집 계약은 `ViewerDocument`·`FixedPageDocument`, `HwpxSourcePackage`, command와
-transaction, main-process editing session으로 한정했다.
+## 과거 macOS 측정 (2026-07~08, 현재 재현 불가)
 
-| 관문 | 결과 |
-| --- | --- |
-| inventory | production·development-only·legacy 판정표 작성 |
-| 삭제 | legacy source 5개, 직접 dependency 4종 제거 |
-| TypeScript | 임시 exclude 없이 main·core·renderer typecheck 통과 |
-| Jest | 23 suites passed, 2 skipped; 133 passed, 11 skipped |
-| parser probe | 8 passed |
-| production build | main·preload·renderer 성공 |
-| production dependency audit | 0 vulnerabilities |
+아래 수치는 당시 로컬 Apple Silicon Mac과 macOS 패키지 앱에서 측정했다. 해당 Mac이 고장 나 현재
+commit(Electron 44)에서 다시 측정할 수 없으므로 회귀 기준의 역사 기록으로만 사용한다.
 
-## 2026-08-21 — Sprint 0 XML·이미지 resource exhaustion 방어
+| 검증 | 결과 | 시점 |
+| --- | --- | --- |
+| HWP cold open 20회(Worker 격리 후) | p50 535ms / p95 614ms / max 722ms | 2026-07 V2 |
+| HWP warm open 20회 | p50 203ms / p95 237ms | 2026-07 V2 |
+| aggregate working set peak p95 | HWP 647.6MiB, HWPX 438.3MiB | 2026-07 V2 |
+| private HWP 앱·PDF | 7쪽, 3개 구역 혼합 용지, overflow 0, PDF 텍스트 99.08% | 2026-07-27 |
+| private HWPX(AIDA) | 8쪽, 이미지 4개, overflow 0, 화면/PDF 문자 수 일치 | 2026-07-23~29 |
+| 80-section synthetic | 9,767쪽 중 DOM 12개 mount | 2026-07 |
+| 실제 두벌식 OS-level key matrix | 7 시나리오 통과(아래 2026-08-02) | 2026-08-02 |
+| arm64 / x64 / Universal package 실험 | 339.6 / 345.1 / 525.3 MB, smoke 통과 | 2026-08-09 |
+| Finder 열기·pinch zoom·dark chrome | V1 RC production 확인 | 2026-07-23 |
 
-HWPX ordered XML을 parse하기 전에 깊이 256, node 1,000,000개, text 50,000,000자와
-DOCTYPE 금지를 검사한다. `BinData`는 순차 read로 바꾸고 resource 2,000개, 개별 32 MiB,
-전체 192 MiB, 한 변 32,768px, 개별 40,000,000 pixels와 전체 160,000,000 pixels 상한을
-적용했다. PNG·JPEG·GIF·BMP·WebP는 decoded dimension을 header에서 확인한다.
-
-실제 ZIP package로 만든 XML 깊이 폭탄과 PNG dimension 폭탄은 crash나 renderer decode 없이
-`HWPX_IMPORT_FAILED`로 종료한다. 정상 공개 fixture와 기존 production 경로는 모두 회귀 통과했다.
-
-| 관문 | 결과 |
-| --- | --- |
-| clean Windows CI | `fa64a1a`, install·122 tests·typecheck·8 probes·build 성공 |
-| 로컬 clean install | Node.js 22.23.2·npm 10.9.8, 811 packages 설치 성공 |
-| Jest | 23 suites passed, 2 skipped; 133 passed, 11 skipped |
-| adversarial package | XML depth·PNG dimension 2종 모두 구조화 오류 통과 |
-| parser probe | 8 passed |
-| TypeScript | main·core·renderer 독립 typecheck 통과 |
-| production build | main·preload·renderer 성공 |
-| production dependency audit | 0 vulnerabilities |
-
-## 2026-08-20 — Sprint 0 Windows 기준선과 P0 방어 착수
-
-Windows 주 개발 환경을 공식화하고 Node.js 22·npm 10 계약과 Windows CI를 추가했다. HWPX
-read-only reader가 editing source package와 동일한 ZIP metadata preflight를 사용하도록
-통합했으며 Electron renderer sandbox와 HTTPS-only 외부 navigation 정책을 적용했다.
-
-현재 작업 폴더의 OneDrive dependency 권한과 시스템 npm 부재를 제품 실패와 분리하기 위해
-현재 변경을 로컬 임시 clone에 복제하고 npm 10.9.3으로 `npm ci`를 실행했다. 검증 host의
-Node.js는 24.19.0이라 저장소 기준 Node 22와 다른 engine warning이 있었고, CI는 Node 22로
-고정했다.
-
-| 관문 | 결과 |
-| --- | --- |
-| Jest | 22 suites passed, 2 skipped; 122 passed, 11 skipped |
-| parser probe | 8 passed |
-| TypeScript | main·core·renderer 독립 typecheck 통과 |
-| production build | main·preload·renderer 성공 |
-| production dependency audit | 0 vulnerabilities |
-| package notice | macOS `.app` 미생성 Windows 환경이므로 실행 대상 아님 |
-
-초기 audit에서는 미사용 `electron-updater`와 오래된 ZIP/XML 계층을 포함해 production
-취약점 4건(High 3, Moderate 1)이 보고됐다. runtime import가 없는 updater를 제거하고
-`adm-zip` 0.6.0, `fast-xml-parser` 5.11.0, `unzipper` 0.12.5로 갱신한 뒤 같은 Jest, probe와
-production build를 다시 통과했으며 production audit은 0건이 됐다. 전체 dev dependency
-audit은 development-only semantic oracle인 `kordoc` 계층을 포함해 별도 정리 대상이다.
-
-후속 typecheck 감사에서는 기존 tsconfig의 core 누락과 renderer 상대경로 오류를 수정했다.
-production에서 import되지 않는 초기 parser·normalization·renderer-engine과 과거 store는
-명시적인 legacy 제거 대상으로 격리했다. 살아 있는 코드에서 발견된 CFB blob, nullable window,
-PDF dialog overload, editable content union과 native InputEvent listener 타입 오류를 수정한 뒤
-`npm run typecheck`를 통과했다.
-
-## 2026-08-09 — V4-0 macOS 배포 기준선 감사
-
-Apple·Electron·electron-builder의 공식 배포 문서를 기준으로 Developer ID 직접 배포 순서를
-정리하고, credential 없이 반복 가능한 `npm run release:audit`를 추가했다.
-
-| 감사 항목 | 결과 |
-| --- | --- |
-| package 설정 | arm64 로컬 `dir`, `identity: null` |
-| 현재 app 서명 | ad-hoc, TeamIdentifier 없음, Developer ID 아님 |
-| strict 서명 검증 | 배포용 sealed resource 조건 불충족 |
-| architecture | Electron app/framework arm64, `font-list` helper universal |
-| updater | 당시 dependency만 존재, runtime 연결 없음; 2026-08-20 미사용 dependency 제거 |
-| 공개 배포 판단 | 차단 유지 — 인증서·공증·stapling·clean account 검증 필요 |
-
-이 결과는 배포 실패가 아니라 의도적인 개인용 빌드의 기준선이다. 실제 release 설정에는
-`forceCodeSigning`을 사용하고, DMG+ZIP·공증·stapling·Gatekeeper 검증을 통과하기 전에는 공개
-artifact를 만들지 않는다. 상세 출처와 후속 관문은 [V4 macOS 배포 전략](v4_release_strategy.md)에
+로컬 Windows(10.0.26200 x64) 수동 실행 결과도 CI 재현 대상이 아니므로 구분한다. 2026-09-07 표 구조
+production E2E와 2026-09-08·13 production matrix(대형 문서 19,503쪽 중 DOM 12개)는 아래 해당 날짜에
 기록했다.
 
-### x64·Universal 무인증서 package 실험
+## 2026-09-28 — Windows·Linux 기준선 전환
 
-공식 Electron 28.3.3 x64 ZIP은 GitHub release의 `SHASUMS256.txt`와 SHA-256
-`6bc63916b7fe52de7559e7631fef5c93315a18ee90a0d3d08168c91414b09ecf`가 일치하고 ZIP test를
-통과한 뒤 사용했다. arm64/x64 app을 `@electron/universal`로 병합했고 모든 Mach-O를 검사했다.
+커밋: `31cbb08` Windows Ctrl 단축키와 네이티브 undo 차단 구현 · `8e997fc` Windows·Linux 기본 메뉴 제거로
+단축키 중복 실행 방지 · `21d60bc` Windows 글꼴 대체 체인과 한/영 family alias 추가 · `4682f7c` ZIP 압축
+해제 상한과 decoder worker 자원 제한 추가 · `8457c4c` Save As를 rename 기반 원자적 게시로 전환하고
+덮어쓰기 정책 정리 · `ffcf0a0` Electron 28에서 44로 업그레이드하고 breaking change 감사 · `0b4adb3` 실제
+한/글 fixture intake 계약과 확보 계획 추가 · `5c03893` Linux 패키지 target과 headless E2E CI job 추가 ·
+`6206f03` Windows NSIS 설치본과 CI artifact 추가 · `492dd02` 저장 덮어쓰기 보장 복원과 worker 한도·플랫폼
+고지 정리 · `c7a999c` 창별 열기 경로 전달과 renderer 경로 허용목록 추가
 
-| artifact | architecture 관문 | 논리 크기 | production smoke |
-| --- | --- | ---: | --- |
-| arm64 | 16개 중 arm64 15 + universal 1 | 339,563,671 byte | 3쪽·이미지 4·overflow 0 |
-| x64 | 16개 중 x64 15 + universal 1 | 345,097,640 byte | Rosetta 지원 종료 알림 확인 |
-| Universal | 16개 모두 arm64+x86_64 | 525,279,804 byte | native arm64 3쪽·이미지 4·overflow 0 |
+- 단축키: macOS는 ⌘, Windows·Linux는 Ctrl(Ctrl+Y redo 추가, AltGr·Win 조합 무시). contentEditable의
+  `historyUndo`·`historyRedo`는 앱 transaction history로 보낸다. Windows·Linux는 기본 메뉴를 제거했다.
+- 글꼴: platform별 대체 체인(Windows 맑은 고딕·바탕, macOS Apple 글꼴, Linux Noto)과 한/영 family
+  alias, 미설치 시 CSS generic family.
+- 자원 한도: ZIP entry를 선언 크기·절대 상한으로 스트리밍 중 차단하고, 크기와 무관하게 모든 HWPX
+  디코딩을 heap 1024MB·120초 한도의 decoder worker에서 실행한다.
+- Save As: 교체 확인이 없으면 hard link(EEXIST)로 원자 게시, 교체 확인 시 rename, hard link 미지원
+  파일 시스템에서만 재확인 후 rename. 원본과 열린 session 원본은 경로·inode로 항상 보호한다.
+- Electron 44: `File.path` → `webUtils.getPathForFile`, 대화상자 마지막 폴더 기억, macOS
+  `minimumSystemVersion` 13.0.
+- corpus에 sha256·출처·라이선스를 요구하는 `source: file` intake 계약 추가(반입 0종).
+- CI: Linux(package·xvfb E2E·artifact), Windows(package E2E·Poppler·비서명 NSIS·artifact).
+- 보안: 창별 허용목록 밖의 경로는 `document:import`·`editing:start`에서 `DOCUMENT_PATH_NOT_ALLOWED`.
 
-세 app이 같은 bundle ID로 동시에 존재한 상태에서는 LaunchServices 경로 충돌로 native arm64도
-`HIServices._RegisterApplication`에서 `SIGABRT`했다. crash report의 `Code Type: ARM-64
-(Native)`로 Rosetta 문제가 아님을 확인했고, 대상 app을 다시 등록한 뒤 같은 E2E가 통과했다.
+검증: 위 "현재 재현 가능한 결과". 남은 것: Windows 실기(단축키·글꼴·exFAT Save As), macOS 13+ 실행,
+외부 fixture 반입.
 
-Apple은 일반 Intel Mac app용 Rosetta를 macOS 27까지만 제공하고 macOS 28부터 일부 오래된
-게임만 예외로 둔다. macOS 26.4부터 실제 지원 종료 알림도 표시되므로 V4 공개 artifact는
-arm64-only로 확정했다. x64/Universal 명령과 전수 검사기는 `experiment:*`로만 유지한다.
+## 2026-09-13 — 동일 너비 다단 흐름 조판과 문서 정리
 
-## 2026-08-09 — V3 Windows 한/글 공개 호환성 bundle
+커밋: `9e3d238` 동일 너비 다단 흐름 조판 구현 · `72a79a1` 현재 개발 상태 문서 정리
 
-Windows PC에서 코드나 개인정보 없이 즉시 외부 승인을 실행할 수 있도록
-`npm run fixture:v3-windows` 관문을 추가했다. production `HwpxSourcePackage → saveHwpxAs`로
-identity 파일을 만들고, 패키지 앱 UI로 일반 문단 전체 style 편집본과 표 cell 편집본을 각각
-저장·재열기한다.
+`hp:p columnBreak`를 보존하고 동일 너비 `NEWSPAPER/LEFT`를 왼쪽 단→오른쪽 단→다음 페이지로 배치했다.
+실측 layer는 `(본문 폭 - 전체 간격) / 단 수`로 다시 측정한다. `PARALLEL`·`RIGHT`·`MIRROR`·비동일 너비는
+fallback diagnostic을 유지한다. 첫 시도에서 지나치게 좁은 synthetic 용지의 실제 overflow를 발견해
+단 폭 실측과 현실적인 fixture 폭으로 수정했다.
 
-| macOS 사전 관문 | 결과 |
-| --- | --- |
-| identity | 5 entries의 metadata·content identity 통과, container SHA 차이 여부 별도 기록 |
-| 일반 문단 편집본 | 원본 불변, 전체 style probe 통과, 3쪽·이미지 4개·overflow 0 |
-| 표 cell 편집본 | `table-cell` surface, 원본 불변, 3쪽·이미지 4개·overflow 0 |
-| 전송 파일 | 다섯 HWPX SHA-256 manifest 교차 검증 통과 |
-| 실행 자료 | Windows PowerShell 검사·WIN-01~08 체크리스트·결과 양식 생성 |
+검증: corpus 9/9, 111,424 bytes, 추정 2,512쪽, 독립 report SHA-256
+`10A806F944CFF272584AD3CFF260E5165CE2AE695AFBC42BC51828C2500F8A79` 일치. 로컬 Windows x64 production
+matrix 6종 통과(2단 DOM 1쪽·17/43자·overflow 0). 당시 Jest 37 suites·228 passed, probe 14.
+남은 것: `RIGHT`·`MIRROR`·비동일 너비 다단, 각주·미주·수식 모델.
 
-이 결과는 Windows 한/글 호환성 통과가 아니라 **실기 입력 준비 완료**다. 최종 통과 여부는
-Windows·한/글 버전을 기록하고 실제 한/글에서 다섯 파일을 열어 판정한 뒤 별도로 남긴다.
+## 2026-09-08 — 공개 HWPX corpus와 fixture catalog
 
-## 2026-08-02 — V3-6D 첫 줄 들여쓰기·내어쓰기
+커밋: `ff32a9e` 공개 HWPX 코퍼스 자동화 기반 구축 · `0f14a39` 공개 fixture 카탈로그와 Windows HWP 검증
+연결 · `09f2485` 목록 구조 공개 코퍼스 확장 · `89f49c5` 다단 레이아웃 읽기 전용 모델 추가
 
-공식 OWPML `CMargin`의 `hc:intent`를 첫 줄 indent로 projection하고 source command에 연결했다.
-−72pt부터 72pt까지 허용하며 음수는 내어쓰기, 양수는 들여쓰기다. `hh:margin`의 다른 네 값과
-unknown XML은 보존하고 inverse는 원본 header·section bytes를 복원한다.
+- `verify:corpus`: manifest schema(허용 generator, 중복 ID, 기대값)를 fixture 생성 전에 검증하고
+  본문 없는 결정적 JSON report를 만든다. ZIP timestamp를 제외한 content fingerprint를 사용한다.
+- `fixture_catalog.json`: HWPX core·production DOM·HWP pipeline을 같은 fixture ID로 선택한다.
+- Windows에서 드러난 Electron shim·ESM file URL·기본 앱 경로 문제를 수정하고 HWP 이미지를 고정 PNG
+  bytes로 바꿔 생성 결정성(6,656 bytes, SHA-256
+  `2400FCEE7AA03235870701AEEA044D084A652BDFB60EFA52264F1774D8725317`)을 복구했다.
+- `list-markers`(글머리표 2·DIGIT 번호 2)와 `multi-column-layout` fixture, `ViewerSection.columnLayout`.
 
-| 관문 | 결과 |
-| --- | --- |
-| production build/package | main·preload·renderer 및 unsigned arm64 `.app` 성공 |
-| Jest | 22 suites, 119 passed, 1 suite skipped |
-| packaged 양방향 probe | −1pt 내어쓰기 → 0pt → +1pt 들여쓰기 통과 |
-| 저장본 XML | `hc:intent` −100·0·100 HWPUNIT definition 확인 |
-| Save As·재열기 | 원본 불변, 2쪽, 이미지 3개, overflow 0 |
-
-검증은 공개 A4 synthetic fixture만 사용했고 저장본은 임시 경로에만 두었다.
-
-## 2026-08-02 — V3-6C 줄 간격·문단 앞뒤 간격
-
-`ApplyParagraphStyleCommand`를 정렬 전용에서 줄 간격과 문단 앞·뒤 간격까지 확장했다. 줄
-간격은 100–300% `PERCENT`, 앞·뒤 간격은 0–72pt의 HWPUNIT만 허용한다. 기존 `paraPr`를
-복제하므로 좌우 여백·들여쓰기·unknown XML은 그대로 남고 inverse는 header와 section bytes를
-원래 상태로 복원한다.
-
-| 관문 | 결과 |
-| --- | --- |
-| production build/package | main·preload·renderer 및 unsigned arm64 `.app` 성공 |
-| Jest | 22 suites, 118 passed, 1 suite skipped |
-| packaged style probe | 줄 간격·문단 앞·뒤 간격 조절기 모두 적용 |
-| A4 Save As | 원본 불변, 저장본 존재, ZIP 무결성 통과 |
-| 저장본 재열기 | 2쪽, 이미지 3개, overflow 0 |
-| 저장 XML | 170%, 앞 100 HWPUNIT, 뒤 100 HWPUNIT 확인 |
-
-검증은 공개 A4 synthetic fixture만 사용했다. 저장본은 임시 경로에 두고 공개 저장소에
-포함하지 않는다.
-
-## 2026-08-02 — V3-6B 기울임·밑줄·취소선
-
-한컴 공개 `hwpx-owpml-model`의 `CharShapeType`, `italic`, `underline`, `strikeout` 구현을
-기준으로 글자 장식 command를 확장했다. 새 definition은 공식 자식 순서를 유지하고, 해제는
-기존 장식의 나머지 속성을 보존한 채 활성 판정 속성을 `NONE`으로 바꾼다. 부분 selection의
-run 분할, definition 재사용과 inverse는 기존 source 기반 history 경계를 그대로 사용한다.
-
-| 관문 | 결과 |
-| --- | --- |
-| production build | main/preload/renderer 성공 |
-| Jest | 22 suites, 116 passed, 1 suite skipped |
-| style source test | 요소 순서·projection·해제·header/section inverse 통과 |
-| packaged A4 style | 기울임·밑줄·취소선 적용, Save As와 저장본 재열기 통과 |
-| 저장본 XML | `italic`, `underline type="BOTTOM"`, `strikeout shape="SOLID"` 확인 |
-
-검증 입력과 저장본은 공개 A4 synthetic fixture 및 임시 경로만 사용했다. 다음 code slice는
-문단 줄 간격과 문단 앞뒤 간격이며, Windows 한/글 재열기는 계속 외부 승인 관문으로 남긴다.
-
-## 2026-08-02 — V3-6A A4 편집 fixture와 홈 리본
-
-기존 `10000 × 10000 HWPUNIT` fixture는 pagination과 표 continuation을 작은 입력으로 빠르게
-검증하려고 의도적으로 만든 약 35mm 정사각형 스트레스 문서였다. 이를 실제 사용 화면으로
-오해하지 않도록 `59528 × 84189 HWPUNIT` A4 세로, 사방 `5669 HWPUNIT`(약 20mm) 여백과
-`48190 HWPUNIT` 본문 표를 가진 별도 공개 편집 fixture를 acceptance bundle에 추가했다.
-
-편집 UI는 52px toolbar 한 줄 안의 25px control에서 상단 문서 제어와 `홈` 리본의 2단 구조로
-바꿨다. 파일, 기록, 글자 모양, 문단 정렬 그룹에 현재 안전하게 저장되는 Save As, undo/redo,
-굵게·크기·색상과 정렬만 배치했다. packaged E2E가 DOM 실측으로 toolbar 168px, 최소 action
-button 40px, 활성 `홈` 탭과 네 group label을 확인한다.
-
-A4 첫 synthetic composition에서는 본문 patch는 성공했지만 짧은 입력의 projection 뒤 selection
-복원이 간헐적으로 시간 초과됐다. 긴 입력은 뒤따른 재조판이 우연히 selection 복원을 다시
-일으켜 통과하고 있었다. layout measurement identity를 input surface의 restore token으로 전달하고,
-composition/buffer가 끝난 경우에만 120ms·350ms 제한 지연 복원을 수행해 늦은 A4 재조판과의
-경쟁을 제거했다. 수정 뒤 짧은 `리본검증`도 projection·undo·redo text와 selection을 통과했다.
-
-| 관문 | 명령 | 결과 |
+| 단계 | corpus | 독립 report SHA-256 |
 | --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 114 passed, 1 suite skipped |
-| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
-| A4 구조 | `tests/parser/public_fixture.test.ts` | A4 크기·20mm 여백·본문 표 폭·본문 8개 통과 |
-| A4 packaged edit | `HAN_FLOW_VERIFY_EDIT_TEXT=리본검증 npm run verify:app -- artifacts/v3-acceptance/han-flow-v3-a4-editing.hwpx` | 2쪽·overflow 0, projection·undo/redo selection, 홈 리본 실측 통과 |
-| acceptance bundle | `npm run fixture:v3-acceptance` | 원본 불변, style·Save As·3쪽·이미지 4개 재열기 통과, A4 fixture 생성 |
-
-리본 화면 캡처와 생성 HWPX는 `artifacts/` 또는 임시 경로에만 두며 공개 저장소에는 결과물을
-커밋하지 않는다. 재현 가능한 생성 코드와 privacy-safe 수치만 기록한다.
-
-## 2026-08-02 — 실제 macOS 두벌식 확장 입력 matrix
-
-공개 acceptance fixture와 패키지 앱에서 `System Events` 실제 key code 검증을 조합 중
-Backspace·Escape, 앞→뒤·뒤→앞 범위 치환과 실제 `⌘Z`·`⇧⌘Z`까지 확장했다. 각 결과는
-native composition/input event, source anchor focus, 본문, selection 방향, dirty와 undo/redo
-상태로 판정한다.
-
-| 시나리오 | 결과 |
-| --- | --- |
-| 일반 문단·표 셀 기본 입력 | Space commit → 2초 대기 → 재클릭 없는 후속 입력 통과 |
-| 조합 중 Backspace | `한` 조합 수정 뒤 `한글 ` 확정, 후속 `추가 ` 입력 통과 |
-| 조합 중 Escape | macOS 기본 동작대로 `하` 확정, 후속 `검증 ` 입력과 focus 유지 |
-| 정방향 범위 치환 | 마지막 2글자 교체, undo 원문·정방향 selection, redo 수정문 복원 |
-| 역방향 범위 치환 | 마지막 2글자 교체, undo 역방향 anchor/focus, redo caret 복원 |
-| history 단축키 | 실제 `⌘Z`·`⇧⌘Z`로 원문·수정문·caret·dirty 상태 복원 |
-
-전체 명령 `npm run verify:ime:mac:matrix`의 7개 시나리오가 연속 통과했다. 최초 연속 실행은
-첫 앱 종료 직후 새 표 셀 인스턴스에 OS key event가 0개 전달되는 자동화 실패를 발견했다.
-표 셀 단독 실행은 통과했고, 전면 앱 활성화와 renderer surface focus 사이의 경쟁으로 확인했다.
-각 인스턴스에서 OS로 Han-Flow를 전면화한 뒤 CDP가 같은 source anchor와 selection을 다시
-확정하도록 probe를 보강하고 전체 matrix를 재실행해 통과했다.
-
-이 결과는 실제 macOS 입력기를 거치지만 물리 키보드를 이용한 사용자 손 입력, 다른 문단 클릭,
-페이지 재분할 장시간 입력을 대신하지 않는다. 해당 항목과 Windows 한/글 재열기는 V3 외부 승인
-관문으로 남긴다.
-
-## 2026-08-02 — 실제 macOS 두벌식 commit 뒤 focus 복원
-
-synthetic `CompositionEvent` E2E가 통과한 뒤에도 사람이 입력하면 첫 commit 다음 글자가 같은
-surface에 들어가지 않는 결함을 화면 녹화로 확인했다. macOS `System Events`가 현재 두벌식
-입력기에 key code를 보내고 CDP가 native composition/input event, `activeElement`, source
-anchor, dirty와 undo 상태를 읽는 공개 fixture 전용 probe를 추가했다.
-
-첫 실제 key probe는 `한글입력검증 `의 본문과 selection offset을 보존하고 undo도 활성화했지만,
-2초 뒤 편집 surface의 focus가 빠져 재클릭 없는 `추가 ` 입력 event가 0개였다. 원인은 source
-transaction 결과가 새 document로 projection된 뒤 동기 selection 복원보다 늦게 focus가
-유실되는 순서였다. 같은 source anchor의 DOM이 안정된 다음 두 animation frame에 focus와
-selection을 다시 복원하고, 프로그램 복원 중 발생한 focus event가 과거 selection을 부모
-상태에 쓰지 못하도록 막았다.
-
-IME adapter는 연속된 macOS 음절별 composition cycle을 450ms burst 하나로 모아 source
-transaction 한 건을 만들며, 입력 listener는 React callback identity 변경에 따라 재설치되지
-않는다. packaged E2E도 listener의 `data-input-ready`를 기다리고 실제 focus render 뒤 현재
-surface를 다시 찾는다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 113 passed, 1 suite skipped |
-| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
-| synthetic IME/history | `HAN_FLOW_VERIFY_EDIT_TEXT=한글입력검증 npm run verify:app -- artifacts/v3-acceptance/han-flow-v3-original.hwpx` | projection·undo·redo text와 selection 일치, overflow 0 |
-| 실제 두벌식 일반 문단 | `npm run verify:ime:mac -- --surface paragraph` | Space commit 뒤 focus·dirty·undo 유지, 재클릭 없는 추가 입력 통과 |
-| 실제 두벌식 표 셀 | `npm run verify:ime:mac -- --surface cell` | Space commit 뒤 focus·dirty·undo 유지, 재클릭 없는 추가 입력 통과 |
-
-두 native smoke는 각각 첫 단계 84개, 두 번째 단계 누적 106개 event를 관찰했고
-`compositionend`는 6회에서 8회로 증가했다. 공개 fixture 외 본문·캡처는 기록하지 않았다.
-Backspace·Escape·방향 selection을 포함한 물리 키보드 전체 matrix와 Windows 한/글 재열기는
-여전히 V3 외부 승인 관문이다.
-
-## 2026-07-30 — V3 코드 완료 후보: 여러 run 입력과 글자 크기·색상
-
-부분 글자 style로 한 문단이 여러 run으로 나뉜 뒤에도 source anchor별 입력 surface를
-유지하도록 연결했다. 좌우 화살표는 run 경계에서 인접 anchor의 처음·끝으로 selection을
-옮긴다. React projection이 run 수를 바꿀 때 기존 DOM의 오래된 selection offset을
-재사용하지 않도록 입력 surface key와 offset 범위를 방어했다.
-
-글자 style command에는 기존 굵기와 같은 원본 definition clone·reuse 경계로 5–72pt 크기와
-`#RRGGBB` 색상을 추가했다. 글꼴 family는 font-face ID와 설치·라이선스 mapping을 함께
-확정해야 하므로 V3 완료 조건에서 제외했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 112 passed, 1 suite skipped |
-| production build/package | `npm run build`, `npm run package:mac` | main·preload·renderer, arm64 unsigned `.app` 성공 |
-| packaged text | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=일반검증 npm run verify:app -- <private.hwpx>` | projection·undo/redo selection 통과 |
-| packaged style | `HAN_FLOW_VERIFY_STYLE=1 ... npm run verify:app -- <private.hwpx>` | 부분 run split·굵게·정렬·undo/redo·여러 run surface 통과 |
-| packaged Save As | `HAN_FLOW_VERIFY_EDIT_SAVE=1 ... npm run verify:app -- <private.hwpx>` | 원본 불변·저장본 재열기 통과 |
-| 공개 HWPX matrix | `npm run verify:matrix` | 5종 통과, 최대 9,767쪽·DOM 12개·overflow 0 |
-
-style과 Save As를 한 프로세스에서 연속 실행하는 합성 probe는 간헐적으로 시작 또는 종료
-대기 시간이 초과돼, 기능 판정은 각각의 packaged gate와 style→정렬→Save As→재개봉 main
-통합 테스트로 교차 확인했다. 이 자동화 불안정은 실제 기능 통과와 구분해 기록한다. V3의
-남은 승인 관문은 실제 macOS 두벌식과 Windows 한/글 재열기다.
-
-## 2026-07-30 — V3-5B 표 body cell text 편집
-
-기존 text source anchor와 transaction을 일반 표 body cell의 단일 문단·단일 run까지
-연결했다. pagination 과정에서 동일 source anchor가 복제될 수 있는 반복 머리글과
-continuation fragment, 구조 변경 위험이 큰 병합·`rowSpan`·여러 문단 cell은 입력 surface를
-열지 않는다. 표 셀은 text 입력만 지원하며 style toolbar 범위에는 포함하지 않는다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 109 passed, 1 suite skipped |
-| main session | `tests/main/editing_session.test.ts` | body cell commit·selection·undo/redo 통과 |
-| renderer eligibility | `tests/renderer/measurement.test.ts` | 일반 cell 허용, 반복·병합·fragment 차단 통과 |
-| production build/package | `npm run package:mac` | main·preload·renderer, arm64 unsigned `.app` 성공 |
-| 공개 baseline cell | `npm run verify:matrix` | 범위 편집·undo/redo·Save As, 저장본 3쪽·이미지 4개 |
-| 공개 구조 회귀 | 같은 matrix | continuation 2쪽, 병합/rowSpan 이미지 12개, overflow 0 |
-| 공개 대형 회귀 | 같은 matrix | 9,767쪽·DOM 12개·overflow 0 |
-
-공개 packaged probe는 원본 SHA-256 불변, projection 뒤 selection, undo/redo selection과
-dirty 해제를 확인했다. fixture에는 Preview entry가 없어 저장 상태가 `Preview 없음`으로
-표시되는 경로도 검증했다. 본문·캡처·저장본은 커밋하지 않았다.
-
-## 2026-07-29 — V3-5 부분 selection 문단·글자 style
-
-최상위 일반 문단의 단일 `hp:t` source anchor에서 실제 run과 paragraph를 찾고, 원본
-`charPr`·`paraPr`를 복제해 굵게와 정렬 4종만 바꾸는 첫 style slice를 연결했다. 같은
-definition은 재사용하며 새 ID는 기존 숫자 ID 최대값 다음 값으로 결정적으로 할당한다.
-header collection count, definition과 section reference를 함께 변경하고 undo에서는 두
-entry의 원본 bytes를 복원한다. 이어서 `hp:t` 내부 부분 selection을 좌·선택·우 최대 3개
-run으로 분할하고 선택 run만 새 글자 style을 참조하도록 확장했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 22 suites, 107 passed, 1 suite skipped |
-| style 코어 | `tests/editing/style_patch.test.ts` | clone·reuse·run split·entity 의미·byte undo/redo 통과 |
-| main session | `tests/main/editing_session.test.ts` | 새 anchor 선택 이동·부분 style undo/redo와 caret 이동 통과 |
-| production build | `npm run build` | main·preload·renderer 성공 |
-| macOS package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
-| packaged style | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=스타일검증 HAN_FLOW_VERIFY_STYLE=1 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | 부분 run split·굵게·정렬·undo/redo·Save As 통과 |
-| 저장본 화면 | 같은 packaged probe의 두 번째 프로세스 | 8쪽·이미지 4개·overflow 0 |
-| 공개 HWPX matrix | `npm run verify:matrix` | 5종 통과, 최대 9,767쪽·DOM 12개·overflow 0 |
-| 배포 고지 | `npm run verify:notices` | Apache-2.0·rhwp MIT·third-party notice 일치 |
-
-packaged probe는 원문이나 캡처를 남기지 않고 부분 run 생성, style 버튼 상태, projection 뒤
-결과, undo/redo 원복 여부와 구조 count만 수집했다. 원본 SHA-256은 변하지 않았으며 임시
-저장본을 다시 연 뒤 삭제했다. 프로그램으로 주입한 composition commit은 실행 환경에 따라
-간헐적으로 늦어질 수 있어 이 관문은 결정적인 범위 교체를 사용했고, composition-only
-패키지 probe는 별도로 통과했다.
-
-이 시점의 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 selection의 굵게, 문단 모양은 최상위
-일반 문단 정렬만 지원했다. 분할 뒤 여러 run의 style 재적용과 undo는 가능하지만 하나의
-연속 text 입력 surface는 아직 제공하지 않는다. 표 cell text는 다음 날 제한적으로
-연결했으며 머리말·꼬리말, 원래부터 복합인 run과 다른 style 속성은 계속 차단한다.
-
-## 2026-07-29 — V3 dirty 문서 교체·종료 보호
-
-main history의 dirty 상태를 파일 교체와 BrowserWindow lifecycle에 연결했다. 열기 dialog,
-drop과 Finder `file:open`은 새 import 전에 저장/버리기/취소 결과를 기다리고, 창 닫기와
-`⌘Q`는 main이 같은 결정을 직접 처리한다.
-
-첫 packaged discard probe는 비동기 결정 뒤 승인된 두 번째 `window.close()`도
-`resolvingClose`가 막아 macOS 프로세스가 남는 결함을 찾았다. 승인 상태를 중복 결정 상태보다
-먼저 판정하고, 앱 종료 요청이면 BrowserWindow `closed` 이후 quit을 재개하도록 수정했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 99 passed, 1 suite skipped |
-| dirty discard | `HAN_FLOW_VERIFY_EDIT_TEXT=한 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION=discard npm run verify:app -- <private.hwpx>` | 새 파일 없이 정상 종료 |
-| dirty close-save | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=교체 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION=save npm run verify:app -- <private.hwpx>` | 원본 hash 불변·저장본 생성·재열기 통과 |
-| 저장본 화면 | close-save 두 번째 프로세스 | 8쪽·overflow 0 |
-
-programmatic composition은 환경에 따라 commit event 주입이 불안정할 수 있어 lifecycle
-probe에는 결정적인 역방향 범위 교체를 사용했다. 실제 composition 관문과 물리 두벌식 수동
-matrix는 별도로 유지한다.
-
-## 2026-07-29 — V3-4 검증형 Save As UI
-
-main-process 편집 session에 검증형 Save As를 연결했다. 사용자는 Preview가 갱신되지 않을 수
-있다는 경고를 확인한 뒤 새 `.hwpx` 목적지만 고를 수 있다. renderer에는 raw package,
-destination writer나 범용 저장 IPC를 노출하지 않으며 과거 `dialog:saveFile`과
-`dialog:confirmSave` preload API는 제거했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 99 passed, 1 suite skipped |
-| session Save As | `tests/main/editing_session.test.ts` | 원본 불변·기존 목적지 충돌·savepoint·undo/redo 5건 통과 |
-| production package | `npm run package:mac` | arm64 unsigned `.app` 성공 |
-| packaged Save As | `HAN_FLOW_VERIFY_EDIT_TEXT=한 HAN_FLOW_VERIFY_EDIT_SAVE=1 npm run verify:app -- <private.hwpx>` | dirty 해제·원본 hash 불변·저장본 재열기 통과 |
-| 저장본 화면 | 같은 packaged probe의 두 번째 프로세스 | 8쪽·이미지 4개·overflow 0 |
-
-저장 성공 뒤에만 savepoint가 이동한다. 저장 실패나 취소는 현재 package와 dirty 상태를
-바꾸지 않는다. probe는 임시 목적지를 사용하고 원문 대신 길이·hash 불변 여부·구조 count만
-출력한 뒤 저장본을 삭제한다.
-
-## 2026-07-29 — V3-4 selection과 re-pagination 복원
-
-편집 projection이나 re-pagination으로 기존 DOM이 교체되어도 selection의 source anchor에
-해당하는 새 surface를 찾아 focus와 UTF-16 anchor/focus offset을 복원하도록 강화했다.
-정방향 caret뿐 아니라 뒤→앞 범위 selection도 방향을 보존한다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 전체 회귀 | `npm test -- --runInBand` | 21 suites, 97 passed, 1 suite skipped |
-| composition selection | `HAN_FLOW_VERIFY_EDIT_TEXT=한 npm run verify:app -- <private.hwpx>` | projection·undo·redo caret 일치 |
-| 역방향 범위 교체 | `HAN_FLOW_VERIFY_EDIT_MODE=range HAN_FLOW_VERIFY_EDIT_TEXT=교체 npm run verify:app -- <private.hwpx>` | 본문·projection·undo·redo selection 일치 |
-| re-pagination | 같은 composition probe | 2·3페이지 문자 분배 변경, 8쪽·이미지 4개·overflow 0 유지 |
-
-probe는 원문 대신 원문 UTF-16 길이와 각 단계 일치 여부만 출력한다. 실제 키보드 두벌식
-입력은 [수동 matrix](v3_ime_manual_matrix.md)에 남겨 자동 event 주입과 구분한다.
-
-## 2026-07-29 — V3-4 paragraph IME surface 첫 slice
-
-ordered XML `hp:t`의 section ordinal을 `ViewerText.sourceAnchor`에 보존하고, renderer의
-`plaintext-only` 문단 surface가 native `beforeinput`·composition·input event를 source
-transaction으로 바꾸도록 연결했다. browser가 조합 중 DOM을 소유하며 중간값은 commit하지
-않고 `compositionend`에서 완성된 UTF-16 최소 diff 하나만 main process로 보낸다.
-
-source package와 bounded history는 sender/session에 묶인 main-process manager가 소유한다.
-commit·undo·redo는 sender별 queue로 직렬화하며 renderer에는 raw package bytes와 base
-revision을 노출하지 않는다. 첫 UI 범위는 완전히 로드된 HWPX의 최상위 단일 text 문단이고
-표·머리말·꼬리말·복합 run·HWP는 계속 읽기 전용이다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 21 suites, 97 passed, 1 suite skipped |
-| IME adapter | `tests/editing/composition_input.test.ts` | 조합 중 0회·종료 1회 commit, 삭제·취소·emoji 경계 통과 |
-| main session | `tests/main/editing_session.test.ts` | sender binding·commit·undo·redo projection 3건 통과 |
-| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
-| packaged IME probe | `HAN_FLOW_VERIFY_EDIT_TEXT=한 npm run verify:app -- <private.hwpx>` | 8쪽·이미지 4개·overflow 0, 편집·undo·redo 일치 |
-
-probe 결과에는 원문이나 수정 본문을 남기지 않고 길이와 일치 여부, editable count만 기록한다.
-실제 물리 키보드 두벌식 입력과 범위 selection·re-pagination caret matrix는 남아 있으므로
-V3-4 전체 완료로 표현하지 않는다. 저장 UI도 아직 연결하지 않았다.
-
-## 2026-07-29 — V3-3 transaction과 bounded history
-
-여러 `ReplaceTextCommand`를 base revision과 전후 selection을 가진 하나의 원자적
-`EditTransaction`으로 묶었다. 성공 결과는 inverse transaction과 loss report를 만들고,
-수정 source package를 기존 viewer decoder로 즉시 projection한다.
-
-history는 문서 snapshot 대신 forward/inverse delta만 기본 100 entries·추정 8 MiB로 제한한다.
-연속 typing grouping은 input type, 같은 anchor, selection 연속성, 시간 창과 composition 경계를
-함께 사용한다. savepoint는 logical state ID로 추적해 package revision이 계속 증가해도
-undo가 저장 상태로 돌아오면 dirty가 정확히 해제된다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 19 suites, 89 passed, 1 suite skipped |
-| transaction/history | `tests/editing/transaction_history.test.ts` | atomicity·inverse·grouping·limit·savepoint·Save As 8건 통과 |
-| private history | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/editing/transaction_history.test.ts` | undo·redo·Save As·원본 hash 불변 |
-| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
-| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
-
-사용자 입력 UI는 아직 없다. 다음 관문은 paragraph surface에서 native composition과 selection을
-source anchor transaction으로 변환하고 실제 macOS 두벌식 입력을 검증하는 V3-4다.
-
-## 2026-07-29 — V3-2 source text patch와 검증형 Save As
-
-UTF-8 section 원문에서 단순 `hp:t` content span만 수정하는 `ReplaceTextCommand`를 구현했다.
-문서 순서 기반 source ID, package revision과 UTF-16 range를 함께 확인하고 inverse command를
-만든다. target 밖 XML과 다른 entry는 재직렬화하지 않는다.
-
-Save As는 같은 directory의 배타적 임시 파일을 flush하고 package identity, 기존 viewer decode,
-선택 semantic 검증을 모두 통과한 뒤 hard link로 존재하지 않는 목적지 이름만 만든다. 원본
-overwrite와 기존 목적지 overwrite는 차단한다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 18 suites, 81 passed, 1 suite skipped |
-| text fixture | `tests/editing/text_patch.test.ts` | escape·빈 node·unsupported node·inverse·conflict·fault 6건 통과 |
-| private patch | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/editing/text_patch.test.ts` | 한 text patch·Save As·원본 hash 불변 |
-| production build | `npm run build` | main/preload/renderer 성공 |
-| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
-
-사용자 저장 버튼은 아직 없다. 다음 품질 관문은 여러 command를 하나의 transaction으로 묶고
-delta history, undo/redo와 savepoint를 검증하는 V3-3이다.
-
-## 2026-07-29 — V3-1 HWPX source package identity
-
-모든 ZIP entry를 원본 순서와 uncompressed bytes, compression, CRC로 보유하는
-`HwpxSourcePackage`를 추가했다. 과거 serializer는 header와 section만 재생성해 unknown XML,
-이미지와 package entry를 잃었고 잘못된 mimetype을 기록했으므로 preload/main 저장 IPC와 함께
-제거했다. 사용자 저장 기능은 아직 노출하지 않는다.
-
-공개 round-trip fixture에는 unknown namespace·attribute·XML node, PNG, stored binary,
-directory entry, Preview와 META-INF를 넣었다. 재패킹 전후 entry metadata와 각 파일 SHA-256이
-일치하고 기존 HWPX reader가 결과를 다시 여는지 확인했다. 저장소 밖 실사용 HWPX도 파일명·본문을
-assertion이나 결과에 출력하지 않는 선택 테스트로 같은 identity 관문을 통과했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 17 suites, 75 passed, 1 suite skipped |
-| private identity | `HAN_FLOW_PRIVATE_HWPX=<path> npm test -- --runInBand tests/parser/source_package.test.ts` | entry metadata·SHA-256 일치 |
-| production build/package | `npm run package:mac` | main/preload/renderer, arm64 `.app` 성공 |
-| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개·overflow 0 |
-
-Windows 한/글에서 identity 결과를 다시 여는 외부 호환성 확인은 남아 있다. 그 전까지
-V3-1을 저장 UI 완료로 표현하지 않으며, 다음 구현은 source anchor 기반 한 text node patch와
-검증된 Save As다.
-
-## 2026-07-27 — V2 공통 importer 완료
-
-관련 구현: `35e26e4` (`문서 가져오기 IPC 경계 통합`)
-
-HWP의 main preflight와 HWPX의 package/점진 decoder를 format-neutral `DocumentImporter`로
-모았다. preload와 React loader가 `document:import`, `document:complete`,
-`document:error` 계약만 사용하도록 변경했고 창 종료 시 진행 중인 decoder Worker를
-정리한다. 실행 경로에 없고 항상 실패하던 과거 HWP prototype은 제거했다.
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 16 suites, 62 passed, 1 skipped |
-| importer 경계 | `tests/main/document_importer.test.ts` | HWP/HWPX/확장자/오류 4건 통과 |
-| production build | `npm run build` | main/preload/renderer build 성공 |
-| macOS package | `npm run package:mac` | arm64 `.app` 생성 성공 |
-| HWP production matrix | `npm run verify:hwp-matrix` | 2쪽·PDF 98.6%·오류 5종 통과 |
-| HWPX production matrix | `npm run verify:matrix` | 5종, 최대 9,767쪽·DOM 12개 통과 |
-| probe 테스트 | `npm run test:probe` | 8 passed |
-| 배포 고지 | `npm run verify:notices` | Apache-2.0, rhwp MIT, notice 일치 |
-
-이 결과로 V2의 parser 선택, 안전한 열기, 화면·검색·PDF, 성능·메모리 기준선, 공개 fixture,
-오류 taxonomy와 importer 경계 완료 조건이 모두 충족됐다. 다음 milestone은 V3 편집 기반
-설계이며, 현재 read-only 모델을 즉시 `contentEditable`로 바꾸지 않고 editable model과
-무손실 저장 계약부터 검증한다.
-
-## 2026-07-27 — HWP FileHeader 안전한 열기
-
-관련 구현: `8c59b53` (`HWP 지원 불가 문서 오류 분류 추가`)
-
-### 검증 환경
-
-- macOS arm64
-- Electron 28.3.3
-- `@rhwp/core` 0.7.19, `kordoc` 4.2.7
-- production `.app`: unsigned local package
-
-### 실행과 결과
-
-| 관문 | 명령 | 결과 |
-| --- | --- | --- |
-| 단위·통합 테스트 | `npm test -- --runInBand` | 15 suites, 58 passed, 1 skipped |
-| probe 테스트 | `npm run test:probe` | 8 passed |
-| production build | `npm run build` | main/preload/renderer build 성공 |
-| macOS package | `npm run package:mac` | arm64 `.app` 생성 성공 |
-| HWP 정상·오류 matrix | `npm run verify:hwp-matrix` | 정상 fixture와 오류 5종 통과 |
-| HWPX 공개 matrix | `npm run verify:matrix` | 5종 fixture 통과 |
-| 배포 고지 | `npm run verify:notices` | Apache-2.0, rhwp MIT, notice 원문 일치 |
-| private HWP 앱 | `npm run verify:app -- <private.hwp>` | 7쪽, mount 7, overflow 0 |
-| private HWP PDF | `npm run verify:pdf -- <private.hwp>` | 7쪽, 혼합 용지, 문자 99.08% |
-
-공개 HWP matrix는 `FileHeader`를 테스트 중에 변형해 다음 오류 코드가 production 앱에 그대로
-표시되는지 확인했다.
-
-- `HWP_ENCRYPTED`
-- `HWP_DISTRIBUTION`
-- `HWP_DRM`
-- `HWP_UNSUPPORTED_VERSION`
-- `HWP_CORRUPTED`
-
-기존 HWPX 회귀 결과는 baseline 3쪽, cell continuation 2쪽, 이미지 12개·`rowSpan` fixture
-1쪽, 80-section 대형 fixture 9,767쪽 중 DOM 12개 mount, 손상 package의 사용자 오류다.
-
-### 검증 중 발견한 문제
-
-오류 fixture를 연속 실행할 때 Electron이 종료 직후 `Session Storage`를 늦게 닫아 임시
-디렉터리 삭제가 `ENOTEMPTY`로 실패할 수 있었다. 앱 판정과 정리 실패를 분리하기 위해 E2E
-임시 디렉터리 삭제에 100ms 간격, 최대 5회의 제한된 재시도를 추가했다. 같은 전체 matrix
-재실행으로 통과를 확인했다.
-
-## 2026-07-27 — 개인정보 없는 HWP 회귀 관문과 PDF race
-
-관련 구현:
-
-- `191fed8` — 공개 HWP 회귀 매트릭스 추가
-- `24f0df9` — HWP PDF 마지막 페이지 출력 대기 보강
-- `72e5153` — V2 공개 HWP 검증 현황 문서화
-
-공개 `synthetic-layout.hwp`는 HWP 5.0.3.2, 12,800 byte이며 SHA-256
-`b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e`로 고정했다.
-
-| 관찰 대상 | 결과 |
-| --- | --- |
-| 생성 결정성 | 재생성 결과와 고정 SHA-256 일치 |
-| kordoc 구조 oracle | section 1, 표 1, 셀 9, 이미지/resource 1/1 |
-| rhwp 렌더 | 2쪽, SVG 이미지 1, 위험 요소·속성 0 |
-| production 앱 | 2쪽, 반복 머리말 2회, overflow 0 |
-| production PDF | 2쪽 A4, 텍스트 보존율 98.6% |
-
-저장소 밖 실사용 HWP 재검증에서 첫 PDF의 마지막 쪽 텍스트가 비어 전체 보존율이 낮아지는
-race를 발견했다. 인쇄 준비를 렌더 요청 완료가 아니라 모든
-fixed-page SVG의 실제 decode 완료(`naturalWidth > 0`)까지 기다리도록 변경했다. 수정 후
-마지막 쪽과 문서 전체 텍스트가 다시 보존됐다.
-
-## 2026-07-23 — V1 HWPX Release Candidate
-
-상세 근거는 [V1 기준선](v1_baseline.md)과 [Release Candidate 체크리스트](release_checklist.md)에
-있다.
-
-- 저장소 밖 실사용 HWPX: 페이지·이미지 보존, overflow 0
-- 화면과 PDF 페이지별 비공백 문자 수 일치
-- 15문단 표 cell continuation: 반복 header, 8+7 문단 분배
-- 80-section synthetic: 9,767쪽 중 DOM 12개 mount
-- 이미지 12개·`rowSpan=2` 공개 fixture와 손상 HWPX 오류 UX
-- production Finder 열기, single-instance, drag-and-drop, pinch zoom, dark chrome와 PDF
-
-## 포트폴리오에 사용할 수 있는 근거
-
-- “빠르다”는 표현은 cold/warm 20회 p50/p95와 최대값으로 설명한다.
-- “대형 문서를 지원한다”는 표현은 9,767쪽 중 DOM 12개 mount 결과로 설명한다.
-- “PDF가 안정적이다”는 표현은 화면/PDF page size와 페이지별 문자 보존율, 실제로 발견해
-  수정한 마지막 페이지 race로 설명한다.
-- “안전하게 연다”는 표현은 main preflight, Worker timeout·취소, SVG 정제와 다섯
-  `FileHeader` 오류 코드로 설명한다.
-- “테스트가 있다”는 표현보다 private 실문서와 공개 결정적 fixture를 함께 사용하고 개인정보를
-  결과에서 제거한 검증 설계를 설명한다.
+| 자동화 기반 | 7/7, 86 sections, 추정 2,509쪽 | `A7D91650EBD73ABC84CAA299FE9634233C4B2901BC2B536012D66B5E5BF13FD4` |
+| 목록 확장 | 8/8, 109,893 bytes, marker 13 | `85F82D921D2EB273D41E7E0208CAB155D51C8261B0BD8698B87D492162AFEB55` |
+| 다단 모델 | 9/9, 111,302 bytes, diagnostic 1 | `7D33EC615F203271AE1E34C8D230C1A3D9F029592C17C7FC28C83EDE18F314FF` |
+
+검증: 로컬 Windows production matrix 5종(대형 19,503쪽 중 DOM 12), HWP matrix(2쪽·PDF 98.6%·오류
+5종), probe 11. 다단·각주·수식은 구조 모델 없이 열기 성공만으로 보존을 주장하지 않았다.
+
+## 2026-09-07 — Windows 표 구조 승인 번들
+
+커밋: `24f523c` Windows 표 구조 승인 번들 확장
+
+로컬 Windows 10.0.26200 x64의 `Han-Flow.exe` 리본으로 3×3 fixture의 행·열 추가/삭제, 오른쪽 1×2
+병합과 분할, 각 undo/redo, Save As, 새 session 재개봉을 자동 실행했다. 결과 3행×3열, 행별 cell
+3·3·3, 모든 `colSpan=1`, 1쪽·overflow 0, 원본 hash 불변. 승인 bundle에 구조 편집 전·후 HWPX와
+WIN-09~10을 추가했고 PowerShell 무결성 검사에서 일곱 HWPX가 통과했다. 이 E2E는 CI에 없다.
+남은 것: 한/글 복구 경고와 역재개봉.
+
+## 2026-09-05 — 표 열 편집과 제한적 병합·분할
+
+커밋: `a17273a` 안전한 표 열 추가 기반 구현 · `2f3739b` 표 열 삭제와 선택 재배치 구현 · `a4a4eeb` 표 셀
+병합과 분할 안전 정책 설계 · `3c43f35` 제한된 오른쪽 표 셀 병합 구현 · `a61c2e3` 병합 표 셀 선택 기반
+구현 · `7fb423d` 제한된 수평 표 셀 분할 구현
+
+- 열 추가·삭제: 모든 direct row와 반복 머리글을 함께 바꾸고 `colCnt`·뒤쪽 `colAddr`·표 너비를
+  원자적으로 갱신한다. 앞선 행의 text 수로 selection ordinal을 이동하고, 삭제 시 살아남은 anchor를
+  inverse locator로 쓴다. 마지막 하나뿐인 열·불균일 너비·병합·span은 fail-closed.
+- 병합 정책([표 셀 병합·분할 전략](table_merge_split_strategy.md)): 현재 body cell과 오른쪽 cell의
+  수평 1×2만, 모양·높이·여백·세로 정렬이 같을 때, 오른쪽 문단은 왼쪽 뒤에 원래 순서로 보존.
+- `TableCellSelection`: 읽기 전용 병합 cell을 click·Enter·Space로 선택하고 text caret과 상호 배타적으로
+  둔다. 재투영·undo·파일 교체에서 stale selection을 해제한다.
+- 분할: `textNodeId` ancestry·주소·`colSpan=2`를 재검증하고 다른 unmerged 행의 일관된 두 열 너비가
+  있을 때만 허용한다.
+
+검증: 각 slice마다 typecheck, Jest(36 suites·210 → 37 suites·223 passed), build, probe 8. 모두 exact
+undo/redo, `table-structure` loss policy, Save As·재개봉 포함.
+
+## 2026-09-04 — 표 셀 문단·모양과 행 편집
+
+커밋: `f804969` 여러 문단 표 셀 독립 편집 기반 구현 · `ffc759a` 표 셀 문단 범위와 구조 편집 구현 ·
+`cf1280d` 표 셀 테두리와 배경 편집 기반 구현 · `a36fbe8` 안전한 표 행 추가 기반 구현 · `fd9ac93` 표 행
+삭제와 선택 재배치 구현 · `66c7870` 문서 최신화와 표 열 편집 계획 정리
+
+- 일반 body cell의 모든 문단이 단일 text run이면 cell별 range scope를 공유하고, 같은 cell 안에서
+  문단 횡단 치환·Enter 분할·경계 병합을 허용한다. core는 `hp:tc > hp:subList` 경계를 재검증한다.
+- 셀 테두리·배경: 기존 `borderFill`을 새 ID로 복제해 선택 셀 reference만 바꾼다.
+- 행 추가·삭제: 단순 직사각형 topology만, `rowCnt`·뒤쪽 `rowAddr`·표 높이 갱신. 삭제 후 다음(마지막이면
+  이전) body 행으로 selection 재배치. 반복 머리글과 마지막 body 행은 보호.
+
+검증: Jest 34 suites·196 → 36 suites·206 passed, build, probe 8, main session undo/redo·Save As·재개봉.
+
+## 2026-09-01 — Sprint 2 마무리와 Sprint 3 착수
+
+커밋: `88c9159` 편집 오류 계약과 기능 판정 1차 구현 · `3d59282` 구조별 편집 판정과 선택 복구 구현 ·
+`4355cd5` 편집 트랜잭션 원자성과 저장 리비전 강화 · `d82722a` 구조별 저장 손실 정책과 사용자 안내 연결 ·
+`c5e31e3` 렌더러 상태 소유권과 IME 임시 상태 분리 · `34806d5` 렌더러 셸과 편집 리본 화면 책임 분할 ·
+`4e33346` 기존 문서 글꼴 재사용 편집 기반 구현 · `5635f81` 문단 모양과 탭 목록 구조 보존 강화
+
+- 편집 IPC 오류 envelope(conflict, unsupported, invalid request, not applicable, session expired, history
+  limit, save failure, internal)와 복구 정책. 내부 오류 원문·경로는 renderer에 보내지 않는다.
+- selection별 구조 capability와 stale selection 복구(UTF-16 경계 보정, collapse, 해제, `editing:refresh`).
+- `commitSynchronized`: 중간 command·history limit 실패 시 package·selection·stack·dirty 불변. 현재
+  `revision`과 `savedRevision` 분리.
+- `HwpxSaveLossPolicy`: 구조 kind(text·글자·문단 모양·문단 구조), Preview `current/stale/omitted`.
+- renderer를 document·viewer·editing reducer와 ref 기반 IME transient state로 분리하고
+  `ViewerToolbar`·`ViewerStage`·`ViewerPageStack`·`ViewerStatusBar`로 분할.
+- 문서 HANGUL font-face에 선언된 ID만 재사용하는 글꼴 편집. 문단 모양 변경 시 `tabPrIDRef`·`hh:heading`
+  불변식 검증.
+
+검증: Jest 30 suites·167 → 34 suites·189 passed, typecheck, build, probe 8.
+
+## 2026-08-22 — 여러 문단 범위와 공통 편집 host
+
+커밋: `b69326e` 문단 경계 Backspace Delete 병합 구현 · `8566a5c` 여러 문단 범위 구조 치환 코어 구현 ·
+`e9160b7` 여러 문단 공통 편집 호스트 연결
+
+문단 시작 Backspace·끝 Delete를 앞 문단 모양과 양쪽 run을 보존하는 merge command로 연결했다. 여러
+최상위 문단 selection을 fragment command 하나로 치환하고 stale `hp:linesegarray`를 제거한다. 공통
+paragraph host에서 pointer drag와 Shift+방향키 selection이 여러 run·문단을 넘으며 표 셀은 고유
+scope로 격리한다. 검증: Jest 26 suites·151 → 27 suites·155 passed, build, probe 8, 치환 → undo →
+redo → Save As → 재개봉. 남은 것: 물리 두벌식 여러 문단 조합.
+
+## 2026-08-21 — Sprint 0 완료와 편집 구조 입력
+
+커밋: `c00e110` TypeScript 검증 관문과 타입 안정성 추가 · `fa64a1a` 기능 브랜치 Windows CI 실행 활성화 ·
+`9215b24` HWPX 리소스 고갈 방어 추가 · `9ebf807` 미사용 레거시 편집 코드 제거 · `dc4de23` Windows 편집
+승인 번들 자동화 · `40efe28` 다중 run 선택 모델 기반 추가 · `01df629` 다중 run 범위 치환 기반 구현 ·
+`242207c` HWPX 줄 나눔 편집 기반 구현 · `8306ca5` 최상위 문단 Enter 분할 구현
+
+- 독립 `typecheck` 관문. XML 깊이 256·node 1,000,000·text 50,000,000자·DOCTYPE 금지, 이미지 2,000개·
+  개별 32 MiB·전체 192 MiB·한 변 32,768px·pixel 상한. XML depth·PNG dimension 폭탄은
+  `HWPX_IMPORT_FAILED`.
+- legacy source 5개와 dependency 4종 제거([legacy inventory](legacy_inventory.md)).
+- 로컬 Windows x64 `dir` package(279,556,778 bytes)에서 일반 문단·표 cell·style·undo/redo·Save As·
+  dirty 저장/버리기 자동 검증과 bundle 무결성 통과.
+- anchor/focus selection domain, multi-run 치환, `hp:lineBreak`·`hp:tab` anchor와 Shift+Enter,
+  최상위 문단 Enter split.
+
+검증: clean Windows CI(`fa64a1a`) install·test·typecheck·probe 8·build, Jest 23 suites·133 passed·11
+skipped, production audit 0. 남은 것: WIN-01~08 한/글 판정.
+
+## 2026-08-20 — Windows 개발 기준선
+
+커밋: `7eb625a` Windows 개발 기준선과 문서 보안 경계 강화
+
+Windows를 주 개발 환경으로 정하고 Node.js 22·npm 10 계약과 Windows CI를 추가했다. HWPX read-only와
+editing 경로가 같은 ZIP metadata preflight를 쓰고 renderer sandbox와 HTTPS-only navigation을 적용했다.
+미사용 `electron-updater` 제거와 `adm-zip`·`fast-xml-parser`·`unzipper` 갱신으로 production audit
+4건 → 0건. 검증: Jest 22 suites·122 passed, probe 8, build.
+
+## 2026-08-09 — Windows 한/글 bundle과 V4-0 배포 기준선
+
+커밋: `87253b7` Windows 한글 호환성 검증 번들 추가 · `247969f` HWPX 컨테이너 해시 판정 명확화 ·
+`9e81f6d` macOS 배포 준비 기준선 감사 추가 · `81343be` macOS arm64 배포 타깃 확정
+
+- `npm run fixture:v3-windows`: identity·일반 문단 편집본·표 cell 편집본·A4 문서와 SHA-256 manifest,
+  PowerShell 검사, WIN-01~08 양식. 이는 한/글 호환성 통과가 아니라 실기 입력 준비 완료다.
+- `npm run release:audit`: 당시 app은 arm64 `dir`, ad-hoc 서명, Team ID 없음. 공개 배포 차단 유지.
+- x64·Universal 무인증서 실험 뒤 Apple의 Rosetta 종료 일정을 근거로 공개 target을 arm64-only로 확정
+  ([V4 배포 전략](v4_release_strategy.md)).
+
+## 2026-08-02 — V3-6 편집 UX와 실제 두벌식 matrix
+
+커밋: `8364d36` V3 한글 입력 검증 결과 문서화 · `fb4602e` macOS 한글 입력 확장 매트릭스 추가 ·
+`3728945` A4 편집 문서와 홈 리본 추가 · `4043056` 기울임 밑줄 취소선 편집 추가 · `2c3895e` 문단 줄
+간격과 앞뒤 간격 편집 추가 · `2b4b81a` 첫 줄 들여쓰기와 내어쓰기 편집 추가
+
+- 실제 두벌식 commit 뒤 focus 유실 결함(재클릭 없는 후속 입력 event 0개)을 발견해 두 animation frame
+  뒤 focus·selection 복원과 450ms 음절 burst로 수정했다.
+- `npm run verify:ime:mac:matrix` 7 시나리오: 문단·표 셀 기본 입력, 조합 중 Backspace·Escape, 양방향
+  범위 치환, 실제 `⌘Z`·`⇧⌘Z`. 연속 실행 중 앱 전면화 경쟁을 찾아 probe를 보강했다.
+- A4 `59528 × 84189 HWPUNIT` 편집 fixture와 2단 `홈` 리본(최소 버튼 40px). 짧은 입력의 selection
+  복원 경쟁을 restore token으로 제거했다.
+- 기울임·밑줄·취소선, 줄 간격 100–300%·문단 앞뒤 0–72pt, 첫 줄 −72–72pt.
+
+검증(macOS arm64): Jest 22 suites·113 → 119 passed, unsigned `.app`, packaged A4 적용·Save As·재열기.
+남은 것: 사용자 손 입력 matrix([수동 matrix](v3_ime_manual_matrix.md)).
+
+## 2026-07-29~30 — V3-1~V3-5 편집 코어 (재임포트 이전 이력, hash 미상)
+
+- V3-1 `HwpxSourcePackage`: 모든 ZIP entry의 순서·bytes·compression·CRC 보존, 과거 손실성 serializer와
+  저장 IPC 제거. identity round-trip의 entry metadata·SHA-256 일치(Jest 17 suites·75).
+- V3-2 `ReplaceTextCommand`와 검증형 Save As 코어(Jest 18 suites·81).
+- V3-3 `EditTransaction`·bounded history(100 entries·8 MiB)·savepoint(Jest 19 suites·89).
+- V3-4 main-process 편집 session, `plaintext-only` IME surface, selection·re-pagination 복원, Save As UI,
+  dirty 교체·종료 보호. 승인된 두 번째 close가 막혀 프로세스가 남던 결함 수정(Jest 21 suites·99).
+- V3-5 부분 selection 글자·문단 style, 표 body cell text, 여러 run surface, 글자 크기·색상(Jest 22
+  suites·112).
+
+검증은 macOS 패키지 앱과 private HWPX(8쪽·이미지 4·overflow 0), 공개 matrix 5종(최대 9,767쪽·DOM 12).
+style과 Save As를 한 프로세스에서 연속 실행하는 probe의 간헐적 대기 초과는 기능 실패와 구분해 기록했다.
+
+## 2026-07-27 — V2 HWP 5.0 읽기 완료 (재임포트 이전 이력, hash 미상)
+
+관련 구현(원래 hash는 현재 저장소에 없으며 날짜는 2026-07-27):
+
+- (재임포트 이전 이력, hash 미상) `문서 가져오기 IPC 경계 통합`
+- (재임포트 이전 이력, hash 미상) `HWP 지원 불가 문서 오류 분류 추가`
+- (재임포트 이전 이력, hash 미상) `공개 HWP 회귀 매트릭스 추가`
+- (재임포트 이전 이력, hash 미상) `HWP PDF 마지막 페이지 출력 대기 보강`
+- (재임포트 이전 이력, hash 미상) `V2 공개 HWP 검증 현황 문서화`
+
+format-neutral `DocumentImporter`와 `document:import` IPC, HWP 200 MiB·CFB·`FileHeader`·5.x preflight,
+`HWP_ENCRYPTED`·`HWP_DISTRIBUTION`·`HWP_DRM`·`HWP_UNSUPPORTED_VERSION`·`HWP_CORRUPTED` 오류 UX, rhwp 전용
+Web Worker(open 30초·page 15초)를 완료했다. 공개 `synthetic-layout.hwp`(5.0.3.2, 12,800 bytes, SHA-256
+`b665933da10ec276e8e21ddb1c9e6d2eec5440c9ac5d1bda9e5bc478bd136b9e`)는 kordoc 구조 oracle과 rhwp 렌더를 교차 검증한다. 실사용 HWP 재검증에서 마지막
+쪽 SVG decode 전에 인쇄가 시작되는 race를 발견해 모든 이미지 `naturalWidth > 0`까지 기다리도록 수정했다.
+연속 E2E의 `Session Storage` 늦은 종료로 인한 임시 폴더 삭제 실패는 제한 재시도로 분리했다.
+
+검증(macOS arm64, Electron 28.3.3): Jest 16 suites·62 passed, probe 8, HWP matrix(2쪽·PDF 98.6%·오류
+5종), HWPX matrix 5종, notices 일치. parser 역할은 [ADR-0001](adr/0001-hwp-parser-roles.md),
+bake-off 경과는 [HWP parser bake-off](hwp_v2_bakeoff.md)에 있다.
+
+## 2026-07-23 — V1 HWPX Release Candidate (재임포트 이전 이력, hash 미상)
+
+상세 근거는 [V1 기준선](v1_baseline.md)과 [Release Candidate 체크리스트](release_checklist.md)에 있다.
+실사용 HWPX의 페이지·이미지 보존과 overflow 0, 화면/PDF 페이지별 비공백 문자 수 일치, 15문단 cell
+continuation(8+7), 80-section 9,767쪽 중 DOM 12개, 이미지 12개·`rowSpan=2`, 손상 HWPX 오류 UX,
+Finder 열기·single-instance·drag-and-drop·pinch zoom·dark chrome·PDF를 확인했다.
+
+## 2026-06 — 초기 prototype (재임포트 이전 이력, hash 미상)
+
+2026-06-06~08에 `parser.ts`·`normalization.ts`·문자열 `renderer-engine`, Zustand store 기반
+`contentEditable` 편집기, 리본 UI와 JSON → OWPML serializer를 빠르게 만들었다. 이 serializer는 unknown
+XML·package entry를 잃고 잘못된 mimetype을 기록했으며 ZIP·resource 상한도 없었다. V3-0 감사에서 재사용하지
+않기로 했고 2026-07~08에 모두 제거했다. 당시의 "완성" 표현은 현재 제품 계약이 아니다.
+
+## 포트폴리오 근거 사용 원칙
+
+- 속도는 OS·architecture·cold/warm·표본 수와 함께 인용하고, 과거 macOS 수치임을 밝힌다.
+- 대형 문서는 페이지 수가 아니라 "수천~수만 쪽에서 DOM 12개 mount, overflow 0"으로 설명한다.
+- PDF 안정성은 화면/PDF page size·문자 보존율과 실제로 발견해 고친 마지막 페이지 race로 설명한다.
+- 안전한 열기는 main preflight, Worker timeout·취소, ZIP·XML·이미지 상한, 경로 허용목록과 오류 코드로
+  설명한다.
+- "테스트가 있다"보다 private 실문서와 공개 결정적 fixture를 함께 쓰고 결과에서 개인정보를 제거한
+  설계를 설명한다.

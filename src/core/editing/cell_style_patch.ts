@@ -1,5 +1,17 @@
 import { HwpxSourcePackage } from '../parser/source_package'
 import { HwpxEditConflictError, HwpxLossReport, listHwpxTextAnchors } from './text_patch'
+import {
+  attribute,
+  buildLossReport,
+  nearestAncestor,
+  replaceRange,
+  sameOrdinalMessage,
+  scanXmlElements,
+  setAttribute,
+  TABLE_SCAN_OPTIONS,
+  targetOrdinal,
+  XmlElementSpan
+} from './xml_scan'
 
 export type CellBorderType = 'NONE' | 'SOLID'
 
@@ -37,116 +49,10 @@ export interface CellStylePatchResult {
   changed: boolean
 }
 
-interface XmlElementSpan {
-  name: string
-  start: number
-  openEnd: number
-  closeStart: number
-  end: number
-  parent?: XmlElementSpan
-}
-
-function findTagEnd(xml: string, start: number): number {
-  let quote: '"' | "'" | undefined
-  for (let index = start + 1; index < xml.length; index += 1) {
-    const value = xml[index]
-    if (quote) {
-      if (value === quote) quote = undefined
-    } else if (value === '"' || value === "'") quote = value
-    else if (value === '>') return index + 1
-  }
-  throw new HwpxEditConflictError('끝나지 않은 XML tag가 있습니다.')
-}
-
-function scanXmlElements(xml: string): XmlElementSpan[] {
-  const spans: XmlElementSpan[] = []
-  const stack: Array<{ name: string; start: number; openEnd: number; parent?: XmlElementSpan }> = []
-  let cursor = 0
-  while (cursor < xml.length) {
-    const start = xml.indexOf('<', cursor)
-    if (start < 0) break
-    if (xml.startsWith('<!--', start)) {
-      const end = xml.indexOf('-->', start + 4)
-      if (end < 0) throw new HwpxEditConflictError('끝나지 않은 XML comment가 있습니다.')
-      cursor = end + 3
-      continue
-    }
-    if (xml.startsWith('<?', start)) {
-      const end = xml.indexOf('?>', start + 2)
-      if (end < 0) throw new HwpxEditConflictError('끝나지 않은 XML 선언이 있습니다.')
-      cursor = end + 2
-      continue
-    }
-    const openEnd = findTagEnd(xml, start)
-    const tag = xml.slice(start, openEnd)
-    if (tag.startsWith('<!')) {
-      cursor = openEnd
-      continue
-    }
-    const closing = /^<\s*\//.test(tag)
-    const name = tag.match(closing ? /^<\s*\/\s*([^\s>]+)/ : /^<\s*([^\s/>]+)/)?.[1]
-    if (!name) throw new HwpxEditConflictError('해석할 수 없는 XML tag가 있습니다.')
-    const selfClosing = !closing && /\/\s*>$/.test(tag)
-    if (closing) {
-      const open = stack.pop()
-      if (!open || open.name !== name) throw new HwpxEditConflictError('XML tag 순서가 올바르지 않습니다.')
-      spans.push({ name, start: open.start, openEnd: open.openEnd, closeStart: start, end: openEnd, parent: open.parent })
-    } else if (selfClosing) {
-      spans.push({ name, start, openEnd, closeStart: openEnd, end: openEnd, parent: stack.at(-1) as XmlElementSpan | undefined })
-    } else {
-      const parent = stack.at(-1)
-      stack.push({
-        name,
-        start,
-        openEnd,
-        parent: parent ? { name: parent.name, start: parent.start, openEnd: parent.openEnd, closeStart: -1, end: -1, parent: parent.parent } : undefined
-      })
-    }
-    cursor = openEnd
-  }
-  if (stack.length) throw new HwpxEditConflictError('끝나지 않은 XML element가 있습니다.')
-  const byStart = new Map(spans.map((span) => [span.start, span]))
-  spans.forEach((span) => { if (span.parent) span.parent = byStart.get(span.parent.start) })
-  return spans.sort((left, right) => left.start - right.start)
-}
-
-function attribute(tag: string, name: string): string | undefined {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return tag.match(new RegExp(`\\s${escaped}\\s*=\\s*(["'])(.*?)\\1`))?.[2]
-}
-
-function setAttribute(tag: string, name: string, value: string): string {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const pattern = new RegExp(`(\\s${escaped}\\s*=\\s*)(["'])(.*?)\\2`)
-  return pattern.test(tag)
-    ? tag.replace(pattern, (_match, prefix: string, quote: string) => `${prefix}${quote}${value}${quote}`)
-    : tag.replace(/(\s*\/?>)$/, ` ${name}="${value}"$1`)
-}
-
-function replaceRange(source: string, start: number, end: number, replacement: string): string {
-  return source.slice(0, start) + replacement + source.slice(end)
-}
-
-function nearestAncestor(span: XmlElementSpan, name: string): XmlElementSpan | undefined {
-  let current = span.parent
-  while (current) {
-    if (current.name === name) return current
-    current = current.parent
-  }
-  return undefined
-}
+const CELL_ORDINAL_MESSAGES = sameOrdinalMessage((textNodeId) => `표 셀 anchor가 올바르지 않습니다: ${textNodeId}`)
 
 function directChild(spans: XmlElementSpan[], parent: XmlElementSpan, name: string): XmlElementSpan | undefined {
   return spans.find((span) => span.name === name && span.parent?.start === parent.start)
-}
-
-function targetOrdinal(sectionPath: string, textNodeId: string): number {
-  const prefix = `${sectionPath}#hp:t:`
-  const ordinal = textNodeId.startsWith(prefix) ? Number(textNodeId.slice(prefix.length)) : Number.NaN
-  if (!Number.isSafeInteger(ordinal) || ordinal < 0) {
-    throw new HwpxEditConflictError(`표 셀 anchor가 올바르지 않습니다: ${textNodeId}`)
-  }
-  return ordinal
 }
 
 function safeCellContext(sourcePackage: HwpxSourcePackage, sectionPath: string, textNodeId: string) {
@@ -154,8 +60,8 @@ function safeCellContext(sourcePackage: HwpxSourcePackage, sectionPath: string, 
     throw new HwpxEditConflictError(`표 셀 anchor를 찾을 수 없습니다: ${textNodeId}`)
   }
   const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
-  const spans = scanXmlElements(xml)
-  const textNode = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId)]
+  const spans = scanXmlElements(xml, TABLE_SCAN_OPTIONS)
+  const textNode = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId, CELL_ORDINAL_MESSAGES)]
   const paragraph = textNode && nearestAncestor(textNode, 'hp:p')
   const subList = paragraph && nearestAncestor(paragraph, 'hp:subList')
   const cell = subList && nearestAncestor(subList, 'hp:tc')
@@ -184,7 +90,7 @@ function validateColor(value: string | undefined, label: string): void {
 }
 
 function mutateBorderFill(fragment: string, command: ApplyCellStyleCommand): string {
-  const spans = scanXmlElements(fragment)
+  const spans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
   let result = fragment
   const replacements: Array<{ start: number; end: number; value: string }> = []
   const fill = spans.find((span) => span.name === 'hc:winBrush')
@@ -210,18 +116,6 @@ function mutateBorderFill(fragment: string, command: ApplyCellStyleCommand): str
   return result
 }
 
-function lossReport(sourcePackage: HwpxSourcePackage, modifiedEntries: string[]): HwpxLossReport {
-  const all = sourcePackage.listEntries().map((entry) => entry.path)
-  return {
-    preservedEntries: all.filter((path) => !modifiedEntries.includes(path)),
-    modifiedEntries,
-    regeneratedEntries: [],
-    omittedEntries: [],
-    unsupportedFeatures: [],
-    previewStatus: sourcePackage.listEntries().some((entry) => entry.path.startsWith('Preview/')) ? 'stale' : 'omitted'
-  }
-}
-
 export function applyCellStyleCommand(sourcePackage: HwpxSourcePackage, command: ApplyCellStyleCommand): CellStylePatchResult {
   validateColor(command.backgroundColor, '셀 배경색')
   validateColor(command.borderColor, '셀 테두리색')
@@ -234,7 +128,7 @@ export function applyCellStyleCommand(sourcePackage: HwpxSourcePackage, command:
   const context = safeCellContext(sourcePackage, command.sectionPath, command.textNodeId)
   const headerPath = 'Contents/header.xml'
   const header = sourcePackage.readEntry(headerPath).toString('utf8')
-  const spans = scanXmlElements(header)
+  const spans = scanXmlElements(header, TABLE_SCAN_OPTIONS)
   const collection = spans.find((span) => span.name === 'hh:borderFills')
   const definitions = collection
     ? spans.filter((span) => span.name === 'hh:borderFill' && span.parent?.start === collection.start)
@@ -244,7 +138,7 @@ export function applyCellStyleCommand(sourcePackage: HwpxSourcePackage, command:
   const originalFragment = header.slice(sourceDefinition.start, sourceDefinition.end)
   const desiredWithoutId = mutateBorderFill(originalFragment, command)
   if (desiredWithoutId === originalFragment) {
-    return { package: sourcePackage, lossReport: lossReport(sourcePackage, []), changed: false }
+    return { package: sourcePackage, lossReport: buildLossReport(sourcePackage, []), changed: false }
   }
   const comparable = (fragment: string) => fragment.replace(/(<hh:borderFill\b[^>]*\bid\s*=\s*)(["']).*?\2/, '$1$2__ID__$2')
   const reused = definitions.find((definition) => comparable(header.slice(definition.start, definition.end)) === comparable(desiredWithoutId))
@@ -282,7 +176,7 @@ export function applyCellStyleCommand(sourcePackage: HwpxSourcePackage, command:
       replacementCellOpenTag: context.cellOpenTag,
       headerMutation
     },
-    lossReport: lossReport(sourcePackage, headerMutation ? [headerPath, command.sectionPath] : [command.sectionPath]),
+    lossReport: buildLossReport(sourcePackage, headerMutation ? [headerPath, command.sectionPath] : [command.sectionPath]),
     changed: true
   }
 }
@@ -303,7 +197,7 @@ export function applyRestoreCellStyleCommand(sourcePackage: HwpxSourcePackage, c
       if (fragmentIndex < 0) throw new HwpxEditConflictError('추가한 borderFill을 찾을 수 없습니다.')
       nextHeader = replaceRange(nextHeader, fragmentIndex, fragmentIndex + mutation.fragment.length, '')
     } else {
-      const collection = scanXmlElements(nextHeader).find((span) => span.name === 'hh:borderFills')
+      const collection = scanXmlElements(nextHeader, TABLE_SCAN_OPTIONS).find((span) => span.name === 'hh:borderFills')
       if (!collection) throw new HwpxEditConflictError('borderFill collection을 찾을 수 없습니다.')
       nextHeader = replaceRange(nextHeader, collection.closeStart, collection.closeStart, mutation.fragment)
     }
@@ -328,7 +222,7 @@ export function applyRestoreCellStyleCommand(sourcePackage: HwpxSourcePackage, c
         action: command.headerMutation.action === 'remove' ? 'insert' : 'remove'
       } : undefined
     },
-    lossReport: lossReport(sourcePackage, modified),
+    lossReport: buildLossReport(sourcePackage, modified),
     changed: true
   }
 }

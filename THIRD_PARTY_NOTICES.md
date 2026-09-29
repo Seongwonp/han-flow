@@ -28,6 +28,27 @@ MIT 라이선스 원문은 macOS 앱의
 - 원 저장소: https://github.com/chrisryugj/kordoc
 - production 앱 포함 여부: 포함하지 않음
 
+## 테스트 fixture
+
+`tests/fixtures/public/external/`의 HWPX 26종은 한/글(Hancom Office Hangul)로 저장된 공개
+테스트 파일을 원본 그대로 복사한 것이다. 각 파일의 출처 URL·commit·SHA-256은
+`tests/fixtures/public/hwpx_corpus_manifest.json`에 기록한다. 배포 앱에는 포함하지 않는다.
+
+### `neolord0/hwpxlib` testFile 13종
+
+- 라이선스: Apache License 2.0
+- 원 저장소: https://github.com/neolord0/hwpxlib (commit `f9fd225`)
+- 대상: `ext-hwpxlib-*.hwpx`
+
+### `airmang/python-hwpx` hancom_saved 13종
+
+- 저작권: Copyright 2025-2026 airmang
+- 라이선스: Apache License 2.0
+- 원 저장소: https://github.com/airmang/python-hwpx (commit `7d5ce2b`)
+- 대상: `ext-pyhwpx-*.hwpx`
+- NOTICE: "This product includes software developed by airmang. Licensed under the Apache
+  License, Version 2.0."
+
 ## HWP 공개 문서 고지
 
 본 제품은 한글과컴퓨터의 한/글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.

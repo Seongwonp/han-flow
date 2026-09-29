@@ -6,16 +6,14 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import * as CFB from 'cfb'
 import { linkHwpManifest, validateFixtureCatalog } from './corpus/fixture_catalog.mjs'
+import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const fixture = resolve(root, 'tests/fixtures/public/synthetic-layout.hwp')
 const manifestPath = `${fixture}.json`
 const catalogPath = resolve(root, 'tests/fixtures/public/fixture_catalog.json')
 const electron = createRequire(import.meta.url)('electron')
-const defaultAppBinary = process.platform === 'win32'
-  ? resolve(root, 'release/win-unpacked/Han-Flow.exe')
-  : resolve(root, 'release/mac-arm64/Han-Flow.app/Contents/MacOS/Han-Flow')
-const appBinary = resolve(process.argv[2] ?? defaultAppBinary)
+const appBinary = process.argv[2] ? resolve(process.argv[2]) : defaultAppBinary(root)
 const activeChildren = new Set()
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
@@ -125,6 +123,7 @@ try {
   ]
 
   await run(electron, [
+    ...electronLaunchArguments(),
     resolve(root, 'scripts/fixtures/generate_public_hwp_main.cjs'),
     generatedFixture
   ], { prefix: 'HAN_FLOW_PUBLIC_HWP_GENERATED ' })

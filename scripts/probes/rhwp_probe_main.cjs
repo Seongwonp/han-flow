@@ -5,8 +5,11 @@ const { promisify } = require('node:util')
 const { resolve } = require('node:path')
 const { pathToFileURL } = require('node:url')
 
-const filePath = process.argv[2]
-const pdfPath = process.argv[3]
+// Electron 옵션(--no-sandbox 등)이 스크립트 경로 앞에 올 수 있으므로 스크립트 경로 뒤의 인자만 위치 인자로 읽는다.
+const scriptIndex = process.argv.findIndex((argument) => resolve(argument) === __filename)
+const scriptArguments = process.argv.slice(scriptIndex >= 0 ? scriptIndex + 1 : 2)
+const filePath = scriptArguments[0]
+const pdfPath = scriptArguments[1]
 const visualDirectory = process.env.HAN_FLOW_HWP_PROBE_VISUAL_DIR
 const visualPages = process.env.HAN_FLOW_HWP_PROBE_VISUAL_PAGES
 const RESULT_CHANNEL = 'han-flow:hwp-probe-result'

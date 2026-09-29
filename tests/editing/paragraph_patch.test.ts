@@ -115,6 +115,41 @@ describe('HWPX paragraph split', () => {
     expect(history.package.readEntry(sectionPath)).not.toEqual(original)
   })
 
+  test('빈 자기 닫힘 <hp:t/> 문단도 나누며 빈 쪽은 원래 tag를 유지하고 글자가 있는 쪽만 펼친다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const xml = source.readEntry(sectionPath).toString('utf8').replace(
+      '</hs:sec>',
+      '<hp:p id="30" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t/></hp:run></hp:p></hs:sec>'
+    )
+    const guarded = source.withEntry(sectionPath, Buffer.from(xml, 'utf8'))
+    const anchors = listHwpxTextAnchors(guarded, sectionPath)
+    const empty = anchors[anchors.length - 1]
+    expect(empty.text).toBe('')
+
+    const split = applyReplaceParagraphFragmentCommand(
+      guarded,
+      planSplitParagraph(guarded, createEditorSelection(sectionPath, empty.textNodeId, 0)).command
+    )
+    expect(split.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '<hp:p id="30" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t/></hp:run></hp:p>' +
+      '<hp:p id="31" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t/></hp:run></hp:p>'
+    )
+
+    const replaced = applyReplaceParagraphFragmentCommand(
+      split.package,
+      planReplaceParagraphSelection(split.package, {
+        sectionPath,
+        anchorTextNodeId: empty.textNodeId,
+        anchorOffset: 0,
+        focusTextNodeId: `${sectionPath}#hp:t:${empty.ordinal + 1}`,
+        focusOffset: 0
+      }, '입력').command
+    )
+    expect(replaced.package.readEntry(sectionPath).toString('utf8')).toContain(
+      '<hp:p id="30" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>입력</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t/></hp:run></hp:p>'
+    )
+  })
+
   test('제어가 섞인 run과 여러 run 선택은 fail-closed한다', async () => {
     const source = await sourceWithEditableParagraph()
     const anchors = listHwpxTextAnchors(source, sectionPath)

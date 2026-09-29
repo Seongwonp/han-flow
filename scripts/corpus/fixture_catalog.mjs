@@ -4,6 +4,12 @@ const PIPELINE_FORMATS = new Map([
   ['hwp-production', 'hwp']
 ])
 
+const PROVENANCES = new Set(['synthetic', 'external'])
+
+export function fixtureProvenance(fixture) {
+  return fixture.provenance ?? 'synthetic'
+}
+
 export function validateFixtureCatalog(catalog) {
   if (!catalog || typeof catalog !== 'object') throw new Error('fixture catalog는 object여야 합니다.')
   if (catalog.schemaVersion !== 1) throw new Error('지원하지 않는 fixture catalog schemaVersion입니다.')
@@ -23,6 +29,15 @@ export function validateFixtureCatalog(catalog) {
     }
     if (!Array.isArray(fixture.pipelines) || !fixture.pipelines.length) {
       throw new Error(`${fixture.id}: pipeline이 없습니다.`)
+    }
+    if (fixture.provenance !== undefined && !PROVENANCES.has(fixture.provenance)) {
+      throw new Error(`${fixture.id}: provenance는 synthetic 또는 external이어야 합니다.`)
+    }
+    if (
+      fixtureProvenance(fixture) === 'external' &&
+      (fixture.format !== 'hwpx' || fixture.pipelines.length !== 1 || fixture.pipelines[0] !== 'hwpx-core')
+    ) {
+      throw new Error(`${fixture.id}: external fixture는 hwpx-core pipeline의 HWPX만 허용합니다.`)
     }
     const pipelines = new Set()
     for (const pipeline of fixture.pipelines) {
@@ -47,6 +62,11 @@ export function linkHwpxManifest(catalog, manifest) {
     if (catalogFixture.format !== 'hwpx') throw new Error(`${fixture.id}: fixture catalog 형식이 HWPX가 아닙니다.`)
     if (catalogFixture.category !== fixture.category) throw new Error(`${fixture.id}: fixture category가 catalog와 다릅니다.`)
     if (!catalogFixture.pipelines.includes('hwpx-core')) throw new Error(`${fixture.id}: hwpx-core pipeline이 없습니다.`)
+    const external = fixtureProvenance(catalogFixture) === 'external'
+    const fileSource = (fixture.source ?? 'generator') === 'file'
+    if (external !== fileSource) {
+      throw new Error(`${fixture.id}: catalog external provenance와 manifest source: file이 서로 대응하지 않습니다.`)
+    }
   }
   for (const fixture of catalog.fixtures.filter(({ pipelines }) => pipelines.includes('hwpx-core'))) {
     if (!manifestById.has(fixture.id)) throw new Error(`${fixture.id}: HWPX manifest 항목이 없습니다.`)
