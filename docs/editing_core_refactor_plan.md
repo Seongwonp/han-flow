@@ -1,6 +1,6 @@
 # 편집 코어 tree 모델 전환 계획
 
-상태: 진행 중 — XML scanner 통합(`src/core/editing/xml_scan.ts`)과 tree 전환 1단계(text) 완료, 2단계(style) 미착수
+상태: 진행 중 — XML scanner 통합(`src/core/editing/xml_scan.ts`)과 tree 전환 1단계(text)·2단계(style) 완료, 3단계(paragraph) 미착수
 
 실제 한/글 문서 편집 가능 비율 기준선과 우선 해제 순서: [편집 가능 비율 기준선](editing_coverage.md)
 
@@ -123,15 +123,73 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 - 남은 것: 문단 분할·병합(`paragraph_patch.ts`)은 3단계 전까지 `rewriteHwpxTextElement`로 논리 text에서 다시 쓰므로 그 경로의
   `hp:t`는 여전히 기본 표기로 바뀐다.
 
-**남은 것 (2단계: style)**
+**남은 것 (2단계: style)** — 2026-09-29 완료, 아래 4-2 참고.
 
-- `style_patch.ts`·`cell_style_patch.ts`를 tree 연산으로 옮긴다. header collection `itemCnt`·정의 재사용·
-  run 분할을 `setSourceAttribute`와 자식 교체로 표현하고, header·section 두 entry 동시 변경의 inverse를 검증한다.
-  header.xml identity는 1단계에서 이미 확인했다.
-- style command가 tree를 쓰면 cache를 text 전용에서 package 전체 편집으로 넓힌다(지금은 non-text revision마다 다시 parse).
-- `text_patch_legacy.ts`와 그 tokenizer를 삭제하고, differential test는 style 비교로 교체한다.
-- 문단(`paragraph_patch.ts`, 아직 `rewriteHwpxTextElement` 문자열 helper 사용)·표(`table_patch.ts`)와 정규식
-  `attribute`/`setAttribute`는 3·4단계까지 문자열 경로에 남는다.
+## 4-2. 2단계 완료 (style, 2026-09-29)
+
+**옮긴 것**
+
+- `style_patch.ts`(글자: 굵게·기울임·밑줄·취소선·크기·색·한글 글꼴, 문단: 정렬·줄 간격·앞뒤 간격·첫 줄 들여쓰기)와
+  `cell_style_patch.ts`(셀 배경·사방 테두리)가 section·header.xml source tree에서 동작한다. anchor의 `hp:t`에서 부모를 따라
+  `hp:run`·`hp:p`(최상위 문단·단일 run 조건 포함)·`hp:subList`→`hp:tc`를 찾고, `cellSpan`·`header` 검사도 tree attribute로 한다.
+- `charPrIDRef`·`paraPrIDRef`·`borderFillIDRef`와 collection `itemCnt`는 따옴표를 인식하는 `writeTagAttribute`·
+  `setSourceAttribute`로 바꾼다. 새 definition은 원본 `hh:charPr`·`hh:paraPr`·`hh:borderFill`을 조각 tree로 복제해 자식 추가·삭제
+  (OWPML 순서의 다음 형제 앞, 없으면 끝)와 attribute 변경으로 고친 뒤 collection 끝에 node로 붙인다(`parseSourceFragment`).
+  같은 definition 재사용, 결정적 ID, `itemCnt` 규칙(글자·문단은 있을 때만 definition 수 + 1, 셀은 `itemCnt` + 1)은 그대로다.
+- 부분 선택 run 분할은 run node를 좌·선택·우 run 조각으로 교체하고 그 section의 `hp:t` 색인만 버린다(다음 조회가 다시 parse하지
+  않고 tree에서 새로 만든다). 전환 전과 같게 reference 변경과 분할을 서로 다른 revision으로 쓴다.
+- inverse(`restore-style`·`restore-character-run`·`restore-cell-style`)의 모양, 저장하는 tag·조각 원문, 오류 code·message,
+  capability 판단(viewer 모델 기준)은 그대로다. 복원도 tree 연산이다: reference tag는 `setElementOpenTag`로 원문 그대로 되돌리고,
+  header 조각 제거는 collection 끝 node들의 원문이 조각과 byte 단위로 같을 때만(셀은 조각과 같은 직계 `hh:borderFill`) 뗀다.
+- tree 연산 추가(`source_tree.ts`): `spliceSourceChildren`·`replaceSourceNode`·`setElementOpenTag`·`parseSourceFragment`·
+  `findFirstSourceElement`·`findDescendantSourceElements`·`nearestSourceAncestor`·`rawTextOffset`.
+- cache를 package 전체로 넓혔다(`package_trees.ts`): package 객체별로 entry 경로 → source tree를 두고 section과 header.xml을 같이
+  보관한다. tree를 고치는 command(text·글자·문단·셀 모양)는 cache를 떼어 낸 뒤 고치고 새 package로 옮긴다. `hp:t` 색인은 tree별
+  (`WeakMap`)로 따라간다. definition 비교 표기도 element별로 cache해 연속 모양 변경이 definition 전체를 다시 비교하지 않는다.
+  header.xml이 UTF-8이 아니면 전환 전처럼 손실 있는 문자열로 고치지 않고 거부한다.
+- 비교 oracle: 전환 전 문자열 구현을 `style_patch_legacy.ts`·`cell_style_patch_legacy.ts`(internal, test 전용)로 보존했다.
+  `text_patch_legacy.ts`와 그 tokenizer는 삭제했다. 1단계 뒤 text 비교는 기본 표기 hp:t에서만 의미가 있으므로, text differential의
+  oracle을 전환 전 경로의 명세(`scanXmlElements`로 찾은 hp:t 전체를 기본 표기로 다시 쓴 section, test 안의 짧은 함수)로 바꿔 유지했다.
+  교차 parser test의 세 번째 참여자는 `scanXmlElements`다.
+
+**측정**
+
+- style differential(`tests/editing/style_tree_differential.test.ts`): 34종의 편집 가능 anchor 전체(같은 문단을 반복한 synthetic
+  large-progressive 19,511개만 40개를 고르게 뽑음), 474 anchor × 글자 모양 5~7종(굵게 켜기·끄기, 기울임+밑줄, 취소선+크기+색,
+  한글 글꼴, 부분 선택 굵게·기울임) + 문단 모양 2종(가운데 정렬, 줄 간격+앞뒤 간격+들여쓰기) + 셀 모양 2종(배경, 테두리 색·두께·종류)
+  = 4,782 command. 거부 2,739건은 두 경로의 오류 종류·message가 같고, 변화 없음 331건, 변경 1,712건(글자 965·문단 570·셀 177,
+  header definition 추가 1,696, run 분할 125)은 section·header bytes·revision·inverse·loss report가 같으며, undo 1,712회·redo
+  1,712회도 두 경로가 같고 undo는 원래 bytes로 돌아온다. 새 경로는 되돌린 package를 다음 command에 이어 써서 cache hit와 주기적
+  cache miss를 함께 거친다. run 분할 뒤 tree에서 다시 만든 anchor는 새 parse와 같다.
+- text differential(명세 oracle): 2,936 편집 가운데 기본 표기 2,926회가 명세와 bytes·inverse가 같고, 손 작성 section의 비기본 표기
+  10회만 원문 보존으로 다르다. 빈 편집 19,945 anchor byte identity, identity round-trip 148/148 entry는 그대로다.
+- 글자 모양 toggle 비용(`HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/style_toggle_benchmark.test.ts`,
+  large-progressive의 가장 큰 section 47,305 bytes·anchor 250개 가운데 run의 굵게를 200번 연속 켜고 끔, anchor 조회 → command →
+  anchor 조회): 전환 전 평균 6.29ms(p50 6.17·p95 8.44) → 전환 후 1.51ms(p50 1.42·p95 2.43). `HwpxEditHistory.commit` 전체 경로는
+  1.22ms(p50 1.07·p95 2.01). 남은 비용은 section bytes 생성과 `withEntry`의 CRC 계산이다.
+- `npm run corpus:editing-coverage` 결과는 `editing_coverage_2026-09-29-after.json`과 같다(기능 변화 없음).
+
+**differential이 드러낸 전환 전 경로의 잠재 버그(공개 corpus에는 없음, 새 경로 동작을 test로 고정)**
+
+- 다른 attribute 값 안의 이름을 읽음: `<hp:run data="x charPrIDRef='7'" charPrIDRef="0">`에 굵게 해제 → 전환 전은 data 값 안의
+  `'7'`을 reference로 읽어 "hh:charPr reference를 찾을 수 없습니다: 7"로 거부. 새 경로는 `charPrIDRef="1"`로 바꾸고 data는 그대로.
+  같은 종류로 `<hp:tc note="x header='1'" ... header="0">`의 배경색은 전환 전이 머리글 셀로 오판해 거부했다.
+- 줄바꿈이 든 attribute 값: `<hh:charPr id="0" ... textColor="#12␊3456">`에 글자색 → 전환 전은 값을 못 찾아 복제 definition에
+  `textColor="#12␊3456" textColor="#ABCDEF"`(중복 attribute, 잘못된 XML)를 썼다. 새 경로는 제자리에서 바꾼다.
+- 부분 선택 run 분할의 entity 표기: `<hp:t>앞&#x41;&apos;뒤</hp:t>`의 [1, 3)에 굵게 해제 → 전환 전은 가운데 조각을 `<hp:t>A'</hp:t>`로
+  다시 썼다(1단계 text 버그와 같은 종류). 새 경로는 원문 조각 `&#x41;&apos;`를 그대로 쓴다. 공개 corpus의 분할은 모두 기본 표기라
+  bytes가 같다.
+- 코드상 차이(corpus 미해당): 정규식이 자기 닫힘 형태만 찾던 `hh:align`·`hc:intent`/`prev`/`next`는 형태와 무관하게 첫 element를
+  찾고, `id`·`itemCnt`를 읽을 때 entity를 해석한다.
+
+**남은 것 (3단계: paragraph, 그다음 4단계: table)**
+
+- 문단 분할·병합·여러 문단 범위 치환(`paragraph_patch.ts`, `range_edit.ts`의 여러 문단 경로)을 tree 연산(`spliceSourceChildren`·
+  `parseSourceFragment`)으로 옮긴다. 지금은 `rewriteHwpxTextElement`로 논리 text에서 다시 쓰므로 분할·병합된 `hp:t`의 inline
+  `hp:tab` attribute·entity 표기가 기본 표기로 바뀐다. `hp:linesegarray` 처리 정책을 이 단계에서 확정한다. 문단 differential을
+  만들면 `style_patch_legacy.ts`·`cell_style_patch_legacy.ts`를 삭제한다.
+- 4단계에서 표(`table_patch.ts`) 행·열 추가/삭제·병합·분할과 topology whitelist를 tree 검사로 옮기고, 정규식 `attribute`/`setAttribute`와
+  `replaceRange` 기반 planner를 제거한다. 문단·표 command가 만든 package에는 아직 tree cache가 없어 첫 조회 때 다시 parse한다.
 
 ## 5. 위험
 

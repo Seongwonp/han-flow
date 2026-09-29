@@ -4,9 +4,17 @@ import {
   createSourceText,
   decodeXmlEntities,
   escapeXmlAttribute,
+  findDescendantSourceElements,
+  findFirstSourceElement,
   findSourceElements,
   getSourceAttribute,
+  nearestSourceAncestor,
+  parseSourceFragment,
   parseSourceTree,
+  rawTextOffset,
+  replaceSourceNode,
+  setElementOpenTag,
+  spliceSourceChildren,
   parseTagAttributes,
   readTagAttribute,
   replaceElementChildren,
@@ -181,5 +189,60 @@ describe('source tree attribute', () => {
     const [empty] = findSourceElements(tree, 'q')
     setSourceAttribute(tree, empty, 'n', 'v')
     expect(serializeSourceTree(tree)).toBe('<r><p id="2&amp;3" s=\'x\'>body<b/></p><q n="v"/></r>')
+  })
+
+  test('자식 splice·node 교체는 바뀐 부모만 다시 쓰고 남은 형제는 원문 그대로 둔다', () => {
+    const source = '<r>\n  <c a=\'1\' >x</c >\n  <d/>\n  <e>&#x41;</e>\n</r>'
+    const tree = parseSourceTree(source)
+    const [root] = findSourceElements(tree, 'r')
+    const [d] = findSourceElements(tree, 'd')
+    replaceSourceNode(tree, d, parseSourceFragment('<n k="v">새 &amp; 값</n><!-- c -->'))
+    expect(serializeSourceTree(tree)).toBe("<r>\n  <c a='1' >x</c >\n  <n k=\"v\">새 &amp; 값</n><!-- c -->\n  <e>&#x41;</e>\n</r>")
+    const removed = spliceSourceChildren(tree, root, 0, 2, [])
+    expect(removed).toHaveLength(2)
+    expect(removed.every((node) => node.parent === undefined)).toBe(true)
+    expect(serializeSourceTree(tree)).toBe('<r>\n  <n k="v">새 &amp; 값</n><!-- c -->\n  <e>&#x41;</e>\n</r>')
+    // 조각에서 옮겨 온 node도 일반 node처럼 찾고 고칠 수 있다.
+    const [inserted] = findSourceElements(tree, 'n')
+    expect(inserted.parent).toBe(root)
+    setSourceAttribute(tree, inserted, 'k', 'w')
+    expect(serializeSourceTree(tree)).toBe('<r>\n  <n k="w">새 &amp; 값</n><!-- c -->\n  <e>&#x41;</e>\n</r>')
+  })
+
+  test('자기 닫힘 부모에 자식을 넣으면 펼친다', () => {
+    const tree = parseSourceTree('<r><m a="1" /></r>')
+    const [m] = findSourceElements(tree, 'm')
+    spliceSourceChildren(tree, m, 0, 0, parseSourceFragment('<x/>'))
+    expect(serializeSourceTree(tree)).toBe('<r><m a="1"><x/></m></r>')
+  })
+
+  test('여는 tag 원문 교체는 같은 이름·자기 닫힘 형태만 받는다', () => {
+    const tree = parseSourceTree('<r><p id="1">t</p><q/></r>')
+    const [p] = findSourceElements(tree, 'p')
+    const [q] = findSourceElements(tree, 'q')
+    setElementOpenTag(tree, p, "<p id='9' x=\"y\">")
+    setElementOpenTag(tree, q, '<q z="1" />')
+    expect(serializeSourceTree(tree)).toBe("<r><p id='9' x=\"y\">t</p><q z=\"1\" /></r>")
+    expect(() => setElementOpenTag(tree, p, '<other>')).toThrow()
+    expect(() => setElementOpenTag(tree, p, '<p/>')).toThrow()
+    expect(() => setElementOpenTag(tree, q, '<q>')).toThrow()
+  })
+
+  test('문서 순서 첫 자손·모든 자손·가장 가까운 조상을 찾는다', () => {
+    const tree = parseSourceTree('<r><a><b id="1"/><c><b id="2"/></c></a><b id="3"/></r>')
+    const [root] = findSourceElements(tree, 'r')
+    const [a] = findSourceElements(tree, 'a')
+    expect(getSourceAttribute(tree, findFirstSourceElement(root, 'b')!, 'id')).toBe('1')
+    expect(findDescendantSourceElements(a, 'b').map((node) => getSourceAttribute(tree, node, 'id'))).toEqual(['1', '2'])
+    const nested = findDescendantSourceElements(a, 'b')[1]
+    expect(nearestSourceAncestor(nested, 'a')).toBe(a)
+    expect(nearestSourceAncestor(nested, 'missing')).toBeUndefined()
+  })
+
+  test('해석한 text offset을 entity 경계의 원문 offset으로 바꾼다', () => {
+    const raw = '앞&#x41;&amp;&#x1F600;뒤'
+    expect([0, 1, 2, 3, 5, 6].map((offset) => rawTextOffset(raw, offset))).toEqual([0, 1, 7, 12, 21, 22])
+    expect(() => rawTextOffset(raw, 4)).toThrow('XML entity 중간')
+    expect(() => rawTextOffset(raw, 7)).toThrow('원문을 벗어났습니다')
   })
 })

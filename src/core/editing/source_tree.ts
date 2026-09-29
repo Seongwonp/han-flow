@@ -51,6 +51,8 @@ export interface SourceText extends SourceNodeBase {
 
 export interface SourceMarkup extends SourceNodeBase {
   kind: SourceMarkupKind
+  /** 편집으로 새로 만든 markup node의 원문. 없으면 원문 범위를 쓴다. */
+  raw?: string
 }
 
 export type SourceNode = SourceElement | SourceText | SourceMarkup
@@ -139,8 +141,8 @@ function emitNode(tree: SourceTree, node: SourceNode, out: string[]): void {
     return
   }
   if (node.kind !== 'element') {
-    // markup node는 편집 연산이 없으므로 dirty일 수 없지만, 방어적으로 원문을 쓴다.
-    out.push(tree.source.slice(node.start, node.end))
+    // markup node는 편집 연산이 없다. 새로 만든(fragment에서 옮겨 온) node만 dirty이고 원문을 들고 있다.
+    out.push(node.raw ?? tree.source.slice(node.start, node.end))
     return
   }
   out.push(elementOpenTag(tree, node))
@@ -208,7 +210,7 @@ export function textRaw(tree: SourceTree, node: SourceText): string {
 
 /** markup node(comment·PI·CDATA·선언)의 원문. */
 export function markupRaw(tree: SourceTree, node: SourceMarkup): string {
-  return tree.source.slice(node.start, node.end)
+  return node.raw ?? tree.source.slice(node.start, node.end)
 }
 
 /** node와 조상을 dirty로 표시한다. 조상이 이미 dirty이면 그 위도 dirty이므로 멈춘다. */
@@ -270,6 +272,112 @@ export function collapseElementToSelfClosing(element: SourceElement, selfClosing
   markDirty(element)
 }
 
+/**
+ * `parent`의 자식 `start`부터 `deleteCount`개를 떼고 `nodes`를 그 자리에 넣는다(Array.splice와 같은 의미).
+ * 자기 닫힘 element에 자식을 넣으면 {@link replaceElementChildren}처럼 여는·닫는 tag로 펼친다.
+ * 뗀 node를 돌려준다. 새 node는 dirty여야 하고(`createSource*`·{@link parseSourceFragment}), 남은 형제는 원문 그대로 쓰인다.
+ */
+export function spliceSourceChildren(
+  tree: SourceTree,
+  parent: SourceElement,
+  start: number,
+  deleteCount: number,
+  nodes: readonly SourceNode[]
+): SourceNode[] {
+  if (!Number.isInteger(start) || start < 0 || start > parent.children.length) {
+    throw new Error('source tree 자식 위치가 올바르지 않습니다.')
+  }
+  const children = parent.children.slice()
+  const removed = children.splice(start, deleteCount, ...nodes)
+  replaceElementChildren(tree, parent, children)
+  for (const node of removed) node.parent = undefined
+  return removed
+}
+
+/** node를 부모에서 떼고 그 자리에 `nodes`를 넣는다. */
+export function replaceSourceNode(tree: SourceTree, node: SourceNode, nodes: readonly SourceNode[]): void {
+  const parent = node.parent
+  if (!parent) throw new Error('최상위 source node는 바꿀 수 없습니다.')
+  const index = parent.children.indexOf(node)
+  if (index < 0) throw new Error('source tree 부모·자식 연결이 올바르지 않습니다.')
+  spliceSourceChildren(tree, parent, index, 1, nodes)
+}
+
+const TAG_NAME = /^<\s*([^\s/>]+)/
+
+/**
+ * element의 여는 tag(자기 닫힘이면 tag 전체)를 주어진 원문으로 바꾼다. inverse가 저장해 둔 tag bytes를 그대로
+ * 되돌릴 때 쓴다. tag 이름과 자기 닫힘 여부가 지금 element와 같아야 한다.
+ */
+export function setElementOpenTag(tree: SourceTree, element: SourceElement, tag: string): void {
+  if (tag.match(TAG_NAME)?.[1] !== element.name || SELF_CLOSING_END.test(tag) !== element.selfClosing) {
+    throw new Error(`${element.name} tag로 바꿀 수 없는 원문입니다.`)
+  }
+  parseTagAttributes(tag)
+  if (tag === elementOpenTag(tree, element)) return
+  element.openTag = tag
+  markDirty(element)
+}
+
+function detachSourceNode(tree: SourceTree, node: SourceNode): SourceNode {
+  if (node.kind === 'text') return createSourceText(textRaw(tree, node))
+  if (node.kind !== 'element') {
+    return { kind: node.kind, start: -1, end: -1, dirty: true, raw: markupRaw(tree, node) }
+  }
+  const element = createSourceElement(node.name, elementOpenTag(tree, node), node.selfClosing)
+  if (!node.selfClosing) {
+    element.closeTag = elementCloseTag(tree, node)
+    element.children = node.children.map((child) => {
+      const detached = detachSourceNode(tree, child)
+      detached.parent = element
+      return detached
+    })
+  }
+  return element
+}
+
+/**
+ * XML 조각을 다른 tree에 붙일 수 있는 새 node 목록으로 읽는다. 각 node는 자기 원문 표기를 직접 들고 있어
+ * 어느 tree에 넣어도 같은 문자열로 직렬화되고, 넣은 뒤에도 일반 node처럼 찾고 고칠 수 있다.
+ */
+export function parseSourceFragment(xml: string): SourceNode[] {
+  const fragment = parseSourceTree(xml)
+  return fragment.children.map((node) => detachSourceNode(fragment, node))
+}
+
+/** `node`의 자손 element 가운데 문서 순서로 처음 나오는 `name`(자기 자신 제외). */
+export function findFirstSourceElement(node: SourceElement, name: string): SourceElement | undefined {
+  for (const child of node.children) {
+    if (child.kind !== 'element') continue
+    if (child.name === name) return child
+    const nested = findFirstSourceElement(child, name)
+    if (nested) return nested
+  }
+  return undefined
+}
+
+/** `node`의 자손 element 가운데 `name`을 모두 문서 순서로 모은다(자기 자신 제외). */
+export function findDescendantSourceElements(node: SourceElement, name: string): SourceElement[] {
+  const result: SourceElement[] = []
+  const visit = (children: readonly SourceNode[]): void => {
+    for (const child of children) {
+      if (child.kind !== 'element') continue
+      if (child.name === name) result.push(child)
+      visit(child.children)
+    }
+  }
+  visit(node.children)
+  return result
+}
+
+/** 가장 가까운 조상 element 가운데 이름이 `name`인 것. */
+export function nearestSourceAncestor(node: SourceNode, name: string): SourceElement | undefined {
+  for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent) {
+    if (ancestor.name === name) return ancestor
+  }
+  return undefined
+}
+
 /** 문서 순서(여는 tag 순서)로 `name` element를 모은다. */
 export function findSourceElements(tree: SourceTree, name: string): SourceElement[] {
   const result: SourceElement[] = []
@@ -315,6 +423,29 @@ export function decodeXmlEntities(source: string): string {
   const tail = source.slice(cursor)
   if (tail.includes('&')) throw new Error('해석할 수 없는 XML entity가 있습니다.')
   return decoded + tail
+}
+
+/**
+ * text node 원문(entity 미해석) 안에서 해석한 text의 UTF-16 offset `logicalOffset`에 해당하는 원문 offset.
+ * entity 하나는 해석한 문자 길이만큼 차지하므로 entity 한가운데에 해당하는 offset이면 오류를 던진다.
+ */
+export function rawTextOffset(raw: string, logicalOffset: number): number {
+  let logical = 0
+  let index = 0
+  while (logical < logicalOffset) {
+    if (index >= raw.length) throw new Error('text 범위가 원문을 벗어났습니다.')
+    if (raw[index] === '&') {
+      const end = raw.indexOf(';', index)
+      if (end < 0) throw new Error('해석할 수 없는 XML entity가 있습니다.')
+      logical += decodeXmlEntities(raw.slice(index, end + 1)).length
+      index = end + 1
+    } else {
+      logical += 1
+      index += 1
+    }
+  }
+  if (logical !== logicalOffset) throw new Error('XML entity 중간은 편집할 수 없습니다.')
+  return index
 }
 
 function isValidXmlCharacter(codePoint: number): boolean {

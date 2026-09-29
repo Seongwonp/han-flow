@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { listHwpxTextAnchors, listHwpxTextOrdinals } from '../../src/core/editing/text_patch'
-import { legacyListHwpxTextAnchors, legacyListHwpxTextOrdinals } from '../../src/core/editing/text_patch_legacy'
+import { forgetHwpxTextTree } from '../../src/core/editing/text_patch'
+import { scanXmlElements } from '../../src/core/editing/xml_scan'
 import { OrderedXmlNode, walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
@@ -10,8 +11,8 @@ import * as generators from '../fixtures/public/create_synthetic_hwpx'
 // viewer decoder(fast-xml-parser 기반 ordered_xml의 sourceOrdinal)와 편집 tokenizer(text_patch)는
 // 같은 `${sectionPath}#hp:t:N` anchor를 서로 다른 parser로 만든다. 둘이 어긋나면 화면에서 고른 run과
 // 다른 hp:t가 patch되므로, 모든 공개 fixture에서 ordinal 목록과 편집 가능 text가 일치하는지 확인한다.
-// 1단계 tree 전환 뒤 `text_patch`의 목록은 source tree(`source_tree.ts`)에서 나온다. 세 번째 참여자로
-// 전환 전 편집 tokenizer(`text_patch_legacy.ts`)를 비교해 viewer·tree·legacy 셋이 모두 같음을 확인한다.
+// 1단계 tree 전환 뒤 `text_patch`의 목록은 source tree(`source_tree.ts`)에서 나온다. 전환 전 편집 tokenizer는
+// 2단계에서 지웠고, 세 번째 참여자로 문단·표 문자열 patch가 아직 쓰는 `scanXmlElements`의 hp:t 순서를 비교한다.
 
 interface ManifestFixture {
   id: string
@@ -90,7 +91,7 @@ describe('hp:t ordinal 교차 parser 일치', () => {
   )
 
   test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
-    '%s: source tree와 전환 전 편집 tokenizer의 hp:t ordinal·anchor가 같다',
+    '%s: source tree·scanXmlElements·viewer decoder의 hp:t ordinal이 같고 cache된 anchor가 새 parse와 같다',
     async (_id, fixture) => {
       const sourcePackage = await HwpxSourcePackage.open(fixturePath(fixture))
       const index = await sourcePackage.index()
@@ -99,11 +100,14 @@ describe('hp:t ordinal 교차 parser 일치', () => {
           .filter((node) => node.name === 'hp:t')
           .map((node) => node.sourceOrdinal)
         const treeOrdinals = listHwpxTextOrdinals(sourcePackage, sectionPath)
-        expect(treeOrdinals).toEqual(legacyListHwpxTextOrdinals(sourcePackage, sectionPath))
-        expect(treeOrdinals).toEqual(viewerOrdinals)
-        expect(listHwpxTextAnchors(sourcePackage, sectionPath)).toEqual(
-          legacyListHwpxTextAnchors(sourcePackage, sectionPath)
+        const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
+        expect(treeOrdinals).toEqual(
+          scanXmlElements(xml).filter((span) => span.name === 'hp:t').map((_span, ordinal) => ordinal)
         )
+        expect(treeOrdinals).toEqual(viewerOrdinals)
+        const cached = listHwpxTextAnchors(sourcePackage, sectionPath)
+        forgetHwpxTextTree(sourcePackage)
+        expect(listHwpxTextAnchors(sourcePackage, sectionPath)).toEqual(cached)
       }
     },
     60_000

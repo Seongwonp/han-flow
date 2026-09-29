@@ -9,14 +9,14 @@ import {
   listHwpxTextAnchors,
   ReplaceTextResult
 } from '../../src/core/editing/text_patch'
-import { legacyApplyReplaceTextCommand, legacyListHwpxTextAnchors } from '../../src/core/editing/text_patch_legacy'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 // `HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/text_edit_benchmark.test.ts`
 // large-progressive synthetic fixture(80 section)의 가장 큰 section 가운데 hp:t에 500자를 한 글자씩 입력한다.
 // keystroke 하나 = applyEditTransaction과 같은 순서(selection 검증용 anchor 조회 → text command → anchor 조회).
-// before: 전환 전 문자열 경로(text_patch_legacy, 매번 section 재scan), after: source tree 경로(cache 재사용).
+// after: source tree 경로(cache 재사용). 전환 전 문자열 경로(text_patch_legacy)는 2단계에서 지웠다. 지우기 전 같은
+// 조건의 측정값은 평균 4.11ms(p50 3.82·p95 5.94)였다(docs/editing_core_refactor_plan.md 1단계 기록).
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
 const KEYSTROKES = 500
@@ -69,7 +69,7 @@ function typeCharacters(
 }
 
 describe('text 입력 keystroke 비용', () => {
-  benchmark('large-progressive에 500자를 입력할 때 전환 전·후 ms/keystroke를 비교한다', async () => {
+  benchmark('large-progressive에 500자를 입력할 때 ms/keystroke를 잰다', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'han-flow-text-benchmark-'))
     try {
       const fixture = createSyntheticHwpx(directory, {
@@ -83,13 +83,10 @@ describe('text 입력 keystroke 비용', () => {
       const sectionPath = [...index.sectionPaths].sort(
         (left, right) => index.sectionSizes[right] - index.sectionSizes[left]
       )[0]
-      const anchors = legacyListHwpxTextAnchors(opened, sectionPath)
+      const anchors = listHwpxTextAnchors(opened, sectionPath)
       const anchor = anchors[Math.floor(anchors.length / 2)]
 
-      const before = typeCharacters(opened, sectionPath, anchor, legacyListHwpxTextAnchors, legacyApplyReplaceTextCommand)
-      const afterStart = await HwpxSourcePackage.open(fixture)
-      const after = typeCharacters(afterStart, sectionPath, anchor, listHwpxTextAnchors, applyReplaceTextCommand)
-      expect(after.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
+      const after = typeCharacters(opened, sectionPath, anchor, listHwpxTextAnchors, applyReplaceTextCommand)
 
       // 실제 편집 세션 경로(HwpxEditHistory.commit → applyEditTransaction, 입력 묶기 포함)
       const history = new HwpxEditHistory(await HwpxSourcePackage.open(fixture))
@@ -117,14 +114,13 @@ describe('text 입력 keystroke 비용', () => {
         historySamples.push(performance.now() - startedAt)
         offset += 1
       }
-      expect(history.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
+      expect(history.package.readEntry(sectionPath).equals(after.package.readEntry(sectionPath))).toBe(true)
 
       const result = {
         sectionPath,
         sectionBytes: index.sectionSizes[sectionPath],
         sectionAnchors: anchors.length,
         keystrokes: KEYSTROKES,
-        beforeLegacyMs: summarize(before.samples),
         afterTreeMs: summarize(after.samples),
         afterHistoryCommitMs: summarize(historySamples)
       }
