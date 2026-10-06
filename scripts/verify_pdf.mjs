@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, extname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
@@ -52,6 +52,10 @@ try {
   const pdfPages = Number(info.match(/^Pages:\s+(\d+)/m)?.[1] ?? 0)
   const pageSize = info.match(/^Page size:\s+(.+)$/m)?.[1]?.trim()
   const pdfVersion = info.match(/^PDF version:\s+(.+)$/m)?.[1]?.trim()
+  // PDF 제목·기본 파일 이름은 열린 문서 이름(확장자 제외)을 따른다.
+  const pdfTitle = info.match(/^Title:\s*(.*)$/m)?.[1]?.trim() ?? ''
+  const documentStem = basename(fixture, extname(fixture))
+  const suggestedPdfName = state.suggestedPdfPath ? basename(state.suggestedPdfPath) : undefined
   const pdfTextCounts = []
   const pdfPageSizes = []
   for (let page = 1; page <= pdfPages; page += 1) {
@@ -104,6 +108,8 @@ try {
     state.totalPages === pdfPages ? undefined : `화면 ${state.totalPages}페이지 / PDF ${pdfPages}페이지`,
     pageSizeMismatches.length ? `PDF 용지 크기 불일치: ${pageSizeMismatches.join(', ')}페이지` : undefined,
     pdfBytes > 0 ? undefined : 'PDF 파일이 비어 있음',
+    pdfTitle === documentStem ? undefined : `PDF 제목 불일치: ${pdfTitle || '없음'} (기대값 ${documentStem})`,
+    suggestedPdfName === `${documentStem}.pdf` ? undefined : `PDF 기본 파일 이름 불일치: ${suggestedPdfName ?? '없음'}`,
     renderedBytes.every((bytes) => bytes > 0) ? undefined : 'PDF PNG 재렌더 실패',
     compareAllPages && state.documentFormat === 'hwpx' && JSON.stringify(state.pageTextCounts) !== JSON.stringify(pdfTextCounts)
       ? '화면과 PDF의 페이지별 글자 수가 다름'
@@ -124,6 +130,8 @@ try {
     pageSizes: pdfPageSizes,
     expectedPageSizes,
     pdfVersion,
+    pdfTitle,
+    suggestedPdfName,
     pdfBytes,
     comparedPageSizes: compareAllPageSizes,
     comparedPageText: compareAllPages,

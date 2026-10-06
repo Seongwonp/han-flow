@@ -72,7 +72,8 @@ macOS 관문(물리 IME, 서명·공증, macOS 13+ 실행)은 기존 개발 Mac�
 - 열기 대화상자와 드래그앤드롭, 창별 경로 허용목록(`DOCUMENT_PATH_NOT_ALLOWED`)
 - macOS는 ⌘, Windows·Linux는 Ctrl 단축키와 platform별 리본 tooltip, Windows·Linux 기본 메뉴 제거
 - OS별 글꼴 대체 체인(Windows 맑은 고딕·바탕, macOS Apple 글꼴, Linux Noto)과 한/영 family alias
-- 트랙패드 pinch zoom, dark mode chrome과 화면의 페이지 구조를 사용하는 PDF 내보내기
+- 트랙패드 pinch zoom, dark mode chrome과 화면의 페이지 구조를 사용하는 PDF 내보내기(문서 이름의 기본 파일 이름·PDF 제목)
+- `<파일 이름> - Han-Flow` 창 제목
 
 HWP와 HWPX는 preload에서 형식별 IPC를 노출하지 않습니다. main의 `DocumentImporter`가
 공통 `document:import` 요청을 받아 HWP preflight 또는 HWPX 점진 decoder를 선택하고,

@@ -45,6 +45,7 @@ import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { ViewerToolbar } from './ViewerToolbar'
+import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
 const api = () => (window as any).api
@@ -910,14 +911,14 @@ export default function App() {
           wasmInitMs: result.timings.wasmInitMs,
           pageInfoMs: result.timings.pageInfoMs
         })
-        setFileName(path.split('/').pop() ?? path)
+        setFileName(documentFileName(path))
         setOpenedPath(path)
         return
       }
       setDocument(imported.document)
       setSectionProgress({ loaded: imported.complete ? imported.sectionCount : imported.document.sections.length, total: imported.sectionCount })
       setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...imported.timings })
-      setFileName(path.split('/').pop() ?? path)
+      setFileName(documentFileName(path))
       setOpenedPath(path)
     }
     catch (reason) {
@@ -932,6 +933,10 @@ export default function App() {
     }
     finally { if (activeLoadId.current === loadId) setLoading(false) }
   }
+  useEffect(() => {
+    // PDF 메타데이터 제목은 page title에서 온다. 창 제목은 main이 `<파일 이름> - Han-Flow`로 따로 정한다.
+    globalThis.document.title = openedPath ? documentTitle(openedPath) : APP_TITLE
+  }, [openedPath])
   useEffect(() => {
     if (!fixedFirstPageReady) {
       setFixedFollowingPagesEnabled(false)

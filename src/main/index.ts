@@ -12,6 +12,7 @@ import {
   pdfExportFailureMessage
 } from './editing_session'
 import { isDevToolsShortcut } from './dev_tools_shortcut'
+import { APP_TITLE, suggestedPdfExportPath, windowTitle } from './export_file_name'
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
@@ -54,6 +55,15 @@ const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js
 const editingSessions = new EditingSessionManager()
 const documentPaths = new DocumentPathRegistry()
 const latestImportLoadIds = new Map<number, string>()
+// 창마다 마지막으로 열기에 성공한 문서 경로. PDF 기본 이름과 창 제목에 쓴다.
+const currentDocumentPaths = new Map<number, string>()
+
+function setCurrentDocumentPath(senderId: number, filePath: string | undefined): void {
+  if (filePath) currentDocumentPaths.set(senderId, filePath)
+  else currentDocumentPaths.delete(senderId)
+  const window = windowsById.get(senderId)
+  if (window && !window.isDestroyed()) window.setTitle(windowTitle(filePath))
+}
 
 function isEditingSelection(value: unknown): boolean {
   return (
@@ -829,6 +839,8 @@ function captureVisualState(window: BrowserWindow): void {
       processPeakSumKb: processMetrics.reduce((sum, metric) => sum + metric.memory.peakWorkingSetSize, 0)
     }
     visualState.editingProbe = editProbe
+    visualState.windowTitle = window.getTitle()
+    visualState.suggestedPdfPath = suggestedPdfExportPath(currentDocumentPaths.get(window.webContents.id), lastDialogDirectory)
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
@@ -891,6 +903,7 @@ function createWindow(initialOpen?: OpenPathRequest): void {
     width: 1200,
     height: visualCapturePath || visualStateOutput ? 1500 : 800,
     show: false,
+    title: APP_TITLE,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset', // macOS 네이티브 스타일 최적화
     trafficLightPosition: { x: 15, y: 15 },
@@ -910,6 +923,8 @@ function createWindow(initialOpen?: OpenPathRequest): void {
 
   const senderId = window.webContents.id
   windowsById.set(senderId, window)
+  // 창 제목은 main이 문서 경로로 정한다. renderer의 document.title은 PDF 제목(문서 이름)으로 쓰므로 창 제목에 반영하지 않는다.
+  window.on('page-title-updated', (event) => event.preventDefault())
   openPathRouter.addWindow(senderId)
   let closeApproved = false
   let resolvingClose = false
@@ -922,6 +937,7 @@ function createWindow(initialOpen?: OpenPathRequest): void {
     editingSessions.stop(senderId)
     documentPaths.forget(senderId)
     latestImportLoadIds.delete(senderId)
+    currentDocumentPaths.delete(senderId)
   })
   window.on('close', (event) => {
     if (closeApproved || !editingSessions.isDirty(senderId)) return
@@ -1066,7 +1082,7 @@ app.whenReady().then(() => {
     const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
     const targetPath = testPath ?? (await showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
       title: 'PDF로 내보내기',
-      defaultPath: lastDialogDirectory ? join(lastDialogDirectory, '문서.pdf') : '문서.pdf',
+      defaultPath: suggestedPdfExportPath(currentDocumentPaths.get(event.sender.id), lastDialogDirectory),
       filters: [{ name: 'PDF 문서', extensions: ['pdf'] }]
     })).filePath
     if (!targetPath) return null
@@ -1195,6 +1211,8 @@ app.whenReady().then(() => {
     const sender = event.sender
     const importRequest = request as { filePath: string; loadId: string }
     latestImportLoadIds.set(sender.id, importRequest.loadId)
+    // renderer는 새 문서를 열기 전에 이전 문서를 닫는다. 실패하면 제목·PDF 이름도 문서 없음으로 둔다.
+    setCurrentDocumentPath(sender.id, undefined)
     try {
       await documentPaths.authorize(sender.id, importRequest.filePath)
     } catch (reason) {
@@ -1213,7 +1231,7 @@ app.whenReady().then(() => {
         error: { code: 'DOCUMENT_LOAD_SUPERSEDED', message: '더 최근에 연 문서로 대체되었습니다.' }
       }
     }
-    return documentImporter.importDocument(
+    const result = await documentImporter.importDocument(
       importRequest,
       {
         senderId: sender.id,
@@ -1225,6 +1243,10 @@ app.whenReady().then(() => {
         }
       }
     )
+    if (result.ok && latestImportLoadIds.get(sender.id) === importRequest.loadId) {
+      setCurrentDocumentPath(sender.id, importRequest.filePath)
+    }
+    return result
   })
 
   // preload가 drag-and-drop File에서 얻은 경로. 존재하는 일반 .hwp/.hwpx 파일만 등록한다.

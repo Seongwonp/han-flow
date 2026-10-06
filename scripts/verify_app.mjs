@@ -139,8 +139,10 @@ try {
     state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음',
     expectedErrorCode && state.errorCode !== expectedErrorCode
       ? `오류 코드 불일치: ${state.errorCode ?? '없음'}`
-      : undefined
+      : undefined,
+    state.windowTitle === 'Han-Flow' ? undefined : `열기 실패 뒤 창 제목 불일치: ${state.windowTitle}`
   ] : [
+    state.windowTitle === `${basename(fixture)} - Han-Flow` ? undefined : `창 제목 불일치: ${state.windowTitle}`,
     state.errorVisible ? '예상하지 않은 사용자 오류가 표시됨' : undefined,
     state.totalPages > 0 ? undefined : '페이지가 생성되지 않음',
     state.mountedPages > 0 ? undefined : '페이지 DOM이 생성되지 않음',
@@ -220,6 +222,7 @@ try {
     columnCounts: state.columnCounts,
     columnTextCounts: state.columnTextCounts,
     errorCode: expectedError ? state.errorCode : undefined,
+    windowTitle: state.windowTitle,
     pageTextCounts: state.pageTextCounts,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
     search: searchQuery ? state.search : undefined,
