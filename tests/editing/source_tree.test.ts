@@ -1,4 +1,3 @@
-import { attribute, setAttribute } from '../../src/core/editing/xml_scan'
 import {
   collapseElementToSelfClosing,
   createSourceText,
@@ -131,8 +130,7 @@ describe('source tree 편집과 범위 보존 직렬화', () => {
 describe('source tree attribute', () => {
   test('따옴표를 인식해 다른 attribute 값 안의 문자열과 겹치지 않는다', () => {
     const tag = '<hp:p note=\' id="9"\' id="3" alt="a>b">'
-    // 정규식 기반 attribute()는 다른 값 안의 ` id="9"`를 먼저 잡는다(기존 모듈이 쓰는 동작은 그대로 둔다).
-    expect(attribute(tag, 'id')).toBe('9')
+    // 4단계 뒤 지운 정규식 기반 attribute()는 다른 값 안의 ` id="9"`를 먼저 잡았다.
     expect(readTagAttribute(tag, 'id')).toBe('3')
     expect(readTagAttribute(tag, 'note')).toBe(' id="9"')
     expect(readTagAttribute(tag, 'alt')).toBe('a>b')
@@ -146,7 +144,7 @@ describe('source tree attribute', () => {
 
   test('줄바꿈이 든 값과 attribute 사이 줄바꿈을 읽는다', () => {
     const tag = '<a\n  first="line1\nline2"\n  second = \'x\'\n/>'
-    expect(attribute(tag, 'first')).toBeUndefined()
+    // 지운 정규식 기반 attribute()는 줄바꿈이 든 값을 찾지 못했다.
     expect(readTagAttribute(tag, 'first')).toBe('line1\nline2')
     expect(readTagAttribute(tag, 'second')).toBe('x')
   })
@@ -164,9 +162,9 @@ describe('source tree attribute', () => {
   test('값을 바꿔도 다른 attribute의 표기·순서·공백은 그대로다', () => {
     const tag = '<hp:run  charPrIDRef=\'7\'\n  z="note charPrIDRef=&quot;1&quot;" >'
     expect(writeTagAttribute(tag, 'charPrIDRef', '12')).toBe('<hp:run  charPrIDRef=\'12\'\n  z="note charPrIDRef=&quot;1&quot;" >')
-    // 없는 attribute는 기존 setAttribute와 같은 위치(끝 공백·`/>` 앞)에 덧붙인다.
-    expect(writeTagAttribute('<a b="1"/>', 'c', 'v')).toBe(setAttribute('<a b="1"/>', 'c', 'v'))
-    expect(writeTagAttribute('<a  />', 'c', 'v')).toBe(setAttribute('<a  />', 'c', 'v'))
+    // 없는 attribute는 지운 정규식 setAttribute와 같은 위치(끝 공백·`/>` 앞)에 덧붙인다.
+    expect(writeTagAttribute('<a b="1"/>', 'c', 'v')).toBe('<a b="1" c="v"/>')
+    expect(writeTagAttribute('<a  />', 'c', 'v')).toBe('<a c="v"  />')
     expect(writeTagAttribute('<a>', 'c', 'v')).toBe('<a c="v">')
     expect(() => writeTagAttribute('<a>', 'bad name', 'v')).toThrow('attribute 이름')
   })

@@ -10,6 +10,7 @@ import {
   planSplitTableCell,
   planInsertTableRowAfter
 } from '../../src/core/editing/table_patch'
+import { createEditorSelection } from '../../src/core/editing/selection'
 import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
@@ -19,6 +20,14 @@ import {
   createRoundTripHwpx,
   createTableColumnHwpx
 } from '../fixtures/public/create_synthetic_hwpx'
+import {
+  attributeInsideValue,
+  cdataWithMarkup,
+  cdataWithQuote,
+  entityAttribute,
+  mergedCellWithTrailingLineSegments,
+  SPLIT_RIGHT_CELL
+} from './table_divergence_repros'
 
 const sectionPath = 'Contents/section0.xml'
 
@@ -502,5 +511,94 @@ describe('HWPX 표 셀 병합 patch', () => {
       )
     ))
     expect(() => planSplitTableCell(inconsistent, selection)).toThrow('일관된 분할 열 너비')
+  })
+})
+
+describe('HWPX 표 구조 command 원문 처리(전환 전 문자열 경로의 잠재 버그 재현)', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-table-repro-'))
+  const fixture = createTableColumnHwpx(directory, 'table-repro.hwpx')
+
+  afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  async function variant(transform: (xml: string) => string): Promise<HwpxSourcePackage> {
+    const source = await HwpxSourcePackage.open(fixture)
+    return source.withEntry(sectionPath, Buffer.from(transform(source.readEntry(sectionPath).toString('utf8'))))
+  }
+
+  function caretAt(source: HwpxSourcePackage, text: string) {
+    const anchor = listHwpxTextAnchors(source, sectionPath).find((item) => item.text === text)!
+    return createEditorSelection(sectionPath, anchor.textNodeId, 0)
+  }
+
+  function insertRowBelow(source: HwpxSourcePackage, text: string): string {
+    const result = applyReplaceTableFragmentCommand(source, planInsertTableRowAfter(source, caretAt(source, text)).command)
+    const restored = applyReplaceTableFragmentCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+    return result.package.readEntry(sectionPath).toString('utf8')
+  }
+
+  test('CDATA 안의 `>`·가짜 hp:t·따옴표를 markup으로 읽지 않고 선택한 셀 아래에 행을 추가한다', async () => {
+    // 전환 전: CDATA를 일반 `<!` tag로 읽어 첫 `>`에서 끝내고 안의 `<hp:t>`를 element로 세어 anchor가 한 칸 앞 셀(H3,
+    // 반복 머리글)을 가리켜 "반복 머리글 행을 기준으로 행을 추가할 수 없습니다."로 거부했다.
+    const withMarkup = await variant(cdataWithMarkup)
+    const xml = insertRowBelow(withMarkup, 'A1')
+    expect(xml).toContain('<![CDATA[a><hp:t>x</hp:t>]]>')
+    expect(xml).toContain('rowCnt="4"')
+    expect(xml).toContain('<hp:cellAddr colAddr="0" rowAddr="2"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="2000" height="2000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="CENTER"><hp:p id="123" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t></hp:t>')
+    // 전환 전: 짝 없는 작은따옴표 뒤를 따옴표 안으로 읽어 "끝나지 않은 XML tag가 있습니다."로 거부했다.
+    const withQuote = await variant(cdataWithQuote)
+    expect(insertRowBelow(withQuote, 'A1')).toContain("<![CDATA[it's]]>")
+  })
+
+  test('다른 attribute 값 안의 같은 이름을 읽거나 고치지 않는다', async () => {
+    // 전환 전: 정규식 setAttribute가 첫 일치(note 값 안)를 고쳐 `note=" rowAddr='3'" … rowAddr="2"`를 썼다(행 주소 중복).
+    const xml = insertRowBelow(await variant(attributeInsideValue), 'A1')
+    expect(xml).toContain(`<hp:cellAddr note=" rowAddr='2'" colAddr="0" rowAddr="3"/>`)
+  })
+
+  test('문자 참조로 쓴 주소 attribute를 해석해 검사하고 새 값으로 쓴다', async () => {
+    // 전환 전: `rowAddr="&#50;"`를 숫자로 읽지 못해 "병합·span 또는 불연속 주소…"로 거부했다.
+    const xml = insertRowBelow(await variant(entityAttribute), 'A1')
+    expect(xml).toContain('<hp:cellAddr colAddr="0" rowAddr="3"/>')
+  })
+
+  test('뒤 문단에 줄 배치 정보가 있는 병합 셀도 올바른 XML로 분할한다', async () => {
+    // 전환 전: 지울 문단과 그 안의 hp:linesegarray를 같은 원문 offset으로 따로 지워 범위가 겹쳤고, 복제한 오른쪽 셀이
+    // `</hp:subList></hp:tc>` 없이 끝나는 잘못된 XML이 되었다.
+    const source = await variant(mergedCellWithTrailingLineSegments)
+    const selection = listSelectableMergedTableCells(await decodeViewerDocument(source))[0]
+    expect(selection).toMatchObject({ row: 1, column: 0 })
+    const plan = planSplitTableCell(source, selection)
+    expect(plan.command.replacementFragment).toContain(SPLIT_RIGHT_CELL)
+    const result = applyReplaceTableFragmentCommand(source, plan.command)
+    const document = await decodeViewerDocument(result.package)
+    const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+    if (!table || table.type !== 'table') throw new Error('분할한 표 projection이 없습니다.')
+    expect(table.rows[1].cells.map((cell) => [cell.column, cell.columnSpan, cell.width])).toEqual([
+      [0, 1, 2000],
+      [1, 1, 2000],
+      [2, 1, 2000]
+    ])
+    const restored = applyReplaceTableFragmentCommand(result.package, result.inverse!)
+    expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
+  })
+
+  test('손대지 않은 셀의 entity 표기와 공백은 그대로 두고 복제한 셀만 비운다', async () => {
+    const source = await variant((xml) => xml
+      .replace('<hp:t>A2</hp:t>', '<hp:t>&#x41;&apos;2&#13;</hp:t>')
+      .replace('<hp:t>B2</hp:t>', '<hp:t>B&#50;</hp:t>'))
+    const xml = insertRowBelow(source, 'A1')
+    expect(xml).toContain('<hp:t>&#x41;&apos;2&#13;</hp:t>')
+    expect(xml).toContain('<hp:t>B&#50;</hp:t>')
+    expect(xml).toContain('</hp:tr>\n    <hp:tr><hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="0" rowAddr="3"/>')
+  })
+
+  test('올바른 XML이 아닌 교체 fragment는 적용하지 않는다', async () => {
+    const source = await HwpxSourcePackage.open(fixture)
+    const plan = planInsertTableRowAfter(source, caretAt(source, 'A1'))
+    expect(() => applyReplaceTableFragmentCommand(source, {
+      ...plan.command,
+      replacementFragment: '<hp:tbl><hp:tr>'
+    })).toThrow('표 fragment가 올바른 XML이 아니어서')
   })
 })

@@ -61,20 +61,26 @@ identity writer는 이 snapshot만 재패킹한다. ZIP timestamp나 압축 결�
 기준이 아니며, entry 순서·경로·compression·CRC와 각 uncompressed content SHA-256을
 재개봉 후 비교한다. V3-1 시점에는 이 writer를 사용자 저장 IPC에 노출하지 않았다.
 
-V3-2의 `text_patch`는 UTF-8 section XML을 token 단위로 훑고 단순 `hp:t`의 source span과
-문서 순서 기반 ID를 만든다. command는 package revision, text node ID와 DOM과 같은 UTF-16
-범위를 함께 검증한다. target text content만 XML escape해 교체하므로 target 밖의 tag, attribute,
-공백과 unknown node는 byte 단위로 유지된다. 복합 자식, 잘못된 entity, 비 UTF-8 XML,
-surrogate pair 중간 범위와 stale revision은 수정하지 않고 conflict로 끝낸다.
-편집 코어 tree 전환 1단계부터 text command는 section XML을 원문 byte 범위를 보존하는 source tree
-(`source_tree.ts`)로 읽어 ordinal로 찾은 `hp:t`의 자식 node만 바꾸고, 바뀐 node만 다시 쓰고 나머지는
-원문 구간을 그대로 복사하는 serializer로 새 section을 만든다. 2단계부터 글자·문단·셀 모양 command도 같은 tree에서
-`hp:run`·`hp:p`·`hp:tc`를 부모 관계로 찾아 reference attribute를 바꾸고, 복제한 `hh:charPr`·`hh:paraPr`·`hh:borderFill`을
-header.xml tree의 collection 끝에 붙인다. section·header tree는 package 객체별 cache(`package_trees.ts`)에 있어
-tree를 고친 command가 새 package로 옮기므로 연속 입력·모양 변경은 entry를 다시 parse하지 않는다. 3단계부터 문단
-분할·병합·여러 문단 범위 치환도 같은 tree에서 `hp:p`·`hp:run`·`hp:t` node로 교체 fragment를 만들어 지우지 않은 부분의
-inline `hp:tab`·entity 원문 표기를 보존하고, fragment에 해당하는 형제 node를 조각 tree로 바꿔 cache를 이어 간다.
-표 구조 command만 아직 문자열 patch 경로를 쓴다.
+편집 command(text·글자/문단/셀 모양·문단 구조·표 구조)는 모두 section·header.xml을 원문 byte 범위를 보존하는 source tree
+(`source_tree.ts`)로 읽어 node 연산으로 고친다. tree는 `xml_scan.ts`의 tokenizer(`iterateXmlTokens`) 하나로 element·text·
+comment·PI·CDATA·선언 node를 만들고, 각 node가 원문 범위와 dirty 표시를 들고 있다. serializer는 dirty가 아닌 연속 형제를 원문
+한 구간으로 복사하고 바뀐 node만 다시 쓰므로 target 밖의 tag·attribute 표기·공백·unknown node는 byte 단위로 유지된다.
+attribute는 따옴표를 인식해 읽고(entity 해석) 쓸 때 escape한다(`readTagAttribute`·`writeTagAttribute`·`setSourceAttribute`).
+command는 package revision, `${sectionPath}#hp:t:N` anchor(source tree의 N번째 `hp:t`, viewer decoder의 `sourceOrdinal`과 같은 순서)와
+DOM과 같은 UTF-16 범위를 검증한다. 복합 자식, 잘못된 entity, 비 UTF-8 XML, surrogate pair 중간 범위와 stale revision은 수정하지 않고
+conflict로 끝낸다.
+
+- text: anchor의 `hp:t`에서 편집 범위에 걸친 text node만 바꾼다(inline `hp:tab`·`hp:lineBreak`·entity 원문 표기 보존).
+- 글자·문단·셀 모양: `hp:run`·`hp:p`·`hp:tc`를 부모 관계로 찾아 reference attribute를 바꾸고, 복제한 `hh:charPr`·`hh:paraPr`·
+  `hh:borderFill`을 header.xml tree의 collection 끝에 붙인다.
+- 문단 분할·병합·여러 문단 범위 치환: `hp:p`·`hp:run`·`hp:t` node로 교체 fragment를 만들고, fragment에 해당하는 형제 node를 조각 tree로 바꾼다.
+- 표 행·열 추가/삭제, 셀 병합·분할: `hp:tc`·`hp:tr`·`hp:tbl`에서 topology를 검사하고, 표 node를 작업용 tree로 복제해
+  `rowCnt`/`colCnt`·주소·크기 attribute와 행·셀 node를 고친 교체 fragment로 표 node를 바꾼다.
+
+inverse는 바뀌기 전 원문(tag·fragment·지운 text의 원문 표기)을 들고 있어 실행 취소가 원래 bytes를 복원한다. section·header tree는
+package 객체별 cache(`package_trees.ts`)에 있고, tree를 고친 command가 새 package로 옮기므로 연속 편집은 entry를 다시 parse하지 않는다.
+V3-2부터 tree 전환(2026-09-29 text ~ 2026-10-06 표 구조) 전까지는 command마다 XML 문자열을 다시 훑어 offset 범위를 문자열로 이어 붙이는 patch 경로를 썼다
+(전환 과정과 그 경로의 잠재 버그는 [편집 코어 tree 모델 전환 계획](editing_core_refactor_plan.md) 참고).
 
 `saveHwpxAs`는 목적지와 같은 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음,
 source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 통과시킨 뒤에만 게시한다.

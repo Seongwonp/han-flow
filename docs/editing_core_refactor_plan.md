@@ -1,6 +1,6 @@
 # 편집 코어 tree 모델 전환 계획
 
-상태: 진행 중 — XML scanner 통합(`src/core/editing/xml_scan.ts`)과 tree 전환 1단계(text)·2단계(style)·3단계(paragraph) 완료, 4단계(table) 미착수
+상태: 완료(2026-10-06) — tree 전환 1단계(text)·2단계(style)·3단계(paragraph)·4단계(table)와 문자열 경로·legacy 정리까지 끝났다. 모든 편집 command가 source tree에서 동작한다.
 
 실제 한/글 문서 편집 가능 비율 기준선과 우선 해제 순서: [편집 가능 비율 기준선](editing_coverage.md)
 
@@ -60,7 +60,7 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 4. **table** (`table_patch.ts`): 행·열 추가/삭제, 병합·분할. `colCnt`/`rowCnt`/`colAddr` 재계산을
    tree 위 함수로 옮기고 topology whitelist를 tree 검사로 대체한다.
 
-전환 중에는 `xml_scan.ts`를 문자열 command와 비교 oracle 양쪽이 공유한다.
+전환 중에는 `xml_scan.ts`를 문자열 command와 비교 oracle 양쪽이 공유했다(정리 뒤에는 tokenizer만 남았다, 4-5 참고).
 
 ## 4-1. 1단계 완료 (text, 2026-09-29)
 
@@ -265,6 +265,124 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
   legacy 파일(`style_patch_legacy.ts`·`cell_style_patch_legacy.ts`·`paragraph_patch_legacy.ts`)과 그 differential의 legacy 비교를 삭제한다
   (differential은 명세 oracle로 바꿔 유지).
 
+## 4-4. 4단계 완료 (table, 2026-10-06)
+
+**옮긴 것**
+
+- `table_patch.ts`의 행 추가(선택 행 아래)·행 삭제·열 추가(선택 열 오른쪽)·열 삭제·수평 1×2 오른쪽 셀 병합·병합 셀 분할이 section
+  source tree에서 동작한다. anchor의 `hp:t` element에서 부모를 따라 `hp:tc`·`hp:tr`·`hp:tbl`(직계 관계 포함)을 찾고, topology whitelist
+  (`assertSimpleRectangularTable`: `rowCnt`/`colCnt`와 실제 행·셀 수, 표·셀 크기, 중첩 표, 행·셀 고유 ID, `rowAddr`/`colAddr` 연속성,
+  span 1, 단순 텍스트 셀(`hp:p`/`hp:run`/`hp:t`/`hp:linesegarray`/`hp:lineseg`만, 문단마다 run·`hp:t` 하나), 반복 머리글 셀)와 분할·병합
+  검사(같은 모양·여백·세로 정렬, 대응 열 너비 증거)를 tree node와 따옴표를 인식하는 attribute API(`getSourceAttribute`·`parseTagAttributes`)로
+  한다. 검사 순서·오류 code·message는 그대로다.
+- 교체 fragment는 표 node를 작업용 tree(`parseSourceTree`)로 복제해 tree 연산(`setSourceAttribute`·`spliceSourceChildren`·
+  `replaceSourceNode`·`replaceElementChildren`)으로 고친 뒤 직렬화한다. `rowCnt`/`colCnt`·`hp:sz` 너비·높이, 뒤쪽 셀의 `rowAddr`/`colAddr`,
+  병합 셀의 `colSpan`·`hp:cellSz` 너비를 node attribute로 다시 계산한다. 새 빈 행·열·분할 셀은 전과 같은 template(선택 행·셀 원문 복제 →
+  `hp:t` 내용 비움, `hp:linesegarray` 제거, section 최대 숫자 문단 ID + 1부터 새 ID)을 조각 node(`parseSourceFragment`)로 만든다. 병합은
+  오른쪽 셀 문단을 원문 표기 그대로(줄 배치 cache만 지우고) 왼쪽 `hp:subList` 끝으로 옮긴다. 손대지 않은 셀의 inline 콘텐츠·entity 표기·공백은
+  byte 그대로다.
+- 적용(`applyReplaceTableFragmentCommand`)은 `textNodeId`가 든 표 node의 현재 원문이 `expectedFragment`와 같을 때 표 node를
+  `replacementFragment` 조각 node로 바꾸고 그 section의 `hp:t` 색인만 버린 뒤 tree cache를 새 package로 옮긴다. 이제 모든 편집 command가
+  만든 package에 cache가 있다. 교체 fragment가 올바른 XML이 아니면 "표 fragment가 올바른 XML이 아니어서 편집을 적용할 수 없습니다."로
+  거부한다(전환 전은 그대로 썼다. planner가 만든 command는 언제나 올바른 XML이다).
+- command·inverse 모양(`replace-table-fragment`의 `expectedFragment`/`replacementFragment`/`replacementTextNodeId`), selection 결과,
+  capability 판단(viewer 모델 기준)은 그대로다. inverse는 바뀌기 전 표 bytes를 그대로 들고 있어 실행 취소는 언제나 원래 bytes를 복원한다.
+- 비교 oracle: 전환 전 문자열 구현을 `table_patch_legacy.ts`(internal, test 전용)로 보존했다.
+
+**측정**
+
+- 표 differential(`tests/editing/table_tree_differential.test.ts`): 34종의 표 26개, 편집 가능한 anchor가 있는 직계 셀 78개마다 행 추가·행 삭제·
+  열 추가·열 삭제·오른쪽 병합(+ 병합이 성공하면 그 결과에서 분할, 원래 병합 셀이면 분할)을 적용해 401 command. 거부 285건은 두 경로의 오류
+  종류·code·message가 같고, 적용 116건(행 추가 35·행 삭제 21·열 추가 34·열 삭제 12·병합 7·분할 7)은 command(표 fragment)·selection·section
+  bytes·revision·inverse·loss report가 전부 같다. 모든 적용에서 inverse가 원래 bytes를, 그 inverse가 결과 bytes를 되살린다(undo 116·redo 116).
+  새 경로는 되돌린 package를 다음 command에 이어 써서 cache hit와 주기적 cache miss를 함께 거치고, tree에서 다시 만든 anchor 색인은 새
+  parse와 같다.
+- 행 추가 + 실행 취소 비용(`HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/table_structure_benchmark.test.ts`, 50쌍, 예열 5쌍 제외,
+  한 쌍 = plan → 적용 → anchor 조회 → inverse 적용 → anchor 조회): table-columns(section 4,450 bytes) 전환 전 평균 1.35ms(p50 1.20·p95 2.22)
+  → 전환 후 1.16ms(p50 1.03·p95 2.53), 행 추가가 가능한 가장 큰 외부 표 fixture ext-pyhwpx-table-page-break-cell(section 30,101 bytes)
+  5.97ms(p50 5.80·p95 8.80) → 3.97ms(p50 4.09·p95 6.34). 남은 비용은 표 fragment 직렬화·조각 parse, section bytes 생성과 `withEntry`의 CRC 계산이다.
+- identity round-trip 148/148 entry, text·style·paragraph differential은 그대로다.
+- `npm run corpus:editing-coverage` 결과는 `editing_coverage_2026-09-29-after.json`과 같다(기능 변화 없음).
+
+**differential이 드러낸 전환 전 경로의 잠재 버그(공개 corpus에는 없음, 새 경로 동작을 `tests/editing/table_patch.test.ts`로 고정)**
+
+최소 재현은 `tests/editing/table_divergence_repros.ts`(table-columns section 변형)이다. 전환 전 동작은 differential의 마지막 test가 확인했다(4-5 정리에서 legacy와 함께 삭제).
+
+- CDATA `as-tag`: 표 scanner가 CDATA를 일반 `<!` tag로 읽어 첫 `>`에서 끝냈다. 표 앞 `<![CDATA[a><hp:t>x</hp:t>]]>`이 있으면 안의 `<hp:t>`를
+  element로 세어 anchor ordinal이 한 칸 밀려 A1에서 행 추가 → "반복 머리글 행을 기준으로 행을 추가할 수 없습니다."(H3을 가리킴). 표 앞
+  `<![CDATA[it's]]>`이면 짝 없는 따옴표 뒤를 tag 안으로 읽어 "끝나지 않은 XML tag가 있습니다."로 거부했다. 새 경로는 CDATA를 불투명 node로
+  두고 행을 추가하며 CDATA는 byte 그대로다.
+- 다른 attribute 값 안의 이름: `<hp:cellAddr note=" rowAddr='2'" colAddr="0" rowAddr="2"/>`(B1) 위 행에 행 추가 → 전환 전은 검사를 note 값으로
+  통과하고 정규식 `setAttribute`가 note 값 안을 고쳐 `note=" rowAddr='3'" … rowAddr="2"`(새 행과 주소 중복)를 썼다. 새 경로는 `rowAddr="3"`.
+- 문자 참조 attribute: `rowAddr="&#50;"` → 전환 전은 숫자로 읽지 못해 "병합·span 또는 불연속 주소…"로 거부했다. 새 경로는 2로 읽고 새 값을 쓴다.
+- 분할 편집 범위 겹침: 병합 셀의 둘째 이후 문단에 `hp:linesegarray`가 있으면 전환 전 `cloneEmptySplitCell`이 문단 삭제와 그 안 줄 배치 삭제를
+  같은 원문 offset 목록으로 차례로 적용해 범위가 겹쳤고, 복제한 오른쪽 셀이 `</hp:subList></hp:tc>` 없이 끝나는(뒤 셀 시작을 먹는) 잘못된 XML을
+  만들었다. 새 경로는 node를 지우므로 올바른 빈 셀(첫 문단만, 새 문단 ID)을 만든다. corpus의 병합 셀은 둘째 문단에 줄 배치 정보가 없어 같았다.
+- 코드상 차이(corpus 미해당): 셀 모양 비교(`tagAttributes`)는 따옴표를 인식해 attribute를 나누되 값은 전과 같이 원문 표기로 비교한다. 위치 비교는
+  원문 offset 대신 node identity·tree 순서로 한다.
+
+## 4-5. 정리 완료 (legacy·문자열 helper 제거, 2026-10-06)
+
+**지운 것**
+
+- 비교 oracle `style_patch_legacy.ts`·`cell_style_patch_legacy.ts`·`paragraph_patch_legacy.ts`·`table_patch_legacy.ts`와 그 differential
+  (`style_tree_differential`·`paragraph_tree_differential`·`table_tree_differential`).
+- `xml_scan.ts`의 문자열 경로 helper: 정규식 `attribute`/`setAttribute`, `replaceRange`, `scanXmlElements`·`XmlElementSpan`·
+  `nearestAncestor`, `targetOrdinal`·`sameOrdinalMessage`·`TEXT_ANCHOR_ORDINAL_MESSAGES`, scanner option(`errors: 'conflict'`·
+  `cdata: 'as-tag'`, `TABLE_SCAN_OPTIONS`). `src/`에서 이들을 쓰는 곳은 없다. `xml_scan.ts`에는 source tree가 쓰는 tokenizer
+  (`iterateXmlTokens`, CDATA는 언제나 `]]>`까지 불투명 구간)와 `findTagEnd`·`isSurrogateBoundarySafe`·`buildLossReport`·
+  `HwpxEditConflictError`만 남았다. `replaceRange` 기반 planner와 편집용 두 번째 tokenizer가 없어져 6절의 완료 조건을 채운다.
+- test가 쓰던 `scanXmlElements`는 source tree(`parseSourceTree`·`findSourceElements`)로 바꿨다. text differential의 명세 oracle은 원문을
+  새로 parse한 tree의 `hp:t` 원문 범위를 쓰고, 교차 parser test의 세 번째 참여자는 tokenizer가 내는 `hp:t` token 순서다. benchmark는
+  tree 경로만 재고 전환 전 수치는 주석과 이 문서에 남겼다.
+
+**대신 둔 안전망**
+
+- 기존 명시적 동작 test(`text_patch`·`style_patch`·`cell_style_patch`·`paragraph_patch`·`table_patch`·inline 보존 test, 4단계 잠재 버그
+  재현 `table_patch.test.ts`)와 text differential(명세 oracle)·identity·교차 parser test는 그대로다.
+- golden 회귀(`tests/editing/editing_golden.test.ts`, 기록 `tests/editing/golden/{text,style,paragraph,table}.json`): 34종 fixture마다
+  모든 section의 편집 가능 anchor에서 4개를 고르게 뽑아 text 3종(가운데 삽입 `가&<"'`, 첫 글자 삭제, 전체 치환 `x\ty\nz`)·style 5~6종
+  (굵게, 기울임+밑줄+크기+색, 가운데 정렬, 줄 간격+앞뒤 간격+들여쓰기, 셀 배경+테두리, 부분 선택 굵게)·paragraph 3~4종(가운데 Enter,
+  맨 앞 Backspace, 맨 끝 Delete, 다음 anchor까지 범위 치환)을, 편집 가능한 anchor가 있는 모든 직계 표 셀(78개)에 표 6종을 적용한다.
+  1,842 case(거부 1,056·변화 없음 42·변경 744). 기록은 바뀐 section·header.xml의 SHA-256(+ 계획 selection), 거부면 오류 class·message다.
+  바뀐 744 case는 모두 inverse가 원래 bytes를, 그 inverse가 결과 bytes를 되살린다(exact undo·redo). 기록은 4단계 tree 구현에서 한 번
+  만들었고(`HAN_FLOW_UPDATE_GOLDEN=1`), 의도한 동작 변경 때만 다시 만든다. 표 command 주소 계산 하나를 바꾸는 변형으로 11개 fixture가
+  실패함을 확인했다.
+
+**측정(`npm test -- --runInBand` wall time, 같은 4 core 환경)**
+
+- 2단계 전(`65b1a1d`): 49.4s(549 test). 4단계 전환 직후(legacy differential 포함): 167.7s(720 test, 문단 differential 92.4s·style 30.9s·
+  text 28.3s). 정리 뒤: 45.4s(598 test, text differential 27.5s·golden 3.4s). 목표(2단계 전 + 30s)보다 34s 짧다.
+
+## 4-6. ZIP entry CRC 계산 교체 (2026-10-06)
+
+앞 단계 측정에서 남은 비용으로 적은 `withEntry`의 CRC-32를 byte 단위 JS 구현에서 Node 내장 `zlib.crc32`(native, Node 22.2+ ·
+Electron 44의 Node 24)로 바꿨다(`src/core/parser/source_package.ts`의 `crc32`). `zlib.crc32`가 없는 runtime에서는 전과 같은 JS 구현
+(`crc32Fallback`)으로 물러선다. 아이콘 생성 script(`scripts/build/make_ico.mjs`)의 PNG chunk CRC도 같은 방식으로 바꿨고 생성 결과
+`build/icon.ico`는 byte 단위로 같다. `tests/parser/source_package_crc.test.ts`가 무작위 buffer(0 B~1 MiB, offset 있는 view 포함
+128개)와 공개 fixture 34종의 모든 file entry에서 native 값 = JS 구현 = ZIP central directory 기록임을, `zlib.crc32`를 뺀 module로는
+fallback을 쓰는지 확인한다.
+
+같은 환경에서 전·후를 번갈아 세 번 잰 평균(ms, tree 경로 / `HwpxEditHistory.commit` 경로):
+
+| benchmark | 교체 전 | 교체 후 |
+| --- | --- | --- |
+| text 입력 500자(`text_edit_benchmark`) | 1.13 / 1.18 | 0.31 / 0.39 |
+| Enter+Backspace 200쌍(`paragraph_split_merge_benchmark`) | 3.93 / 3.40 | 2.21 / 2.32 |
+| 굵게 toggle 200번(`style_toggle_benchmark`, 한 번씩) | 1.00 / 1.10 | 0.37 / 0.34 |
+| 표 행 추가+undo 50쌍, 외부 fixture(`table_structure_benchmark`, 한 번씩) | 3.02 | 2.70 |
+
+남은 편집 비용은 section 문자열 직렬화와 UTF-8 bytes 생성, 문단·표 command의 fragment 조각 parse와 `hp:t` 색인 재구성이다.
+
+## 4-7. 남은 한계
+
+- 표 구조 command는 여전히 병합 없는 직사각형 표(분할은 선택한 수평 1×2 body 병합 셀 하나), 단순 텍스트 셀, 고유 ID 없는 행·셀만
+  허용한다. topology whitelist는 tree 검사로 옮겼을 뿐 넓히지 않았다(기능 확장은 별도 단계).
+- 문단·표 command의 command·inverse는 여전히 원문 fragment 문자열(`expectedFragment`/`replacementFragment`)이라 history byte 예산은
+  fragment 길이에 비례한다. 구조적 inverse(바뀐 node만 들고 있는 inverse)는 5절 위험의 history 예산 재정의와 함께 별도로 다룬다.
+- capability 판단은 아직 viewer 모델(`editing_capability.ts`)에서 하고, anchor ordinal 계약은 viewer decoder와 source tree 사이의
+  교차 parser test로 지킨다.
+
 ## 5. 위험
 
 - **공백·entity 충실도**: fast-xml-parser는 entity를 해석하고 공백·따옴표 표기를 잃는다.
@@ -285,5 +403,5 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 - `tests/editing/*`의 기존 XML 문자열 단언이 모두 새 serializer 출력으로 그대로 통과한다.
 - 편집하지 않은 package의 identity round-trip이 모든 entry에서 byte 단위로 같다.
 - `decodeViewerDocument` 왕복 test, `verify:corpus`, `verify:matrix`(편집 + Save As)가 통과한다.
-- 문자열 patch 경로(`replaceRange` 기반 planner)와 편집용 두 번째 tokenizer가 제거된다.
+- 문자열 patch 경로(`replaceRange` 기반 planner)와 편집용 두 번째 tokenizer가 제거된다. (4-5에서 완료)
 - 새 편집 기능 하나를 추가할 때 tree 연산 조합과 capability 규칙만 쓰면 된다.

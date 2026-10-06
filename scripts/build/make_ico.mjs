@@ -3,7 +3,7 @@
 // 넣어 rcedit·NSIS·구형 Explorer 모두 읽을 수 있게 한다.
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { deflateSync, inflateSync } from 'node:zlib'
+import * as zlib from 'node:zlib'
 
 const sizes = [256, 128, 64, 48, 32, 16]
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -39,7 +39,7 @@ function decodePng(buffer) {
   }
   const channels = colorType === 6 ? 4 : 3
   const stride = width * channels
-  const raw = inflateSync(Buffer.concat(idat))
+  const raw = zlib.inflateSync(Buffer.concat(idat))
   const pixels = Buffer.alloc(width * height * 4)
   let previous = Buffer.alloc(stride)
   for (let y = 0; y < height; y += 1) {
@@ -122,7 +122,9 @@ const crcTable = Array.from({ length: 256 }, (_, n) => {
   return c >>> 0
 })
 
+// Node 22.2+는 native zlib.crc32를 제공한다. 없는 runtime에서는 같은 다항식의 JS 구현으로 물러선다.
 function crc32(buffer) {
+  if (typeof zlib.crc32 === 'function') return zlib.crc32(buffer) >>> 0
   let crc = 0xffffffff
   for (const byte of buffer) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8)
   return (crc ^ 0xffffffff) >>> 0
@@ -150,7 +152,7 @@ function encodePng(pixels, size) {
   return Buffer.concat([
     pngSignature,
     chunk('IHDR', header),
-    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
     chunk('IEND', Buffer.alloc(0))
   ])
 }
