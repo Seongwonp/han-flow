@@ -41,6 +41,7 @@
 - HWPX XML 본문의 숫자처럼 보이는 글자(`1.`·`2017.`·`007`)를 숫자로 바꿔 목차 번호·날짜의 점을 잃던 문제 수정, 화면·PDF 글자 수 비교를 code point 단위로 하고 PDF로 추출되지 않는 사설 영역 글자를 제외, 표지·목차 보고서 합성 fixture와 matrix PDF 검증 추가
 - 내어쓰기(음수 `hc:intent`) 문단의 첫 줄을 CSS `text-indent`로 왼쪽 여백 밖까지 당겨 PDF에서 문단 앞부분이 용지 밖으로 잘리던 문제를 첫 줄은 왼쪽 여백·둘째 줄부터 들임으로 고치고, HwpUnitChar `hp:case` 밖(한/글 2018 저장본의 직접 `hh:margin`·`hp:default`) 문단 여백·간격이 HWPUNIT 2배로 저장된 것을 반영(읽기 절반·쓰기 2배), 내어쓰기 합성 fixture·matrix PDF 비교·용지 밖 글자 E2E 검사 추가
 - 보도자료 머리 표처럼 좁은 가운데 정렬 셀의 내어쓰기가 셀 안쪽 폭보다 커서 `배포`가 왼쪽 날짜 셀 끝과 겹치던 문제를 셀 안쪽 폭 안으로 내어쓰기를 줄여 수정, 합성 fixture에 머리 표와 표 셀 밖 글자 E2E 검사 추가
+- 기본 편집 E2E가 글자 칸 없는 빈 문단(합성 anchor `#hp:p:N:empty`)을 첫 surface로 고르면 첫 입력 뒤 새 `#hp:t:M` anchor로 바뀌는 것을 따라가지 못해 `projection` 대기 시간 초과로 실패하던 probe를 caret을 가진 새 anchor를 따라가도록 수정(앱 동작은 정상), 구역 첫 문단이 빈 문단인 합성 fixture로 matrix 편집·저장 검증 추가
 
 ### V3 HWPX 편집 기반
 

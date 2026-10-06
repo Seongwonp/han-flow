@@ -143,22 +143,22 @@
   "20 range": "Contents/section0.xml c94ae19494891d8da212dea27d0e6b12503e04973d1a5967cedff0e7ed3ef6a3 @20:11-20:11"
  },
  "hanging-indent": {
-  "0 split": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
-  "0 merge-previous": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
-  "0 merge-next": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 split": "Contents/section0.xml b81d3ac975fc8c004f8b1365c682c8c160dfc132511de1da0f095122ddb59231 @1:0-1:0",
+  "0 merge-previous": "! HwpxEditConflictError: 인접 문단에 text anchor가 없습니다.",
+  "0 merge-next": "! HwpxEditConflictError: 두 문단 사이에 보존해야 할 콘텐츠가 있어 병합할 수 없습니다.",
   "0 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.",
-  "2 split": "Contents/section0.xml 363e2c0cdaf9833f511955fedee5abc5c08136ea21ac87eb382db0ab99c570ca @3:0-3:0",
+  "2 split": "Contents/section0.xml 4b0f428616bee9fb82732534104d5721905baa63a91f3215f828748e6db6cb64 @3:0-3:0",
   "2 merge-previous": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
   "2 merge-next": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
   "2 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.",
-  "5 split": "Contents/section0.xml 8e0be35a994df9f87b2ddfcbec82a219c746e53d0359a2289d9956700fbba22d @6:0-6:0",
+  "5 split": "Contents/section0.xml f90708c5d3fb62d579e307d63504d38223f048318b9a35f8505c1498aab0cd40 @6:0-6:0",
   "5 merge-previous": "! HwpxEditConflictError: 두 문단 사이에 보존해야 할 콘텐츠가 있어 병합할 수 없습니다.",
-  "5 merge-next": "Contents/section0.xml e548500e2bff5579ac009e639eb0cce52e03feac0a21fc6093d099be7d2a87f4 @5:66-5:66",
-  "5 range": "Contents/section0.xml 99ea9a73619bb0a0232fd1cb1d8707c12b8ac17196cd5fcfc349cf9959c7bd9b @5:37-5:37",
-  "7 split": "Contents/section0.xml 2d172c5617f20a6eaa038d2b1cbbcdc00874b353f48780f1f8190c4d7f8d82d7 @8:0-8:0",
-  "7 merge-previous": "Contents/section0.xml 74c4b7e62341003736c48c247202cfb5bcd36616ea7f5cfc1d49a10e9a1d2fca @7:0-7:0",
-  "7 merge-next": "Contents/section0.xml 1063de838175208b3d66785e2659705b7e2d7296765e0e896e591250a4f185a5 @7:80-7:80",
-  "7 range": "Contents/section0.xml e04aa6c306903403a93ba6caebb2a60541b3ec42a3645fd5ea4933f4bf74a48d @7:44-7:44"
+  "5 merge-next": "Contents/section0.xml 927f23c826bd90ddc9fae76f0dc975e19a2dd240d105fb37090abc72012d0f75 @5:66-5:66",
+  "5 range": "Contents/section0.xml 7ac9e515161c5cce698d8fa7ead36746a5f3a2f9317cf6947c6b5cabf67428ce @5:37-5:37",
+  "7 split": "Contents/section0.xml 6b8be15fce36856b32ec4169ce50bd320010f3dc37adb141effbef7c0c86746b @8:0-8:0",
+  "7 merge-previous": "Contents/section0.xml 876c0e6d83009781d54399826964dc2c65d0a53e030fc193c32f2d034a76bdef @7:0-7:0",
+  "7 merge-next": "Contents/section0.xml 1ccec84e53ad781c7c0d39bebd060f591161eabdd7c36bf926210577d9b6ba01 @7:80-7:80",
+  "7 range": "Contents/section0.xml 26d911a779bef31839aadeabb2dfbc28bc2ffed7d853a394d771502947af61c0 @7:44-7:44"
  },
  "large-progressive": {
   "0 split": "! HwpxEditConflictError: 병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.",

@@ -12,6 +12,7 @@ import {
   pdfExportFailureMessage
 } from './editing_session'
 import { isDevToolsShortcut } from './dev_tools_shortcut'
+import { findProjectedSurface } from './e2e_surface_follow'
 import { APP_TITLE, suggestedPdfExportPath, windowTitle } from './export_file_name'
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
@@ -508,8 +509,10 @@ function captureVisualState(window: BrowserWindow): void {
         await waitFor(() => document.querySelector('.viewer-editing-badge'))
         const activeTabAfterStart = selectedRibbonTab()
         const anchorId = target.dataset.sourceTextNodeId
-        const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
-          .find((element) => element.dataset.sourceTextNodeId === anchorId)
+        const surfaces = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
+        const surfaceById = (id) => surfaces().find((element) => element.dataset.sourceTextNodeId === id)
+        const currentTarget = () => surfaceById(anchorId)
+        ${findProjectedSurface.toString()}
         target.focus()
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         target = await waitFor(() => {
@@ -580,10 +583,9 @@ function captureVisualState(window: BrowserWindow): void {
             document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨')
         })
         setPhase('projection')
-        const editedTarget = await waitFor(() => {
-          const candidate = currentTarget()
-          return candidate?.textContent === expected ? candidate : undefined
-        })
+        // 빈 문단 합성 anchor(#hp:p:N:empty)는 첫 입력 뒤 새 #hp:t:M anchor로 바뀐다. caret을 가진 새 surface를 따라간다.
+        const editedTarget = await waitFor(() => findProjectedSurface(surfaces(), anchorId, expected, window.getSelection()?.focusNode))
+        const editedAnchorId = editedTarget.dataset.sourceTextNodeId
         await waitFor(() => {
           const value = getSelection(editedTarget)
           return value.anchorOffset === selectionAfter.anchorOffset &&
@@ -609,7 +611,7 @@ function captureVisualState(window: BrowserWindow): void {
         redo?.click()
         setPhase('redo-text')
         const redoneTarget = await waitFor(() => {
-          const candidate = currentTarget()
+          const candidate = surfaceById(editedAnchorId)
           return candidate?.textContent === expected ? candidate : undefined
         })
         setPhase('redo-selection')
@@ -773,6 +775,7 @@ function captureVisualState(window: BrowserWindow): void {
         return {
           mode,
           surface: ${JSON.stringify(editCellEnabled ? 'table-cell' : 'paragraph')},
+          anchorTransition: anchorId === editedAnchorId ? undefined : { from: anchorId, to: editedAnchorId },
           activeTabAfterStart,
           originalLength: original.length,
           editedMatches: edited === expected,

@@ -294,6 +294,8 @@ export function createReportTocHwpx(directory: string, fileName = 'han-flow-repo
  * 공공기관 행사 계획 붙임 쪽의 내어쓰기 문단(직접 작성한 합성 문서).
  * 한/글은 음수 `hc:intent`(내어쓰기)를 첫 줄은 왼쪽 여백에서, 둘째 줄부터 `|intent|`만큼 들여 그린다.
  * 음수를 CSS `text-indent`로만 옮기면 첫 줄이 용지 왼쪽 밖으로 나가 PDF에서 잘린다.
+ * 구역 첫 문단은 한/글 저장본처럼 `hp:secPr`만 든 빈 문단이다. 글자 칸이 없어 편집 시 합성 anchor
+ * `#hp:p:0:empty`로 시작하고 첫 입력 뒤 새 `#hp:t:0` anchor로 바뀐다(편집 E2E가 이 전환을 따라가야 한다).
  */
 const hangingIndentHeader = reportHeader.replace(
   '</hh:paraProperties>',
@@ -326,7 +328,8 @@ const pressHeaderTable = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="2"><hp:tbl 
 
 const hangingIndentSection = `<?xml version="1.0" encoding="UTF-8"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
-  <hp:p paraPrIDRef="4"><hp:run charPrIDRef="1"><hp:secPr><hp:pagePr width="59528" height="84188"><hp:margin left="5669" right="5669" top="2834" bottom="1417" header="1417" footer="1417"/></hp:pagePr></hp:secPr><hp:t>합성 행사 개최 계획</hp:t></hp:run></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="2"><hp:secPr><hp:pagePr width="59528" height="84188"><hp:margin left="5669" right="5669" top="2834" bottom="1417" header="1417" footer="1417"/></hp:pagePr></hp:secPr></hp:run></hp:p>
+  ${reportParagraph('합성 행사 개최 계획', { paraPr: '4', charPr: '1' })}
   ${pressHeaderTable}
   ${reportParagraph('□ 행사 개요: 참여형 홍보 체계를 바탕으로 국민 참여 행사를 열고 지역 단위 활동 계획을 함께 공유하여 관심을 높인다', { paraPr: '6' })}
   ${reportParagraph('○ (일시) 2026. 4. 7.(화) 17:00 ~ 18:00', { paraPr: '7' })}

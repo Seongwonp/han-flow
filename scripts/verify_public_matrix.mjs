@@ -90,6 +90,13 @@ try {
         HAN_FLOW_VERIFY_EDIT_SAVE: '1'
       }
     },
+    // 구역 첫 문단이 글자 칸 없는 빈 문단이라 기본 문단 편집 E2E가 #hp:p:0:empty → #hp:t:0 전환을 거친다.
+    'hanging-indent': {
+      environment: {
+        HAN_FLOW_VERIFY_EDIT_TEXT: '시험',
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+      }
+    },
     'invalid-package': {
       expectedError: true
     }
@@ -126,6 +133,7 @@ try {
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     ...pdfResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: pdfFailures }) => `${fixtureId}: PDF 검증 실패(${pdfFailures.join(', ')})`),
     reportToc?.totalPages === 3 ? undefined : 'report-toc: 표지·목차·본문 3페이지가 아님',
+    hangingIndent?.editingProbe?.anchorTransition?.to?.endsWith('#hp:t:0') ? undefined : 'hanging-indent: 빈 문단 합성 anchor 편집 전환이 검증되지 않음',
     hangingIndent?.outsidePageTextPages?.length === 0 ? undefined : `hanging-indent: 용지 밖으로 나간 글자(${hangingIndent?.outsidePageTextPages?.join(', ')})`,
     hangingIndent?.cellOverflowTexts?.length === 0 ? undefined : `hanging-indent: 표 셀 밖으로 나간 글자(${hangingIndent?.cellOverflowTexts?.join(', ')})`,
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
