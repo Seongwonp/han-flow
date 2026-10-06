@@ -83,7 +83,7 @@
       "category": "report-template",
       "generator": "createHangingIndentHwpx",
       "fileName": "hanging-indent.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 0, "cells": 0, "resources": 0, "estimatedPages": 1 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 0, "estimatedPages": 1 }
     },
     {
       "id": "large-progressive",

@@ -291,16 +291,19 @@ export function ParagraphView({
   paragraph,
   document,
   measurable = false,
-  editing
+  editing,
+  availableWidth
 }: {
   paragraph: ViewerParagraph
   document: ViewerDocument
   measurable?: boolean
   editing?: ParagraphEditingProps
+  /** 문단이 놓이는 칸(표 셀)의 안쪽 폭(HWPUNIT). 내어쓰기 폭을 이 안으로 줄인다. */
+  availableWidth?: number
 }) {
   const style = document.paraStyles[paragraph.paraStyleId]
-  // 음수 intent(내어쓰기)는 첫 줄을 왼쪽 여백에 두고 둘째 줄부터 들인다. 첫 줄을 용지 밖으로 당기지 않는다.
-  const indentBox = paragraphIndentBox(style?.margin ?? {}, style?.indent)
+  // 음수 intent(내어쓰기)는 첫 줄을 왼쪽 여백에 두고 둘째 줄부터 들인다. 첫 줄을 용지·셀 밖으로 당기지 않는다.
+  const indentBox = paragraphIndentBox(style?.margin ?? {}, style?.indent, availableWidth)
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
     marginLeft: hwpUnitToCssPx(indentBox.marginLeft),
@@ -519,6 +522,7 @@ export function TableView({
       paragraph={paragraph}
       document={document}
       measurable={measurable}
+      availableWidth={Math.max(0, cell.width - cell.margin.left - cell.margin.right)}
       editing={
         cellMode === 'structure' && editing
           ? {

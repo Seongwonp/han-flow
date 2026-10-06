@@ -829,6 +829,30 @@ function captureVisualState(window: BrowserWindow): void {
         }
         return 0
       }).filter(Boolean),
+      // 표 셀 글자가 셀 좌우 경계를 넘어 이웃 셀과 겹치는 위치(페이지 번호·셀 text).
+      cellOverflowTexts: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page) .viewer-table td')).flatMap((cell) => {
+        const box = cell.getBoundingClientRect()
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT)
+        const range = document.createRange()
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim() || node.parentElement?.closest('td') !== cell) continue
+          range.selectNodeContents(node)
+          const outside = (rect) => rect.width > 0 ? Math.max(box.left - rect.left, rect.right - box.right) : 0
+          if (!Array.from(range.getClientRects()).some((rect) => outside(rect) > 1)) continue
+          // pre-wrap 줄 끝 공백은 줄 밖으로 걸쳐도 보이지 않으므로, 보이는 글자만 하나씩 잰다.
+          const text = node.textContent ?? ''
+          for (let index = 0; index < text.length; index += 1) {
+            if (/\\s/.test(text[index])) continue
+            range.setStart(node, index)
+            range.setEnd(node, index + 1)
+            const overshoot = Math.max(0, ...Array.from(range.getClientRects()).map(outside))
+            if (overshoot > 1) {
+              return [(Number(cell.closest('.viewer-page')?.dataset.pageIndex) + 1) + ':' + (cell.textContent ?? '').trim().slice(0, 20) + ' (' + overshoot.toFixed(1) + 'px)']
+            }
+          }
+        }
+        return []
+      }),
       columnCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column').length),
       columnTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) =>
         Array.from(page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column')).map((column) =>

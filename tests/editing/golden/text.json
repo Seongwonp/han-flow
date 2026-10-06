@@ -112,18 +112,18 @@
   "20 replace-all": "Contents/section0.xml dd1b7525df9b590f90153b2431e7c38a7f3127b58874671b4ec50aabb8fc66e7"
  },
  "hanging-indent": {
-  "0 insert": "Contents/section0.xml 1355a25f772e79a6988bc46de014a5b3e012d0e2175adb912959f96b078368de",
-  "0 delete": "Contents/section0.xml ffbb1f3c8b63989dfa1b99881860c31db7fd3c65f36efd00047e1155904a9abb",
-  "0 replace-all": "Contents/section0.xml c9de12fa6e87850627c94dba3d120a90bb7f2178a516564f2da8885d010a8885",
-  "1 insert": "Contents/section0.xml 5864a72bcfea177a050cf5fba59b167c855a98130a08c74c24893d218398f454",
-  "1 delete": "Contents/section0.xml 0a489c65a57cd6d900338615ceac72d885efff7b4f10c9dac4e62cc5300c7d7c",
-  "1 replace-all": "Contents/section0.xml c33b68866a7e30a3f115bb414f579edf3e156e5c054220b0163d73b73b87ac7b",
-  "3 insert": "Contents/section0.xml 95f2c203c79f91f6accee4608d807c788f5193e1bebea2a5fc2272561fcc90dc",
-  "3 delete": "Contents/section0.xml 41d31860f4a0848aa47086a222b1498966d57d1dc30fc3945eba46cf815f7db0",
-  "3 replace-all": "Contents/section0.xml dbdccc547ce570ca4e6548202f68f24db8b3be0339115c0c65e84d0741bdc4d7",
-  "4 insert": "Contents/section0.xml b9cb4626c47ec6a2dd3633aab5714833ae76837fdd19dac84b1c148fd684cda0",
-  "4 delete": "Contents/section0.xml 571d967d4368728c0f9d76d2909269753921b650d7c7ce120b30506095246761",
-  "4 replace-all": "Contents/section0.xml be4cea2268329cd35609a42c07549ced5ef1cdbb96c0f30c626be6413acadd9c"
+  "0 insert": "Contents/section0.xml 50ec9b69091bdcc50e0ca26f02a562ca348ad6adf3783bb6d8cd2d20011749c0",
+  "0 delete": "Contents/section0.xml 89753be689c99ece4c67b76b0e69a3aa786ddae86738f6ff6ee77812d197f8f8",
+  "0 replace-all": "Contents/section0.xml a8c2260a06d8724f3d03fc221cd66b49d2678968c87271cb41e4604c1cd1d367",
+  "2 insert": "Contents/section0.xml 1b9d6dca3672c8d7722f79890bbee92c6a543968b0c75bf355af2b6b316301ea",
+  "2 delete": "Contents/section0.xml 7b5d15611d2d5790f9e485211a27c7f740162a2ba2afc3aba9b3a3d06ccda5e8",
+  "2 replace-all": "Contents/section0.xml 5e82c30be20d1f44b5f9207a40ac638b7e55d53918152bee59f19a03c73cbad7",
+  "5 insert": "Contents/section0.xml cc56283ca5982589d867d0e38aa72b495a48bac1a154fe52201b36230eead185",
+  "5 delete": "Contents/section0.xml 25163d45ac5de590118c2945aeac379887f232c89eb176c3e5bad4c3b0acd698",
+  "5 replace-all": "Contents/section0.xml 89c37fc163a27281e485ea384d90df60a0a0d4ffddfcac77dfaa2a2a4498d804",
+  "7 insert": "Contents/section0.xml 8f5d8080b31f43c3b27287024bda39ae940c2c00f34cdb1c14ae6b2295510ee0",
+  "7 delete": "Contents/section0.xml ee362e6a079634f26176fa77bed14cf56fa5c21b1031b39f01f9b72ac9412099",
+  "7 replace-all": "Contents/section0.xml d79169d6127830ce8fcf576db03484373e3f3e7788f56cb5dbb1a60b54b5b5db"
  },
  "large-progressive": {
   "0 insert": "Contents/section0.xml e7fd9f1be1f414b3850060e14a0f70c175b1e5dd87c2555b2505d6e5b6be5b3d",

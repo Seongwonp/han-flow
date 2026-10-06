@@ -300,17 +300,39 @@ const hangingIndentHeader = reportHeader.replace(
   '<hh:paraPr id="6"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="130"/><hh:margin><hc:intent value="-2620" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
     '<hh:paraPr id="7"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-15232" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
     '<hh:paraPr id="8"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-18704" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
-    '<hh:paraPr id="9"><hh:align horizontal="LEFT"/><hh:heading type="BULLET" idRef="1" level="0"/><hh:lineSpacing type="PERCENT" value="140"/><hh:margin><hc:intent value="-4214" unit="HWPUNIT"/><hc:left value="1406" unit="HWPUNIT"/><hc:right value="458" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr></hh:paraProperties>'
+    '<hh:paraPr id="9"><hh:align horizontal="LEFT"/><hh:heading type="BULLET" idRef="1" level="0"/><hh:lineSpacing type="PERCENT" value="140"/><hh:margin><hc:intent value="-4214" unit="HWPUNIT"/><hc:left value="1406" unit="HWPUNIT"/><hc:right value="458" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
+    '<hh:paraPr id="10"><hh:align horizontal="CENTER"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-200" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
+    '<hh:paraPr id="11"><hh:align horizontal="CENTER"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-4642" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr></hh:paraProperties>'
+).replace(
+  '</hh:charProperties>',
+  '<hh:charPr id="3" height="1000" textColor="#FF0000"><hh:fontRef hangul="0"/><hh:bold/></hh:charPr><hh:charPr id="4" height="1000" textColor="#000000"><hh:fontRef hangul="0"/><hh:bold/></hh:charPr></hh:charProperties>'
 )
+
+/**
+ * 보도자료 머리 표의 좁은 셀: 가운데 정렬 문단에 셀 안쪽 폭(3251 - 2×510)보다 큰 내어쓰기(-4642, 실제 2321)가 있다.
+ * 음수 text-indent를 그대로 쓰면 `배포`가 왼쪽 날짜 셀 끝과 겹친다.
+ */
+const pressCell = (column: number, width: number, text: string, paraPr: string, charPr: string) =>
+  `<hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${width}" height="2514"/><hp:cellMargin left="510" right="510" top="141" bottom="141"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="${paraPr}"><hp:run charPrIDRef="${charPr}"><hp:t>${text}</hp:t></hp:run></hp:p></hp:subList></hp:tc>`
+
+export const PRESS_HEADER_CELL_TEXTS = ['보도시점', '2026.4.7.(화) 09:00', '배포', '2026.4.7.(화) 08:30'] as const
+
+const pressHeaderTable = `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="2"><hp:tbl id="press-header" rowCnt="1" colCnt="4" pageBreak="CELL"><hp:sz width="31283" height="2514"/><hp:tr>${[
+  pressCell(0, 4538, PRESS_HEADER_CELL_TEXTS[0], '10', '3'),
+  pressCell(1, 12054, PRESS_HEADER_CELL_TEXTS[1], '4', '3'),
+  pressCell(2, 3251, PRESS_HEADER_CELL_TEXTS[2], '11', '4'),
+  pressCell(3, 11440, PRESS_HEADER_CELL_TEXTS[3], '4', '4')
+].join('')}</hp:tr></hp:tbl></hp:run></hp:p>`
 
 const hangingIndentSection = `<?xml version="1.0" encoding="UTF-8"?>
 <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
   <hp:p paraPrIDRef="4"><hp:run charPrIDRef="1"><hp:secPr><hp:pagePr width="59528" height="84188"><hp:margin left="5669" right="5669" top="2834" bottom="1417" header="1417" footer="1417"/></hp:pagePr></hp:secPr><hp:t>합성 행사 개최 계획</hp:t></hp:run></hp:p>
+  ${pressHeaderTable}
   ${reportParagraph('□ 행사 개요: 참여형 홍보 체계를 바탕으로 국민 참여 행사를 열고 지역 단위 활동 계획을 함께 공유하여 관심을 높인다', { paraPr: '6' })}
   ${reportParagraph('○ (일시) 2026. 4. 7.(화) 17:00 ~ 18:00', { paraPr: '7' })}
   ${reportParagraph('○ (참석) 정책국장, 진흥기관 부회장, 지역 담당 과장, 서포터즈 구성원, 관계 기관 담당자 등 약 15명이 참석하여 활동 계획을 함께 나눈다', { paraPr: '7' })}
   ${reportParagraph('※ 서포터즈: 교사, 창업가 등 이해도를 갖춘 관계자 10명 내외로 구성하고 분야별 활동 결과를 정리하여 공유한다', { paraPr: '8' })}
-  ${reportParagraph('- 행사 뒤 활동 수기를 모아 우수 사례를 선정하고 영상 제작과 대외 홍보에 활용하며 활동자에게 포상한다', { paraPr: '9' })}
+  ${reportParagraph('행사 뒤 활동 수기를 모아 우수 사례를 선정하고 영상 제작과 대외 홍보에 활용하며 활동자에게 포상한다', { paraPr: '9' })}
 </hs:sec>`
 
 export function createHangingIndentHwpx(directory: string, fileName = 'han-flow-hanging-indent.hwpx'): string {
