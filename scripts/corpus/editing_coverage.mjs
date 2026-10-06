@@ -31,13 +31,18 @@ const DECODER_SKIP_CODES = {
 
 let editingCore
 
+const pick = (module, names) => Object.fromEntries(names.map((name) => [name, module[name]]))
+
 function loadEditingCore() {
   if (editingCore) return editingCore
   editingCore = {
     HwpxSourcePackage: loadTypeScriptModule('src/core/parser/source_package.ts').HwpxSourcePackage,
     decodeViewerDocument: loadTypeScriptModule('src/core/parser/viewer_decoder.ts').decodeViewerDocument,
     ...loadTypeScriptModule('src/core/editing/editing_capability.ts'),
-    listHwpxTextAnchors: loadTypeScriptModule('src/core/editing/text_patch.ts').listHwpxTextAnchors,
+    ...pick(loadTypeScriptModule('src/core/editing/text_patch.ts'), [
+      'listHwpxTextAnchors', 'listHwpxEmptyParagraphAnchors', 'applyReplaceTextCommand'
+    ]),
+    emptyParagraphAnchorId: loadTypeScriptModule('src/core/editing/empty_paragraph_anchor.ts').emptyParagraphAnchorId,
     ...loadTypeScriptModule('src/core/editing/style_patch.ts'),
     applyCellStyleCommand: loadTypeScriptModule('src/core/editing/cell_style_patch.ts').applyCellStyleCommand,
     ...loadTypeScriptModule('src/core/editing/table_patch.ts')
@@ -95,13 +100,14 @@ function collectRawStructure(sectionPath, nodes, structure) {
       structure.tables.push(table)
       next = { ...next, table }
     } else if (node.name === 'hp:tc') {
-      const cell = { runs: [], node }
+      const cell = { runs: [], paragraphs: [], node }
       structure.cells.push(cell)
       next.table?.cells.push(cell)
       next = { ...next, cell, inCell: true }
     } else if (node.name === 'hp:p') {
       const paragraph = { sectionPath, runs: [], node, parentName: context.parentName }
       structure.paragraphs.push(paragraph)
+      context.cell?.paragraphs.push(paragraph)
       next = { ...next, paragraph }
     } else if (node.name === 'hp:t') {
       const mixedChildren = [...new Set(
@@ -289,6 +295,8 @@ export async function measureEditingCoverage(path) {
     charStyleEditable: 0,
     paragraphs: structure.paragraphs.length,
     paraStyleEditable: 0,
+    noTextParagraphs: 0,
+    noTextParagraphsEditable: 0,
     tableCells: structure.cells.length,
     tableCellsEditable: 0,
     tableCellStyleEditable: 0,
@@ -356,12 +364,70 @@ export async function measureEditingCoverage(path) {
     else metrics.charStyleEditable += 1
   }
 
-  // 2) 문단: 첫 편집 가능 run을 caret 위치로 삼아 문단 style을 dry-run한다.
+  // 2) 문단: 첫 편집 가능 run을 caret 위치로 삼아 문단 style을 dry-run한다. `hp:t`가 없는 문단은 decoder가 붙인 빈 문단
+  //    합성 anchor(`#hp:p:N:empty`)가 capability와 첫 입력 dry-run을 통과하면 편집 가능으로 보고 그 anchor로 문단 style을 잰다.
+  const emptyAnchorCache = new Map()
+  const emptyAnchors = (sectionPath) => {
+    if (!emptyAnchorCache.has(sectionPath)) {
+      let ids
+      try {
+        ids = new Set(core.listHwpxEmptyParagraphAnchors(sourcePackage, sectionPath).map((anchor) => anchor.textNodeId))
+      } catch {
+        ids = new Set()
+      }
+      emptyAnchorCache.set(sectionPath, ids)
+    }
+    return emptyAnchorCache.get(sectionPath)
+  }
+  const emptyEditable = new Set()
+  const emptyParagraphReason = (paragraph, id) => {
+    if (!id || !anchored.has(id) || !emptyAnchors(paragraph.sectionPath).has(id)) return { reason: 'NO_TEXT_NODE' }
+    const capabilities = core.editingCapabilities(sectionViews.get(paragraph.sectionPath), collapsed(paragraph.sectionPath, id))
+    if (!capabilities.text.available) {
+      return {
+        reason: !listed.has(id)
+          ? `EMPTY_PARAGRAPH: NOT_LISTED_${exclusions.get(id) ?? 'UNKNOWN'}`
+          : `EMPTY_PARAGRAPH: capability: ${capabilities.text.reason}`
+      }
+    }
+    const textReason = attempt('text_patch', () => core.applyReplaceTextCommand(sourcePackage, {
+      type: 'replace-text',
+      revision: sourcePackage.revision,
+      sectionPath: paragraph.sectionPath,
+      textNodeId: id,
+      from: 0,
+      to: 0,
+      insert: '가'
+    }))
+    return textReason ? { reason: `EMPTY_PARAGRAPH: ${textReason}` } : { capabilities }
+  }
   for (const paragraph of structure.paragraphs) {
     const ownRuns = paragraph.runs
     const target = ownRuns.find((run) => runState.get(run.textNodeId).textEditable)
     let reason
-    if (!ownRuns.length) reason = 'NO_TEXT_NODE'
+    if (!ownRuns.length) {
+      metrics.noTextParagraphs += 1
+      const ordinal = paragraph.node.sourceParagraphOrdinal
+      const id = ordinal === undefined ? undefined : core.emptyParagraphAnchorId(paragraph.sectionPath, ordinal)
+      const empty = emptyParagraphReason(paragraph, id)
+      reason = empty.reason
+      if (!reason) {
+        metrics.noTextParagraphsEditable += 1
+        emptyEditable.add(paragraph)
+        const capabilities = empty.capabilities
+        reason = !capabilities.paragraphStyle.available
+          ? `capability: ${capabilities.paragraphStyle.reason}`
+          : memoAttempt(`para-empty|${paragraph.parentName}|${structureSignature(paragraph.node)}`, 'style_patch', () => {
+              const align = document.paraStyles[capabilities.focus?.paraStyleId ?? '']?.align
+              core.applyParagraphStyleCommand(sourcePackage, {
+                type: 'apply-paragraph-style',
+                sectionPath: paragraph.sectionPath,
+                textNodeId: id,
+                align: align === 'CENTER' ? 'LEFT' : 'CENTER'
+              })
+            })
+      }
+    }
     else if (!target) reason = `BLOCKED_BY_TEXT: ${runState.get(ownRuns[0].textNodeId).reason}`
     else {
       const capabilities = runState.get(target.textNodeId).capabilities
@@ -381,12 +447,19 @@ export async function measureEditingCoverage(path) {
     else metrics.paraStyleEditable += 1
   }
 
-  // 3) 표 셀: 셀에 직접 속한 hp:t가 모두 편집 가능해야 셀 글자를 고칠 수 있다.
+  // 3) 표 셀: 셀에 직접 속한 hp:t가 모두 편집 가능해야 셀 글자를 고칠 수 있다. `hp:t`가 없는 빈 셀은 셀 문단이 모두
+  //    빈 문단 합성 anchor로 입력을 받으면 편집 가능이다(셀 style·표 구조 대상은 아니다).
   const cellAnchor = new Map()
   for (const cell of structure.cells) {
     const blocked = cell.runs.find((run) => !runState.get(run.textNodeId).textEditable)
     let reason
-    if (!cell.runs.length) reason = 'NO_TEXT_NODE'
+    if (!cell.runs.length) {
+      if (cell.paragraphs.length && cell.paragraphs.every((paragraph) => emptyEditable.has(paragraph))) {
+        metrics.tableCellsEditable += 1
+        continue
+      }
+      reason = 'NO_TEXT_NODE'
+    }
     else if (blocked) reason = `BLOCKED_BY_TEXT: ${runState.get(blocked.textNodeId).reason}`
     if (reason) {
       count(rejections.tableCell, reason)
@@ -435,6 +508,7 @@ export async function measureEditingCoverage(path) {
 
 const SUM_KEYS = [
   'textRuns', 'anchored', 'textEditable', 'charStyleEditable', 'paragraphs', 'paraStyleEditable',
+  'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
   'characters', 'editableCharacters'
 ]
@@ -449,6 +523,7 @@ function withRatios(metrics) {
       textEditable: ratio(metrics.textEditable, metrics.textRuns),
       charStyleEditable: ratio(metrics.charStyleEditable, metrics.textRuns),
       paraStyleEditable: ratio(metrics.paraStyleEditable, metrics.paragraphs),
+      noTextParagraphsEditable: ratio(metrics.noTextParagraphsEditable, metrics.noTextParagraphs),
       tableCellsEditable: ratio(metrics.tableCellsEditable, metrics.tableCells),
       tableStructureEditable: ratio(metrics.tableStructureEditable, metrics.tables),
       characterWeighted: ratio(metrics.editableCharacters, metrics.characters)

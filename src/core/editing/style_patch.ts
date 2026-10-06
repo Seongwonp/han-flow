@@ -4,8 +4,10 @@ import {
   HwpxLossReport,
   invalidateHwpxTextIndex,
   listHwpxTextAnchors,
+  locateHwpxEmptyParagraph,
   locateHwpxTextElement
 } from './text_patch'
+import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
 import { packageEntryTree, PackageTrees, putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
   elementCloseTag,
@@ -117,8 +119,9 @@ export interface StylePatchResult {
 
 interface TextStyleContext {
   tree: SourceTree
-  textNode: SourceElement
-  run: SourceElement
+  /** 빈 문단 합성 anchor의 문단 style이면 없다. */
+  textNode?: SourceElement
+  run?: SourceElement
   paragraph: SourceElement
 }
 
@@ -146,6 +149,18 @@ function locateTextStyleContext(
 ): TextStyleContext {
   // 목록 조회는 section 경로 검증과 오류 message를 전환 전과 같게 유지한다(cache된 tree를 쓰므로 다시 parse하지 않는다).
   listHwpxTextAnchors(sourcePackage, sectionPath)
+  if (isEmptyParagraphAnchorId(textNodeId)) {
+    // 빈 문단 합성 anchor: 문단 모양만 바꾼다. 글자 모양은 첫 글자를 입력해 `hp:t`가 생긴 뒤 바꾼다.
+    if (target === 'character') {
+      throw new HwpxEditConflictError('빈 문단은 글자를 입력한 뒤 글자 모양을 바꿀 수 있습니다.')
+    }
+    const empty = locateHwpxEmptyParagraph(sourcePackage, sectionPath, textNodeId)
+    if (!empty) throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
+    if (!isStyleEditableParagraph(empty.paragraph)) {
+      throw new HwpxEditConflictError('글자·문단 모양은 최상위 문단과 최상위 표 셀 직속 문단의 run만 편집할 수 있습니다.')
+    }
+    return { tree: empty.tree, paragraph: empty.paragraph, run: empty.run }
+  }
   const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
   if (!located) throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
   const { tree, element: textNode } = located
@@ -184,6 +199,13 @@ function isStyleEditableParagraph(paragraph: SourceElement): boolean {
     hostParagraph?.name === 'hp:p' &&
     hostParagraph.parent?.name === 'hs:sec'
   )
+}
+
+/** 글자 모양은 run, 문단 모양은 문단의 reference attribute를 바꾼다. 글자 모양 context에는 언제나 run이 있다. */
+function referenceElementOf(context: TextStyleContext, target: 'character' | 'paragraph'): SourceElement {
+  if (target === 'paragraph') return context.paragraph
+  if (!context.run) throw new HwpxEditConflictError('글자 모양을 바꿀 run이 없습니다.')
+  return context.run
 }
 
 function findAllDescendantElements(node: SourceElement): SourceElement[] {
@@ -488,7 +510,7 @@ function stageStyleDefinition(
 ): StagedStyle | undefined {
   const context = locateTextStyleContext(sourcePackage, options.sectionPath, options.textNodeId, options.target)
   const sectionTree = context.tree
-  const referenceElement = options.target === 'character' ? context.run : context.paragraph
+  const referenceElement = referenceElementOf(context, options.target)
   const referenceTag = elementOpenTag(sectionTree, referenceElement)
   const currentId = getSourceAttribute(sectionTree, referenceElement, options.referenceAttribute)
   if (currentId === undefined) {
@@ -587,6 +609,9 @@ export function applyCharacterStyleCommand(
       throw new Error('문서에 선언되지 않은 한글 글꼴은 적용할 수 없습니다.')
     }
   }
+  if (isEmptyParagraphAnchorId(command.textNodeId)) {
+    throw new HwpxEditConflictError('빈 문단은 글자를 입력한 뒤 글자 모양을 바꿀 수 있습니다.')
+  }
   const anchor = listHwpxTextAnchors(sourcePackage, command.sectionPath).find(
     (candidate) => candidate.textNodeId === command.textNodeId
   )
@@ -644,7 +669,8 @@ export function applyCharacterStyleCommand(
 
   // 부분 선택: reference를 바꾼 run을 좌·선택·우 run으로 나눈다. 전환 전 경로와 같게 reference 변경과 분할을
   // 서로 다른 revision으로 쓴다(header → section reference → section 분할).
-  const { run, textNode } = context
+  const run = referenceElementOf(context, 'character')
+  const textNode = context.textNode!
   const styledRun = serializeSourceNode(sectionTree, run)
   const originalRun = staged.referenceTag + styledRun.slice(staged.nextReferenceTag.length)
   const index = run.children.indexOf(textNode)
@@ -829,7 +855,7 @@ export function applyRestoreStyleCommand(
     command.textNodeId,
     command.target
   )
-  const referenceElement = command.target === 'character' ? context.run : context.paragraph
+  const referenceElement = referenceElementOf(context, command.target)
   if (elementOpenTag(context.tree, referenceElement) !== command.expectedReferenceTag) {
     throw new HwpxEditConflictError('style reference가 변경되어 안전하게 복원할 수 없습니다.')
   }
@@ -867,7 +893,7 @@ export function applyRestoreCharacterRunCommand(
   )
   // anchor run부터 이어지는 형제의 원문이 `expectedFragment`로 시작해야 한다(분할된 run 셋 또는 원래 run 하나).
   const siblings = context.paragraph.children
-  const start = siblings.indexOf(context.run)
+  const start = siblings.indexOf(referenceElementOf(context, 'character'))
   let actual = ''
   let end = start
   while (end < siblings.length && actual.length < command.expectedFragment.length) {

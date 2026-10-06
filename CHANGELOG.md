@@ -92,6 +92,7 @@
 - 편집 코어 tree 전환 정리: legacy 문자열 구현 4개와 정규식 attribute·`replaceRange`·`scanXmlElements`·CDATA `as-tag` scanner 경로를 제거하고, legacy differential을 공개 corpus 1,842 case의 SHA-256 golden 회귀와 exact undo·redo 검사로 대체해 `npm test` 시간을 약 168s에서 45s로 단축
 - HWPX entry CRC-32를 byte 단위 JS 구현에서 Node 내장 `zlib.crc32`로 교체(없으면 JS 구현으로 대체, 모든 공개 fixture entry와 무작위 buffer에서 값 동일)해 대형 section 입력 비용을 keystroke당 약 1.1ms에서 0.3ms로, Enter+Backspace를 약 3.9ms에서 2.2ms로 단축
 - 최상위 표의 셀(병합·머리글 셀 포함) 직속 문단에 글자 모양(굵게·기울임·밑줄·취소선·크기·색·글꼴, 부분 선택 run 분할 포함)과 문단 모양(정렬·줄 간격·앞뒤 간격·첫 줄 들여쓰기)을 허용하고 ribbon·단축키를 같은 capability로 열기(셀 안 표와 머리말·글상자는 계속 거부, 외부 26종 글자 모양 46.9% → 78.2%·문단 모양 49.4% → 79.1%)
+- `hp:t`가 없는 빈 문단·빈 셀(`<hp:run/>`, 구역 정의만 든 첫 문단, run 없는 `<hp:p/>`)에 `#hp:p:N:empty` 합성 caret anchor를 두고 첫 입력 때 한/글 저장 방식대로 `hp:t`(필요하면 문단 style 글자 모양의 run)를 만들며 undo는 원래 bytes 복원, selection은 새 `hp:t` anchor로 이동(외부 26종 빈 문단 44/46·표 셀 49/66 → 66/66·문단 모양 79.1% → 90.2%)
 
 ### V2 HWP fixed-page
 

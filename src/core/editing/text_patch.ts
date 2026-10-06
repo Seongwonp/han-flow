@@ -7,7 +7,10 @@ import {
   decodeXmlEntities,
   elementCloseTag,
   elementOpenTag,
+  escapeXmlAttribute,
+  findDescendantSourceElements,
   findSourceElements,
+  getSourceAttribute,
   parseSourceFragment,
   rawTextOffset,
   replaceElementChildren,
@@ -15,8 +18,15 @@ import {
   SourceElement,
   SourceNode,
   SourceTree,
+  spliceSourceChildren,
   textRaw
 } from './source_tree'
+import {
+  EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
+  EMPTY_PARAGRAPH_RUN_CONTROLS,
+  emptyParagraphAnchorId,
+  parseEmptyParagraphAnchorId
+} from './empty_paragraph_anchor'
 import { buildLossReport, HwpxEditConflictError, isSurrogateBoundarySafe } from './xml_scan'
 import {
   forgetPackageTrees,
@@ -34,6 +44,25 @@ export interface HwpxTextAnchor {
   ordinal: number
   text: string
 }
+
+/**
+ * `hp:t`가 없는 빈 문단의 합성 caret anchor(`empty_paragraph_anchor.ts`). text는 언제나 빈 문자열이고, 첫 입력이
+ * `hp:t`를 만든다.
+ */
+export interface HwpxEmptyParagraphAnchor {
+  sectionPath: string
+  textNodeId: string
+  /** section 안 모든 `hp:p`의 문서 순서 번호 */
+  paragraphOrdinal: number
+  /** 첫 입력 글자가 쓸 `charPrIDRef`: 글자를 넣을 run의 값, run이 없으면 문단 style(`hh:style`)의 값 */
+  charStyleId: string
+  text: ''
+}
+
+/** 편집 command가 caret으로 받는 anchor: 실제 `hp:t` 또는 빈 문단의 합성 anchor. */
+export type HwpxCaretAnchor =
+  | (HwpxTextAnchor & { emptyParagraph?: undefined })
+  | (HwpxEmptyParagraphAnchor & { emptyParagraph: true })
 
 export interface ReplaceTextCommand {
   type: 'replace-text'
@@ -54,6 +83,12 @@ export interface ReplaceTextCommand {
    * 실행 취소가 원래 bytes를 그대로 복원하도록 쓴다. 해석한 논리 text는 `insert`와 같아야 한다.
    */
   insertSource?: string
+  /**
+   * inverse 전용. 빈 문단에 처음 입력하며 만든 `hp:t`를 지운다. text 전체를 지우는 command에만 붙는다.
+   * `createdRunTag`가 있으면 `hp:t`를 담으려고 새로 만든 run(이 여는 tag)까지 지운다. `restoreSelfClosingTag`가 있으면
+   * 지운 뒤 비게 되는 부모(run 또는 문단)를 이 자기 닫힘 tag 원문으로 되돌린다. 결과는 원래 빈 문단 bytes와 같다.
+   */
+  removeCreatedText?: { createdRunTag?: string; restoreSelfClosingTag?: string }
 }
 
 export interface HwpxLossReport {
@@ -333,6 +368,22 @@ interface SectionTextState {
   anchors: readonly HwpxTextAnchor[]
   /** element → ordinal. 문단 command가 처음 쓸 때 만든다. */
   ordinals?: Map<SourceElement, number>
+  /** 빈 문단 합성 anchor. 처음 조회할 때 만든다(문단 style을 읽으려고 header.xml이 필요할 수 있다). */
+  empty?: EmptyParagraphState
+}
+
+/** 빈 문단에 글자를 넣을 위치. `run`이 없으면 `charPrIDRef`로 새 run을 만든다. */
+interface EmptyParagraphTarget {
+  paragraph: SourceElement
+  run?: SourceElement
+  charPrIDRef: string
+}
+
+interface EmptyParagraphState {
+  /** section 안 모든 `hp:p`(문서 순서). 번호가 합성 anchor의 paragraphOrdinal이다. */
+  paragraphs: SourceElement[]
+  anchors: readonly HwpxEmptyParagraphAnchor[]
+  targets: Map<number, EmptyParagraphTarget>
 }
 
 /**
@@ -372,6 +423,148 @@ function sectionTextState(sourcePackage: HwpxSourcePackage, sectionPath: string)
 /** @internal tree 연산이 `hp:t` 개수·순서를 바꾸었을 때 그 tree의 색인을 버린다. */
 export function invalidateHwpxTextIndex(tree: SourceTree): void {
   textIndexes.delete(tree)
+}
+
+// ---------------------------------------------------------------------------
+// 빈 문단 합성 anchor
+
+const HEADER_PATH = 'Contents/header.xml'
+const WHITESPACE = /^[ \t\r\n]*$/
+
+/** header.xml의 문단 style id → 글자 모양(`charPrIDRef`). header가 없거나 읽을 수 없으면 빈 Map. */
+function paragraphStyleCharacterIds(sourcePackage: HwpxSourcePackage): Map<string, string> {
+  const ids = new Map<string, string>()
+  let header: SourceTree
+  try {
+    header = packageEntryTree(sourcePackage, HEADER_PATH)
+  } catch {
+    return ids
+  }
+  for (const style of findSourceElements(header, 'hh:style')) {
+    const id = getSourceAttribute(header, style, 'id')
+    const charPrIDRef = getSourceAttribute(header, style, 'charPrIDRef')
+    if (id !== undefined && charPrIDRef !== undefined && !ids.has(id)) ids.set(id, charPrIDRef)
+  }
+  return ids
+}
+
+function isWhitespaceText(tree: SourceTree, node: SourceNode): boolean {
+  return node.kind === 'text' && WHITESPACE.test(textRaw(tree, node))
+}
+
+/**
+ * 문단이 빈 문단이면 글자를 넣을 위치를 돌려준다. 규칙은 viewer decoder(`emptyParagraphCaret`)와 같다.
+ * - 문단 자식은 `hp:run`·`hp:linesegarray`와 공백 text뿐이다.
+ * - run 자식은 `hp:secPr`·`hp:ctrl`(필드 시작·끝 제외)과 공백 text뿐이다(`hp:t`·표·그림 등이 없다).
+ * - 자식 element가 없는 run이 있으면 마지막 그것에, 없으면 마지막 run(구역 정의·control 뒤)에 글자를 넣는다.
+ *   한/글은 구역 첫 문단의 글자를 `hp:secPr`·`hp:ctrl`과 같은 run 뒤쪽에 저장한다.
+ * - run이 없으면 문단 style의 `charPrIDRef`로 새 run을 만든다. style을 찾지 못하면 빈 문단으로 보지 않는다.
+ */
+function emptyParagraphTarget(
+  tree: SourceTree,
+  paragraph: SourceElement,
+  styleCharacterIds: () => Map<string, string>
+): EmptyParagraphTarget | undefined {
+  const runs: SourceElement[] = []
+  for (const child of paragraph.children) {
+    if (child.kind === 'element') {
+      if (child.name === 'hp:run') runs.push(child)
+      else if (child.name !== 'hp:linesegarray') return undefined
+    } else if (!isWhitespaceText(tree, child)) {
+      return undefined
+    }
+  }
+  for (const run of runs) {
+    for (const child of run.children) {
+      if (child.kind !== 'element') {
+        if (!isWhitespaceText(tree, child)) return undefined
+        continue
+      }
+      if (!EMPTY_PARAGRAPH_RUN_CONTROLS.has(child.name)) return undefined
+      if (
+        child.name === 'hp:ctrl' &&
+        [...EMPTY_PARAGRAPH_BLOCKING_CONTROLS].some((name) => findDescendantSourceElements(child, name).length)
+      ) {
+        return undefined
+      }
+    }
+  }
+  if (runs.length) {
+    const plain = runs.filter((run) => !run.children.some((child) => child.kind === 'element'))
+    const run = plain[plain.length - 1] ?? runs[runs.length - 1]
+    return { paragraph, run, charPrIDRef: getSourceAttribute(tree, run, 'charPrIDRef') ?? '0' }
+  }
+  const charPrIDRef = styleCharacterIds().get(getSourceAttribute(tree, paragraph, 'styleIDRef') ?? '0')
+  return charPrIDRef === undefined ? undefined : { paragraph, charPrIDRef }
+}
+
+function emptyParagraphState(sourcePackage: HwpxSourcePackage, sectionPath: string): { state: SectionTextState; empty: EmptyParagraphState } {
+  const state = sectionTextState(sourcePackage, sectionPath)
+  if (!state.empty) {
+    const paragraphs = findSourceElements(state.tree, 'hp:p')
+    let styles: Map<string, string> | undefined
+    const styleCharacterIds = () => (styles ??= paragraphStyleCharacterIds(sourcePackage))
+    const anchors: HwpxEmptyParagraphAnchor[] = []
+    const targets = new Map<number, EmptyParagraphTarget>()
+    paragraphs.forEach((paragraph, paragraphOrdinal) => {
+      const target = emptyParagraphTarget(state.tree, paragraph, styleCharacterIds)
+      if (!target) return
+      targets.set(paragraphOrdinal, target)
+      anchors.push(Object.freeze({
+        sectionPath,
+        textNodeId: emptyParagraphAnchorId(sectionPath, paragraphOrdinal),
+        paragraphOrdinal,
+        charStyleId: target.charPrIDRef,
+        text: '' as const
+      }))
+    })
+    state.empty = { paragraphs, anchors: Object.freeze(anchors), targets }
+  }
+  return { state, empty: state.empty }
+}
+
+/** section의 빈 문단 합성 anchor. 표 셀·머리말·글상자 안 문단도 포함한다(편집 노출 여부는 capability가 정한다). */
+export function listHwpxEmptyParagraphAnchors(
+  sourcePackage: HwpxSourcePackage,
+  sectionPath: string
+): readonly HwpxEmptyParagraphAnchor[] {
+  listHwpxTextAnchors(sourcePackage, sectionPath)
+  return emptyParagraphState(sourcePackage, sectionPath).empty.anchors
+}
+
+/**
+ * @internal 빈 문단 합성 anchor의 문단과 글자를 넣을 run. 없으면 undefined. 문단 style command가 쓴다.
+ */
+export function locateHwpxEmptyParagraph(
+  sourcePackage: HwpxSourcePackage,
+  sectionPath: string,
+  textNodeId: string
+): { tree: SourceTree; paragraph: SourceElement; run?: SourceElement; anchor: HwpxEmptyParagraphAnchor } | undefined {
+  const parsed = parseEmptyParagraphAnchorId(textNodeId)
+  if (!parsed || parsed.sectionPath !== sectionPath) return undefined
+  const { state, empty } = emptyParagraphState(sourcePackage, sectionPath)
+  const target = empty.targets.get(parsed.paragraphOrdinal)
+  if (!target) return undefined
+  const anchor = empty.anchors.find((candidate) => candidate.paragraphOrdinal === parsed.paragraphOrdinal)!
+  return { tree: state.tree, paragraph: target.paragraph, run: target.run, anchor }
+}
+
+/**
+ * caret anchor 조회: `#hp:t:N`이면 편집 가능한 `hp:t` anchor, `#hp:p:N:empty`면 빈 문단 합성 anchor. 없으면 undefined.
+ */
+export function resolveHwpxCaretAnchor(
+  sourcePackage: HwpxSourcePackage,
+  sectionPath: string,
+  textNodeId: string
+): HwpxCaretAnchor | undefined {
+  const anchors = listHwpxTextAnchors(sourcePackage, sectionPath)
+  if (parseEmptyParagraphAnchorId(textNodeId)) {
+    const located = locateHwpxEmptyParagraph(sourcePackage, sectionPath, textNodeId)
+    return located ? { ...located.anchor, emptyParagraph: true } : undefined
+  }
+  const state = sectionTextState(sourcePackage, sectionPath)
+  const index = findAnchorIndex(state, sectionPath, textNodeId)
+  return index < 0 ? undefined : anchors[index]
 }
 
 /** 편집 가능한 anchor 목록에서 ordinal의 위치(없으면 -1). 목록은 ordinal 오름차순이다. */
@@ -474,6 +667,7 @@ export function applyReplaceTextCommand(
     )
   }
 
+  if (parseEmptyParagraphAnchorId(command.textNodeId)) return applyEmptyParagraphText(sourcePackage, command)
   const state = sectionTextState(sourcePackage, command.sectionPath)
   const index = findAnchorIndex(state, command.sectionPath, command.textNodeId)
   if (index < 0) throw new HwpxEditConflictError(`text anchor를 찾을 수 없습니다: ${command.textNodeId}`)
@@ -481,6 +675,7 @@ export function applyReplaceTextCommand(
   assertTextBoundary(sourceAnchor.text, command.from)
   assertTextBoundary(sourceAnchor.text, command.to)
   if (command.from > command.to) throw new HwpxEditConflictError('text 범위의 시작이 끝보다 큽니다.')
+  if (command.removeCreatedText) return applyRemoveCreatedText(sourcePackage, command, state, sourceAnchor)
 
   const removed = sourceAnchor.text.slice(command.from, command.to)
   const nextText = sourceAnchor.text.slice(0, command.from) + command.insert + sourceAnchor.text.slice(command.to)
@@ -555,6 +750,179 @@ export function applyReplaceTextCommand(
       ...(insertSource !== undefined ? { insertSource } : {})
     },
     anchor: { ...anchor },
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath])
+  }
+}
+
+/**
+ * 빈 문단 합성 anchor(`#hp:p:N:empty`)에 첫 글자를 넣는다. 대상 run 안 control 뒤에 `<hp:t>…</hp:t>`를 붙이고, run이
+ * 없으면 `<hp:run charPrIDRef="X"><hp:t>…</hp:t></hp:run>`을 문단 맨 앞(`hp:linesegarray` 앞)에 넣는다. 자기 닫힘
+ * run·문단은 같은 attribute의 여는·닫는 tag로 펼친다. 결과 anchor는 새 `hp:t`의 `#hp:t:N`이고, inverse는 그 `hp:t`
+ * text 전체를 지우며 만든 node를 떼고 펼친 tag를 원래 자기 닫힘 tag로 되돌린다(원래 bytes 복원).
+ */
+function applyEmptyParagraphText(sourcePackage: HwpxSourcePackage, command: ReplaceTextCommand): ReplaceTextResult {
+  listHwpxTextAnchors(sourcePackage, command.sectionPath)
+  const located = locateHwpxEmptyParagraph(sourcePackage, command.sectionPath, command.textNodeId)
+  if (!located) throw new HwpxEditConflictError(`text anchor를 찾을 수 없습니다: ${command.textNodeId}`)
+  assertTextBoundary('', command.from)
+  assertTextBoundary('', command.to)
+  const emptyAnchor: HwpxTextAnchor = {
+    sectionPath: command.sectionPath,
+    textNodeId: command.textNodeId,
+    ordinal: -1,
+    text: ''
+  }
+  if (command.removeCreatedText || command.restoreSelfClosingTag !== undefined) {
+    throw new HwpxEditConflictError('빈 문단 anchor에는 복원 전용 option을 쓸 수 없습니다.')
+  }
+  if (!command.insert) {
+    return {
+      package: sourcePackage,
+      inverse: { ...command, revision: sourcePackage.revision, insert: '' },
+      anchor: emptyAnchor,
+      lossReport: buildLossReport(sourcePackage, [])
+    }
+  }
+  const { tree, paragraph, run, anchor } = located
+  const insertNodes =
+    command.insertSource !== undefined
+      ? insertSourceNodes(command.insertSource, command.insert)
+      : hwpxTextContentNodes(command.insert)
+  const textElement = createSourceElement('hp:t', '<hp:t>', false)
+  textElement.children = insertNodes
+  for (const node of insertNodes) node.parent = textElement
+
+  let container: SourceElement
+  let position: number
+  let inserted: SourceElement
+  let createdRunTag: string | undefined
+  if (run) {
+    container = run
+    let lastElement = -1
+    run.children.forEach((child, index) => {
+      if (child.kind === 'element') lastElement = index
+    })
+    position = lastElement >= 0 ? lastElement + 1 : run.children.length
+    inserted = textElement
+  } else {
+    container = paragraph
+    const lineSegments = paragraph.children.findIndex(
+      (child) => child.kind === 'element' && child.name === 'hp:linesegarray'
+    )
+    position = lineSegments >= 0 ? lineSegments : paragraph.children.length
+    createdRunTag = `<hp:run charPrIDRef="${escapeXmlAttribute(anchor.charStyleId)}">`
+    inserted = createSourceElement('hp:run', createdRunTag, false)
+    inserted.children = [textElement]
+    textElement.parent = inserted
+  }
+  const restoreSelfClosingTag = container.selfClosing ? elementOpenTag(tree, container) : undefined
+
+  const trees = takePackageTrees(sourcePackage)
+  spliceSourceChildren(tree, container, position, 0, [inserted])
+  invalidateHwpxTextIndex(tree)
+  const nextPackage = withSerializedTree(sourcePackage, command.sectionPath, tree)
+  putPackageTrees(nextPackage, trees)
+  const ordinal = hwpxTextOrdinal(nextPackage, command.sectionPath, textElement)
+  if (ordinal < 0) throw new Error('새 hp:t ordinal을 찾을 수 없습니다.')
+  const textNodeId = `${command.sectionPath}#hp:t:${ordinal}`
+  return {
+    package: nextPackage,
+    inverse: {
+      type: 'replace-text',
+      revision: nextPackage.revision,
+      sectionPath: command.sectionPath,
+      textNodeId,
+      from: 0,
+      to: command.insert.length,
+      insert: '',
+      removeCreatedText: {
+        ...(createdRunTag !== undefined ? { createdRunTag } : {}),
+        ...(restoreSelfClosingTag !== undefined ? { restoreSelfClosingTag } : {})
+      }
+    },
+    anchor: freezeAnchor({ sectionPath: command.sectionPath, textNodeId, ordinal, text: command.insert }),
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath])
+  }
+}
+
+/**
+ * {@link applyEmptyParagraphText}의 inverse: 빈 문단에 만든 `hp:t`(와 새 run)를 떼어 원래 빈 문단 bytes로 되돌린다.
+ * text 전체를 지우는 command만 받고, 지울 node가 만든 모양 그대로(`<hp:t>`, 새 run이면 그 여는 tag와 `hp:t` 하나)인지
+ * 확인한다. 결과 anchor는 다시 생긴 빈 문단 합성 anchor이고, inverse는 같은 text를 그 anchor에 다시 넣는다.
+ */
+function applyRemoveCreatedText(
+  sourcePackage: HwpxSourcePackage,
+  command: ReplaceTextCommand,
+  state: SectionTextState,
+  sourceAnchor: HwpxTextAnchor
+): ReplaceTextResult {
+  const option = command.removeCreatedText!
+  const conflict = () => new HwpxEditConflictError('빈 문단에 만든 hp:t가 변경되어 안전하게 되돌릴 수 없습니다.')
+  if (command.from !== 0 || command.to !== sourceAnchor.text.length || command.insert !== '' || !sourceAnchor.text) {
+    throw conflict()
+  }
+  const { tree } = state
+  const element = state.elements[sourceAnchor.ordinal]
+  if (element.selfClosing || elementOpenTag(tree, element) !== '<hp:t>' || elementCloseTag(tree, element) !== '</hp:t>') {
+    throw conflict()
+  }
+  let removed: SourceElement = element
+  if (option.createdRunTag !== undefined) {
+    const run = element.parent
+    if (
+      !run ||
+      run.name !== 'hp:run' ||
+      elementOpenTag(tree, run) !== option.createdRunTag ||
+      elementCloseTag(tree, run) !== '</hp:run>' ||
+      run.children.length !== 1
+    ) {
+      throw conflict()
+    }
+    removed = run
+  }
+  const container = removed.parent
+  if (!container || container.name !== (option.createdRunTag !== undefined ? 'hp:p' : 'hp:run')) throw conflict()
+  const paragraph = option.createdRunTag !== undefined ? container : container.parent
+  if (!paragraph || paragraph.name !== 'hp:p') throw conflict()
+  const restoreTag = option.restoreSelfClosingTag
+  if (
+    restoreTag !== undefined &&
+    (container.children.length !== 1 ||
+      !/^<\s*hp:(?:run|p)(?=[\s/])/.test(restoreTag) ||
+      !SELF_CLOSING_END.test(restoreTag) ||
+      expandSelfClosingTag(restoreTag) !== elementOpenTag(tree, container))
+  ) {
+    throw conflict()
+  }
+  // 지운 범위의 원문 표기가 기본 표기가 아니면 redo가 그대로 다시 쓰도록 들고 간다.
+  const removedSource = element.children.map((child) => serializeSourceNode(tree, child)).join('')
+  const insertSource = removedSource !== encodeHwpxTextContent(sourceAnchor.text) ? removedSource : undefined
+
+  const trees = takePackageTrees(sourcePackage)
+  if (restoreTag !== undefined) collapseElementToSelfClosing(container, restoreTag)
+  else spliceSourceChildren(tree, container, container.children.indexOf(removed), 1, [])
+  invalidateHwpxTextIndex(tree)
+  const nextPackage = withSerializedTree(sourcePackage, command.sectionPath, tree)
+  putPackageTrees(nextPackage, trees)
+  const { empty } = emptyParagraphState(nextPackage, command.sectionPath)
+  const paragraphOrdinal = empty.paragraphs.indexOf(paragraph)
+  if (paragraphOrdinal < 0 || !empty.targets.has(paragraphOrdinal)) {
+    throw new Error('되돌린 문단이 빈 문단 anchor 규칙과 맞지 않습니다.')
+  }
+  const textNodeId = emptyParagraphAnchorId(command.sectionPath, paragraphOrdinal)
+  return {
+    package: nextPackage,
+    inverse: {
+      type: 'replace-text',
+      revision: nextPackage.revision,
+      sectionPath: command.sectionPath,
+      textNodeId,
+      from: 0,
+      to: 0,
+      insert: sourceAnchor.text,
+      ...(insertSource !== undefined ? { insertSource } : {})
+    },
+    anchor: freezeAnchor({ sectionPath: command.sectionPath, textNodeId, ordinal: -1, text: '' }),
     lossReport: buildLossReport(sourcePackage, [command.sectionPath])
   }
 }

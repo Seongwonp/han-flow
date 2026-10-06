@@ -249,6 +249,8 @@ export class HwpxEditHistory {
     }
 
     const result = applyEditTransaction(this.currentPackage, transaction)
+    // 빈 문단 첫 입력처럼 anchor id가 바뀐 경우 저장하는 forward는 옮긴 selectionAfter를 쓴다(redo·grouping 기준).
+    transaction = { ...transaction, selectionAfter: result.selectionAfter }
     if (!result.changed) {
       if (synchronizeSelection) {
         this.currentSelection = { ...transaction.selectionAfter }

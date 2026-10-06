@@ -3,7 +3,8 @@
 실제 한/글 저장본에서 편집기가 얼마나 고칠 수 있는지 재는 도구와 첫 측정 결과입니다.
 원본 JSON은 [`editing_coverage_2026-09-29.json`](editing_coverage_2026-09-29.json)(기준선),
 [`editing_coverage_2026-09-29-after.json`](editing_coverage_2026-09-29-after.json)(아래 "개선 후")와
-[`editing_coverage_2026-10-06.json`](editing_coverage_2026-10-06.json)(아래 "2026-10-06", 가장 최근 측정)에 있습니다.
+[`editing_coverage_2026-10-06.json`](editing_coverage_2026-10-06.json)(아래 "2026-10-06 빈 문단", 가장 최근 측정)에 있습니다.
+같은 날 앞선 "셀 모양" 측정은 그 변경을 담은 commit의 같은 파일에 있습니다.
 다시 재려면 `npm run corpus:editing-coverage -- --output <file>`를 실행합니다(약 6초).
 
 ## 측정 방법
@@ -31,6 +32,8 @@
 | 외부 한/글 26종 · 개선 후 | 371 | 95.7% | 89.8% (333) | 92.8% | 46.9% | 49.4% (196/397) | 49/66 (74.2%) | 13/19 |
 | 합성 8종 · 2026-10-06 셀 모양 | 19,575 | 100% | 99.9% | 99.98% | 99.9% | 99.9% (19,556/19,583) | 29/29 | 5/7 |
 | 외부 한/글 26종 · 2026-10-06 셀 모양 | 371 | 95.7% | 89.8% (333) | 92.8% | 78.2% (290) | 79.1% (314/397) | 49/66 (74.2%) | 13/19 |
+| 합성 8종 · 2026-10-06 빈 문단 | 19,575 | 100% | 99.9% | 99.98% | 99.9% | 99.9% (19,556/19,583) | 29/29 | 5/7 |
+| 외부 한/글 26종 · 2026-10-06 빈 문단 | 371 | 95.7% | 89.8% (333) | 92.8% | 78.2% (290) | 90.2% (358/397) | 66/66 (100%) | 13/19 |
 
 합성 합계는 `large-progressive`(19,511 run)가 지배하므로 판단 근거로는 외부 묶음을 씁니다.
 외부 26종은 hwpxlib·python-hwpx의 기능별 소형 표본(총 1,147자)이라 실제 공문서 분포와는 다릅니다.
@@ -51,6 +54,25 @@
   `hp:ctrl`이 섞인 복합 run이라 본문과 같은 이유(`복합 run`)로 계속 거부되어 그 사유가 39 → 43이 되었습니다.
   text·표 셀·표 구조 수치는 그대로입니다. 셀 안에 다시 든 표와 머리말·꼬리말·글상자 문단은 계속 거부합니다.
 - 남은 최대 거부는 `hp:t`가 없는 문단(`NO_TEXT_NODE` 46)과 빈 셀(17)입니다.
+
+## 2026-10-06 — 글자 칸이 없는 빈 문단·셀
+
+- **합성 caret anchor**: `hp:t`가 없는 빈 문단에 `${sectionPath}#hp:p:${paragraphOrdinal}:empty` anchor를 붙입니다
+  (`src/core/editing/empty_paragraph_anchor.ts`). `paragraphOrdinal`은 section 안 모든 `hp:p`의 문서 순서 번호이고,
+  viewer decoder(`ordered_xml.ts`의 `sourceParagraphOrdinal`)·편집 source tree·tokenizer가 같은 번호를 내는지
+  `text_ordinal_agreement.test.ts`가 공개 corpus 전체에서 확인합니다. `#hp:p:`·`:empty` 형식이라 `#hp:t:N`과 겹치지 않습니다.
+- **빈 문단 규칙**: 문단 자식이 `hp:run`·`hp:linesegarray`뿐이고 run 자식이 `hp:secPr`·`hp:ctrl`(필드 시작·끝 제외)뿐이면
+  빈 문단입니다. 첫 입력은 자식 없는 마지막 run(`<hp:run charPrIDRef="0"/>`), 없으면 마지막 run의 control 뒤에
+  `<hp:t>…</hp:t>`를 넣습니다. 한/글(hwpxlib 표본)이 구역 첫 문단 글자를 `hp:secPr`·`hp:ctrl`과 같은 run 뒤쪽에 저장하는
+  것을 따랐습니다. run이 없는 `<hp:p/>`(python-hwpx 표본)는 문단 style(`hh:style`)의 `charPrIDRef`로 새 run을 만듭니다.
+  실행 취소는 만든 node를 떼고 펼친 자기 닫힘 tag를 되돌려 원래 bytes를 복원하고, transaction이 selection을 새 `#hp:t:N`으로 옮깁니다.
+- **수치(외부 26종)**: `hp:t` 없는 문단 46개 가운데 44개가 첫 입력을 받습니다(`noTextParagraphsEditable`). 남은 2개는
+  꼬리말(`EMPTY_PARAGRAPH: NOT_LISTED_HEADER_FOOTER`)과 decoder가 읽지 않는 글상자 문단(`NO_TEXT_NODE`)입니다.
+  문단 style 314 → 358(79.1% → 90.2%), 표 셀 49 → 66/66(74.2% → 100%)입니다. text·글자 가중·글자 style 수치는 `hp:t` run
+  기준이라 그대로입니다. 빈 문단에서는 글자 모양·문단 나눔/병합·셀 style·표 구조를 열지 않고(첫 입력 뒤 일반 anchor로 바뀝니다),
+  빈 셀은 text 전용 셀로 둡니다.
+- **범위 밖**: 표만 든 문단(합성 8종의 `NO_TEXT_NODE` 8, 외부의 표 옆 `<hp:t/>` 문단 `NOT_LISTED_PARAGRAPH_HAS_TABLE` 19)은
+  표와 caret 위치를 함께 다뤄야 해서 이번에 열지 않았습니다.
 
 ## 외부 fixture category별 (기준선)
 
@@ -99,9 +121,9 @@ page-numbering 66.7% → 100%, header-footer 0% → 33.3%, equations·ruby-text�
 2. **(반영됨, 쪽을 넘어 나뉜 셀 조각은 계속 읽기 전용) 글자 기준 최대 단일 해제는 셀 text 조건 분리**: `tableContexts`의 병합·run 1개 조건은
    구조 편집용인데 text 입력까지 막습니다. text용 anchor만 풀면 patch 수정 없이 13 run·40자,
    글자 가중 89.3% → 92.8%, 표 셀 68.2% → 74.2%입니다(시험 적용으로 확인). **첫 해제로 권장**합니다.
-3. **style은 표 셀 차단 하나가 절반을 막음**: capability와 `locateTextStyleContext`의 `hs:sec`
+3. **(반영됨, 2026-10-06) style은 표 셀 차단 하나가 절반을 막음**: capability와 `locateTextStyleContext`의 `hs:sec`
    조건을 셀 문단으로 넓히면 글자 style 45.0% → 최대 73.9%(+107 run)입니다.
 4. **글상자·각주·필드는 decoder 범위 문제**: 글자 기준 최대 손실(글상자 53자)이지만 decoder·
    layout·anchor 모델을 함께 바꿔야 하므로 tree 모델의 "subList 일반화" 단계에서 다룹니다.
-5. **빈 run·빈 셀(`NO_TEXT_NODE` 46 문단·17 셀)**: caret을 둘 `hp:t`가 없어 입력 자체가 불가합니다.
+5. **(반영됨, 2026-10-06, 표만 든 문단 제외) 빈 run·빈 셀(`NO_TEXT_NODE` 46 문단·17 셀)**: caret을 둘 `hp:t`가 없어 입력 자체가 불가합니다.
    tree 모델에서 "빈 run에 text 삽입" 연산을 1급으로 두어야 양식 문서를 채울 수 있습니다.

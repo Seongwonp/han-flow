@@ -1,7 +1,15 @@
 import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { listHwpxTextAnchors, listHwpxTextOrdinals } from '../../src/core/editing/text_patch'
+import {
+  listHwpxEmptyParagraphAnchors,
+  listHwpxTextAnchors,
+  listHwpxTextOrdinals
+} from '../../src/core/editing/text_patch'
+import { emptyParagraphAnchorId } from '../../src/core/editing/empty_paragraph_anchor'
+import { findSourceElements, parseSourceTree } from '../../src/core/editing/source_tree'
+import { decodeViewerDocument, emptyParagraphCaret } from '../../src/core/parser/viewer_decoder'
+import { ViewerParagraph } from '../../src/core/document/viewer_document'
 import { forgetHwpxTextTree } from '../../src/core/editing/text_patch'
 import { iterateXmlTokens } from '../../src/core/editing/xml_scan'
 import { OrderedXmlNode, walkOrderedXml } from '../../src/core/parser/ordered_xml'
@@ -115,6 +123,63 @@ describe('hp:t ordinal 교차 parser 일치', () => {
     },
     60_000
   )
+
+  let emptyParagraphAnchors = 0
+  test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
+    '%s: 빈 문단 합성 anchor의 hp:p ordinal·대상·글자 모양이 decoder와 편집 코어에서 같다',
+    async (_id, fixture) => {
+      const sourcePackage = await HwpxSourcePackage.open(fixturePath(fixture))
+      const index = await sourcePackage.index()
+      const headerNodes = walkOrderedXml(await sourcePackage.readOrderedXml(index.headerPath))
+      const styleCharacterIds = Object.fromEntries(
+        headerNodes.filter((node) => node.name === 'hh:style').map((node) => [node.attributes.id, node.attributes.charPrIDRef])
+      )
+      const document = await decodeViewerDocument(sourcePackage)
+      const decoded = new Map<string, string>()
+      const visit = (paragraph: ViewerParagraph): void => {
+        for (const item of paragraph.content) {
+          if (item.type === 'text' && item.sourceAnchor?.textNodeId.endsWith(':empty')) {
+            decoded.set(item.sourceAnchor.textNodeId, item.charStyleId)
+          }
+          if (item.type === 'table') item.rows.forEach((row) => row.cells.forEach((cell) => cell.paragraphs.forEach(visit)))
+        }
+      }
+      document.sections.forEach((section) => {
+        section.blocks.forEach(visit)
+        ;[...section.headers, ...section.footers].forEach((control) => control.paragraphs.forEach(visit))
+      })
+      const core = new Map<string, string>()
+      for (const sectionPath of index.sectionPaths) {
+        const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
+        const viewerParagraphs = walkOrderedXml(await sourcePackage.readOrderedXml(sectionPath)).filter((node) => node.name === 'hp:p')
+        // 세 parser가 같은 hp:p 순서 번호를 낸다.
+        expect(viewerParagraphs.map((node) => node.sourceParagraphOrdinal)).toEqual(
+          findSourceElements(parseSourceTree(xml), 'hp:p').map((_element, ordinal) => ordinal)
+        )
+        expect(viewerParagraphs.length).toBe(
+          [...iterateXmlTokens(xml)].filter((token) => token.name === 'hp:p' && token.kind !== 'close').length
+        )
+        const viewerEmpty = new Map(viewerParagraphs.flatMap((node) => {
+          const caret = emptyParagraphCaret(node, styleCharacterIds)
+          return caret ? [[emptyParagraphAnchorId(sectionPath, node.sourceParagraphOrdinal!), caret.charStyleId] as const] : []
+        }))
+        const anchors = listHwpxEmptyParagraphAnchors(sourcePackage, sectionPath)
+        expect(new Map(anchors.map((anchor) => [anchor.textNodeId, anchor.charStyleId]))).toEqual(viewerEmpty)
+        anchors.forEach((anchor) => core.set(anchor.textNodeId, anchor.charStyleId))
+        // 합성 anchor는 hp:t anchor와 겹치지 않는다.
+        const textIds = new Set(listHwpxTextAnchors(sourcePackage, sectionPath).map((anchor) => anchor.textNodeId))
+        expect(anchors.some((anchor) => textIds.has(anchor.textNodeId))).toBe(false)
+      }
+      // decoder가 화면에 내놓은 합성 anchor(본문·표 셀·머리말·꼬리말)는 모두 편집 코어 목록에 같은 글자 모양으로 있다.
+      for (const [id, charStyleId] of decoded) expect(core.get(id)).toBe(charStyleId)
+      emptyParagraphAnchors += decoded.size
+    },
+    60_000
+  )
+
+  test('공개 corpus에 decoder가 내놓는 빈 문단 합성 anchor가 있다', () => {
+    expect(emptyParagraphAnchors).toBeGreaterThan(40)
+  })
 
   test('external corpus의 자기 닫힘 <hp:t/>도 비교 대상에 들어 있다', () => {
     expect(selfClosingAnchors).toBeGreaterThan(0)

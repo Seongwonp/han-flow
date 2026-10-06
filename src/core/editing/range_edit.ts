@@ -5,6 +5,7 @@ import {
   EditorSelection,
   normalizeEditorSelection
 } from './selection'
+import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
 import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
 import {
   planReplaceParagraphSelection,
@@ -31,6 +32,15 @@ export function planReplaceSelection(
     }
   }
   const normalized = normalizeEditorSelection(sourcePackage, selection)
+  if (isEmptyParagraphAnchorId(normalized.start.textNodeId)) {
+    // 빈 문단 caret: 첫 입력이 `hp:t`를 만들고, transaction이 selectionAfter를 새 `hp:t` anchor로 옮긴다.
+    const textNodeId = normalized.start.textNodeId
+    return {
+      commands: [{ type: 'replace-text', sectionPath: selection.sectionPath, textNodeId, from: 0, to: 0, insert }],
+      selectionAfter: createEditorSelection(selection.sectionPath, textNodeId, insert.length),
+      affectedTextNodeIds: [textNodeId]
+    }
+  }
   const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
   const startIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.start.textNodeId)
   const endIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.end.textNodeId)

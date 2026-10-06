@@ -81,6 +81,9 @@ describe('renderer 편집 오류 안내', () => {
     expect(editingCapabilityStatus('문단 나눔·병합', 'TABLE_CELL_STRUCTURE')).toBe(
       '현재 선택한 본문·표 셀 구조에는 문단 나눔·병합을 적용할 수 없습니다.'
     )
+    expect(editingCapabilityStatus('글자 모양', 'EMPTY_PARAGRAPH')).toBe(
+      '빈 문단에는 글자를 먼저 입력한 뒤 글자 모양을 적용할 수 있습니다.'
+    )
     expect(editingSelectionProjectionStatus('COLLAPSED')).toContain('남아 있는 위치로 이동')
     expect(editingSelectionProjectionStatus('CLEARED')).toContain('다시 선택')
     expect(editingSelectionProjectionStatus('CURRENT')).toBeNull()

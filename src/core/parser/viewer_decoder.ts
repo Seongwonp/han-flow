@@ -1,5 +1,10 @@
 import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
+import {
+  EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
+  EMPTY_PARAGRAPH_RUN_CONTROLS,
+  emptyParagraphAnchorId
+} from '../editing/empty_paragraph_anchor'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
 
@@ -32,7 +37,47 @@ export interface ViewerDecodeOptions {
   resourcePaths?: string[]
 }
 
-function decodeParagraph(node: OrderedXmlNode, id: string, sectionPath?: string): ViewerParagraph {
+/** 문단 style id → 글자 모양 id(`hh:style`의 `charPrIDRef`). run이 없는 빈 문단의 첫 글자 모양에 쓴다. */
+export type ParagraphStyleCharacterIds = Readonly<Record<string, string>>
+
+const isWhitespaceNode = (node: OrderedXmlNode): boolean => node.name === '#text' && /^[ \t\r\n]*$/.test(node.text ?? '')
+
+/**
+ * `hp:t`가 없는 빈 문단의 합성 caret 글자 모양. 빈 문단이 아니면 undefined.
+ * 편집 코어(`text_patch.ts`의 `emptyParagraphTarget`)와 같은 규칙이다: 문단 자식은 `hp:run`·`hp:linesegarray`·공백,
+ * run 자식은 `hp:secPr`·`hp:ctrl`(필드 시작·끝 제외)·공백뿐이어야 하고, 글자는 자식 element가 없는 마지막 run 또는 마지막
+ * run에 들어간다. run이 없으면 문단 style의 `charPrIDRef`를 쓰고, style이 없으면 빈 문단으로 보지 않는다.
+ */
+export function emptyParagraphCaret(
+  node: OrderedXmlNode,
+  styleCharacterIds: ParagraphStyleCharacterIds
+): { charStyleId: string } | undefined {
+  if (node.name !== 'hp:p') return undefined
+  if (!node.children.every((item) => item.name === 'hp:run' || item.name === 'hp:linesegarray' || isWhitespaceNode(item))) {
+    return undefined
+  }
+  const runs = children(node, 'hp:run')
+  const controlsOnly = runs.every((run) => run.children.every((item) =>
+    isWhitespaceNode(item) ||
+    (EMPTY_PARAGRAPH_RUN_CONTROLS.has(item.name) &&
+      !(item.name === 'hp:ctrl' && walkOrderedXml(item.children).some((nested) => EMPTY_PARAGRAPH_BLOCKING_CONTROLS.has(nested.name))))
+  ))
+  if (!controlsOnly) return undefined
+  if (runs.length) {
+    const plain = runs.filter((run) => run.children.every((item) => item.name === '#text'))
+    const run = plain[plain.length - 1] ?? runs[runs.length - 1]
+    return { charStyleId: run.attributes.charPrIDRef ?? '0' }
+  }
+  const charStyleId = styleCharacterIds[node.attributes.styleIDRef ?? '0']
+  return charStyleId === undefined ? undefined : { charStyleId }
+}
+
+function decodeParagraph(
+  node: OrderedXmlNode,
+  id: string,
+  sectionPath: string | undefined,
+  styleCharacterIds: ParagraphStyleCharacterIds
+): ViewerParagraph {
   const content: ViewerContent[] = []
   children(node, 'hp:run').forEach((run) => {
     const charStyleId = run.attributes.charPrIDRef ?? '0'
@@ -53,12 +98,24 @@ function decodeParagraph(node: OrderedXmlNode, id: string, sectionPath?: string)
               : undefined
         })
       }
-      if (item.name === 'hp:tbl') content.push(decodeTable(item, `${id}:tbl${content.length}`, sectionPath))
+      if (item.name === 'hp:tbl') content.push(decodeTable(item, `${id}:tbl${content.length}`, sectionPath, styleCharacterIds))
       if (item.name === 'hp:pic') content.push(decodeImage(item))
       if (item.name === 'hp:tab') content.push({ type: 'text', text: '\t', charStyleId })
       if (item.name === 'hp:lineBreak') content.push({ type: 'text', text: '\n', charStyleId })
     })
   })
+  // 빈 문단에는 첫 입력을 받을 빈 text와 합성 anchor를 둔다(`empty_paragraph_anchor.ts`).
+  const emptyCaret = sectionPath !== undefined && node.sourceParagraphOrdinal !== undefined
+    ? emptyParagraphCaret(node, styleCharacterIds)
+    : undefined
+  if (emptyCaret) {
+    content.push({
+      type: 'text',
+      text: '',
+      charStyleId: emptyCaret.charStyleId,
+      sourceAnchor: { sectionPath: sectionPath!, textNodeId: emptyParagraphAnchorId(sectionPath!, node.sourceParagraphOrdinal!) }
+    })
+  }
   const lineSegments = children(child(node, 'hp:linesegarray') ?? node, 'hp:lineseg')
   const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
   const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
@@ -86,7 +143,12 @@ function decodeImage(node: OrderedXmlNode): ViewerImage {
   return { type: 'image', resourceId: resource?.attributes.binaryItemIDRef, width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined }
 }
 
-function decodeTable(node: OrderedXmlNode, id: string, sectionPath?: string): ViewerTable {
+function decodeTable(
+  node: OrderedXmlNode,
+  id: string,
+  sectionPath: string | undefined,
+  styleCharacterIds: ParagraphStyleCharacterIds
+): ViewerTable {
   const size = child(node, 'hp:sz')
   const rows = children(node, 'hp:tr').map((row, rowIndex) => ({
     cells: children(row, 'hp:tc').map((cell, cellIndex): ViewerTableCell => {
@@ -110,7 +172,7 @@ function decodeTable(node: OrderedXmlNode, id: string, sectionPath?: string): Vi
         sourceCellId: `${id}:r${actualRow}c${column}`,
         paragraphs: subList
           ? children(subList, 'hp:p').map((p, index) =>
-              decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`, sectionPath)
+              decodeParagraph(p, `${id}:r${actualRow}c${column}:p${index}`, sectionPath, styleCharacterIds)
             )
           : []
       }
@@ -195,7 +257,8 @@ function decodeHeaderFooters(
   nodes: OrderedXmlNode[],
   name: 'hp:header' | 'hp:footer',
   sectionIndex: number,
-  sectionPath: string
+  sectionPath: string,
+  styleCharacterIds: ParagraphStyleCharacterIds
 ): ViewerHeaderFooter[] {
   return walkOrderedXml(nodes).filter((node) => node.name === name).map((node, controlIndex) => {
     const subList = child(node, 'hp:subList')
@@ -205,7 +268,7 @@ function decodeHeaderFooters(
       applyPageType: node.attributes.applyPageType ?? 'BOTH',
       paragraphs: subList
         ? children(subList, 'hp:p').map((paragraph, index) =>
-            decodeParagraph(paragraph, `s${sectionIndex}:${kind}${controlIndex}:p${index}`, sectionPath)
+            decodeParagraph(paragraph, `s${sectionIndex}:${kind}${controlIndex}:p${index}`, sectionPath, styleCharacterIds)
           )
         : []
     }
@@ -271,7 +334,12 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
       bottom: border(child(style, 'hh:bottomBorder'))
     }
   })
-  return { fonts, charStyles, paraStyles, cellStyles }
+  const styleCharacterIds: Record<string, string> = {}
+  all.filter((node) => node.name === 'hh:style').forEach((style) => {
+    const { id, charPrIDRef } = style.attributes
+    if (id !== undefined && charPrIDRef !== undefined && !(id in styleCharacterIds)) styleCharacterIds[id] = charPrIDRef
+  })
+  return { fonts, charStyles, paraStyles, cellStyles, styleCharacterIds }
 }
 
 function applyParagraphMarkers(paragraphs: ViewerParagraph[], paraStyles: Record<string, ViewerParaStyle>): ViewerParagraph[] {
@@ -298,7 +366,7 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
   const index = knownIndex ?? await reader.index()
   const sectionPaths = options.sectionPaths ?? index.sectionPaths
   const resourcePaths = options.resourcePaths ?? index.resourcePaths
-  const header = decodeHeader(await reader.readOrderedXml(index.headerPath))
+  const { styleCharacterIds, ...header } = decodeHeader(await reader.readOrderedXml(index.headerPath))
   const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
   const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
   const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
@@ -311,17 +379,17 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
       id: `section-${sectionIndex}`,
       blocks: root
         ? applyParagraphMarkers(
-            children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, path)),
+            children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, path, styleCharacterIds)),
             header.paraStyles
           )
         : [],
       pageNumber: decodePageNumber(nodes),
       columnLayout: columnResults[position].columnLayout,
-      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, path).map((control) => ({
+      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, path, styleCharacterIds).map((control) => ({
         ...control,
         paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
       })),
-      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex, path).map((control) => ({
+      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex, path, styleCharacterIds).map((control) => ({
         ...control,
         paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
       }))

@@ -28,6 +28,7 @@ function sectionTexts(path) {
 
 const COUNT_KEYS = [
   'textRuns', 'anchored', 'textEditable', 'charStyleEditable', 'paragraphs', 'paraStyleEditable',
+  'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
   'characters', 'editableCharacters'
 ]
@@ -52,6 +53,9 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       charStyleEditable: 4,
       paragraphs: 12,
       paraStyleEditable: 4,
+      // 표만 든 첫 문단은 hp:t가 없지만 빈 문단(합성 anchor 대상)이 아니다.
+      noTextParagraphs: 1,
+      noTextParagraphsEditable: 0,
       tableCells: 4,
       tableCellsEditable: 4,
       tableCellStyleEditable: 3,
@@ -66,6 +70,7 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 1
     })
     assert.deepEqual(baseline.rejectionReasons.charStyle, {})
+    assert.equal(baseline.rejectionReasons.paraStyle.NO_TEXT_NODE, 1)
     assert.deepEqual(baseline.nonEditableCharactersByReason, {
       NOT_LISTED_HEADER_FOOTER: 30,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 7
@@ -78,6 +83,8 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       charStyleEditable: 4,
       paragraphs: 5,
       paraStyleEditable: 5,
+      noTextParagraphs: 0,
+      noTextParagraphsEditable: 0,
       tableCells: 0,
       tableCellsEditable: 0,
       tableCellStyleEditable: 0,
@@ -100,6 +107,40 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
     for (const text of texts) assert.ok(!serialized.includes(text), '보고서에 hp:t 본문이 들어가면 안 됩니다.')
     assert.ok(!serialized.includes(directory))
     assert.ok(!serialized.includes('Contents/section'))
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('편집 coverage는 hp:t 없는 빈 문단·셀을 합성 anchor 첫 입력으로 센다', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'han-flow-editing-coverage-empty-'))
+  try {
+    const path = prepareCorpusFixture(await manifestFixture('ext-pyhwpx-fill-image'), {
+      generator: loadGenerator(),
+      directory,
+      publicRoot: publicFixtureRoot
+    })
+    const metrics = await measureEditingCoverage(path)
+    // run 없는 자기 닫힘 `<hp:p/>` 7개(본문 1, 표 셀 6)가 모두 첫 입력·문단 모양을 받는다. 표 옆 `<hp:t/>` 문단은 범위 밖이다.
+    assert.deepEqual(pick(metrics), {
+      textRuns: 1,
+      anchored: 1,
+      textEditable: 0,
+      charStyleEditable: 0,
+      paragraphs: 8,
+      paraStyleEditable: 7,
+      noTextParagraphs: 7,
+      noTextParagraphsEditable: 7,
+      tableCells: 6,
+      tableCellsEditable: 6,
+      tableCellStyleEditable: 0,
+      tables: 1,
+      tableStructureEditable: 0,
+      characters: 0,
+      editableCharacters: 0
+    })
+    assert.deepEqual(metrics.rejectionReasons.tableCell, {})
+    assert.deepEqual(metrics.rejectionReasons.text, { NOT_LISTED_PARAGRAPH_HAS_TABLE: 1 })
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

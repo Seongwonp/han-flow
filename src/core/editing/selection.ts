@@ -1,5 +1,6 @@
 import { HwpxSourcePackage } from '../parser/source_package'
-import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
+import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { HwpxEditConflictError, listHwpxTextAnchors, resolveHwpxCaretAnchor } from './text_patch'
 
 export interface EditorSelection {
   sectionPath: string
@@ -70,6 +71,24 @@ export function normalizeEditorSelection(
   sourcePackage: HwpxSourcePackage,
   selection: EditorSelection
 ): NormalizedEditorSelection {
+  if (
+    isEmptyParagraphAnchorId(selection.anchorTextNodeId) ||
+    isEmptyParagraphAnchorId(selection.focusTextNodeId)
+  ) {
+    // 빈 문단 합성 anchor는 글자가 없으므로 같은 anchor의 0 위치 caret만 받는다.
+    if (
+      selection.anchorTextNodeId !== selection.focusTextNodeId ||
+      selection.anchorOffset !== 0 ||
+      selection.focusOffset !== 0
+    ) {
+      throw new HwpxEditConflictError('빈 문단 selection은 그 문단의 caret만 지원합니다.')
+    }
+    if (!resolveHwpxCaretAnchor(sourcePackage, selection.sectionPath, selection.anchorTextNodeId)) {
+      throw new HwpxEditConflictError(`selection anchor를 찾을 수 없습니다: ${selection.anchorTextNodeId}`)
+    }
+    const point = { textNodeId: selection.anchorTextNodeId, offset: 0 }
+    return { sectionPath: selection.sectionPath, start: point, end: { ...point }, backward: false }
+  }
   const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
   const anchorIndex = anchors.findIndex(
     (candidate) => candidate.textNodeId === selection.anchorTextNodeId

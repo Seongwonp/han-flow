@@ -63,6 +63,8 @@ export function editingCapabilityStatus(
       return `여러 문단에 걸친 ${action}은 아직 지원하지 않습니다.`
     case 'TABLE_CELL_STRUCTURE':
       return `현재 선택한 본문·표 셀 구조에는 ${action}을 적용할 수 없습니다.`
+    case 'EMPTY_PARAGRAPH':
+      return `빈 문단에는 글자를 먼저 입력한 뒤 ${action}을 적용할 수 있습니다.`
     default:
       return undefined
   }

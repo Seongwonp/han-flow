@@ -5,6 +5,7 @@ import {
   ViewerTableCell,
   ViewerText
 } from '../document/viewer_document'
+import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
 import { EditorSelection } from './selection'
 import { isSurrogateBoundarySafe } from './xml_scan'
 
@@ -16,6 +17,7 @@ export type EditingCapabilityReason =
   | 'MULTI_RUN_SELECTION'
   | 'MULTI_PARAGRAPH_SELECTION'
   | 'TABLE_CELL_STRUCTURE'
+  | 'EMPTY_PARAGRAPH'
 
 export interface EditingCapabilityState {
   available: boolean
@@ -37,6 +39,11 @@ export interface EditingAnchorContext {
    * false면 병합·머리글 셀이거나 문단에 run이 여러 개인 셀이라 text 입력·삭제·치환과 글자·문단 모양만 허용한다.
    */
   cellStructureEditable?: boolean
+  /**
+   * `hp:t`가 없는 빈 문단의 합성 anchor(`#hp:p:N:empty`)이면 true. text 입력과 문단 모양만 허용하고, 첫 입력이
+   * `hp:t`를 만든 뒤에는 일반 anchor로 바뀐다.
+   */
+  emptyParagraph?: boolean
 }
 
 export interface EditingCapabilities {
@@ -84,7 +91,8 @@ function paragraphContexts(
     paragraphId: paragraph.id,
     rangeScope,
     structure,
-    ...(cell ? { cellStyleId: cell.cellStyleId, cellStructureEditable: cell.cellStructureEditable } : {})
+    ...(cell ? { cellStyleId: cell.cellStyleId, cellStructureEditable: cell.cellStructureEditable } : {}),
+    ...(isEmptyParagraphAnchorId(text.sourceAnchor!.textNodeId) ? { emptyParagraph: true } : {})
   }))
 }
 
@@ -98,7 +106,8 @@ function isStructureEditableCell(cell: ViewerTableCell, paragraphTexts: Readonly
     cell.rowSpan === 1 &&
     cell.columnSpan === 1 &&
     paragraphTexts.length > 0 &&
-    paragraphTexts.every((texts) => texts?.length === 1)
+    // 빈 문단 합성 anchor가 있는 셀은 문단 나눔·행열 command가 쓸 `hp:t`가 없으므로 text 전용으로 둔다.
+    paragraphTexts.every((texts) => texts?.length === 1 && !isEmptyParagraphAnchorId(texts[0].sourceAnchor?.textNodeId))
   )
 }
 
@@ -147,8 +156,12 @@ export function listEditingAnchorContexts(document: ViewerDocument): EditingAnch
     if (!sectionPath) return []
     return section.blocks.flatMap((paragraph) => {
       const texts = editableTexts(paragraph)
+      // 빈 문단은 여러 문단 범위 치환에 끼지 않도록 문단마다 따로 scope를 둔다.
+      const topLevelScope = texts?.some((text) => isEmptyParagraphAnchorId(text.sourceAnchor?.textNodeId))
+        ? `${sectionPath}:empty-paragraph:${paragraph.id}`
+        : `${sectionPath}:top-level`
       const topLevel = texts
-        ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', `${sectionPath}:top-level`)
+        ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', topLevelScope)
         : []
       const nested = paragraph.content.flatMap((item) =>
         item.type === 'table' ? tableContexts(item, sectionPath) : []
@@ -266,26 +279,32 @@ export function editingCapabilities(
   const structuralCell = tableCell && anchor.cellStructureEditable === true && focus.cellStructureEditable === true
   const sameRun = anchor.textNodeId === focus.textNodeId
   const sameParagraph = anchor.paragraphId === focus.paragraphId
+  const emptyParagraph = anchor.emptyParagraph === true || focus.emptyParagraph === true
   return {
     selection: { available: true },
     text: { available: true },
     // 글자·문단 모양은 본문과 표 셀(병합·머리글 셀 포함) 모두 같은 run·문단 조건만 본다.
     // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
+    // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다.
     characterStyle: !topLevel && !tableCell
       ? unavailable('TABLE_CELL_STRUCTURE')
-      : !sameRun
-        ? unavailable('MULTI_RUN_SELECTION')
-        : { available: true },
+      : emptyParagraph
+        ? unavailable('EMPTY_PARAGRAPH')
+        : !sameRun
+          ? unavailable('MULTI_RUN_SELECTION')
+          : { available: true },
     paragraphStyle: !topLevel && !tableCell
       ? unavailable('TABLE_CELL_STRUCTURE')
       : !sameParagraph
         ? unavailable('MULTI_PARAGRAPH_SELECTION')
         : { available: true },
-    paragraphStructure: !topLevel && !structuralCell
-      ? unavailable('TABLE_CELL_STRUCTURE')
-      : !sameRun
-        ? unavailable('MULTI_RUN_SELECTION')
-        : { available: true },
+    paragraphStructure: emptyParagraph
+      ? unavailable('EMPTY_PARAGRAPH')
+      : !topLevel && !structuralCell
+        ? unavailable('TABLE_CELL_STRUCTURE')
+        : !sameRun
+          ? unavailable('MULTI_RUN_SELECTION')
+          : { available: true },
     cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },

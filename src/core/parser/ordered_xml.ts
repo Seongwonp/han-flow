@@ -7,6 +7,8 @@ export interface OrderedXmlNode {
   children: OrderedXmlNode[]
   text?: string
   sourceOrdinal?: number
+  /** `hp:p`의 section 안 문서 순서 번호(빈 문단 합성 anchor `#hp:p:N:empty`의 N). 편집 source tree와 같은 번호다. */
+  sourceParagraphOrdinal?: number
 }
 
 const parser = new XMLParser({
@@ -18,6 +20,7 @@ const parser = new XMLParser({
 
 interface ConvertContext {
   textOrdinal: number
+  paragraphOrdinal: number
 }
 
 function convert(entry: Record<string, unknown>, context: ConvertContext): OrderedXmlNode {
@@ -29,20 +32,22 @@ function convert(entry: Record<string, unknown>, context: ConvertContext): Order
   if (!name) throw new Error('이름이 없는 XML 노드입니다.')
   const rawChildren = entry[name]
   const sourceOrdinal = name === 'hp:t' ? context.textOrdinal++ : undefined
+  const sourceParagraphOrdinal = name === 'hp:p' ? context.paragraphOrdinal++ : undefined
   return {
     name,
     attributes: (entry[':@'] as Record<string, string> | undefined) ?? {},
     children: Array.isArray(rawChildren)
       ? rawChildren.map((child) => convert(child as Record<string, unknown>, context))
       : [],
-    sourceOrdinal
+    sourceOrdinal,
+    ...(sourceParagraphOrdinal !== undefined ? { sourceParagraphOrdinal } : {})
   }
 }
 
 export function parseOrderedXml(xml: Buffer | string): OrderedXmlNode[] {
   const validatedXml = validateXmlResourceBudget(xml)
   const parsed = parser.parse(validatedXml) as Record<string, unknown>[]
-  const context: ConvertContext = { textOrdinal: 0 }
+  const context: ConvertContext = { textOrdinal: 0, paragraphOrdinal: 0 }
   return parsed.map((entry) => convert(entry, context))
 }
 

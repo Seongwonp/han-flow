@@ -11,9 +11,11 @@
       "textEditable": 19889,
       "charStyleEditable": 19844,
       "paragraphs": 19980,
-      "paraStyleEditable": 19870,
+      "paraStyleEditable": 19914,
+      "noTextParagraphs": 54,
+      "noTextParagraphsEditable": 44,
       "tableCells": 95,
-      "tableCellsEditable": 78,
+      "tableCellsEditable": 95,
       "tableCellStyleEditable": 64,
       "tables": 26,
       "tableStructureEditable": 18,
@@ -83,11 +85,10 @@
           "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 19,
           "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 3,
           "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 19,
-          "NO_TEXT_NODE": 54
+          "EMPTY_PARAGRAPH: NOT_LISTED_HEADER_FOOTER": 1,
+          "NO_TEXT_NODE": 9
         },
-        "tableCell": {
-          "NO_TEXT_NODE": 17
-        },
+        "tableCell": {},
         "tableStructure": {
           "NO_SAFE_CELL_SELECTION": 3,
           "table_patch: 병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
@@ -97,11 +98,6 @@
         }
       },
       "topRejectionReasons": [
-        {
-          "stage": "paraStyle",
-          "reason": "NO_TEXT_NODE",
-          "count": 54
-        },
         {
           "stage": "charStyle",
           "reason": "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.",
@@ -128,11 +124,6 @@
           "count": 19
         },
         {
-          "stage": "tableCell",
-          "reason": "NO_TEXT_NODE",
-          "count": 17
-        },
-        {
           "stage": "anchor",
           "reason": "DECODER_SKIPS_TEXT_BOX",
           "count": 11
@@ -141,6 +132,11 @@
           "stage": "paraStyle",
           "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX",
           "count": 10
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "NO_TEXT_NODE",
+          "count": 9
         },
         {
           "stage": "paraStyle",
@@ -171,14 +167,20 @@
           "stage": "paraStyle",
           "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_FIELD_SUBLIST",
           "count": 2
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_SKIPS_FOOTNOTE_ENDNOTE",
+          "count": 2
         }
       ],
       "ratios": {
         "anchored": 0.9992,
         "textEditable": 0.9971,
         "charStyleEditable": 0.9949,
-        "paraStyleEditable": 0.9945,
-        "tableCellsEditable": 0.8211,
+        "paraStyleEditable": 0.9967,
+        "noTextParagraphsEditable": 0.8148,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0.6923,
         "characterWeighted": 0.9996
       }
@@ -191,6 +193,8 @@
       "charStyleEditable": 19554,
       "paragraphs": 19583,
       "paraStyleEditable": 19556,
+      "noTextParagraphs": 8,
+      "noTextParagraphsEditable": 0,
       "tableCells": 29,
       "tableCellsEditable": 29,
       "tableCellStyleEditable": 19,
@@ -296,6 +300,7 @@
         "textEditable": 0.999,
         "charStyleEditable": 0.9989,
         "paraStyleEditable": 0.9986,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0.7143,
         "characterWeighted": 0.9998
@@ -308,9 +313,11 @@
       "textEditable": 333,
       "charStyleEditable": 290,
       "paragraphs": 397,
-      "paraStyleEditable": 314,
+      "paraStyleEditable": 358,
+      "noTextParagraphs": 46,
+      "noTextParagraphsEditable": 44,
       "tableCells": 66,
-      "tableCellsEditable": 49,
+      "tableCellsEditable": 66,
       "tableCellStyleEditable": 45,
       "tables": 19,
       "tableStructureEditable": 13,
@@ -380,11 +387,10 @@
           "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 2,
           "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_IMAGE": 1,
           "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 19,
-          "NO_TEXT_NODE": 46
+          "EMPTY_PARAGRAPH: NOT_LISTED_HEADER_FOOTER": 1,
+          "NO_TEXT_NODE": 1
         },
-        "tableCell": {
-          "NO_TEXT_NODE": 17
-        },
+        "tableCell": {},
         "tableStructure": {
           "NO_SAFE_CELL_SELECTION": 3,
           "table_patch: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.": 1,
@@ -392,11 +398,6 @@
         }
       },
       "topRejectionReasons": [
-        {
-          "stage": "paraStyle",
-          "reason": "NO_TEXT_NODE",
-          "count": 46
-        },
         {
           "stage": "charStyle",
           "reason": "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.",
@@ -411,11 +412,6 @@
           "stage": "text",
           "reason": "NOT_LISTED_PARAGRAPH_HAS_TABLE",
           "count": 19
-        },
-        {
-          "stage": "tableCell",
-          "reason": "NO_TEXT_NODE",
-          "count": 17
         },
         {
           "stage": "anchor",
@@ -466,14 +462,25 @@
           "stage": "text",
           "reason": "NOT_LISTED_HEADER_FOOTER",
           "count": 2
+        },
+        {
+          "stage": "anchor",
+          "reason": "DECODER_MIXED_INLINE_CONTENT",
+          "count": 1
+        },
+        {
+          "stage": "paraStyle",
+          "reason": "BLOCKED_BY_TEXT: DECODER_MIXED_INLINE_CONTENT",
+          "count": 1
         }
       ],
       "ratios": {
         "anchored": 0.9569,
         "textEditable": 0.8976,
         "charStyleEditable": 0.7817,
-        "paraStyleEditable": 0.7909,
-        "tableCellsEditable": 0.7424,
+        "paraStyleEditable": 0.9018,
+        "noTextParagraphsEditable": 0.9565,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0.6842,
         "characterWeighted": 0.9276
       }
@@ -487,9 +494,11 @@
       "textEditable": 0,
       "charStyleEditable": 0,
       "paragraphs": 8,
-      "paraStyleEditable": 0,
+      "paraStyleEditable": 7,
+      "noTextParagraphs": 7,
+      "noTextParagraphsEditable": 7,
       "tableCells": 6,
-      "tableCellsEditable": 0,
+      "tableCellsEditable": 6,
       "tableCellStyleEditable": 0,
       "tables": 1,
       "tableStructureEditable": 0,
@@ -499,8 +508,9 @@
         "anchored": 1,
         "textEditable": 0,
         "charStyleEditable": 0,
-        "paraStyleEditable": 0,
-        "tableCellsEditable": 0,
+        "paraStyleEditable": 0.875,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": null
       }
@@ -513,6 +523,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 0,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -525,6 +537,7 @@
         "textEditable": 0,
         "charStyleEditable": 0,
         "paraStyleEditable": 0,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0
@@ -538,6 +551,8 @@
       "charStyleEditable": 2,
       "paragraphs": 3,
       "paraStyleEditable": 2,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -550,6 +565,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.3333,
         "paraStyleEditable": 0.6667,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -563,6 +579,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -575,6 +593,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -588,6 +607,8 @@
       "charStyleEditable": 2,
       "paragraphs": 5,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -600,6 +621,7 @@
         "textEditable": 0.6667,
         "charStyleEditable": 0.3333,
         "paraStyleEditable": 0.6,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.6364
@@ -613,6 +635,8 @@
       "charStyleEditable": 11,
       "paragraphs": 32,
       "paraStyleEditable": 23,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 3,
       "tableCellsEditable": 3,
       "tableCellStyleEditable": 2,
@@ -625,6 +649,7 @@
         "textEditable": 0.7805,
         "charStyleEditable": 0.2683,
         "paraStyleEditable": 0.7188,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0.6667,
         "characterWeighted": 0.7586
@@ -638,6 +663,8 @@
       "charStyleEditable": 0,
       "paragraphs": 4,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -650,6 +677,7 @@
         "textEditable": 0.3333,
         "charStyleEditable": 0,
         "paraStyleEditable": 0.25,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0
@@ -663,6 +691,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 0,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -675,6 +705,7 @@
         "textEditable": 0,
         "charStyleEditable": 0,
         "paraStyleEditable": 0,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -688,6 +719,8 @@
       "charStyleEditable": 0,
       "paragraphs": 4,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -700,6 +733,7 @@
         "textEditable": 0.5,
         "charStyleEditable": 0,
         "paraStyleEditable": 0.25,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.7815
@@ -712,7 +746,9 @@
       "textEditable": 27,
       "charStyleEditable": 26,
       "paragraphs": 34,
-      "paraStyleEditable": 27,
+      "paraStyleEditable": 34,
+      "noTextParagraphs": 7,
+      "noTextParagraphsEditable": 7,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -724,7 +760,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 0.963,
-        "paraStyleEditable": 0.7941,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -738,6 +775,8 @@
       "charStyleEditable": 1,
       "paragraphs": 5,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -750,6 +789,7 @@
         "textEditable": 0.7143,
         "charStyleEditable": 0.1429,
         "paraStyleEditable": 0.6,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.7273
@@ -762,7 +802,9 @@
       "textEditable": 126,
       "charStyleEditable": 125,
       "paragraphs": 127,
-      "paraStyleEditable": 126,
+      "paraStyleEditable": 127,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -774,7 +816,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 0.9921,
-        "paraStyleEditable": 0.9921,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -788,6 +831,8 @@
       "charStyleEditable": 2,
       "paragraphs": 3,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -800,6 +845,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.6667,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -813,6 +859,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -825,6 +873,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -837,7 +886,9 @@
       "textEditable": 9,
       "charStyleEditable": 9,
       "paragraphs": 26,
-      "paraStyleEditable": 9,
+      "paraStyleEditable": 18,
+      "noTextParagraphs": 9,
+      "noTextParagraphsEditable": 9,
       "tableCells": 8,
       "tableCellsEditable": 8,
       "tableCellStyleEditable": 8,
@@ -849,7 +900,8 @@
         "anchored": 1,
         "textEditable": 0.5294,
         "charStyleEditable": 0.5294,
-        "paraStyleEditable": 0.3462,
+        "paraStyleEditable": 0.6923,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -863,6 +915,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -875,6 +929,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -887,9 +942,11 @@
       "textEditable": 24,
       "charStyleEditable": 22,
       "paragraphs": 33,
-      "paraStyleEditable": 23,
+      "paraStyleEditable": 31,
+      "noTextParagraphs": 8,
+      "noTextParagraphsEditable": 8,
       "tableCells": 24,
-      "tableCellsEditable": 21,
+      "tableCellsEditable": 24,
       "tableCellStyleEditable": 21,
       "tables": 1,
       "tableStructureEditable": 0,
@@ -899,8 +956,9 @@
         "anchored": 0.9259,
         "textEditable": 0.8889,
         "charStyleEditable": 0.8148,
-        "paraStyleEditable": 0.697,
-        "tableCellsEditable": 0.875,
+        "paraStyleEditable": 0.9394,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": 0.8889
       }
@@ -913,6 +971,8 @@
       "charStyleEditable": 72,
       "paragraphs": 74,
       "paraStyleEditable": 72,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 7,
       "tableCellsEditable": 7,
       "tableCellStyleEditable": 7,
@@ -925,6 +985,7 @@
         "textEditable": 0.973,
         "charStyleEditable": 0.973,
         "paraStyleEditable": 0.973,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -937,9 +998,11 @@
       "textEditable": 18,
       "charStyleEditable": 18,
       "paragraphs": 34,
-      "paraStyleEditable": 18,
+      "paraStyleEditable": 30,
+      "noTextParagraphs": 12,
+      "noTextParagraphsEditable": 12,
       "tableCells": 18,
-      "tableCellsEditable": 10,
+      "tableCellsEditable": 18,
       "tableCellStyleEditable": 7,
       "tables": 4,
       "tableStructureEditable": 1,
@@ -949,8 +1012,9 @@
         "anchored": 1,
         "textEditable": 0.8182,
         "charStyleEditable": 0.8182,
-        "paraStyleEditable": 0.5294,
-        "tableCellsEditable": 0.5556,
+        "paraStyleEditable": 0.8824,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0.25,
         "characterWeighted": 1
       }
@@ -968,6 +1032,8 @@
       "charStyleEditable": 4,
       "paragraphs": 12,
       "paraStyleEditable": 4,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 4,
       "tableCellsEditable": 4,
       "tableCellStyleEditable": 3,
@@ -1026,6 +1092,7 @@
         "textEditable": 0.3636,
         "charStyleEditable": 0.3636,
         "paraStyleEditable": 0.3333,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 0.2885
@@ -1042,6 +1109,8 @@
       "charStyleEditable": 17,
       "paragraphs": 19,
       "paraStyleEditable": 17,
+      "noTextParagraphs": 2,
+      "noTextParagraphsEditable": 0,
       "tableCells": 3,
       "tableCellsEditable": 3,
       "tableCellStyleEditable": 2,
@@ -1094,6 +1163,7 @@
         "textEditable": 1,
         "charStyleEditable": 1,
         "paraStyleEditable": 0.8947,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0.5,
         "characterWeighted": 1
@@ -1110,6 +1180,8 @@
       "charStyleEditable": 5,
       "paragraphs": 7,
       "paraStyleEditable": 5,
+      "noTextParagraphs": 2,
+      "noTextParagraphsEditable": 0,
       "tableCells": 5,
       "tableCellsEditable": 5,
       "tableCellStyleEditable": 2,
@@ -1162,6 +1234,7 @@
         "textEditable": 1,
         "charStyleEditable": 1,
         "paraStyleEditable": 0.7143,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": 1
@@ -1178,6 +1251,8 @@
       "charStyleEditable": 9,
       "paragraphs": 10,
       "paraStyleEditable": 9,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 9,
       "tableCellsEditable": 9,
       "tableCellStyleEditable": 6,
@@ -1228,6 +1303,7 @@
         "textEditable": 1,
         "charStyleEditable": 1,
         "paraStyleEditable": 0.9,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -1244,6 +1320,8 @@
       "charStyleEditable": 4,
       "paragraphs": 5,
       "paraStyleEditable": 5,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1294,6 +1372,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.8,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -1310,6 +1389,8 @@
       "charStyleEditable": 6,
       "paragraphs": 7,
       "paraStyleEditable": 7,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1360,6 +1441,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.8571,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -1376,6 +1458,8 @@
       "charStyleEditable": 5,
       "paragraphs": 11,
       "paraStyleEditable": 5,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 4,
       "tableCellsEditable": 4,
       "tableCellStyleEditable": 3,
@@ -1431,6 +1515,7 @@
         "textEditable": 0.5,
         "charStyleEditable": 0.5,
         "paraStyleEditable": 0.4545,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 0.3947
@@ -1447,6 +1532,8 @@
       "charStyleEditable": 19504,
       "paragraphs": 19512,
       "paraStyleEditable": 19504,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 4,
       "tableCellsEditable": 4,
       "tableCellStyleEditable": 3,
@@ -1505,6 +1592,7 @@
         "textEditable": 0.9996,
         "charStyleEditable": 0.9996,
         "paraStyleEditable": 0.9996,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 0.9999
@@ -1526,9 +1614,11 @@
       "textEditable": 24,
       "charStyleEditable": 22,
       "paragraphs": 33,
-      "paraStyleEditable": 23,
+      "paraStyleEditable": 31,
+      "noTextParagraphs": 8,
+      "noTextParagraphsEditable": 8,
       "tableCells": 24,
-      "tableCellsEditable": 21,
+      "tableCellsEditable": 24,
       "tableCellStyleEditable": 21,
       "tables": 1,
       "tableStructureEditable": 0,
@@ -1577,12 +1667,9 @@
         },
         "paraStyle": {
           "BLOCKED_BY_TEXT: DECODER_SKIPS_TEXT_BOX": 1,
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 8
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
-        "tableCell": {
-          "NO_TEXT_NODE": 3
-        },
+        "tableCell": {},
         "tableStructure": {
           "table_patch: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.": 1
         }
@@ -1591,8 +1678,9 @@
         "anchored": 0.9259,
         "textEditable": 0.8889,
         "charStyleEditable": 0.8148,
-        "paraStyleEditable": 0.697,
-        "tableCellsEditable": 0.875,
+        "paraStyleEditable": 0.9394,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": 0.8889
       }
@@ -1607,7 +1695,9 @@
       "textEditable": 21,
       "charStyleEditable": 20,
       "paragraphs": 26,
-      "paraStyleEditable": 21,
+      "paraStyleEditable": 26,
+      "noTextParagraphs": 5,
+      "noTextParagraphsEditable": 5,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1649,9 +1739,7 @@
         "charStyle": {
           "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
         },
-        "paraStyle": {
-          "NO_TEXT_NODE": 5
-        },
+        "paraStyle": {},
         "tableCell": {},
         "tableStructure": {}
       },
@@ -1659,7 +1747,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 0.9524,
-        "paraStyleEditable": 0.8077,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -1676,6 +1765,8 @@
       "charStyleEditable": 0,
       "paragraphs": 4,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1732,6 +1823,7 @@
         "textEditable": 0.5,
         "charStyleEditable": 0,
         "paraStyleEditable": 0.25,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.7815
@@ -1747,7 +1839,9 @@
       "textEditable": 126,
       "charStyleEditable": 125,
       "paragraphs": 127,
-      "paraStyleEditable": 126,
+      "paraStyleEditable": 127,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1789,9 +1883,7 @@
         "charStyle": {
           "style_patch: 복합 run은 아직 style을 편집할 수 없습니다.": 1
         },
-        "paraStyle": {
-          "NO_TEXT_NODE": 1
-        },
+        "paraStyle": {},
         "tableCell": {},
         "tableStructure": {}
       },
@@ -1799,7 +1891,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 0.9921,
-        "paraStyleEditable": 0.9921,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -1816,6 +1909,8 @@
       "charStyleEditable": 0,
       "paragraphs": 4,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1863,7 +1958,7 @@
         },
         "paraStyle": {
           "BLOCKED_BY_TEXT: NOT_LISTED_HEADER_FOOTER": 2,
-          "NO_TEXT_NODE": 1
+          "EMPTY_PARAGRAPH: NOT_LISTED_HEADER_FOOTER": 1
         },
         "tableCell": {},
         "tableStructure": {}
@@ -1873,6 +1968,7 @@
         "textEditable": 0.3333,
         "charStyleEditable": 0,
         "paraStyleEditable": 0.25,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0
@@ -1889,6 +1985,8 @@
       "charStyleEditable": 2,
       "paragraphs": 3,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -1939,6 +2037,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.6667,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -1955,6 +2054,8 @@
       "charStyleEditable": 2,
       "paragraphs": 3,
       "paraStyleEditable": 2,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2007,6 +2108,7 @@
         "textEditable": 1,
         "charStyleEditable": 0.3333,
         "paraStyleEditable": 0.6667,
+        "noTextParagraphsEditable": 0,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -2022,7 +2124,9 @@
       "textEditable": 5,
       "charStyleEditable": 5,
       "paragraphs": 7,
-      "paraStyleEditable": 5,
+      "paraStyleEditable": 6,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 5,
       "tableCellsEditable": 5,
       "tableCellStyleEditable": 3,
@@ -2067,8 +2171,7 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 1
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
         "tableCell": {},
         "tableStructure": {
@@ -2079,7 +2182,8 @@
         "anchored": 1,
         "textEditable": 0.8333,
         "charStyleEditable": 0.8333,
-        "paraStyleEditable": 0.7143,
+        "paraStyleEditable": 0.8571,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": 1
@@ -2096,6 +2200,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2146,6 +2252,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -2162,6 +2269,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 0,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2216,6 +2325,7 @@
         "textEditable": 0,
         "charStyleEditable": 0,
         "paraStyleEditable": 0,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -2232,6 +2342,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 0,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2291,6 +2403,7 @@
         "textEditable": 0,
         "charStyleEditable": 0,
         "paraStyleEditable": 0,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0
@@ -2307,6 +2420,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2357,6 +2472,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -2373,6 +2489,8 @@
       "charStyleEditable": 0,
       "paragraphs": 1,
       "paraStyleEditable": 1,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2423,6 +2541,7 @@
         "textEditable": 1,
         "charStyleEditable": 0,
         "paraStyleEditable": 1,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": null
@@ -2439,6 +2558,8 @@
       "charStyleEditable": 68,
       "paragraphs": 69,
       "paraStyleEditable": 68,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 6,
       "tableCellsEditable": 6,
       "tableCellStyleEditable": 6,
@@ -2493,6 +2614,7 @@
         "textEditable": 0.9855,
         "charStyleEditable": 0.9855,
         "paraStyleEditable": 0.9855,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -2508,7 +2630,9 @@
       "textEditable": 9,
       "charStyleEditable": 9,
       "paragraphs": 11,
-      "paraStyleEditable": 9,
+      "paraStyleEditable": 10,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 4,
       "tableCellsEditable": 4,
       "tableCellStyleEditable": 3,
@@ -2553,8 +2677,7 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 1
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
         "tableCell": {},
         "tableStructure": {
@@ -2565,7 +2688,8 @@
         "anchored": 1,
         "textEditable": 0.9,
         "charStyleEditable": 0.9,
-        "paraStyleEditable": 0.8182,
+        "paraStyleEditable": 0.9091,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": 1
@@ -2581,7 +2705,9 @@
       "textEditable": 4,
       "charStyleEditable": 4,
       "paragraphs": 6,
-      "paraStyleEditable": 4,
+      "paraStyleEditable": 5,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 1,
       "tableCellsEditable": 1,
       "tableCellStyleEditable": 1,
@@ -2626,8 +2752,7 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 1
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
         "tableCell": {},
         "tableStructure": {}
@@ -2636,7 +2761,8 @@
         "anchored": 1,
         "textEditable": 0.8,
         "charStyleEditable": 0.8,
-        "paraStyleEditable": 0.6667,
+        "paraStyleEditable": 0.8333,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -2652,7 +2778,9 @@
       "textEditable": 3,
       "charStyleEditable": 3,
       "paragraphs": 4,
-      "paraStyleEditable": 3,
+      "paraStyleEditable": 4,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2692,9 +2820,7 @@
         "anchor": {},
         "text": {},
         "charStyle": {},
-        "paraStyle": {
-          "NO_TEXT_NODE": 1
-        },
+        "paraStyle": {},
         "tableCell": {},
         "tableStructure": {}
       },
@@ -2702,7 +2828,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 1,
-        "paraStyleEditable": 0.75,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -2718,7 +2845,9 @@
       "textEditable": 3,
       "charStyleEditable": 3,
       "paragraphs": 4,
-      "paraStyleEditable": 3,
+      "paraStyleEditable": 4,
+      "noTextParagraphs": 1,
+      "noTextParagraphsEditable": 1,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2758,9 +2887,7 @@
         "anchor": {},
         "text": {},
         "charStyle": {},
-        "paraStyle": {
-          "NO_TEXT_NODE": 1
-        },
+        "paraStyle": {},
         "tableCell": {},
         "tableStructure": {}
       },
@@ -2768,7 +2895,8 @@
         "anchored": 1,
         "textEditable": 1,
         "charStyleEditable": 1,
-        "paraStyleEditable": 0.75,
+        "paraStyleEditable": 1,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 1
@@ -2785,6 +2913,8 @@
       "charStyleEditable": 1,
       "paragraphs": 5,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2841,6 +2971,7 @@
         "textEditable": 0.7143,
         "charStyleEditable": 0.1429,
         "paraStyleEditable": 0.6,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.7273
@@ -2857,6 +2988,8 @@
       "charStyleEditable": 2,
       "paragraphs": 5,
       "paraStyleEditable": 3,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 0,
       "tableCellsEditable": 0,
       "tableCellStyleEditable": 0,
@@ -2913,6 +3046,7 @@
         "textEditable": 0.6667,
         "charStyleEditable": 0.3333,
         "paraStyleEditable": 0.6,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": null,
         "tableStructureEditable": null,
         "characterWeighted": 0.6364
@@ -2929,6 +3063,8 @@
       "charStyleEditable": 5,
       "paragraphs": 17,
       "paraStyleEditable": 10,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 1,
       "tableCellsEditable": 1,
       "tableCellStyleEditable": 1,
@@ -2989,6 +3125,7 @@
         "textEditable": 0.6316,
         "charStyleEditable": 0.2632,
         "paraStyleEditable": 0.5882,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 0.4
@@ -3004,9 +3141,11 @@
       "textEditable": 0,
       "charStyleEditable": 0,
       "paragraphs": 10,
-      "paraStyleEditable": 0,
+      "paraStyleEditable": 9,
+      "noTextParagraphs": 9,
+      "noTextParagraphsEditable": 9,
       "tableCells": 8,
-      "tableCellsEditable": 0,
+      "tableCellsEditable": 8,
       "tableCellStyleEditable": 0,
       "tables": 1,
       "tableStructureEditable": 0,
@@ -3049,12 +3188,9 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 9
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
-        "tableCell": {
-          "NO_TEXT_NODE": 8
-        },
+        "tableCell": {},
         "tableStructure": {
           "NO_SAFE_CELL_SELECTION": 1
         }
@@ -3063,8 +3199,9 @@
         "anchored": 1,
         "textEditable": 0,
         "charStyleEditable": 0,
-        "paraStyleEditable": 0,
-        "tableCellsEditable": 0,
+        "paraStyleEditable": 0.9,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": null
       }
@@ -3079,9 +3216,11 @@
       "textEditable": 0,
       "charStyleEditable": 0,
       "paragraphs": 8,
-      "paraStyleEditable": 0,
+      "paraStyleEditable": 7,
+      "noTextParagraphs": 7,
+      "noTextParagraphsEditable": 7,
       "tableCells": 6,
-      "tableCellsEditable": 0,
+      "tableCellsEditable": 6,
       "tableCellStyleEditable": 0,
       "tables": 1,
       "tableStructureEditable": 0,
@@ -3124,12 +3263,9 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1,
-          "NO_TEXT_NODE": 7
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 1
         },
-        "tableCell": {
-          "NO_TEXT_NODE": 6
-        },
+        "tableCell": {},
         "tableStructure": {
           "NO_SAFE_CELL_SELECTION": 1
         }
@@ -3138,8 +3274,9 @@
         "anchored": 1,
         "textEditable": 0,
         "charStyleEditable": 0,
-        "paraStyleEditable": 0,
-        "tableCellsEditable": 0,
+        "paraStyleEditable": 0.875,
+        "noTextParagraphsEditable": 1,
+        "tableCellsEditable": 1,
         "tableStructureEditable": 0,
         "characterWeighted": null
       }
@@ -3155,6 +3292,8 @@
       "charStyleEditable": 6,
       "paragraphs": 15,
       "paraStyleEditable": 13,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 2,
       "tableCellsEditable": 2,
       "tableCellStyleEditable": 1,
@@ -3213,6 +3352,7 @@
         "textEditable": 0.9091,
         "charStyleEditable": 0.2727,
         "paraStyleEditable": 0.8667,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 0.5,
         "characterWeighted": 1
@@ -3229,6 +3369,8 @@
       "charStyleEditable": 4,
       "paragraphs": 5,
       "paraStyleEditable": 4,
+      "noTextParagraphs": 0,
+      "noTextParagraphsEditable": 0,
       "tableCells": 1,
       "tableCellsEditable": 1,
       "tableCellStyleEditable": 1,
@@ -3283,6 +3425,7 @@
         "textEditable": 0.8,
         "charStyleEditable": 0.8,
         "paraStyleEditable": 0.8,
+        "noTextParagraphsEditable": null,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1
@@ -3298,7 +3441,9 @@
       "textEditable": 9,
       "charStyleEditable": 9,
       "paragraphs": 26,
-      "paraStyleEditable": 9,
+      "paraStyleEditable": 18,
+      "noTextParagraphs": 9,
+      "noTextParagraphsEditable": 9,
       "tableCells": 8,
       "tableCellsEditable": 8,
       "tableCellStyleEditable": 8,
@@ -3343,8 +3488,7 @@
         },
         "charStyle": {},
         "paraStyle": {
-          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 8,
-          "NO_TEXT_NODE": 9
+          "BLOCKED_BY_TEXT: NOT_LISTED_PARAGRAPH_HAS_TABLE": 8
         },
         "tableCell": {},
         "tableStructure": {}
@@ -3353,7 +3497,8 @@
         "anchored": 1,
         "textEditable": 0.5294,
         "charStyleEditable": 0.5294,
-        "paraStyleEditable": 0.3462,
+        "paraStyleEditable": 0.6923,
+        "noTextParagraphsEditable": 1,
         "tableCellsEditable": 1,
         "tableStructureEditable": 1,
         "characterWeighted": 1

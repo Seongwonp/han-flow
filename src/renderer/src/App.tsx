@@ -10,6 +10,7 @@ import {
   reconcileEditingSelection
 } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
+import { isEmptyParagraphAnchorId } from '../../core/editing/empty_paragraph_anchor'
 import {
   equalTableCellSelections,
   reconcileTableCellSelection,
@@ -79,6 +80,11 @@ export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string 
   return `${tableId}:${cell.sourceCellId ?? `r${cell.row}c${cell.column}`}:${fragment}`
 }
 
+/** 글자 칸(`hp:t`)이 없는 빈 문단에 decoder가 붙인 합성 caret text인지(`empty_paragraph_anchor.ts`). */
+export function isEmptyParagraphText(item: ViewerContent): boolean {
+  return item.type === 'text' && isEmptyParagraphAnchorId(item.sourceAnchor?.textNodeId)
+}
+
 export function isEditableTableCell(cell: ViewerTableCell, measurable = false): boolean {
   return (
     !measurable &&
@@ -88,7 +94,8 @@ export function isEditableTableCell(cell: ViewerTableCell, measurable = false): 
     cell.rowSpan === 1 &&
     cell.columnSpan === 1 &&
     cell.paragraphs.length > 0 &&
-    cell.paragraphs.every((paragraph) => isEditableTextParagraph(paragraph))
+    // 빈 문단이 있는 셀은 문단 나눔·행열 command가 쓸 `hp:t`가 없으므로 text 전용 셀로 둔다.
+    cell.paragraphs.every((paragraph) => isEditableTextParagraph(paragraph) && !paragraph.content.some(isEmptyParagraphText))
   )
 }
 
@@ -311,9 +318,11 @@ export function ParagraphView({
     : undefined
   const paragraphRef = useRef<HTMLDivElement>(null)
   const sectionPath = editableTexts?.[0]?.sourceAnchor?.sectionPath
+  // 글자 칸 없는 빈 문단의 합성 anchor: 첫 입력만 받고 문단 나눔·병합·여러 문단 범위에는 끼지 않는다.
+  const emptyParagraph = Boolean(editableTexts?.some((text) => isEmptyParagraphText(text)))
   const rangeScope = sectionPath && activeEditing
-    ? activeEditing.rangeScope ??
-      paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange))
+    ? (emptyParagraph ? undefined : activeEditing.rangeScope) ??
+      paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange) && !emptyParagraph)
     : undefined
   const editorHost = () => activeEditing?.editorHostRef?.current ?? paragraphRef.current
   const readEditorSelection = () => {
@@ -376,9 +385,9 @@ export function ParagraphView({
       onRangeCommit={activeEditing.onRangeCommit}
       onSplitParagraph={activeEditing.onSplitParagraph}
       onMergeParagraph={activeEditing.onMergeParagraph}
-      allowMergePrevious={index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
-      allowMergeNext={index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
-      allowParagraphStructure={activeEditing.allowParagraphStructure}
+      allowMergePrevious={!emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
+      allowMergeNext={!emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
+      allowParagraphStructure={activeEditing.allowParagraphStructure && !emptyParagraph}
       onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
       onHistory={activeEditing.onHistory}
       onBoundaryNavigate={(direction, selection) => {
@@ -1238,15 +1247,19 @@ export default function App() {
   const onComposingChange = useCallback((composing: boolean) => {
     editingTransient.current.setComposing(composing)
   }, [])
-  const paragraphStructureUnavailable = useCallback(() => {
-    setEditingStatus(
-      editingCapabilityStatus('문단 나눔·병합', 'TABLE_CELL_STRUCTURE') ?? '편집 중'
-    )
-  }, [])
   const editingCapabilityState = useMemo(
     () => editingCapabilities(document, editingSelection),
     [document, editingSelection]
   )
+  const paragraphStructureReason = editingCapabilityState.paragraphStructure.reason
+  const paragraphStructureUnavailable = useCallback(() => {
+    setEditingStatus(
+      editingCapabilityStatus(
+        '문단 나눔·병합',
+        paragraphStructureReason === 'EMPTY_PARAGRAPH' ? 'EMPTY_PARAGRAPH' : 'TABLE_CELL_STRUCTURE'
+      ) ?? '편집 중'
+    )
+  }, [paragraphStructureReason])
   const {
     activeStyle,
     activeCellStyle,

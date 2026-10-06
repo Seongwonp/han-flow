@@ -29,6 +29,7 @@ import {
   ReplaceTableFragmentCommand
 } from './table_patch'
 import { buildLossReport } from './xml_scan'
+import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
@@ -67,6 +68,20 @@ export interface EditTransactionResult {
   inverse?: EditTransaction
   lossReport: HwpxLossReport
   changed: boolean
+  /**
+   * 적용 뒤 selection. 보통 `transaction.selectionAfter`와 같고, 빈 문단 합성 anchor(`#hp:p:N:empty`)에 첫 글자를 넣어
+   * `hp:t`가 생기면 그 anchor를 새 `#hp:t:N`으로 옮긴 값이다(실행 취소로 `hp:t`가 사라지면 반대로 옮긴다).
+   */
+  selectionAfter: EditorSelection
+}
+
+function remapSelection(selection: EditorSelection, remapped: ReadonlyMap<string, string>): EditorSelection {
+  if (!remapped.size) return selection
+  return {
+    ...selection,
+    anchorTextNodeId: remapped.get(selection.anchorTextNodeId) ?? selection.anchorTextNodeId,
+    focusTextNodeId: remapped.get(selection.focusTextNodeId) ?? selection.focusTextNodeId
+  }
 }
 
 export const MAX_TRANSACTION_COMMANDS = 1_000
@@ -104,6 +119,8 @@ export function applyEditTransaction(
 
   let currentPackage = sourcePackage
   const inverseCommands: EditCommand[] = []
+  /** text command가 anchor id를 바꾼 경우(빈 문단 ↔ 새 `hp:t`) 옛 id → 새 id */
+  const remapped = new Map<string, string>()
   const modifiedEntries = new Set<string>()
   let previewStatus: HwpxLossReport['previewStatus'] = sourcePackage
     .listEntries()
@@ -133,6 +150,13 @@ export function applyEditTransaction(
                     : command.type === 'replace-table-fragment'
                       ? applyReplaceTableFragmentCommand(currentPackage, command)
                       : applyReplaceParagraphFragmentCommand(currentPackage, command)
+    if (command.type === 'replace-text' && result.package !== currentPackage) {
+      const anchorId = (result as ReturnType<typeof applyReplaceTextCommand>).anchor.textNodeId
+      if (anchorId !== command.textNodeId) {
+        for (const [from, to] of remapped) if (to === command.textNodeId) remapped.set(from, anchorId)
+        remapped.set(command.textNodeId, anchorId)
+      }
+    }
     if (result.package !== currentPackage) {
       const inverse =
         command.type === 'replace-text'
@@ -146,16 +170,18 @@ export function applyEditTransaction(
     }
   }
 
-  validateEditorSelection(currentPackage, transaction.selectionAfter)
+  const selectionAfter = remapSelection(transaction.selectionAfter, remapped)
+  validateEditorSelection(currentPackage, selectionAfter)
   const changed = currentPackage !== sourcePackage
   return {
     package: currentPackage,
+    selectionAfter,
     inverse: changed
       ? {
           id: `${transaction.id}:inverse`,
           baseRevision: currentPackage.revision,
           commands: inverseCommands,
-          selectionBefore: transaction.selectionAfter,
+          selectionBefore: selectionAfter,
           selectionAfter: transaction.selectionBefore,
           inputType: 'historyUndo',
           compositionId: transaction.compositionId,
@@ -199,6 +225,9 @@ export function shouldGroupTransactions(previous: EditTransaction, next: EditTra
     previousCommand.type === 'replace-text' &&
     nextCommand.type === 'replace-text' &&
     previousCommand.sectionPath === nextCommand.sectionPath &&
-    previousCommand.textNodeId === nextCommand.textNodeId
+    (previousCommand.textNodeId === nextCommand.textNodeId ||
+      // 빈 문단 첫 글자가 만든 `hp:t`에 이어 치는 입력도 한 번에 되돌린다(selectionAfter가 새 anchor로 옮겨져 있다).
+      (isEmptyParagraphAnchorId(previousCommand.textNodeId) &&
+        previous.selectionAfter.focusTextNodeId === nextCommand.textNodeId))
   )
 }

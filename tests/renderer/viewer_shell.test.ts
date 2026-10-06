@@ -15,7 +15,7 @@ import {
   ViewerStatusBar
 } from '../../src/renderer/src/ViewerShell'
 import { ViewerToolbar } from '../../src/renderer/src/ViewerToolbar'
-import { editingRibbonState, TableView } from '../../src/renderer/src/App'
+import { editingRibbonState, ParagraphView, TableView, tableCellEditingMode } from '../../src/renderer/src/App'
 
 const noop = () => undefined
 
@@ -370,5 +370,52 @@ describe('viewer shell components', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
+  })
+  test('글자 칸 없는 빈 문단·셀은 합성 anchor 입력 surface를 받고 문단 구조·여러 문단 범위에서는 빠진다', async () => {
+    const source = await HwpxSourcePackage.open(join(__dirname, '../fixtures/public/external/ext-hwpxlib-table-scores.hwpx'))
+    const document = await decodeViewerDocument(source)
+    const blocks = document.sections[0].blocks
+    const empty = blocks.find((paragraph) =>
+      paragraph.content.length === 1 &&
+      paragraph.content[0].type === 'text' &&
+      Boolean(paragraph.content[0].sourceAnchor?.textNodeId.endsWith(':empty'))
+    )!
+    const anchorId = empty.content[0].type === 'text' ? empty.content[0].sourceAnchor!.textNodeId : ''
+    expect(anchorId).toMatch(/^Contents\/section0\.xml#hp:p:\d+:empty$/)
+    const consoleError = jest.spyOn(console, 'error').mockImplementation((message: unknown, ...rest: unknown[]) => {
+      if (String(message).includes('useLayoutEffect does nothing on the server')) return
+      throw new Error([message, ...rest].map(String).join(' '))
+    })
+    const markup = renderToStaticMarkup(createElement(ParagraphView as any, {
+      paragraph: empty,
+      document,
+      editing: {
+        pending: false,
+        allowMultipleRuns: true,
+        allowParagraphRange: true,
+        allowParagraphStructure: true,
+        onCommit: noop,
+        onComposingChange: noop,
+        onSelectionChange: noop,
+        onEditorSelectionChange: noop,
+        onRangeCommit: noop,
+        onSplitParagraph: noop,
+        onMergeParagraph: noop,
+        onParagraphStructureUnavailable: noop,
+        onTableCellSelectionChange: noop
+      }
+    }))
+    consoleError.mockRestore()
+    expect(markup).toContain(`data-source-text-node-id="${anchorId}"`)
+    // 여러 최상위 문단 범위(`:top-level`) 대신 문단 하나 scope를 쓴다.
+    expect(markup).toContain(`data-editor-range-scope="Contents/section0.xml:paragraph:${empty.id}"`)
+
+    const table = blocks.flatMap((paragraph) => paragraph.content).find((item) => item.type === 'table')
+    const cells = table?.type === 'table' ? table.rows.flatMap((row) => row.cells) : []
+    const emptyCell = cells.find((cell) => cell.paragraphs.some((paragraph) =>
+      paragraph.content.some((item) => item.type === 'text' && Boolean(item.sourceAnchor?.textNodeId.endsWith(':empty')))
+    ))!
+    expect(emptyCell).toBeDefined()
+    expect(tableCellEditingMode(emptyCell)).toBe('text')
   })
 })
