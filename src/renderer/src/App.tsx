@@ -1875,6 +1875,8 @@ export default function App() {
       onSearchOpen={openSearch}
       onStartEditing={() => void startEditing()}
       onZoomStep={(direction) => changeZoomAt(stepZoom(zoom, direction))}
+      onZoomReset={() => changeZoomAt(1)}
+      onOpenNewWindow={() => void api().openNewWindow()}
       onExportPdf={() => void exportPdf()}
       onChooseFile={() => void chooseFile()}
       onSaveEditing={() => void saveEditingAs()}

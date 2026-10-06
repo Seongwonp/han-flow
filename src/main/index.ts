@@ -241,6 +241,26 @@ function pathFromArguments(arguments_: string[], workingDirectory = process.cwd(
   return filePath ? resolve(workingDirectory, filePath) : undefined
 }
 
+// E2E probe가 리본 control을 누르기 전에 그 control이 든 탭을 사용자처럼 먼저 고르는 helper(renderer에 주입하는 JS).
+const RIBBON_E2E_HELPERS = `
+  const selectedRibbonTab = () => document.querySelector('.viewer-ribbon-tabs [role="tab"][aria-selected="true"]')?.textContent?.trim()
+  const ribbonTab = (name) => Array.from(document.querySelectorAll('.viewer-ribbon-tabs [role="tab"]'))
+    .find((tab) => tab.textContent?.trim() === name)
+  const revealRibbonControl = async (label) => {
+    const element = document.querySelector('[aria-label="' + label + '"]')
+    const panel = element?.closest('[role="tabpanel"]')
+    if (!panel || !panel.hidden) return element
+    const tab = document.getElementById(panel.getAttribute('aria-labelledby'))
+    tab?.click()
+    const started = performance.now()
+    while (panel.hidden && performance.now() - started < 5000) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    }
+    if (panel.hidden) throw new Error('리본 탭 전환 실패: ' + label)
+    return document.querySelector('[aria-label="' + label + '"]')
+  }
+`
+
 function captureVisualState(window: BrowserWindow): void {
   const capturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
@@ -292,7 +312,8 @@ function captureVisualState(window: BrowserWindow): void {
       stableSamples = 0
       previousSignature = ''
       await window.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[aria-label="검색"]')?.click()
+        ${RIBBON_E2E_HELPERS}
+        ;(await revealRibbonControl('검색'))?.click()
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         const input = document.querySelector('[aria-label="HWP 문서 검색"]')
         if (!input) return false
@@ -323,6 +344,7 @@ function captureVisualState(window: BrowserWindow): void {
           }
           throw new Error('표 구조 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
         }
+        ${RIBBON_E2E_HELPERS}
         const button = (label) => document.querySelector('[aria-label="' + label + '"]')
         const table = () => document.querySelector('.viewer-page .viewer-table')
         const rowCount = () => table()?.querySelectorAll(':scope > tbody > tr').length ?? 0
@@ -331,10 +353,13 @@ function captureVisualState(window: BrowserWindow): void {
         const bodyRowTexts = () => Array.from(
           table()?.querySelectorAll(':scope > tbody > tr:nth-child(2) > td') ?? []
         ).map((cell) => cell.textContent ?? '')
-        const waitButton = (label) => waitFor(() => {
-          const candidate = button(label)
-          return candidate && !candidate.disabled ? candidate : undefined
-        })
+        const waitButton = async (label) => {
+          await revealRibbonControl(label)
+          return waitFor(() => {
+            const candidate = button(label)
+            return candidate && !candidate.disabled && !candidate.closest('[role="tabpanel"]')?.hidden ? candidate : undefined
+          })
+        }
         const clickButton = async (label, nextPhase, predicate) => {
           setPhase(nextPhase)
           ;(await waitButton(label)).click()
@@ -345,11 +370,11 @@ function captureVisualState(window: BrowserWindow): void {
           ;(await waitButton(label)).click()
           await waitFor(predicate)
         }
-        const editButton = await waitFor(() =>
-          Array.from(document.querySelectorAll('button')).find((candidate) => candidate.textContent?.trim() === '편집')
-        )
+        const editButton = await waitFor(() => button('HWPX 편집 시작'))
         editButton.click()
         setPhase('editable-cell')
+        await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        const activeTabAfterStart = selectedRibbonTab()
         const focusCell = async () => {
           const surface = await waitFor(() => {
             const candidate = document.querySelector('[aria-label="HWPX 표 셀 편집"]')
@@ -360,6 +385,10 @@ function captureVisualState(window: BrowserWindow): void {
           await waitFor(() => !button('아래에 표 행 추가')?.disabled)
         }
         await focusCell()
+        // 표 안에 caret이 들어가도 탭은 바꾸지 않고 표 탭에만 표시한다.
+        const tableTabMarked = selectedRibbonTab() === activeTabAfterStart &&
+          ribbonTab('표')?.dataset.context === 'table' &&
+          Boolean(ribbonTab('표')?.querySelector('.viewer-ribbon-tab-badge'))
         const original = { rows: rowCount(), columns: columnCount(), bodyCells: bodyRowCells(), texts: bodyRowTexts() }
 
         await clickButton('아래에 표 행 추가', 'row-insert', () => rowCount() === original.rows + 1)
@@ -415,6 +444,8 @@ function captureVisualState(window: BrowserWindow): void {
         return {
           mode: 'table-structure',
           surface: 'table-cell',
+          activeTabAfterStart,
+          tableTabMarked,
           original,
           final: { rows: rowCount(), columns: columnCount(), bodyCells: bodyRowCells(), texts: bodyRowTexts() },
           rowInserted,
@@ -460,6 +491,7 @@ function captureVisualState(window: BrowserWindow): void {
           }
           throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
         }
+        ${RIBBON_E2E_HELPERS}
         const surfaceLabel = ${JSON.stringify(editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')}
         const readySurface = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
           .find((element) => element.dataset.inputReady === 'true')
@@ -467,14 +499,14 @@ function captureVisualState(window: BrowserWindow): void {
         if (!target) {
           const existingSurface = document.querySelector('[aria-label="' + surfaceLabel + '"]')
           if (!existingSurface) {
-            const editButton = await waitFor(() =>
-              Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
-            )
+            const editButton = await waitFor(() => document.querySelector('[aria-label="HWPX 편집 시작"]'))
             editButton.click()
             setPhase('editable-surface')
           }
           target = await waitFor(readySurface)
         }
+        await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        const activeTabAfterStart = selectedRibbonTab()
         const anchorId = target.dataset.sourceTextNodeId
         const currentTarget = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
           .find((element) => element.dataset.sourceTextNodeId === anchorId)
@@ -559,7 +591,7 @@ function captureVisualState(window: BrowserWindow): void {
         })
         const edited = editedTarget.textContent
         const selectionAfterProjection = getSelection(editedTarget)
-        const undo = document.querySelector('[aria-label="실행 취소"]')
+        const undo = await revealRibbonControl('실행 취소')
         undo?.click()
         setPhase('undo-text')
         const undoneTarget = await waitFor(() => {
@@ -573,7 +605,7 @@ function captureVisualState(window: BrowserWindow): void {
         })
         const undoSelection = getSelection(undoneTarget)
         const undoneMatches = undoneTarget.textContent === original
-        const redo = document.querySelector('[aria-label="다시 실행"]')
+        const redo = await revealRibbonControl('다시 실행')
         redo?.click()
         setPhase('redo-text')
         const redoneTarget = await waitFor(() => {
@@ -590,6 +622,8 @@ function captureVisualState(window: BrowserWindow): void {
         if (${styleProbeEnabled}) {
           setPhase('style-buttons')
           const button = (label) => document.querySelector('[aria-label="' + label + '"]')
+          const press = async (label) => (await revealRibbonControl(label))?.click()
+          await revealRibbonControl('현재 텍스트 블록 굵게')
           const boldButton = await waitFor(() => {
             const candidate = button('현재 텍스트 블록 굵게')
             return candidate && !candidate.disabled ? candidate : undefined
@@ -606,35 +640,36 @@ function captureVisualState(window: BrowserWindow): void {
           setSelection(redoneTarget, partialStart, expected.length)
           redoneTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-          button('현재 텍스트 블록 굵게')?.click()
+          await press('현재 텍스트 블록 굵게')
           setPhase('style-bold')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
           const boldApplied = button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold)
           const partialRunSplit = await waitFor(() => Array.from(document.querySelectorAll('.viewer-paragraph'))
             .some((paragraph) => paragraph.textContent === expected &&
               paragraph.querySelectorAll(':scope > .viewer-editable-text').length >= 2))
-          button(desiredAlign)?.click()
+          await press(desiredAlign)
           setPhase('style-align')
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
           const alignApplied = button(desiredAlign)?.getAttribute('aria-pressed') === 'true'
-          document.querySelector('[aria-label="실행 취소"]')?.click()
+          await press('실행 취소')
           setPhase('style-align-undo')
           await waitFor(() => button(originalAlign)?.getAttribute('aria-pressed') === 'true')
-          document.querySelector('[aria-label="실행 취소"]')?.click()
+          await press('실행 취소')
           setPhase('style-bold-undo')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold))
           const undoRestored = button(originalAlign)?.getAttribute('aria-pressed') === 'true' &&
             button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(originalBold)
-          document.querySelector('[aria-label="다시 실행"]')?.click()
+          await press('다시 실행')
           setPhase('style-bold-redo')
           await waitFor(() => button('현재 텍스트 블록 굵게')?.getAttribute('aria-pressed') === String(!originalBold))
-          document.querySelector('[aria-label="다시 실행"]')?.click()
+          await press('다시 실행')
           setPhase('style-align-redo')
           await waitFor(() => button(desiredAlign)?.getAttribute('aria-pressed') === 'true')
           const sizeLabel = () => document.querySelector('[aria-label="현재 글자 크기"]')?.textContent?.trim()
           const originalSize = Number.parseFloat(sizeLabel() ?? '')
           const expectedSize = Math.min(72, originalSize + 1)
           setPhase('style-size')
+          await revealRibbonControl('글자 크기 늘리기')
           const increaseSize = await waitFor(() => {
             const candidate = button('글자 크기 늘리기')
             return candidate && !candidate.disabled ? candidate : undefined
@@ -643,6 +678,7 @@ function captureVisualState(window: BrowserWindow): void {
           await waitFor(() => sizeLabel() === expectedSize + 'pt')
           const sizeApplied = sizeLabel() === expectedSize + 'pt'
           setPhase('style-color')
+          await revealRibbonControl('글자 색상')
           const colorInput = await waitFor(() => {
             const candidate = document.querySelector('[aria-label="글자 색상"]')
             return candidate && !candidate.disabled ? candidate : undefined
@@ -657,6 +693,7 @@ function captureVisualState(window: BrowserWindow): void {
           const colorApplied = document.querySelector('[aria-label="글자 색상"]')?.value.toLowerCase() === desiredColor
           const toggleDecoration = async (label, original, phase) => {
             setPhase(phase)
+            await revealRibbonControl(label)
             const target = await waitFor(() => {
               const candidate = button(label)
               return candidate && !candidate.disabled ? candidate : undefined
@@ -671,29 +708,29 @@ function captureVisualState(window: BrowserWindow): void {
           const metricValue = (label) => document.querySelector('[aria-label="' + label + '"]')?.textContent?.trim()
           const originalLineSpacing = Number.parseFloat(metricValue('현재 줄 간격') ?? '')
           setPhase('style-line-spacing')
-          button('줄 간격 늘리기')?.click()
+          await press('줄 간격 늘리기')
           await waitFor(() => metricValue('현재 줄 간격') === Math.min(300, originalLineSpacing + 10) + '%')
           const lineSpacingApplied = metricValue('현재 줄 간격') === Math.min(300, originalLineSpacing + 10) + '%'
           const originalMarginBefore = Number.parseFloat(metricValue('현재 문단 앞 간격') ?? '')
           setPhase('style-margin-before')
-          button('문단 앞 간격 늘리기')?.click()
+          await press('문단 앞 간격 늘리기')
           await waitFor(() => metricValue('현재 문단 앞 간격') === Math.min(72, originalMarginBefore + 1) + 'pt')
           const marginBeforeApplied = metricValue('현재 문단 앞 간격') === Math.min(72, originalMarginBefore + 1) + 'pt'
           const originalMarginAfter = Number.parseFloat(metricValue('현재 문단 뒤 간격') ?? '')
           setPhase('style-margin-after')
-          button('문단 뒤 간격 늘리기')?.click()
+          await press('문단 뒤 간격 늘리기')
           await waitFor(() => metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt')
           const marginAfterApplied = metricValue('현재 문단 뒤 간격') === Math.min(72, originalMarginAfter + 1) + 'pt'
           const originalIndent = Number.parseFloat(metricValue('현재 첫 줄 들여쓰기') ?? '')
           setPhase('style-outdent')
-          button('첫 줄 내어쓰기')?.click()
+          await press('첫 줄 내어쓰기')
           await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === Math.max(-72, originalIndent - 1) + 'pt')
           const outdentApplied = metricValue('현재 첫 줄 들여쓰기') === Math.max(-72, originalIndent - 1) + 'pt'
           setPhase('style-indent-reset')
-          button('첫 줄 들여쓰기')?.click()
+          await press('첫 줄 들여쓰기')
           await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === originalIndent + 'pt')
           setPhase('style-indent')
-          button('첫 줄 들여쓰기')?.click()
+          await press('첫 줄 들여쓰기')
           await waitFor(() => metricValue('현재 첫 줄 들여쓰기') === Math.min(72, originalIndent + 1) + 'pt')
           const indentApplied = metricValue('현재 첫 줄 들여쓰기') === Math.min(72, originalIndent + 1) + 'pt'
           styleProbe = {
@@ -720,6 +757,7 @@ function captureVisualState(window: BrowserWindow): void {
         let dirtyCleared
         if (${autoSaveEdit}) {
           setPhase('save-button')
+          await revealRibbonControl('HWPX 변경본 저장')
           const saveButton = await waitFor(() => {
             const button = document.querySelector('[aria-label="HWPX 변경본 저장"]')
             return button && !button.disabled ? button : undefined
@@ -735,6 +773,7 @@ function captureVisualState(window: BrowserWindow): void {
         return {
           mode,
           surface: ${JSON.stringify(editCellEnabled ? 'table-cell' : 'paragraph')},
+          activeTabAfterStart,
           originalLength: original.length,
           editedMatches: edited === expected,
           undoneMatches,
@@ -817,11 +856,13 @@ function captureVisualState(window: BrowserWindow): void {
       editingUi: (() => {
         const ribbon = document.querySelector('.viewer-edit-ribbon')
         const toolbar = document.querySelector('.viewer-toolbar')
-        const buttons = Array.from(document.querySelectorAll('.viewer-ribbon-controls button'))
+        const panel = document.querySelector('.viewer-ribbon-panel:not([hidden])')
+        const buttons = Array.from(panel?.querySelectorAll('.viewer-ribbon-controls button') ?? [])
         return {
           ribbonVisible: Boolean(ribbon),
+          tabs: Array.from(document.querySelectorAll('.viewer-ribbon-tabs [role="tab"]')).map((tab) => tab.textContent?.trim()),
           activeTab: document.querySelector('.viewer-ribbon-tabs [aria-selected="true"]')?.textContent?.trim(),
-          groupLabels: Array.from(document.querySelectorAll('.viewer-ribbon-group-label')).map((element) => element.textContent?.trim()),
+          groupLabels: Array.from(panel?.querySelectorAll('.viewer-ribbon-group-label') ?? []).map((element) => element.textContent?.trim()),
           toolbarHeight: toolbar ? Math.round(toolbar.getBoundingClientRect().height) : 0,
           minimumButtonHeight: buttons.length ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height))) : 0
         }

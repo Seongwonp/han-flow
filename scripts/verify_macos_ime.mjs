@@ -165,9 +165,7 @@ try {
       }
       throw new Error('편집 surface 준비 시간이 초과되었습니다.')
     }
-    const editButton = await waitFor(() =>
-      Array.from(document.querySelectorAll('button')).find((button) => button.textContent?.trim() === '편집')
-    )
+    const editButton = await waitFor(() => document.querySelector('[aria-label="HWPX 편집 시작"]'))
     editButton.click()
     const findSurface = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
       .find((element) => element.dataset.inputReady === 'true')

@@ -771,6 +771,10 @@ session의 현재 document·revision·selection을 다시 받아 같은 복구�
 편집은 UI placeholder부터 만들지 않는다. packaged E2E는 활성 홈 탭, toolbar와 버튼
 실측 크기, A4 범위 치환·selection·undo/redo와 overflow 0을 함께 판정한다.
 
+이후 `홈` 탭 하나에 모든 group을 넣던 리본은 `파일`·`편집`·`서식`·`표`·`보기` 탭으로 나눴다
+([리본 탭 구성](ux_strategy.md#14-리본-탭-구성)). packaged E2E는 control을 누르기 전에 그 control이 든 탭을 고르고,
+편집 시작 뒤 `서식` 탭과 표 안 caret의 `표` 탭 표시를 판정한다.
+
 ### V3-6B 글자 장식 command
 
 2026-08-02에는 기존 글자 style clone·reuse 경계에 기울임, 밑줄과 취소선을 추가했다.

@@ -54,6 +54,8 @@ const toolbarProps = {
   onSearchOpen: noop,
   onStartEditing: noop,
   onZoomStep: noop,
+  onZoomReset: noop,
+  onOpenNewWindow: noop,
   onExportPdf: noop,
   onChooseFile: noop,
   onSaveEditing: noop,
@@ -108,6 +110,10 @@ describe('viewer shell components', () => {
       onSearchOpen: noop,
       onStartEditing: noop,
       onZoomStep: noop,
+      onZoomReset: noop,
+      onOpenNewWindow: noop,
+  onZoomReset: noop,
+  onOpenNewWindow: noop,
       onExportPdf: noop,
       onChooseFile: noop,
       onSaveEditing: noop,
@@ -126,7 +132,7 @@ describe('viewer shell components', () => {
 
     expect(markup).toContain('sample.hwpx')
     expect(markup).toContain('125%')
-    expect(markup).toContain('aria-label="HWPX 편집 리본"')
+    expect(markup).toContain('aria-label="리본 메뉴"')
     expect(markup).toContain('aria-label="HWPX 변경본 저장"')
     expect(markup).toContain('aria-label="문서 글꼴"')
     expect(markup).toContain('HanFlow Test Sans')

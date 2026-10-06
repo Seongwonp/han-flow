@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 
 const fixture = process.argv[2]
+const RIBBON_TABS = ['파일', '편집', '서식', '표', '보기']
 const expectedError = process.argv.includes('--expect-error')
 const expectedErrorCode = process.env.HAN_FLOW_VERIFY_ERROR_CODE
 const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
@@ -165,8 +166,14 @@ try {
     editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
-    editText && !state.editingUi?.ribbonVisible ? '편집 홈 리본이 표시되지 않음' : undefined,
-    editText && state.editingUi?.activeTab !== '홈' ? '편집 홈 탭이 활성화되지 않음' : undefined,
+    editText && !state.editingUi?.ribbonVisible ? '편집 리본이 표시되지 않음' : undefined,
+    (editText || tableStructureProbe) && JSON.stringify(state.editingUi?.tabs) !== JSON.stringify(RIBBON_TABS)
+      ? `리본 탭 구성 불일치: ${JSON.stringify(state.editingUi?.tabs)}`
+      : undefined,
+    (editText || tableStructureProbe) && state.editingProbe?.activeTabAfterStart !== '서식'
+      ? `편집 시작 뒤 서식 탭이 선택되지 않음: ${state.editingProbe?.activeTabAfterStart}`
+      : undefined,
+    editText && !state.editingUi?.groupLabels?.length ? '선택한 리본 탭에 group이 없음' : undefined,
     editText && state.editingUi?.toolbarHeight < 150 ? '편집 리본 높이가 사용성 기준보다 작음' : undefined,
     editText && state.editingUi?.minimumButtonHeight < 40 ? '편집 리본 버튼 높이가 사용성 기준보다 작음' : undefined,
     editCell && state.editingProbe?.surface !== 'table-cell' ? '표 셀 편집 surface 검증 불일치' : undefined,
@@ -191,6 +198,7 @@ try {
     tableStructureProbe && !state.editingProbe ? '표 구조 probe 결과가 없음' : undefined,
     tableStructureProbe && state.editingProbe?.probeError ? `표 구조 probe 오류: ${state.editingProbe.probeError}` : undefined,
     tableStructureProbe && state.editingProbe?.mode !== 'table-structure' ? '표 구조 probe mode 불일치' : undefined,
+    tableStructureProbe && !state.editingProbe?.tableTabMarked ? '표 안 caret에서 표 탭 표시가 없거나 탭이 바뀜' : undefined,
     tableStructureProbe && !state.editingProbe?.rowInserted ? '표 행 추가 검증 불일치' : undefined,
     tableStructureProbe && !state.editingProbe?.rowDeleted ? '표 행 삭제 검증 불일치' : undefined,
     tableStructureProbe && !state.editingProbe?.columnInserted ? '표 열 추가 검증 불일치' : undefined,

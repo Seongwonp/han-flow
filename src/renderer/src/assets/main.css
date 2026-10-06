@@ -4,8 +4,7 @@ html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 button { font: inherit; }
 .viewer-app { height: 100%; display: flex; flex-direction: column; background: #cfd3d8; }
 .viewer-measurement { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
-.viewer-toolbar { height: 52px; flex: 0 0 52px; display: flex; flex-direction: column; background: rgba(248,248,248,.92); border-bottom: 1px solid rgba(0,0,0,.16); backdrop-filter: blur(20px); -webkit-app-region: drag; }
-.viewer-toolbar-editing { height: 168px; flex-basis: 168px; }
+.viewer-toolbar { height: 168px; flex: 0 0 168px; display: flex; flex-direction: column; background: rgba(248,248,248,.92); border-bottom: 1px solid rgba(0,0,0,.16); backdrop-filter: blur(20px); -webkit-app-region: drag; }
 .viewer-toolbar-main { min-height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 78px; }
 .viewer-title, .viewer-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .viewer-title { min-width: 0; }
@@ -19,10 +18,20 @@ button { font: inherit; }
 .viewer-search input { width: 180px; border: 0; outline: 0; font: inherit; color: #202124; background: transparent; }
 .viewer-search span { min-width: 70px; font-size: 11px; text-align: right; white-space: nowrap; }
 .viewer-search button { height: 26px; min-width: 26px; border: 0; }
-.viewer-actions .viewer-open { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
+.viewer-actions .viewer-start-editing { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
 .viewer-edit-ribbon { height: 116px; display: flex; flex-direction: column; border-top: 1px solid rgba(0,0,0,.1); background: rgba(252,252,253,.88); -webkit-app-region: no-drag; }
 .viewer-ribbon-tabs { height: 30px; display: flex; align-items: end; padding-left: 72px; border-bottom: 1px solid rgba(0,0,0,.1); }
-.viewer-ribbon-tabs button { height: 30px; padding: 0 18px; border: 0; border-bottom: 2px solid #335eea; color: #244fd1; background: transparent; font-weight: 700; cursor: default; }
+.viewer-ribbon-tabs button { position: relative; height: 30px; padding: 0 18px; font-size: 13px; border: 0; border-bottom: 2px solid transparent; color: #4c535d; background: transparent; font-weight: 600; cursor: pointer; }
+.viewer-ribbon-tabs button:hover { color: #202124; background: rgba(0,0,0,.04); }
+.viewer-ribbon-tabs button[aria-selected="true"] { border-bottom-color: #335eea; color: #244fd1; font-weight: 700; cursor: default; background: transparent; }
+.viewer-ribbon-tabs button:focus-visible { outline: 2px solid #335eea; outline-offset: -3px; border-radius: 5px; }
+.viewer-ribbon-tabs button[data-context="table"]:not([aria-selected="true"]) { color: #8a4b00; background: #fff4df; }
+.viewer-ribbon-tab-badge { position: absolute; top: 6px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: #e08a00; }
+.viewer-ribbon-panel { flex: 1; display: flex; min-height: 0; }
+.viewer-ribbon-panel[hidden] { display: none; }
+.viewer-ribbon-hint { align-self: center; margin: 0 0 12px 12px; color: #69717d; font-size: 12px; white-space: nowrap; }
+.viewer-ribbon-controls .viewer-ribbon-wide { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.viewer-ribbon-zoom { min-width: 48px; font-size: 12px; font-variant-numeric: tabular-nums; text-align: center; color: #343a43; }
 .viewer-ribbon-groups { flex: 1; display: flex; align-items: stretch; gap: 0; padding: 7px 14px 5px 72px; overflow-x: auto; }
 .viewer-ribbon-group { min-width: max-content; display: flex; flex-direction: column; justify-content: space-between; padding: 0 12px; border-right: 1px solid rgba(0,0,0,.12); }
 .viewer-ribbon-group:first-child { padding-left: 6px; }
@@ -94,7 +103,7 @@ button { font: inherit; }
 .viewer-status { flex: 0 0 28px; height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: rgba(248,248,248,.94); border-top: 1px solid rgba(0,0,0,.14); color: #58606b; font-size: 11px; }
 .viewer-status-warn { color: #8a5a00; }
 .viewer-status-error { color: #b42318; font-weight: 600; }
-@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.94); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } .viewer-edit-ribbon { background: rgba(48,49,54,.96); border-color: #202126; } .viewer-ribbon-tabs { border-color: #202126; } .viewer-ribbon-group { border-color: rgba(255,255,255,.12); } .viewer-ribbon-controls button { color: #eceef2; } .viewer-ribbon-controls button:hover:not(:disabled), .viewer-style-size-control { background: #3b3d43; border-color: #626772; } .viewer-ribbon-controls button[aria-pressed="true"] { color: #dce5ff; background: #344573; } .viewer-ribbon-controls .viewer-ribbon-save { color: #e2e9ff; background: #304478; border-color: #526cae; } .viewer-ribbon-group-label, .viewer-style-color-label, .viewer-style-size, .viewer-paragraph-metric, .viewer-paragraph-metric output { color: #c6cad2; } .viewer-editing-badge { color: #dce5ff; background: #344573; border-color: #526cae; } }
+@media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.94); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } .viewer-edit-ribbon { background: rgba(48,49,54,.96); border-color: #202126; } .viewer-ribbon-tabs { border-color: #202126; } .viewer-ribbon-tabs button { color: #c6cad2; } .viewer-ribbon-tabs button:hover { color: #f4f4f4; background: rgba(255,255,255,.06); } .viewer-ribbon-tabs button[aria-selected="true"] { color: #b9c9ff; border-bottom-color: #7d98ff; } .viewer-ribbon-tabs button[data-context="table"]:not([aria-selected="true"]) { color: #ffd59a; background: #4a3a20; } .viewer-ribbon-hint, .viewer-ribbon-zoom { color: #c6cad2; } .viewer-ribbon-group { border-color: rgba(255,255,255,.12); } .viewer-ribbon-controls button { color: #eceef2; } .viewer-ribbon-controls button:hover:not(:disabled), .viewer-style-size-control { background: #3b3d43; border-color: #626772; } .viewer-ribbon-controls button[aria-pressed="true"] { color: #dce5ff; background: #344573; } .viewer-ribbon-controls .viewer-ribbon-save { color: #e2e9ff; background: #304478; border-color: #526cae; } .viewer-ribbon-group-label, .viewer-style-color-label, .viewer-style-size, .viewer-paragraph-metric, .viewer-paragraph-metric output { color: #c6cad2; } .viewer-editing-badge { color: #dce5ff; background: #344573; border-color: #526cae; } }
 @media print {
   @page { margin: 0; }
   html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }
