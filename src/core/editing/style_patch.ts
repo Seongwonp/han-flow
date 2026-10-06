@@ -151,8 +151,8 @@ function locateTextStyleContext(
   const { tree, element: textNode } = located
   const run = nearestSourceAncestor(textNode, 'hp:run')
   const paragraph = nearestSourceAncestor(textNode, 'hp:p')
-  if (!run || !paragraph || run.parent !== paragraph || paragraph.parent?.name !== 'hs:sec') {
-    throw new HwpxEditConflictError('첫 style 편집은 최상위 일반 문단의 단일 run만 지원합니다.')
+  if (!run || !paragraph || run.parent !== paragraph || !isStyleEditableParagraph(paragraph)) {
+    throw new HwpxEditConflictError('글자·문단 모양은 최상위 문단과 최상위 표 셀 직속 문단의 run만 편집할 수 있습니다.')
   }
   if (target === 'character') {
     const descendants = findAllDescendantElements(run)
@@ -161,6 +161,29 @@ function locateTextStyleContext(
     }
   }
   return { tree, textNode, run, paragraph }
+}
+
+/**
+ * style command를 받는 문단 위치. `hs:sec` 직속 문단, 또는 최상위 문단에 든 표(`hs:sec > hp:p > hp:run > hp:tbl`)의
+ * 셀 `hp:subList` 직속 문단이다. 병합·머리글 셀도 포함한다. 셀 안에 다시 든 표, 글상자·머리말 같은 다른 subList는 제외한다.
+ */
+function isStyleEditableParagraph(paragraph: SourceElement): boolean {
+  const scope = paragraph.parent
+  if (scope?.name === 'hs:sec') return true
+  if (scope?.name !== 'hp:subList') return false
+  const cell = scope.parent
+  const row = cell?.parent
+  const table = row?.parent
+  const hostRun = table?.parent
+  const hostParagraph = hostRun?.parent
+  return (
+    cell?.name === 'hp:tc' &&
+    row?.name === 'hp:tr' &&
+    table?.name === 'hp:tbl' &&
+    hostRun?.name === 'hp:run' &&
+    hostParagraph?.name === 'hp:p' &&
+    hostParagraph.parent?.name === 'hs:sec'
+  )
 }
 
 function findAllDescendantElements(node: SourceElement): SourceElement[] {

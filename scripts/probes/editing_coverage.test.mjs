@@ -43,14 +43,15 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
     const baseline = await measureEditingCoverage(baselinePath)
     const list = await measureEditingCoverage(listPath)
 
-    // 머리글 셀(4자)은 text만 편집할 수 있다: 셀 text는 열리지만 셀 style·표 구조 대상은 아니다.
+    // 머리글 셀(4자)은 text·글자·문단 모양만 편집할 수 있다: 셀 style·표 구조 대상은 아니다.
+    // 표 셀 4개의 run·문단은 모두 글자·문단 모양 대상이다(본문 문단은 머리말·이미지 문단뿐이라 0).
     assert.deepEqual(pick(baseline), {
       textRuns: 11,
       anchored: 11,
       textEditable: 4,
-      charStyleEditable: 0,
+      charStyleEditable: 4,
       paragraphs: 12,
-      paraStyleEditable: 0,
+      paraStyleEditable: 4,
       tableCells: 4,
       tableCellsEditable: 4,
       tableCellStyleEditable: 3,
@@ -64,7 +65,7 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       NOT_LISTED_HEADER_FOOTER: 6,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 1
     })
-    assert.deepEqual(baseline.rejectionReasons.charStyle, { 'capability: TABLE_CELL_STRUCTURE': 4 })
+    assert.deepEqual(baseline.rejectionReasons.charStyle, {})
     assert.deepEqual(baseline.nonEditableCharactersByReason, {
       NOT_LISTED_HEADER_FOOTER: 30,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 7

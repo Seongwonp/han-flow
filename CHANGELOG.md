@@ -91,6 +91,7 @@
 - 편집 코어 tree 전환 4단계: 표 행·열 추가/삭제와 1×2 셀 병합·분할을 source tree로 옮기고(공개 corpus 401 command differential에서 오류·표 fragment·selection·bytes·inverse가 전환 전과 동일, CDATA·다른 attribute 값 안의 이름·문자 참조 주소를 잘못 읽고 둘째 문단에 줄 배치 정보가 있는 병합 셀 분할에서 잘못된 XML을 쓰던 잠재 버그 수정), 큰 표의 행 추가+실행 취소 비용을 약 6.0ms에서 4.0ms로 단축
 - 편집 코어 tree 전환 정리: legacy 문자열 구현 4개와 정규식 attribute·`replaceRange`·`scanXmlElements`·CDATA `as-tag` scanner 경로를 제거하고, legacy differential을 공개 corpus 1,842 case의 SHA-256 golden 회귀와 exact undo·redo 검사로 대체해 `npm test` 시간을 약 168s에서 45s로 단축
 - HWPX entry CRC-32를 byte 단위 JS 구현에서 Node 내장 `zlib.crc32`로 교체(없으면 JS 구현으로 대체, 모든 공개 fixture entry와 무작위 buffer에서 값 동일)해 대형 section 입력 비용을 keystroke당 약 1.1ms에서 0.3ms로, Enter+Backspace를 약 3.9ms에서 2.2ms로 단축
+- 최상위 표의 셀(병합·머리글 셀 포함) 직속 문단에 글자 모양(굵게·기울임·밑줄·취소선·크기·색·글꼴, 부분 선택 run 분할 포함)과 문단 모양(정렬·줄 간격·앞뒤 간격·첫 줄 들여쓰기)을 허용하고 ribbon·단축키를 같은 capability로 열기(셀 안 표와 머리말·글상자는 계속 거부, 외부 26종 글자 모양 46.9% → 78.2%·문단 모양 49.4% → 79.1%)
 
 ### V2 HWP fixed-page
 

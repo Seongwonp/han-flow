@@ -1,5 +1,13 @@
+import { mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { createElement, createRef } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { editingCapabilities } from '../../src/core/editing/editing_capability'
+import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
+import { HwpxSourcePackage } from '../../src/core/parser/source_package'
+import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
+import { createCompatibilityHwpx } from '../fixtures/public/create_synthetic_hwpx'
 import {
   ViewerColumnFlow,
   ViewerPageStack,
@@ -7,9 +15,60 @@ import {
   ViewerStatusBar
 } from '../../src/renderer/src/ViewerShell'
 import { ViewerToolbar } from '../../src/renderer/src/ViewerToolbar'
-import { TableView } from '../../src/renderer/src/App'
+import { editingRibbonState, TableView } from '../../src/renderer/src/App'
 
 const noop = () => undefined
+
+const toolbarProps = {
+  fileName: 'sample.hwpx',
+  editing: {
+    sessionId: 'session',
+    revision: 3,
+    savedRevision: 2,
+    canUndo: true,
+    canRedo: false,
+    isDirty: true
+  },
+  editingPending: 0,
+  documentLoading: false,
+  loading: false,
+  hasDocument: true,
+  printing: false,
+  fixedDocument: false,
+  canStartEditing: true,
+  zoom: 1.25,
+  searchOpen: false,
+  searchQuery: '',
+  searching: false,
+  searchPageCount: 0,
+  searchOccurrences: 0,
+  searchInputRef: createRef<HTMLInputElement>(),
+  characterStyleAvailable: false,
+  paragraphStyleAvailable: false,
+  cellStyleAvailable: false,
+  tableCellSelectionAvailable: false,
+  documentFonts: [{ id: '0', family: 'HanFlow Test Sans' }],
+  onSearchQueryChange: noop,
+  onSearchStep: noop,
+  onSearchClose: noop,
+  onSearchOpen: noop,
+  onStartEditing: noop,
+  onZoomStep: noop,
+  onExportPdf: noop,
+  onChooseFile: noop,
+  onSaveEditing: noop,
+  onUndoEditing: noop,
+  onRedoEditing: noop,
+  onCharacterStyle: noop,
+  onParagraphStyle: noop,
+  onCellStyle: noop,
+  onInsertTableRowAfter: noop,
+  onDeleteTableRow: noop,
+  onInsertTableColumnAfter: noop,
+  onDeleteTableColumn: noop,
+  onMergeTableCellRight: noop,
+  onSplitTableCell: noop
+}
 
 describe('viewer shell components', () => {
   test('toolbar는 보기 action과 편집 ribbon 상태를 props로만 표시한다', () => {
@@ -258,5 +317,58 @@ describe('viewer shell components', () => {
     expect(markup).toContain('grid-template-columns:repeat(2, minmax(0, 1fr))')
     expect(markup).toContain('column-gap:8px')
     expect(markup.indexOf('왼쪽')).toBeLessThan(markup.indexOf('오른쪽'))
+  })
+  test.each([
+    ['일반 셀', 'A'],
+    ['병합 셀', 'R'],
+    ['머리글 셀', 'H1']
+  ])('%s caret이면 ribbon의 글자·문단 모양 control과 단축키 상태가 켜진다', async (_label, text) => {
+    const directory = mkdtempSync(join(tmpdir(), 'han-flow-ribbon-cell-'))
+    try {
+      const source = await HwpxSourcePackage.open(createCompatibilityHwpx(directory))
+      const sectionPath = 'Contents/section0.xml'
+      const anchor = listHwpxTextAnchors(source, sectionPath).find((candidate) => candidate.text === text)!
+      const document = await decodeViewerDocument(source)
+      const capabilities = editingCapabilities(document, {
+        sectionPath,
+        anchorTextNodeId: anchor.textNodeId,
+        anchorOffset: 0,
+        focusTextNodeId: anchor.textNodeId,
+        focusOffset: text.length
+      })
+      const ribbon = editingRibbonState(document, capabilities)
+      expect(ribbon.characterStyleAvailable).toBe(true)
+      expect(ribbon.paragraphStyleAvailable).toBe(true)
+      expect(ribbon.activeStyle).toMatchObject({ bold: true, height: 500 })
+
+      const markup = renderToStaticMarkup(createElement(ViewerToolbar, {
+        ...toolbarProps,
+        characterStyleAvailable: ribbon.characterStyleAvailable,
+        paragraphStyleAvailable: ribbon.paragraphStyleAvailable,
+        cellStyleAvailable: ribbon.cellStyleAvailable,
+        activeStyle: ribbon.activeStyle,
+        activeCellStyle: ribbon.activeCellStyle
+      }))
+      const control = (label: string): string => {
+        const match = markup.match(new RegExp(`<(?:button|input|select)[^>]*aria-label="${label}"[^>]*>`))
+        if (!match) throw new Error(`control 없음: ${label}`)
+        return match[0]
+      }
+      for (const label of [
+        '현재 텍스트 블록 굵게',
+        '현재 텍스트 블록 기울임',
+        '현재 텍스트 블록 밑줄',
+        '글자 크기 늘리기',
+        '글자 색상',
+        '가운데 정렬',
+        '줄 간격 늘리기',
+        '첫 줄 들여쓰기',
+        '문단 앞 간격 늘리기'
+      ]) {
+        expect(control(label)).not.toMatch(/\sdisabled=/)
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

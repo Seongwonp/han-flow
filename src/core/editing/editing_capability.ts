@@ -34,7 +34,7 @@ export interface EditingAnchorContext {
   cellStyleId?: string
   /**
    * 표 셀 text에서만 쓴다. true면 행·열·병합·분할·셀 style·문단 나눔 같은 구조 command를 허용하는 셀이다.
-   * false면 병합·머리글 셀이거나 문단에 run이 여러 개인 셀이라 text 입력·삭제·치환만 허용한다.
+   * false면 병합·머리글 셀이거나 문단에 run이 여러 개인 셀이라 text 입력·삭제·치환과 글자·문단 모양만 허용한다.
    */
   cellStructureEditable?: boolean
 }
@@ -269,12 +269,14 @@ export function editingCapabilities(
   return {
     selection: { available: true },
     text: { available: true },
-    characterStyle: !topLevel
+    // 글자·문단 모양은 본문과 표 셀(병합·머리글 셀 포함) 모두 같은 run·문단 조건만 본다.
+    // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
+    characterStyle: !topLevel && !tableCell
       ? unavailable('TABLE_CELL_STRUCTURE')
       : !sameRun
         ? unavailable('MULTI_RUN_SELECTION')
         : { available: true },
-    paragraphStyle: !topLevel
+    paragraphStyle: !topLevel && !tableCell
       ? unavailable('TABLE_CELL_STRUCTURE')
       : !sameParagraph
         ? unavailable('MULTI_PARAGRAPH_SELECTION')

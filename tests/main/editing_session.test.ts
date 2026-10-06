@@ -5,6 +5,7 @@ import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { listSelectableMergedTableCells } from '../../src/core/editing/table_cell_selection'
 import { HwpxSaveAsError, saveHwpxAs } from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
+import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 import {
   EditingSessionManager,
   pdfExportFailureMessage,
@@ -754,6 +755,66 @@ describe('main process HWPX editing session', () => {
     const redone = await manager.redo(23, started.sessionId)
     expect(redone.document.sections[0].blocks.at(-1)?.content).toHaveLength(3)
     expect(redone.selection).toEqual(styled.selection)
+  })
+
+  test('표 셀 run의 부분 글자 모양과 문단 정렬을 세션 history로 적용하고 되돌린다', async () => {
+    const manager = new EditingSessionManager(() => 'cell-style-session')
+    const source = await HwpxSourcePackage.open(fixture)
+    const sectionPath = 'Contents/section0.xml'
+    const anchor = listHwpxTextAnchors(source, sectionPath).find((candidate) => candidate.text === '긴 설명')!
+    const started = await manager.start(28, fixture)
+    const selected = {
+      sectionPath,
+      anchorTextNodeId: anchor.textNodeId,
+      anchorOffset: 0,
+      focusTextNodeId: anchor.textNodeId,
+      focusOffset: 1
+    }
+    const styled = await manager.applyCharacterStyle(28, {
+      sessionId: started.sessionId,
+      transactionId: 'cell-partial-size',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: selected,
+      height: 1400,
+      timestamp: 1
+    })
+    const cell = (document: typeof styled.document) => {
+      const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
+      return table?.type === 'table' ? table.rows[1].cells[0].paragraphs[0] : undefined
+    }
+    expect(cell(styled.document)?.content).toMatchObject([
+      { type: 'text', text: '긴' },
+      { type: 'text', text: ' 설명' }
+    ])
+    const first = cell(styled.document)?.content[0]
+    expect(first?.type === 'text' ? styled.document.charStyles[first.charStyleId]?.height : undefined).toBe(1400)
+    expect(styled.selection).toEqual(selected)
+
+    const centered = await manager.applyParagraphStyle(28, {
+      sessionId: started.sessionId,
+      transactionId: 'cell-center',
+      sectionPath,
+      textNodeId: anchor.textNodeId,
+      selection: { ...selected, focusOffset: 0 },
+      align: 'CENTER',
+      timestamp: 2
+    })
+    expect(centered.document.paraStyles[cell(centered.document)!.paraStyleId]?.align).toBe('CENTER')
+
+    await manager.undo(28, started.sessionId)
+    const undone = await manager.undo(28, started.sessionId)
+    expect(cell(undone.document)?.content).toMatchObject([{ type: 'text', text: '긴 설명' }])
+    await manager.redo(28, started.sessionId)
+    await manager.redo(28, started.sessionId)
+    const saved = join(directory, 'cell-style-saved.hwpx')
+    await manager.saveAs(28, started.sessionId, saved)
+    const reopened = await decodeViewerDocument(await HwpxSourcePackage.open(saved))
+    expect(cell(reopened)?.content).toMatchObject([
+      { type: 'text', text: '긴' },
+      { type: 'text', text: ' 설명' }
+    ])
+    expect(reopened.paraStyles[cell(reopened)!.paraStyleId]?.align).toBe('CENTER')
   })
 
   test('기울임·밑줄·취소선 요청을 projection과 history에 반영한다', async () => {

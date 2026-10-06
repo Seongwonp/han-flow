@@ -195,14 +195,23 @@ describe('편집 capability', () => {
     ['병합 셀', 6],
     ['머리글 셀', 7],
     ['여러 run 셀', 9]
-  ])('%s은 text만 허용하고 셀 style·행열·문단 구조는 제한한다', (_label, ordinal) => {
+  ])('%s은 text·글자·문단 모양만 허용하고 셀 style·행열·문단 구조는 제한한다', (_label, ordinal) => {
     const capability = editingCapabilities(document, selection(ordinal, 1))
     expect(capability.selection.available).toBe(true)
     expect(capability.text.available).toBe(true)
     expect(capability.cellStyle).toEqual({ available: false, reason: 'TABLE_CELL_STRUCTURE' })
     expect(capability.paragraphStructure).toEqual({ available: false, reason: 'TABLE_CELL_STRUCTURE' })
-    expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
-    expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(capability.characterStyle).toEqual({ available: true })
+    expect(capability.paragraphStyle).toEqual({ available: true })
+  })
+
+  test('표 셀의 글자 모양은 같은 run, 문단 모양은 같은 문단 선택에서만 연다', () => {
+    const acrossRuns = editingCapabilities(document, selection(9, 0, 10, 0))
+    expect(acrossRuns.characterStyle).toEqual({ available: false, reason: 'MULTI_RUN_SELECTION' })
+    expect(acrossRuns.paragraphStyle).toEqual({ available: true })
+    const acrossParagraphs = editingCapabilities(document, selection(4, 0, 5, 1))
+    expect(acrossParagraphs.characterStyle).toEqual({ available: false, reason: 'MULTI_RUN_SELECTION' })
+    expect(acrossParagraphs.paragraphStyle).toEqual({ available: false, reason: 'MULTI_PARAGRAPH_SELECTION' })
   })
 
   test('text 전용 셀은 같은 문단 안 run 사이만 선택하고 문단을 넘는 선택은 막는다', () => {
@@ -233,11 +242,11 @@ describe('편집 capability', () => {
     })
   })
 
-  test('안전한 표 셀은 text와 문단 구조를 허용하고 style은 제한한다', () => {
+  test('안전한 표 셀은 text·문단 구조·글자·문단 모양을 허용한다', () => {
     const capability = editingCapabilities(document, selection(3, 1))
     expect(capability.text.available).toBe(true)
-    expect(capability.characterStyle.reason).toBe('TABLE_CELL_STRUCTURE')
-    expect(capability.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(capability.characterStyle).toEqual({ available: true })
+    expect(capability.paragraphStyle).toEqual({ available: true })
     expect(capability.paragraphStructure.available).toBe(true)
     expect(capability.cellStyle.available).toBe(true)
     expect(capability.focus?.cellStyleId).toBe('1')
@@ -256,7 +265,7 @@ describe('편집 capability', () => {
     const across = editingCapabilities(document, selection(4, 0, 5, 1))
     expect(across.selection.available).toBe(true)
     expect(across.text.available).toBe(true)
-    expect(across.paragraphStyle.reason).toBe('TABLE_CELL_STRUCTURE')
+    expect(across.paragraphStyle.reason).toBe('MULTI_PARAGRAPH_SELECTION')
     expect(across.paragraphStructure.reason).toBe('MULTI_RUN_SELECTION')
   })
 

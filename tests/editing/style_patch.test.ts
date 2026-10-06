@@ -444,7 +444,7 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
   })
 
-  test('이미 같은 문단 정렬은 no-op이고 표 셀처럼 제한 밖 anchor는 거부한다', async () => {
+  test('이미 같은 문단 정렬은 no-op이고 머리말처럼 제한 밖 anchor는 거부한다', async () => {
     const source = await sourceWithCounts()
     const anchor = editableAnchor(source)
     const noOp = applyParagraphStyleCommand(source, {
@@ -456,16 +456,16 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(noOp.changed).toBe(false)
     expect(noOp.package).toBe(source)
 
-    const tableAnchor = listHwpxTextAnchors(source, sectionPath).find(
-      (candidate) => candidate.text === '공개 헤더'
+    const headerAnchor = listHwpxTextAnchors(source, sectionPath).find(
+      (candidate) => candidate.text === '공개 머리말'
     )!
     expect(() =>
       applyCharacterStyleCommand(source, {
         type: 'apply-character-style',
         sectionPath,
-        textNodeId: tableAnchor.textNodeId,
+        textNodeId: headerAnchor.textNodeId,
         bold: false
       })
-    ).toThrow('최상위 일반 문단')
+    ).toThrow('최상위 표 셀 직속 문단')
   })
 })

@@ -5,6 +5,7 @@ import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fi
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import {
+  EditingCapabilities,
   editingCapabilities,
   reconcileEditingSelection
 } from '../../core/editing/editing_capability'
@@ -96,7 +97,8 @@ export type TableCellEditingMode = 'structure' | 'text'
 /**
  * 표 셀 편집 방식.
  * - `'structure'`: 병합되지 않은 일반 body 셀. text와 문단 나눔·범위 치환, 행·열·셀 style command를 허용한다.
- * - `'text'`: 병합·머리글 셀이나 여러 run 문단이 있는 셀. 문단 하나 안의 text 입력·삭제·치환만 허용한다.
+ * - `'text'`: 병합·머리글 셀이나 여러 run 문단이 있는 셀. 문단 하나 안의 text 입력·삭제·치환과
+ *   글자·문단 모양(capability가 ribbon·단축키를 연다)만 허용한다.
  * 쪽을 넘어 나뉜 셀 조각은 조각 사이 caret·선택 복원을 검증하지 않았으므로 편집하지 않는다.
  */
 export function tableCellEditingMode(cell: ViewerTableCell, measurable = false): TableCellEditingMode | undefined {
@@ -184,6 +186,85 @@ interface ParagraphEditingProps {
   onHistory?: (direction: HistoryDirection) => void
   tableCellSelection?: TableCellSelection
   onTableCellSelectionChange: (selection: TableCellSelection) => void
+}
+
+export interface EditingActiveStyle {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strikeout: boolean
+  height: number
+  color: string
+  fontId?: string
+  fontFamily?: string
+  align: ParagraphAlignment
+  lineSpacing: number
+  indent: number
+  marginBefore: number
+  marginAfter: number
+}
+
+export interface EditingActiveCellStyle {
+  backgroundColor: string
+  borderColor: string
+  borderWidth: number
+}
+
+export interface EditingRibbonState {
+  activeStyle?: EditingActiveStyle
+  activeCellStyle?: EditingActiveCellStyle
+  characterStyleAvailable: boolean
+  paragraphStyleAvailable: boolean
+  cellStyleAvailable: boolean
+}
+
+/**
+ * 편집 ribbon의 글자·문단·셀 모양 control 상태. 본문과 표 셀(병합·머리글 셀 포함)을 구분하지 않고
+ * capability가 열어 준 command만 켠다. 단축키(굵게·기울임·밑줄)도 같은 값을 쓴다.
+ */
+export function editingRibbonState(
+  document: ViewerDocument | null | undefined,
+  capabilities: EditingCapabilities
+): EditingRibbonState {
+  const focus = capabilities.focus
+  let activeStyle: EditingActiveStyle | undefined
+  if (document && focus) {
+    const charStyle = document.charStyles[focus.charStyleId]
+    const paraStyle = document.paraStyles[focus.paraStyleId]
+    activeStyle = {
+      bold: charStyle?.bold ?? false,
+      italic: charStyle?.italic ?? false,
+      underline: charStyle?.underline ?? false,
+      strikeout: charStyle?.strikeout ?? false,
+      height: charStyle?.height ?? 1000,
+      color: charStyle?.color ?? '#000000',
+      fontId: charStyle?.fontId,
+      fontFamily: charStyle?.fontFamily,
+      align: (paraStyle?.align ?? 'LEFT') as ParagraphAlignment,
+      lineSpacing: paraStyle?.lineSpacing || 160,
+      indent: paraStyle?.indent ?? 0,
+      marginBefore: paraStyle?.margin.top ?? 0,
+      marginAfter: paraStyle?.margin.bottom ?? 0
+    }
+  }
+  const cellStyleId = focus?.cellStyleId
+  const cellStyle = document && cellStyleId ? document.cellStyles[cellStyleId] : undefined
+  const activeCellStyle = cellStyle
+    ? {
+        backgroundColor: /^#[0-9a-f]{6}$/i.test(cellStyle.backgroundColor ?? '')
+          ? cellStyle.backgroundColor!
+          : '#FFFFFF',
+        borderColor: /^#[0-9a-f]{6}$/i.test(cellStyle.left.color) ? cellStyle.left.color : '#000000',
+        borderWidth: cellStyle.left.widthMm || 0.12
+      }
+    : undefined
+  return {
+    activeStyle,
+    activeCellStyle,
+    characterStyleAvailable: Boolean(activeStyle && capabilities.characterStyle.available),
+    paragraphStyleAvailable: Boolean(activeStyle && capabilities.paragraphStyle.available),
+    cellStyleAvailable: Boolean(activeCellStyle && capabilities.cellStyle.available)
+  }
 }
 
 export function isEditableTextParagraph(
@@ -1166,47 +1247,17 @@ export default function App() {
     () => editingCapabilities(document, editingSelection),
     [document, editingSelection]
   )
-  const activeStyle = useMemo(() => {
-    const focus = editingCapabilityState.focus
-    if (!document || !focus) return undefined
-    const charStyle = document.charStyles[focus.charStyleId]
-    const paraStyle = document.paraStyles[focus.paraStyleId]
-    return {
-      bold: charStyle?.bold ?? false,
-      italic: charStyle?.italic ?? false,
-      underline: charStyle?.underline ?? false,
-      strikeout: charStyle?.strikeout ?? false,
-      height: charStyle?.height ?? 1000,
-      color: charStyle?.color ?? '#000000',
-      fontId: charStyle?.fontId,
-      fontFamily: charStyle?.fontFamily,
-      align: (paraStyle?.align ?? 'LEFT') as ParagraphAlignment,
-      lineSpacing: paraStyle?.lineSpacing || 160,
-      indent: paraStyle?.indent ?? 0,
-      marginBefore: paraStyle?.margin.top ?? 0,
-      marginAfter: paraStyle?.margin.bottom ?? 0
-    }
-  }, [document, editingCapabilityState.focus])
-  const activeCellStyle = useMemo(() => {
-    const styleId = editingCapabilityState.focus?.cellStyleId
-    const style = document && styleId ? document.cellStyles[styleId] : undefined
-    if (!style) return undefined
-    return {
-      backgroundColor: /^#[0-9a-f]{6}$/i.test(style.backgroundColor ?? '')
-        ? style.backgroundColor!
-        : '#FFFFFF',
-      borderColor: /^#[0-9a-f]{6}$/i.test(style.left.color) ? style.left.color : '#000000',
-      borderWidth: style.left.widthMm || 0.12
-    }
-  }, [document, editingCapabilityState.focus])
+  const {
+    activeStyle,
+    activeCellStyle,
+    characterStyleAvailable,
+    paragraphStyleAvailable,
+    cellStyleAvailable
+  } = useMemo(
+    () => editingRibbonState(document, editingCapabilityState),
+    [document, editingCapabilityState]
+  )
   const characterStyleState = editingCapabilityState.characterStyle
-  const characterStyleAvailable = Boolean(activeStyle && characterStyleState.available)
-  const paragraphStyleAvailable = Boolean(
-    activeStyle && editingCapabilityState.paragraphStyle.available
-  )
-  const cellStyleAvailable = Boolean(
-    activeCellStyle && editingCapabilityState.cellStyle.available
-  )
   const applyCharacterStyle = useCallback(async (
     style: { bold?: boolean; italic?: boolean; underline?: boolean; strikeout?: boolean; height?: number; color?: string; fontId?: string }
   ) => {

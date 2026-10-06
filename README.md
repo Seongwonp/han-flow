@@ -113,7 +113,7 @@ Mac·로컬 기기 측정은 별도 절로 분리합니다. 날짜별 상세는 
 | Jest (`npm test -- --runInBand`) | 43 suites passed·2 skipped, 292 passed·12 skipped |
 | parser probe (`npm run test:probe`) | 18 passed |
 | 공개 HWPX corpus (`npm run verify:corpus`) | 35/35 (synthetic 9종 + 한/글 저장본 external 26종, invalid-package 1종 의도적 거부) |
-| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 26종 371 run: anchor 95.7%·text 편집 89.8%·글자 가중 92.8%·표 셀 49/66 (기준선 79.5%·89.3%·45/66, [측정](docs/editing_coverage.md)) |
+| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 26종 371 run: anchor 95.7%·text 편집 89.8%·글자 가중 92.8%·표 셀 49/66·글자 모양 78.2%·문단 모양 79.1% (2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
 | 공개 fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | Windows CI (`windows-latest`) | test·typecheck·probe·corpus·build·package, 패키지 앱 HWPX·HWP matrix·PDF E2E, 비서명 NSIS artifact 통과 |
 | Linux CI (`ubuntu-latest`, xvfb) | 같은 자동 관문과 `package:linux`, 패키지 앱 HWPX·HWP matrix·PDF E2E, unpacked artifact 통과 |
@@ -201,8 +201,8 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
 
 - HWPX 편집은 최상위 텍스트 문단과 일반 표 body cell의 단일 text run 문단을 지원합니다. 부분 style로
   나뉜 여러 run과 여러 최상위 문단은 키보드·pointer 범위 선택과 치환을 지원합니다.
-- 머리글·병합(`rowSpan`·`colSpan`) 셀과 여러 run 문단이 있는 셀은 문단 하나 안에서 text 입력·삭제·치환만
-  지원하고 구조·모양 편집은 막습니다. 쪽을 넘어 나뉜 셀 조각(continuation fragment)과 머리말·꼬리말은
+- 머리글·병합(`rowSpan`·`colSpan`) 셀과 여러 run 문단이 있는 셀은 문단 하나 안에서 text 입력·삭제·치환과
+  글자·문단 모양만 지원하고 구조·셀 모양 편집은 막습니다. 쪽을 넘어 나뉜 셀 조각(continuation fragment)과 머리말·꼬리말은
   읽기 전용입니다. 병합되지 않은 일반 body cell은 여러 문단의 단일 text run을 편집하고, 같은 cell 안에서
   문단을 가로지르는 범위 치환·Enter 분할·경계 Backspace/Delete 병합을 수행할 수 있습니다.
 - 한/글이 빈 입력 칸으로 저장한 `<hp:t/>`에 입력하면 `<hp:t>…</hp:t>`로 펼치고, 실행 취소는 원래
@@ -211,13 +211,16 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   `columnBreak`와 높이에 따라 왼쪽 단→오른쪽 단→다음 페이지 순서로 표시합니다. `PARALLEL`,
   `RIGHT`·`MIRROR`와 서로 다른 단 너비는 모델에는 보존하지만 단일 흐름 fallback diagnostic을 남깁니다.
 - 글자 모양은 단일 `hp:t` 전체 또는 내부 부분 선택의 굵게·기울임·밑줄·취소선·크기·색상을 지원합니다.
+  최상위 문단과 최상위 표의 셀(병합·머리글 셀 포함) 직속 문단에 적용하며, 셀 안에 다시 든 표와
+  머리말·꼬리말·글상자 문단은 거부합니다.
   글꼴은 문서 `HANGUL` font-face에 이미 선언된 family만 ID로 재사용하며 새 글꼴 추가·포함은 지원하지 않습니다.
 - 부분 스타일로 여러 run이 된 최상위 문단은 run별 입력 surface와 좌우 경계 이동을 지원합니다.
 - 여러 run에 걸친 글자 모양 적용은 아직 지원하지 않으며 해당 선택에서는 글자 모양 control과
   단축키를 비활성화합니다.
 - 편집 capability는 최상위 문단, 안전한 표 셀 text, 여러 run·문단과 서로 다른 구조의 selection을
-  구분합니다. 여러 문단 표 셀은 cell별 scope를 공유하되 다른 cell과 격리합니다. 표 셀의
-  글자·문단 모양 control은 차단하고, 안전한 단일 셀에서는 배경색과 사방 테두리 색·두께를 편집합니다.
+  구분합니다. 여러 문단 표 셀은 cell별 scope를 공유하되 다른 cell과 격리합니다. 표 셀에서도
+  글자·문단 모양 control과 단축키를 본문과 같은 run·문단 조건으로 열고, 안전한 단일 셀에서는
+  배경색과 사방 테두리 색·두께를 편집합니다.
   병합·span·반복 머리글·continuation 구조 편집은 요청 전에 차단합니다.
 - 편집 결과의 selection anchor가 문서 갱신으로 달라지면 최신 main projection을 다시 받아
   offset을 안전한 UTF-16 경계로 조정합니다. 한 endpoint만 남으면 그 위치로 접고 둘 다
@@ -226,7 +229,7 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   일반 텍스트 문단과 안전한 일반 body cell은 Enter 분할과 문단 경계 Backspace/Delete 병합을
   지원합니다. 여러 문단 범위는 같은 section의 최상위 문단 또는 같은 표 cell 안에서만 연결하며
   서로 다른 cell·중첩 구조의 scope를 섞지 않습니다.
-- 문단 모양은 최상위 일반 문단의 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄
+- 문단 모양은 최상위 일반 문단과 최상위 표 셀 직속 문단의 정렬 4종, 줄 간격, 문단 앞·뒤 간격과 첫 줄
   들여쓰기·내어쓰기를 지원합니다. 인라인 탭이 있는 문단도 같은 문단 모양을 바꿀 수 있으며,
   기존 `tabPrIDRef`와 글머리표·번호 매기기 `heading`은 복제·저장·undo/redo에서 유지합니다.
   사용자 정의 탭 위치와 목록 모양 자체를 새로 만들거나 바꾸는 기능은 아직 지원하지 않습니다.
