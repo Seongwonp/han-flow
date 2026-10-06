@@ -895,6 +895,41 @@ function captureVisualState(window: BrowserWindow): void {
         hiddenImages: document.querySelectorAll('.viewer-fixed-page-image[aria-hidden="true"]').length,
         labeledTextLayers: document.querySelectorAll('.viewer-fixed-page-text-layer[aria-label]').length
       },
+      // 상단 막대·리본 control이 글자 줄바꿈으로 세로로 넘치지 않는지 탭 panel마다 하나씩 펼쳐 잰다.
+      toolbarLayout: (() => {
+        const toolbar = document.querySelector('.viewer-toolbar')
+        if (!toolbar) return null
+        const panels = Array.from(toolbar.querySelectorAll('.viewer-ribbon-panel'))
+        const originallyHidden = panels.map((panel) => panel.hidden)
+        const overflowing = new Set()
+        const measure = () => {
+          for (const element of toolbar.querySelectorAll('button, output, .viewer-file-name, .viewer-ribbon-group-label, .viewer-editing-badge')) {
+            if (!element.getClientRects().length) continue
+            // 파일 이름은 의도한 말줄임이므로 가로 넘침은 세지 않는다.
+            const clipsHorizontally = !element.classList.contains('viewer-file-name') && element.scrollWidth > element.clientWidth + 1
+            if (element.scrollHeight > element.clientHeight + 1 || clipsHorizontally) {
+              overflowing.add(element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 24) || element.className)
+            }
+          }
+        }
+        if (!panels.length) measure()
+        panels.forEach((panel, index) => {
+          panels.forEach((other, otherIndex) => { other.hidden = otherIndex !== index })
+          measure()
+        })
+        panels.forEach((panel, index) => { panel.hidden = originallyHidden[index] })
+        const name = toolbar.querySelector('.viewer-file-name')
+        const nameStyle = name ? getComputedStyle(name) : undefined
+        return {
+          overflowControls: Array.from(overflowing),
+          fileName: name ? {
+            title: name.getAttribute('title'),
+            truncated: name.scrollWidth > name.clientWidth + 1,
+            singleLine: name.getBoundingClientRect().height <= Number.parseFloat(nameStyle.lineHeight === 'normal' ? nameStyle.fontSize : nameStyle.lineHeight) * 1.6,
+            ellipsis: nameStyle.textOverflow === 'ellipsis' && nameStyle.whiteSpace === 'nowrap'
+          } : null
+        }
+      })(),
       editingUi: (() => {
         const ribbon = document.querySelector('.viewer-edit-ribbon')
         const toolbar = document.querySelector('.viewer-toolbar')

@@ -5,13 +5,14 @@ button { font: inherit; }
 .viewer-app { height: 100%; display: flex; flex-direction: column; background: #cfd3d8; }
 .viewer-measurement { position: fixed; left: -100000px; top: 0; visibility: hidden; pointer-events: none; }
 .viewer-toolbar { height: 168px; flex: 0 0 168px; display: flex; flex-direction: column; background: rgba(248,248,248,.92); border-bottom: 1px solid rgba(0,0,0,.16); backdrop-filter: blur(20px); -webkit-app-region: drag; }
-.viewer-toolbar-main { min-height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 78px; }
+.viewer-toolbar-main { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 18px 0 78px; }
 .viewer-title, .viewer-actions { display: flex; align-items: center; gap: 10px; font-size: 13px; }
-.viewer-title { min-width: 0; }
-.viewer-title > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.viewer-mark { display: grid; place-items: center; width: 25px; height: 25px; color: white; background: #335eea; border-radius: 6px; font-weight: 800; }
-.viewer-actions { -webkit-app-region: no-drag; color: #59606a; }
-.viewer-actions button, .viewer-empty button { border: 1px solid #b8bec6; background: #fff; border-radius: 7px; min-width: 30px; height: 30px; cursor: pointer; }
+/* 긴 파일 이름은 한 줄 말줄임으로 줄이고(전체 이름은 title), 오른쪽 동작 버튼은 줄이지 않는다. */
+.viewer-title { flex: 1 1 auto; min-width: 0; }
+.viewer-file-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-mark { flex: none; display: grid; place-items: center; width: 25px; height: 25px; color: white; background: #335eea; border-radius: 6px; font-weight: 800; }
+.viewer-actions { flex: none; -webkit-app-region: no-drag; color: #59606a; }
+.viewer-actions button, .viewer-empty button { border: 1px solid #b8bec6; background: #fff; border-radius: 7px; min-width: 30px; height: 30px; cursor: pointer; white-space: nowrap; }
 .viewer-actions button:disabled { cursor: default; opacity: .45; }
 .viewer-editing-badge { padding: 5px 9px; color: #244fd1; background: #e4ebff; border: 1px solid #c7d4ff; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
 .viewer-search { display: flex; align-items: center; gap: 5px; height: 34px; padding: 2px 4px 2px 8px; border: 1px solid #b8bec6; border-radius: 8px; background: white; box-shadow: 0 2px 9px rgba(20,25,35,.12); }
@@ -21,7 +22,7 @@ button { font: inherit; }
 .viewer-actions .viewer-start-editing { padding: 0 14px; background: #335eea; color: white; border-color: #335eea; }
 .viewer-edit-ribbon { height: 116px; display: flex; flex-direction: column; border-top: 1px solid rgba(0,0,0,.1); background: rgba(252,252,253,.88); -webkit-app-region: no-drag; }
 .viewer-ribbon-tabs { height: 30px; display: flex; align-items: end; padding-left: 72px; border-bottom: 1px solid rgba(0,0,0,.1); }
-.viewer-ribbon-tabs button { position: relative; height: 30px; padding: 0 18px; font-size: 13px; border: 0; border-bottom: 2px solid transparent; color: #4c535d; background: transparent; font-weight: 600; cursor: pointer; }
+.viewer-ribbon-tabs button { position: relative; height: 30px; padding: 0 18px; white-space: nowrap; font-size: 13px; border: 0; border-bottom: 2px solid transparent; color: #4c535d; background: transparent; font-weight: 600; cursor: pointer; }
 .viewer-ribbon-tabs button:hover { color: #202124; background: rgba(0,0,0,.04); }
 .viewer-ribbon-tabs button[aria-selected="true"] { border-bottom-color: #335eea; color: #244fd1; font-weight: 700; cursor: default; background: transparent; }
 .viewer-ribbon-tabs button:focus-visible { outline: 2px solid #335eea; outline-offset: -3px; border-radius: 5px; }
@@ -37,7 +38,7 @@ button { font: inherit; }
 .viewer-ribbon-group:first-child { padding-left: 6px; }
 .viewer-ribbon-group:last-child { border-right: 0; }
 .viewer-ribbon-controls { display: flex; align-items: center; gap: 6px; min-height: 48px; }
-.viewer-ribbon-controls button { min-width: 40px; height: 40px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; color: #303640; background: transparent; cursor: pointer; font-size: 15px; }
+.viewer-ribbon-controls button { min-width: 40px; height: 40px; padding: 0 10px; white-space: nowrap; border: 1px solid transparent; border-radius: 7px; color: #303640; background: transparent; cursor: pointer; font-size: 15px; }
 .viewer-ribbon-controls select { max-width: 150px; height: 32px; padding: 0 8px; border: 1px solid #c3cad4; border-radius: 6px; background: #fff; color: #303640; }
 .viewer-ribbon-controls button:hover:not(:disabled) { border-color: #c3cad4; background: #fff; box-shadow: 0 1px 4px rgba(20,25,35,.1); }
 .viewer-ribbon-controls button:disabled, .viewer-style-color:disabled { cursor: default; opacity: .38; }

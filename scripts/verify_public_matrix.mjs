@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -75,6 +75,8 @@ async function verifyPdf(fixture) {
 // report-toc: 목차 번호(`1.`)와 사설 영역 글머리, hanging-indent: 내어쓰기 첫 줄이 용지 밖으로 잘리던 문단.
 const PDF_FIXTURE_IDS = new Set(['report-toc', 'hanging-indent'])
 
+const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
+
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
 try {
   const generator = loadGenerator()
@@ -117,6 +119,14 @@ try {
     })
   }
 
+  // 아주 긴 한글 파일 이름: 상단 막대는 한 줄 말줄임, 버튼·리본 control은 배율 1.25·1.5에서도 줄바꿈하지 않는다.
+  const longNamePath = join(directory, `${LONG_KOREAN_FILE_STEM}.hwpx`)
+  await copyFile(fixtures.find(({ id }) => id === 'hanging-indent').path, longNamePath)
+  const longNameResults = []
+  for (const scale of ['1', '1.25', '1.5']) {
+    longNameResults.push({ scale, ...await verify(longNamePath, 500, false, { HAN_FLOW_VERIFY_DEVICE_SCALE: scale }) })
+  }
+
   const pdfResults = []
   for (const fixture of fixtures.filter(({ id }) => PDF_FIXTURE_IDS.has(id))) {
     pdfResults.push({ fixtureId: fixture.id, ...await verifyPdf(fixture.path) })
@@ -131,6 +141,8 @@ try {
   const hangingIndent = results.find(({ fixtureId }) => fixtureId === 'hanging-indent')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
+    ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
+    ...longNameResults.filter(({ toolbarLayout }) => !toolbarLayout?.fileName?.truncated).map(({ scale }) => `긴 파일 이름 ${scale}배: 말줄임이 적용되지 않음`),
     ...pdfResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: pdfFailures }) => `${fixtureId}: PDF 검증 실패(${pdfFailures.join(', ')})`),
     reportToc?.totalPages === 3 ? undefined : 'report-toc: 표지·목차·본문 3페이지가 아님',
     hangingIndent?.editingProbe?.anchorTransition?.to?.endsWith('#hp:t:0') ? undefined : 'hanging-indent: 빈 문단 합성 anchor 편집 전환이 검증되지 않음',
@@ -154,6 +166,7 @@ try {
     fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
       fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
     })),
+    longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({
       fixtureId, passed, screenPageTextCounts, pdfPageTextCounts: pageTextCounts, pdfTitle
     })),

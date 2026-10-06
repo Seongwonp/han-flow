@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { createElement, createRef } from 'react'
@@ -73,6 +73,36 @@ const toolbarProps = {
 }
 
 describe('viewer shell components', () => {
+  test('긴 파일 이름은 한 줄 말줄임 class와 전체 이름 tooltip으로 표시한다', () => {
+    const longName = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본.hwp'
+    expect(Array.from(longName).length).toBeGreaterThanOrEqual(75)
+    const markup = renderToStaticMarkup(createElement(ViewerToolbar, {
+      ...toolbarProps,
+      fileName: longName,
+      editing: undefined,
+      fixedDocument: true,
+      canStartEditing: false
+    }))
+    const escaped = longName.replace(/&/g, '&amp;')
+    expect(markup).toContain(`<span class="viewer-file-name" title="${escaped}">${escaped}</span>`)
+    // 전체 이름을 다른 곳에 중복으로 펼치지 않는다(상단 막대 한 곳).
+    expect(markup.split(escaped).length - 1).toBe(2)
+  })
+
+  test('상단 막대 CSS는 파일 이름만 줄이고 동작 버튼·리본 버튼은 줄바꿈하지 않는다', () => {
+    const css = readFileSync(join(__dirname, '../../src/renderer/src/assets/main.css'), 'utf8')
+    const rule = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`))?.[1] ?? ''
+    expect(rule('.viewer-file-name')).toEqual(expect.stringContaining('min-width: 0'))
+    expect(rule('.viewer-file-name')).toEqual(expect.stringContaining('white-space: nowrap'))
+    expect(rule('.viewer-file-name')).toEqual(expect.stringContaining('text-overflow: ellipsis'))
+    expect(rule('.viewer-file-name')).toEqual(expect.stringContaining('overflow: hidden'))
+    expect(rule('.viewer-title')).toEqual(expect.stringContaining('min-width: 0'))
+    expect(rule('.viewer-actions')).toEqual(expect.stringContaining('flex: none'))
+    expect(rule('.viewer-actions button, .viewer-empty button')).toEqual(expect.stringContaining('white-space: nowrap'))
+    expect(rule('.viewer-ribbon-controls button')).toEqual(expect.stringContaining('white-space: nowrap'))
+    expect(rule('.viewer-ribbon-tabs button')).toEqual(expect.stringContaining('white-space: nowrap'))
+  })
+
   test('toolbar는 보기 action과 편집 ribbon 상태를 props로만 표시한다', () => {
     const markup = renderToStaticMarkup(createElement(ViewerToolbar, {
       fileName: 'sample.hwpx',

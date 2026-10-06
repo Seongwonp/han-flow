@@ -291,7 +291,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
 
   return <header className={`viewer-toolbar${editing ? ' viewer-toolbar-editing' : ''}`}>
     <div className="viewer-toolbar-main">
-      <div className="viewer-title"><span className="viewer-mark">한</span><span>{fileName}</span></div>
+      <div className="viewer-title"><span className="viewer-mark">한</span><span className="viewer-file-name" title={fileName}>{fileName}</span></div>
       <div className="viewer-actions">
         {searchOpen && <div className="viewer-search" role="search">
           <input

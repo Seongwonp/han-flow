@@ -21,7 +21,11 @@ const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
 const forcedArchitecture = process.env.HAN_FLOW_VERIFY_ARCH
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = appArgument ? resolve(appArgument) : defaultAppBinary()
-const launchArguments = electronLaunchArguments()
+const deviceScale = process.env.HAN_FLOW_VERIFY_DEVICE_SCALE
+const launchArguments = [
+  ...electronLaunchArguments(),
+  ...(deviceScale ? [`--force-device-scale-factor=${deviceScale}`] : [])
+]
 
 if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
   console.error('HAN_FLOW_VERIFY_ARCH는 arm64 또는 x86_64여야 합니다.')
@@ -144,6 +148,10 @@ try {
     state.windowTitle === 'Han-Flow' ? undefined : `열기 실패 뒤 창 제목 불일치: ${state.windowTitle}`
   ] : [
     state.windowTitle === `${basename(fixture)} - Han-Flow` ? undefined : `창 제목 불일치: ${state.windowTitle}`,
+    state.toolbarLayout?.overflowControls?.length ? `툴바 control 넘침(줄바꿈): ${state.toolbarLayout.overflowControls.join(', ')}` : undefined,
+    state.toolbarLayout?.fileName?.title === basename(fixture) ? undefined : `파일 이름 tooltip 불일치: ${state.toolbarLayout?.fileName?.title}`,
+    state.toolbarLayout?.fileName && !state.toolbarLayout.fileName.singleLine ? '파일 이름이 한 줄을 넘음' : undefined,
+    state.toolbarLayout?.fileName && !state.toolbarLayout.fileName.ellipsis ? '파일 이름 말줄임 style이 없음' : undefined,
     state.errorVisible ? '예상하지 않은 사용자 오류가 표시됨' : undefined,
     state.totalPages > 0 ? undefined : '페이지가 생성되지 않음',
     state.mountedPages > 0 ? undefined : '페이지 DOM이 생성되지 않음',
@@ -235,6 +243,8 @@ try {
     columnTextCounts: state.columnTextCounts,
     errorCode: expectedError ? state.errorCode : undefined,
     windowTitle: state.windowTitle,
+    deviceScale: deviceScale ? Number(deviceScale) : undefined,
+    toolbarLayout: state.toolbarLayout,
     pageTextCounts: state.pageTextCounts,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
     search: searchQuery ? state.search : undefined,
