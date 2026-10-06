@@ -11,19 +11,25 @@ import {
   listHwpxTextAnchors,
   ReplaceTextCommand
 } from '../../src/core/editing/text_patch'
-import { isSurrogateBoundarySafe, scanXmlElements } from '../../src/core/editing/xml_scan'
+import { isSurrogateBoundarySafe } from '../../src/core/editing/xml_scan'
+import { findSourceElements, parseSourceTree } from '../../src/core/editing/source_tree'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
 
 // 1단계 tree 전환 관문(2단계에서 전환 전 문자열 구현 `text_patch_legacy.ts`를 지우고 명세 oracle로 바꿈).
 // 1) identity: 열리는 모든 공개 fixture의 section XML과 header.xml이 parse → serialize 뒤 byte 단위로 같다.
 // 2) differential: fixture마다 정해진 text 편집 순서를 tree 경로(`text_patch`)에 적용한다. 편집 전 hp:t 내용이
-//    기본 표기(`encodeHwpxTextContent`)이면 결과는 전환 전 경로의 명세, 즉 `scanXmlElements`로 찾은 hp:t element
+//    기본 표기(`encodeHwpxTextContent`)이면 결과는 전환 전 경로의 명세, 즉 원문을 새로 parse해 찾은 hp:t element
 //    전체를 논리 text의 기본 표기로 다시 쓴 section과 byte 단위로 같아야 하고 inverse도 명세 그대로여야 한다
 //    ({@link canonicalRewrite}). 기본 표기가 아닌 hp:t(attribute 있는 `hp:tab`, 비표준 entity, CR/LF)는 범위 밖
 //    원문을 보존하므로 명세와 다르다. inverse를 역순으로 적용하면 모든 경우 원래 bytes(`<hp:t/>` 포함)로 돌아온다.
 //    tree 경로는 cache된 tree를 이어 쓰므로 연속 편집(cache hit)과 첫 편집(cache miss)을 모두 거친다.
 // 3) no-op identity: 모든 fixture의 모든 편집 가능 anchor에 빈 편집을 적용해도 section bytes가 그대로다.
+
+/** 원문을 새로 parse한 tree의 hp:t element(문서 순서). 원문 범위(`start`/`openEnd`/`closeStart`/`end`)를 쓴다. */
+function hpTextElements(xml: string): ReturnType<typeof findSourceElements> {
+  return findSourceElements(parseSourceTree(xml), 'hp:t')
+}
 
 interface ManifestFixture {
   id: string
@@ -116,7 +122,7 @@ describe('source tree identity와 text 편집 differential', () => {
   /** `hp:t` ordinal의 현재 내용 원문(자기 닫힘이면 빈 문자열). */
   function textContentSource(sourcePackage: HwpxSourcePackage, sectionPath: string, ordinal: number): string {
     const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
-    const element = scanXmlElements(xml).filter((span) => span.name === 'hp:t')[ordinal]
+    const element = hpTextElements(xml)[ordinal]
     return element.closeStart > element.openEnd ? xml.slice(element.openEnd, element.closeStart) : ''
   }
 
@@ -138,7 +144,7 @@ describe('source tree identity와 text 편집 differential', () => {
     text: string
   ): { section: Buffer; inverse: Omit<ReplaceTextCommand, 'revision'> } {
     const xml = sourcePackage.readEntry(command.sectionPath).toString('utf8')
-    const span = scanXmlElements(xml).filter((candidate) => candidate.name === 'hp:t')[ordinal]
+    const span = hpTextElements(xml)[ordinal]
     const openTag = xml.slice(span.start, span.openEnd)
     const nextText = text.slice(0, command.from) + command.insert + text.slice(command.to)
     let replacement: string

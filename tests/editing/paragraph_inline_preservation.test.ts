@@ -10,12 +10,6 @@ import {
   planSplitParagraph,
   ReplaceParagraphFragmentCommand
 } from '../../src/core/editing/paragraph_patch'
-import {
-  legacyApplyReplaceParagraphFragmentCommand,
-  legacyPlanMergeParagraph,
-  legacyPlanReplaceParagraphSelection,
-  legacyPlanSplitParagraph
-} from '../../src/core/editing/paragraph_patch_legacy'
 import { planReplaceSelection } from '../../src/core/editing/range_edit'
 import { createEditorSelection, EditorSelection } from '../../src/core/editing/selection'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
@@ -23,8 +17,8 @@ import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createRoundTripHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 // 문단 분할·병합·범위 치환이 지우지 않은 부분의 inline `hp:tab`(attribute 포함)·`hp:lineBreak`·entity 표기를 원문 그대로
-// 남기는지, 실행 취소가 원래 bytes를 복원하는지 확인한다. 전환 전 경로(`paragraph_patch_legacy`)는 경계 hp:t를 논리 text에서
-// 다시 써 `<hp:tab .../>`를 `&#9;`로 바꿨다(최소 재현을 각 test에 함께 적는다).
+// 남기는지, 실행 취소가 원래 bytes를 복원하는지 확인한다. 3단계 전환 전 문자열 경로는 경계 hp:t를 논리 text에서
+// 다시 써 `<hp:tab .../>`를 `&#9;`로 바꿨다(그 출력은 각 test의 주석에 적는다).
 
 const sectionPath = 'Contents/section0.xml'
 const TAB = '<hp:tab width="3112" leader="0" type="1"/>'
@@ -78,9 +72,6 @@ describe('문단 구조 편집의 inline control·원문 표기 보존', () => {
         `<hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${TAB}뒤&#x41;</hp:t></hp:run></hp:p>`
     )
     // 전환 전: 뒤 문단을 <hp:t>&#9;뒤A</hp:t>로 다시 써 tab 폭·채움 attribute를 잃었다.
-    expect(legacyPlanSplitParagraph(source, createEditorSelection(sectionPath, id(0), 1)).command.replacementFragment).toContain(
-      '<hp:t>&#9;뒤A</hp:t>'
-    )
     expect(listHwpxTextAnchors(result.package, sectionPath).map((anchor) => anchor.text)).toEqual(['앞', '\t뒤A'])
   })
 
@@ -112,9 +103,7 @@ describe('문단 구조 편집의 inline control·원문 표기 보존', () => {
     const backward = planMergeParagraph(source, createEditorSelection(sectionPath, id(1), 0), 'previous')
     const forward = planMergeParagraph(source, createEditorSelection(sectionPath, id(0), 3), 'next')
     expect(backward.command).toEqual(forward.command)
-    expect(backward.command).toEqual(
-      legacyPlanMergeParagraph(source, createEditorSelection(sectionPath, id(1), 0), 'previous').command
-    )
+    // 병합은 전환 전에도 run 원문을 그대로 이어 붙였으므로 command가 같았다.
     const result = applyExact(source, backward.command)
     expect(section(result.package)).toContain(
       `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>제목${TAB}</hp:t></hp:run>` +
@@ -146,10 +135,8 @@ describe('문단 구조 편집의 inline control·원문 표기 보존', () => {
       `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가${TAB}나새&#9;글</hp:t></hp:run>` +
         '<hp:run charPrIDRef="2"><hp:t>마&apos;</hp:t></hp:run></hp:p></hs:sec>'
     )
-    // 전환 전: 남은 조각을 논리 text에서 다시 써 앞 tab을 &#9;로, &apos;를 '로 바꿨다.
-    expect(legacyPlanReplaceParagraphSelection(source, selection, '새\t글').command.replacementFragment).toContain(
-      "<hp:t>가&#9;나새&#9;글</hp:t></hp:run><hp:run charPrIDRef=\"2\"><hp:t>마'</hp:t>"
-    )
+    // 전환 전: 남은 조각을 논리 text에서 다시 써 앞 tab을 &#9;로, &apos;를 '로 바꿨다
+    // (<hp:t>가&#9;나새&#9;글</hp:t></hp:run><hp:run charPrIDRef="2"><hp:t>마'</hp:t>).
     expect(plan.selectionAfter).toEqual(createEditorSelection(sectionPath, id(0), 6))
     expect(plan.affectedTextNodeIds).toEqual([id(0), id(1), id(2)])
   })
@@ -169,16 +156,7 @@ describe('문단 구조 편집의 inline control·원문 표기 보존', () => {
         run(`앞${TAB}가`) + run('&#x41;<hp:lineBreak/>뒤')
       )
     )
-    // 전환 전 경로는 같은 두 단계에서 tab과 &#x41;를 기본 표기로 바꿨다.
-    const legacySplit = legacyApplyReplaceParagraphFragmentCommand(
-      source,
-      legacyPlanSplitParagraph(source, createEditorSelection(sectionPath, id(0), 3)).command
-    )
-    const legacyMerged = legacyApplyReplaceParagraphFragmentCommand(
-      legacySplit.package,
-      legacyPlanMergeParagraph(legacySplit.package, split.selectionAfter, 'previous').command
-    )
-    expect(section(legacyMerged.package)).toContain(run('앞&#9;가') + run('A<hp:lineBreak/>뒤'))
+    // 전환 전 경로는 같은 두 단계에서 tab과 &#x41;를 기본 표기로 바꿨다(run('앞&#9;가') + run('A<hp:lineBreak/>뒤')).
 
     // history로 두 단계를 되돌리면 원래 bytes다.
     const history = new HwpxEditHistory(source)
@@ -199,21 +177,23 @@ describe('문단 구조 편집의 inline control·원문 표기 보존', () => {
     expect(section(history.package)).toBe(section(source))
   })
 
-  test('기본 표기 문단의 Enter 뒤 Backspace는 전환 전 경로와 bytes가 같다', () => {
+  test('기본 표기 문단의 Enter 뒤 Backspace는 전환 전 경로와 같은 bytes를 쓴다', () => {
     const source = withParagraphs(
       `<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나&amp;다</hp:t></hp:run>${LINESEG}</hp:p>`
     )
     const caret = createEditorSelection(sectionPath, id(0), 2)
     const split = applyReplaceParagraphFragmentCommand(source, planSplitParagraph(source, caret).command)
-    const legacySplit = legacyApplyReplaceParagraphFragmentCommand(source, legacyPlanSplitParagraph(source, caret).command)
-    expect(section(split.package)).toBe(section(legacySplit.package))
+    // 3단계 전환 전 경로의 출력과 같은 bytes(기본 표기 hp:t는 두 경로가 같았다).
+    expect(section(split.package)).toContain(
+      '<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run></hp:p>' +
+        '<hp:p id="2" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>&amp;다</hp:t></hp:run></hp:p></hs:sec>'
+    )
     const after = createEditorSelection(sectionPath, id(1), 0)
     const merged = applyReplaceParagraphFragmentCommand(split.package, planMergeParagraph(split.package, after, 'previous').command)
-    const legacyMerged = legacyApplyReplaceParagraphFragmentCommand(
-      legacySplit.package,
-      legacyPlanMergeParagraph(legacySplit.package, after, 'previous').command
+    expect(section(merged.package)).toContain(
+      '<hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>가나</hp:t></hp:run>' +
+        '<hp:run charPrIDRef="0"><hp:t>&amp;다</hp:t></hp:run></hp:p></hs:sec>'
     )
-    expect(section(merged.package)).toBe(section(legacyMerged.package))
   })
 
   test('fragment가 node 경계와 맞지 않거나 교체 fragment가 올바른 XML이 아니면 적용하지 않는다', () => {

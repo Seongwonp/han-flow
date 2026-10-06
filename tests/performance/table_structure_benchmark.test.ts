@@ -3,10 +3,6 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createEditorSelection, EditorSelection } from '../../src/core/editing/selection'
 import { applyReplaceTableFragmentCommand, planInsertTableRowAfter } from '../../src/core/editing/table_patch'
-import {
-  legacyApplyReplaceTableFragmentCommand,
-  legacyPlanInsertTableRowAfter
-} from '../../src/core/editing/table_patch_legacy'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createTableColumnHwpx } from '../fixtures/public/create_synthetic_hwpx'
@@ -14,7 +10,8 @@ import { createTableColumnHwpx } from '../fixtures/public/create_synthetic_hwpx'
 // `HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/table_structure_benchmark.test.ts`
 // 표 행 추가 + 실행 취소 50쌍(예열 5쌍 제외). 한 쌍 = [plan insert-row → apply → anchor 조회 → inverse apply → anchor 조회].
 // 대상: table-columns synthetic fixture(A1 셀)와, 행 추가가 가능한 셀이 있는 외부 fixture 가운데 그 section이 가장 큰 것.
-// before: 전환 전 문자열 경로(table_patch_legacy, 매번 section 재scan), after: source tree 경로.
+// after: source tree 경로. 전환 전 문자열 경로(table_patch_legacy)는 4단계 정리에서 지웠다. 지우기 전 같은 조건의 측정값은
+// table-columns 평균 1.35ms, ext-pyhwpx-table-page-break-cell 평균 5.97ms였다(docs/editing_core_refactor_plan.md 4단계 기록).
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
 const PAIRS = 50
@@ -82,7 +79,7 @@ async function insertableCaret(path: string): Promise<{ caret: EditorSelection; 
 }
 
 describe('표 행 추가·실행 취소 비용', () => {
-  benchmark('table-columns와 가장 큰 외부 표 fixture에서 행 추가+undo 50쌍의 전환 전·후 ms/쌍을 비교한다', async () => {
+  benchmark('table-columns와 가장 큰 외부 표 fixture에서 행 추가+undo 50쌍의 ms/쌍을 잰다', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'han-flow-table-benchmark-'))
     try {
       const publicRoot = join(__dirname, '../fixtures/public')
@@ -104,23 +101,17 @@ describe('표 행 추가·실행 취소 비용', () => {
       ]
       const results = []
       for (const target of targets) {
-        const before = run(await HwpxSourcePackage.open(target.path), target.caret, {
-          plan: legacyPlanInsertTableRowAfter,
-          apply: legacyApplyReplaceTableFragmentCommand as typeof applyReplaceTableFragmentCommand
-        })
         const after = run(await HwpxSourcePackage.open(target.path), target.caret, {
           plan: planInsertTableRowAfter,
           apply: applyReplaceTableFragmentCommand
         })
         const original = await HwpxSourcePackage.open(target.path)
         expect(after.package.readEntry(target.caret.sectionPath).equals(original.readEntry(target.caret.sectionPath))).toBe(true)
-        expect(before.package.readEntry(target.caret.sectionPath).equals(original.readEntry(target.caret.sectionPath))).toBe(true)
         results.push({
           fixture: target.id,
           sectionPath: target.caret.sectionPath,
           sectionBytes: target.sectionBytes,
           pairs: PAIRS,
-          beforeLegacyMs: summarize(before.samples),
           afterTreeMs: summarize(after.samples)
         })
       }

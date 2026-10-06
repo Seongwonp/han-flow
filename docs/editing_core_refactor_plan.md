@@ -1,6 +1,6 @@
 # 편집 코어 tree 모델 전환 계획
 
-상태: 진행 중 — XML scanner 통합(`src/core/editing/xml_scan.ts`)과 tree 전환 1단계(text)·2단계(style)·3단계(paragraph)·4단계(table) 완료, legacy 정리 남음
+상태: 완료(2026-10-06) — tree 전환 1단계(text)·2단계(style)·3단계(paragraph)·4단계(table)와 문자열 경로·legacy 정리까지 끝났다. 모든 편집 command가 source tree에서 동작한다.
 
 실제 한/글 문서 편집 가능 비율 기준선과 우선 해제 순서: [편집 가능 비율 기준선](editing_coverage.md)
 
@@ -60,7 +60,7 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 4. **table** (`table_patch.ts`): 행·열 추가/삭제, 병합·분할. `colCnt`/`rowCnt`/`colAddr` 재계산을
    tree 위 함수로 옮기고 topology whitelist를 tree 검사로 대체한다.
 
-전환 중에는 `xml_scan.ts`를 문자열 command와 비교 oracle 양쪽이 공유한다.
+전환 중에는 `xml_scan.ts`를 문자열 command와 비교 oracle 양쪽이 공유했다(정리 뒤에는 tokenizer만 남았다, 4-5 참고).
 
 ## 4-1. 1단계 완료 (text, 2026-09-29)
 
@@ -306,7 +306,7 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 
 **differential이 드러낸 전환 전 경로의 잠재 버그(공개 corpus에는 없음, 새 경로 동작을 `tests/editing/table_patch.test.ts`로 고정)**
 
-최소 재현은 `tests/editing/table_divergence_repros.ts`(table-columns section 변형), 전환 전 동작은 differential의 마지막 test가 확인한다.
+최소 재현은 `tests/editing/table_divergence_repros.ts`(table-columns section 변형)이다. 전환 전 동작은 differential의 마지막 test가 확인했다(4-5 정리에서 legacy와 함께 삭제).
 
 - CDATA `as-tag`: 표 scanner가 CDATA를 일반 `<!` tag로 읽어 첫 `>`에서 끝냈다. 표 앞 `<![CDATA[a><hp:t>x</hp:t>]]>`이 있으면 안의 `<hp:t>`를
   element로 세어 anchor ordinal이 한 칸 밀려 A1에서 행 추가 → "반복 머리글 행을 기준으로 행을 추가할 수 없습니다."(H3을 가리킴). 표 앞
@@ -321,10 +321,38 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 - 코드상 차이(corpus 미해당): 셀 모양 비교(`tagAttributes`)는 따옴표를 인식해 attribute를 나누되 값은 전과 같이 원문 표기로 비교한다. 위치 비교는
   원문 offset 대신 node identity·tree 순서로 한다.
 
-**남은 것 (정리)**
+## 4-5. 정리 완료 (legacy·문자열 helper 제거, 2026-10-06)
 
-- 정규식 `attribute`/`setAttribute`·`replaceRange`·`nearestAncestor`·`targetOrdinal`·`TABLE_SCAN_OPTIONS`(`cdata: 'as-tag'`) 등 문자열 경로
-  helper와 legacy 파일 4개, 그 differential의 legacy 비교를 삭제하고 결정적 golden 회귀로 바꾼다.
+**지운 것**
+
+- 비교 oracle `style_patch_legacy.ts`·`cell_style_patch_legacy.ts`·`paragraph_patch_legacy.ts`·`table_patch_legacy.ts`와 그 differential
+  (`style_tree_differential`·`paragraph_tree_differential`·`table_tree_differential`).
+- `xml_scan.ts`의 문자열 경로 helper: 정규식 `attribute`/`setAttribute`, `replaceRange`, `scanXmlElements`·`XmlElementSpan`·
+  `nearestAncestor`, `targetOrdinal`·`sameOrdinalMessage`·`TEXT_ANCHOR_ORDINAL_MESSAGES`, scanner option(`errors: 'conflict'`·
+  `cdata: 'as-tag'`, `TABLE_SCAN_OPTIONS`). `src/`에서 이들을 쓰는 곳은 없다. `xml_scan.ts`에는 source tree가 쓰는 tokenizer
+  (`iterateXmlTokens`, CDATA는 언제나 `]]>`까지 불투명 구간)와 `findTagEnd`·`isSurrogateBoundarySafe`·`buildLossReport`·
+  `HwpxEditConflictError`만 남았다. `replaceRange` 기반 planner와 편집용 두 번째 tokenizer가 없어져 6절의 완료 조건을 채운다.
+- test가 쓰던 `scanXmlElements`는 source tree(`parseSourceTree`·`findSourceElements`)로 바꿨다. text differential의 명세 oracle은 원문을
+  새로 parse한 tree의 `hp:t` 원문 범위를 쓰고, 교차 parser test의 세 번째 참여자는 tokenizer가 내는 `hp:t` token 순서다. benchmark는
+  tree 경로만 재고 전환 전 수치는 주석과 이 문서에 남겼다.
+
+**대신 둔 안전망**
+
+- 기존 명시적 동작 test(`text_patch`·`style_patch`·`cell_style_patch`·`paragraph_patch`·`table_patch`·inline 보존 test, 4단계 잠재 버그
+  재현 `table_patch.test.ts`)와 text differential(명세 oracle)·identity·교차 parser test는 그대로다.
+- golden 회귀(`tests/editing/editing_golden.test.ts`, 기록 `tests/editing/golden/{text,style,paragraph,table}.json`): 34종 fixture마다
+  모든 section의 편집 가능 anchor에서 4개를 고르게 뽑아 text 3종(가운데 삽입 `가&<"'`, 첫 글자 삭제, 전체 치환 `x\ty\nz`)·style 5~6종
+  (굵게, 기울임+밑줄+크기+색, 가운데 정렬, 줄 간격+앞뒤 간격+들여쓰기, 셀 배경+테두리, 부분 선택 굵게)·paragraph 3~4종(가운데 Enter,
+  맨 앞 Backspace, 맨 끝 Delete, 다음 anchor까지 범위 치환)을, 편집 가능한 anchor가 있는 모든 직계 표 셀(78개)에 표 6종을 적용한다.
+  1,842 case(거부 1,056·변화 없음 42·변경 744). 기록은 바뀐 section·header.xml의 SHA-256(+ 계획 selection), 거부면 오류 class·message다.
+  바뀐 744 case는 모두 inverse가 원래 bytes를, 그 inverse가 결과 bytes를 되살린다(exact undo·redo). 기록은 4단계 tree 구현에서 한 번
+  만들었고(`HAN_FLOW_UPDATE_GOLDEN=1`), 의도한 동작 변경 때만 다시 만든다. 표 command 주소 계산 하나를 바꾸는 변형으로 11개 fixture가
+  실패함을 확인했다.
+
+**측정(`npm test -- --runInBand` wall time, 같은 4 core 환경)**
+
+- 2단계 전(`65b1a1d`): 49.4s(549 test). 4단계 전환 직후(legacy differential 포함): 167.7s(720 test, 문단 differential 92.4s·style 30.9s·
+  text 28.3s). 정리 뒤: 45.4s(598 test, text differential 27.5s·golden 3.4s). 목표(2단계 전 + 30s)보다 34s 짧다.
 
 ## 5. 위험
 
@@ -346,5 +374,5 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 - `tests/editing/*`의 기존 XML 문자열 단언이 모두 새 serializer 출력으로 그대로 통과한다.
 - 편집하지 않은 package의 identity round-trip이 모든 entry에서 byte 단위로 같다.
 - `decodeViewerDocument` 왕복 test, `verify:corpus`, `verify:matrix`(편집 + Save As)가 통과한다.
-- 문자열 patch 경로(`replaceRange` 기반 planner)와 편집용 두 번째 tokenizer가 제거된다.
+- 문자열 patch 경로(`replaceRange` 기반 planner)와 편집용 두 번째 tokenizer가 제거된다. (4-5에서 완료)
 - 새 편집 기능 하나를 추가할 때 tree 연산 조합과 capability 규칙만 쓰면 된다.

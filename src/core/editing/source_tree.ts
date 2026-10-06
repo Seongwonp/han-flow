@@ -64,8 +64,8 @@ export interface SourceTree {
 }
 
 /**
- * XML 문자열을 source tree로 읽는다. tokenizer 오류는 `scanXmlElements`의 기본(`'plain'`) 방식과 같고,
- * 여는·닫는 tag 짝이 맞지 않으면 같은 message로 오류를 던진다.
+ * XML 문자열을 source tree로 읽는다. tokenizer 오류는 {@link iterateXmlTokens}의 message를 그대로 던지고,
+ * 여는·닫는 tag 짝이 맞지 않거나 닫히지 않은 element가 있으면 그 tag 이름을 덧붙인 오류를 던진다.
  */
 export function parseSourceTree(xml: string): SourceTree {
   const root: SourceNode[] = []

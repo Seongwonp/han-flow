@@ -4,7 +4,6 @@ import { join } from 'path'
 import { HwpxEditHistory } from '../../src/core/editing/history'
 import { createEditorSelection } from '../../src/core/editing/selection'
 import { applyCharacterStyleCommand, StylePatchResult } from '../../src/core/editing/style_patch'
-import { legacyApplyCharacterStyleCommand } from '../../src/core/editing/style_patch_legacy'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
@@ -12,7 +11,8 @@ import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 // `HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/style_toggle_benchmark.test.ts`
 // large-progressive synthetic fixture(80 section)의 가장 큰 section 가운데 run에 굵게를 200번 연속으로 켜고 끈다.
 // toggle 하나 = applyEditTransaction과 같은 순서(selection 검증용 anchor 조회 → 글자 style command → anchor 조회).
-// before: 전환 전 문자열 경로(style_patch_legacy, 매번 section·header 재scan), after: source tree 경로(package tree cache).
+// after: source tree 경로(package tree cache). 전환 전 문자열 경로(style_patch_legacy)는 4단계 뒤 지웠다. 지우기 전 같은 조건의
+// 측정값은 평균 6.29ms(p50 6.17·p95 8.44)였다(docs/editing_core_refactor_plan.md 2단계 기록).
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
 const TOGGLES = 200
@@ -60,7 +60,7 @@ function toggle(
 }
 
 describe('글자 style toggle 비용', () => {
-  benchmark('large-progressive에서 굵게를 200번 toggle할 때 전환 전·후 ms/toggle을 비교한다', async () => {
+  benchmark('large-progressive에서 굵게를 200번 toggle할 때 ms/toggle을 잰다', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'han-flow-style-benchmark-'))
     try {
       const fixture = createSyntheticHwpx(directory, {
@@ -78,23 +78,14 @@ describe('글자 style toggle 비용', () => {
       const anchor = anchors[Math.floor(anchors.length / 2)]
 
       // 처음 값은 지금 run 모양과 반대여야 한다(같으면 no-op).
-      const firstBold = legacyApplyCharacterStyleCommand(opened, {
+      const firstBold = applyCharacterStyleCommand(await HwpxSourcePackage.open(fixture), {
         type: 'apply-character-style',
         sectionPath,
         textNodeId: anchor.textNodeId,
         bold: true
       }).changed
 
-      const before = toggle(opened, sectionPath, anchor.textNodeId, legacyApplyCharacterStyleCommand, firstBold)
-      const after = toggle(
-        await HwpxSourcePackage.open(fixture),
-        sectionPath,
-        anchor.textNodeId,
-        applyCharacterStyleCommand,
-        firstBold
-      )
-      expect(after.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
-      expect(after.package.readEntry('Contents/header.xml').equals(before.package.readEntry('Contents/header.xml'))).toBe(true)
+      const after = toggle(opened, sectionPath, anchor.textNodeId, applyCharacterStyleCommand, firstBold)
 
       // 실제 편집 세션 경로(HwpxEditHistory.commit → applyEditTransaction)
       const history = new HwpxEditHistory(await HwpxSourcePackage.open(fixture))
@@ -119,7 +110,8 @@ describe('글자 style toggle 비용', () => {
         })
         historySamples.push(performance.now() - startedAt)
       }
-      expect(history.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
+      expect(history.package.readEntry(sectionPath).equals(after.package.readEntry(sectionPath))).toBe(true)
+      expect(history.package.readEntry('Contents/header.xml').equals(after.package.readEntry('Contents/header.xml'))).toBe(true)
 
       const result = {
         sectionPath,
@@ -127,7 +119,6 @@ describe('글자 style toggle 비용', () => {
         headerBytes: opened.readEntry('Contents/header.xml').byteLength,
         sectionAnchors: anchors.length,
         toggles: TOGGLES,
-        beforeLegacyMs: summarize(before.samples),
         afterTreeMs: summarize(after.samples),
         afterHistoryCommitMs: summarize(historySamples)
       }

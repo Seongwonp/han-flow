@@ -7,11 +7,6 @@ import {
   planMergeParagraph,
   planSplitParagraph
 } from '../../src/core/editing/paragraph_patch'
-import {
-  legacyApplyReplaceParagraphFragmentCommand,
-  legacyPlanMergeParagraph,
-  legacyPlanSplitParagraph
-} from '../../src/core/editing/paragraph_patch_legacy'
 import { createEditorSelection } from '../../src/core/editing/selection'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
@@ -20,7 +15,8 @@ import { createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 // `HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/paragraph_split_merge_benchmark.test.ts`
 // large-progressive synthetic fixture(80 section)의 가장 큰 section 가운데 문단에서 Enter(가운데 분할)와 새 문단 맨 앞
 // Backspace(이전 문단과 병합)를 200쌍 연속으로 적용한다. 한 쌍 = [plan split → apply → anchor 조회 → plan merge → apply →
-// anchor 조회]. before: 전환 전 문자열 경로(paragraph_patch_legacy, 매번 section 재scan), after: source tree 경로.
+// anchor 조회]. after: source tree 경로. 전환 전 문자열 경로(paragraph_patch_legacy)는 4단계 뒤 지웠다. 지우기 전 같은 조건의
+// 측정값은 평균 18.93ms(p50 18.28·p95 26.92)였다(docs/editing_core_refactor_plan.md 3단계 기록).
 
 const benchmark = process.env.HAN_FLOW_BENCHMARK === '1' ? test : test.skip
 const PAIRS = 200
@@ -67,7 +63,7 @@ function run(
 }
 
 describe('문단 Enter·Backspace 비용', () => {
-  benchmark('large-progressive에서 Enter+Backspace 200쌍의 전환 전·후 ms/쌍을 비교한다', async () => {
+  benchmark('large-progressive에서 Enter+Backspace 200쌍의 ms/쌍을 잰다', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'han-flow-paragraph-benchmark-'))
     try {
       const fixture = createSyntheticHwpx(directory, {
@@ -85,18 +81,11 @@ describe('문단 Enter·Backspace 비용', () => {
       const anchor = anchors[Math.floor(anchors.length / 2)]
       const offset = Math.floor(anchor.text.length / 2)
 
-      const before = run(opened, sectionPath, anchor.textNodeId, offset, {
-        split: legacyPlanSplitParagraph,
-        merge: legacyPlanMergeParagraph,
-        apply: legacyApplyReplaceParagraphFragmentCommand
-      })
-      const after = run(await HwpxSourcePackage.open(fixture), sectionPath, anchor.textNodeId, offset, {
+      const after = run(opened, sectionPath, anchor.textNodeId, offset, {
         split: planSplitParagraph,
         merge: planMergeParagraph,
         apply: applyReplaceParagraphFragmentCommand
       })
-      // 기본 표기 문단이므로 두 경로의 결과 bytes가 같다(한 쌍마다 대상 run이 하나씩 늘어난다).
-      expect(after.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
 
       // 실제 편집 세션 경로(HwpxEditHistory.commit → applyEditTransaction)
       const history = new HwpxEditHistory(await HwpxSourcePackage.open(fixture))
@@ -118,14 +107,14 @@ describe('문단 Enter·Backspace 비용', () => {
         })
         historySamples.push(performance.now() - startedAt)
       }
-      expect(history.package.readEntry(sectionPath).equals(before.package.readEntry(sectionPath))).toBe(true)
+      // 한 쌍마다 대상 run이 하나씩 늘어나므로 두 경로가 같은 bytes에 이른다.
+      expect(history.package.readEntry(sectionPath).equals(after.package.readEntry(sectionPath))).toBe(true)
 
       const result = {
         sectionPath,
         sectionBytes: index.sectionSizes[sectionPath],
         sectionAnchors: anchors.length,
         pairs: PAIRS,
-        beforeLegacyMs: summarize(before.samples),
         afterTreeMs: summarize(after.samples),
         afterHistoryCommitMs: summarize(historySamples)
       }
