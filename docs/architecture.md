@@ -74,7 +74,8 @@ header.xml tree의 collection 끝에 붙인다. section·header tree는 package 
 tree를 고친 command가 새 package로 옮기므로 연속 입력·모양 변경은 entry를 다시 parse하지 않는다. 3단계부터 문단
 분할·병합·여러 문단 범위 치환도 같은 tree에서 `hp:p`·`hp:run`·`hp:t` node로 교체 fragment를 만들어 지우지 않은 부분의
 inline `hp:tab`·entity 원문 표기를 보존하고, fragment에 해당하는 형제 node를 조각 tree로 바꿔 cache를 이어 간다.
-표 구조 command만 아직 문자열 patch 경로를 쓴다.
+4단계부터 표 행·열 추가/삭제, 셀 병합·분할도 같은 tree에서 `hp:tc`·`hp:tr`·`hp:tbl`을 부모 관계로 찾아 topology를 검사하고,
+표 node를 작업용 tree로 복제해 `rowCnt`/`colCnt`·주소·크기 attribute와 행·셀 node를 고친 교체 fragment를 만든 뒤 표 node를 조각 tree로 바꾼다.
 
 `saveHwpxAs`는 목적지와 같은 directory의 `wx` 임시 파일에 package를 쓰고 `fsync`한 다음,
 source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 통과시킨 뒤에만 게시한다.

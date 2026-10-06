@@ -1,0 +1,998 @@
+/**
+ * @internal 4단계(tree 전환) 비교 oracle 전용 — 제품 코드에서 import하지 않는다.
+ *
+ * tree 모델로 옮기기 전 `table_patch.ts`의 문자열 구현(scanXmlElements span + 정규식 attribute + `replaceRange` planner)을
+ * 그대로 보존한 사본이다. `tests/editing/table_tree_differential.test.ts`와 표 benchmark가 새 tree 경로와 출력 bytes를
+ * 비교하는 데만 쓴다. 다른 legacy 파일과 함께 삭제한다.
+ */
+import { HwpxSourcePackage } from '../parser/source_package'
+import { EditorSelection, normalizeEditorSelection } from './selection'
+import { TableCellSelection } from './table_cell_selection'
+import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
+import type {
+  DeleteTableColumnPlan,
+  DeleteTableRowPlan,
+  InsertTableColumnPlan,
+  InsertTableRowPlan,
+  MergeTableCellRightPlan,
+  ReplaceTableFragmentCommand,
+  SplitTableCellPlan
+} from './table_patch'
+import {
+  attribute,
+  buildLossReport,
+  nearestAncestor,
+  replaceRange,
+  sameOrdinalMessage,
+  scanXmlElements,
+  setAttribute,
+  TABLE_SCAN_OPTIONS,
+  targetOrdinal,
+  XmlElementSpan
+} from './xml_scan'
+
+function directChildren(spans: XmlElementSpan[], parent: XmlElementSpan, name: string): XmlElementSpan[] {
+  return spans.filter((span) => span.name === name && span.parent?.start === parent.start)
+}
+
+const TABLE_ORDINAL_MESSAGES = sameOrdinalMessage(() => '표 anchor가 올바르지 않습니다.')
+
+function locateTable(sourcePackage: HwpxSourcePackage, sectionPath: string, textNodeId: string) {
+  if (!listHwpxTextAnchors(sourcePackage, sectionPath).some((anchor) => anchor.textNodeId === textNodeId)) {
+    throw new HwpxEditConflictError('표 anchor를 찾을 수 없습니다.')
+  }
+  const xml = sourcePackage.readEntry(sectionPath).toString('utf8')
+  const spans = scanXmlElements(xml, TABLE_SCAN_OPTIONS)
+  const text = spans.filter((span) => span.name === 'hp:t')[targetOrdinal(sectionPath, textNodeId, TABLE_ORDINAL_MESSAGES)]
+  const cell = text && nearestAncestor(text, 'hp:tc')
+  const row = cell && nearestAncestor(cell, 'hp:tr')
+  const table = row && nearestAncestor(row, 'hp:tbl')
+  if (!text || !cell || !row || !table || row.parent?.start !== table.start || cell.parent?.start !== row.start) {
+    throw new HwpxEditConflictError('표 행 추가는 일반 표 셀에서만 지원합니다.')
+  }
+  return { xml, spans, text, cell, row, table }
+}
+
+function assertSimpleRectangularTable(context: ReturnType<typeof locateTable>): {
+  rows: XmlElementSpan[]
+  columnCount: number
+  selectedRowIndex: number
+  selectedColumnIndex: number
+  selectedRowHeight: number
+  selectedColumnWidth: number
+} {
+  const { xml, spans, table, row: selectedRow, cell: selectedCell } = context
+  const tableTag = xml.slice(table.start, table.openEnd)
+  const rowCount = Number(attribute(tableTag, 'rowCnt'))
+  const columnCount = Number(attribute(tableTag, 'colCnt'))
+  const rows = directChildren(spans, table, 'hp:tr')
+  const tableSize = directChildren(spans, table, 'hp:sz')[0]
+  const tableHeight = tableSize
+    ? Number(attribute(xml.slice(tableSize.start, tableSize.openEnd), 'height'))
+    : Number.NaN
+  const tableWidth = tableSize
+    ? Number(attribute(xml.slice(tableSize.start, tableSize.openEnd), 'width'))
+    : Number.NaN
+  if (!Number.isSafeInteger(rowCount) || rowCount !== rows.length || !Number.isSafeInteger(columnCount) || columnCount < 1) {
+    throw new HwpxEditConflictError('표 행·열 개수와 실제 구조가 일치하지 않습니다.')
+  }
+  if (!Number.isFinite(tableHeight) || tableHeight < 0) {
+    throw new HwpxEditConflictError('표 전체 높이가 올바르지 않습니다.')
+  }
+  if (!Number.isFinite(tableWidth) || tableWidth < 0) {
+    throw new HwpxEditConflictError('표 전체 너비가 올바르지 않습니다.')
+  }
+  if (spans.some((span) => span.name === 'hp:tbl' && span.start > table.start && span.end < table.end)) {
+    throw new HwpxEditConflictError('중첩 표가 있는 표에는 아직 행을 추가할 수 없습니다.')
+  }
+  let selectedRowHeight = 0
+  let selectedColumnIndex = -1
+  let selectedColumnWidth = 0
+  rows.forEach((row, rowIndex) => {
+    if (attribute(xml.slice(row.start, row.openEnd), 'id') !== undefined) {
+      throw new HwpxEditConflictError('고유 ID가 있는 행은 아직 복제할 수 없습니다.')
+    }
+    const cells = directChildren(spans, row, 'hp:tc')
+    if (cells.length !== columnCount) throw new HwpxEditConflictError('직사각형 표에만 행을 추가할 수 있습니다.')
+    cells.forEach((cell, columnIndex) => {
+      const cellTag = xml.slice(cell.start, cell.openEnd)
+      if (attribute(cellTag, 'id') !== undefined) {
+        throw new HwpxEditConflictError('고유 ID가 있는 셀은 아직 복제할 수 없습니다.')
+      }
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      const span = directChildren(spans, cell, 'hp:cellSpan')[0]
+      const cellSize = directChildren(spans, cell, 'hp:cellSz')[0]
+      const addressTag = address ? xml.slice(address.start, address.openEnd) : ''
+      const spanTag = span ? xml.slice(span.start, span.openEnd) : ''
+      if (
+        !address || !span || !cellSize ||
+        Number(attribute(addressTag, 'rowAddr')) !== rowIndex ||
+        Number(attribute(addressTag, 'colAddr')) !== columnIndex ||
+        Number(attribute(spanTag, 'rowSpan')) !== 1 ||
+        Number(attribute(spanTag, 'colSpan')) !== 1
+      ) throw new HwpxEditConflictError('병합·span 또는 불연속 주소가 있는 표에는 아직 행을 추가할 수 없습니다.')
+      const cellHeight = Number(attribute(xml.slice(cellSize.start, cellSize.openEnd), 'height'))
+      const cellWidth = Number(attribute(xml.slice(cellSize.start, cellSize.openEnd), 'width'))
+      if (!Number.isFinite(cellHeight) || cellHeight < 0) {
+        throw new HwpxEditConflictError('표 셀 높이가 올바르지 않습니다.')
+      }
+      if (!Number.isFinite(cellWidth) || cellWidth < 0) {
+        throw new HwpxEditConflictError('표 셀 너비가 올바르지 않습니다.')
+      }
+      if (row.start === selectedRow.start) selectedRowHeight = Math.max(selectedRowHeight, cellHeight)
+      if (cell.start === selectedCell.start) {
+        selectedColumnIndex = columnIndex
+        selectedColumnWidth = cellWidth
+      }
+      const subLists = directChildren(spans, cell, 'hp:subList')
+      if (subLists.length !== 1) throw new HwpxEditConflictError('단순 텍스트 셀로 이루어진 표에만 행을 추가할 수 있습니다.')
+      const paragraphs = directChildren(spans, subLists[0], 'hp:p')
+      if (!paragraphs.length) throw new HwpxEditConflictError('빈 문단 구조가 없는 셀에는 행을 추가할 수 없습니다.')
+      const content = spans.filter(
+        (span) => span.start >= subLists[0].openEnd && span.end <= subLists[0].closeStart
+      )
+      if (content.some((span) => ![
+        'hp:p', 'hp:run', 'hp:t', 'hp:linesegarray', 'hp:lineseg'
+      ].includes(span.name))) {
+        throw new HwpxEditConflictError('이미지·제어 문자 등 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.')
+      }
+      paragraphs.forEach((paragraph) => {
+        const runs = directChildren(spans, paragraph, 'hp:run')
+        const texts = runs.flatMap((run) => directChildren(spans, run, 'hp:t'))
+        if (runs.length !== 1 || texts.length !== 1) {
+          throw new HwpxEditConflictError('복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.')
+        }
+      })
+      if (cell.start === selectedCell.start && attribute(cellTag, 'header') === '1') {
+        throw new HwpxEditConflictError('반복 머리글 행을 기준으로 행을 추가할 수 없습니다.')
+      }
+    })
+  })
+  const selectedRowIndex = rows.findIndex((row) => row.start === selectedRow.start)
+  if (selectedRowIndex < 0) throw new HwpxEditConflictError('선택한 표 행을 찾을 수 없습니다.')
+  if (selectedColumnIndex < 0) throw new HwpxEditConflictError('선택한 표 열을 찾을 수 없습니다.')
+  if (tableHeight < selectedRowHeight) {
+    throw new HwpxEditConflictError('표 전체 높이가 선택 행 높이보다 작습니다.')
+  }
+  if (tableWidth < selectedColumnWidth) {
+    throw new HwpxEditConflictError('표 전체 너비가 선택 열 너비보다 작습니다.')
+  }
+  return { rows, columnCount, selectedRowIndex, selectedColumnIndex, selectedRowHeight, selectedColumnWidth }
+}
+
+function cloneEmptyRow(context: ReturnType<typeof locateTable>, newRowIndex: number): string {
+  const { xml, spans, row } = context
+  const fragment = xml.slice(row.start, row.end)
+  const localSpans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
+  const replacements: Array<{ start: number; end: number; value: string }> = []
+  for (const address of localSpans.filter((span) => span.name === 'hp:cellAddr')) {
+    replacements.push({
+      start: address.start,
+      end: address.openEnd,
+      value: setAttribute(fragment.slice(address.start, address.openEnd), 'rowAddr', String(newRowIndex))
+    })
+  }
+  for (const text of localSpans.filter((span) => span.name === 'hp:t')) {
+    replacements.push({ start: text.openEnd, end: text.closeStart, value: '' })
+  }
+  for (const lines of localSpans.filter((span) => span.name === 'hp:linesegarray')) {
+    replacements.push({ start: lines.start, end: lines.end, value: '' })
+  }
+  const ids = spans.filter((span) => span.name === 'hp:p')
+    .map((paragraph) => attribute(xml.slice(paragraph.start, paragraph.openEnd), 'id'))
+    .filter((id): id is string => id !== undefined)
+  if (ids.some((id) => !/^\d+$/.test(id))) throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 표에는 행을 추가할 수 없습니다.')
+  let nextId = ids.map(Number).reduce((maximum, id) => Math.max(maximum, id), -1) + 1
+  for (const paragraph of localSpans.filter((span) => span.name === 'hp:p')) {
+    const tag = fragment.slice(paragraph.start, paragraph.openEnd)
+    if (attribute(tag, 'id') !== undefined) {
+      replacements.push({ start: paragraph.start, end: paragraph.openEnd, value: setAttribute(tag, 'id', String(nextId++)) })
+    }
+  }
+  let result = fragment
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    result = replaceRange(result, replacement.start, replacement.end, replacement.value)
+  }
+  return result
+}
+
+function firstTextInRow(spans: XmlElementSpan[], row: XmlElementSpan): XmlElementSpan | undefined {
+  return spans.find(
+    (span) => span.name === 'hp:t' && span.start >= row.openEnd && span.end <= row.closeStart
+  )
+}
+
+function numericParagraphIdCursor(xml: string, spans: XmlElementSpan[]): { next: number } {
+  const ids = spans.filter((span) => span.name === 'hp:p')
+    .map((paragraph) => attribute(xml.slice(paragraph.start, paragraph.openEnd), 'id'))
+    .filter((id): id is string => id !== undefined)
+  if (ids.some((id) => !/^\d+$/.test(id))) {
+    throw new HwpxEditConflictError('숫자가 아닌 문단 ID가 있는 표의 구조는 편집할 수 없습니다.')
+  }
+  return { next: ids.map(Number).reduce((maximum, id) => Math.max(maximum, id), -1) + 1 }
+}
+
+function cloneEmptyCell(
+  context: ReturnType<typeof locateTable>,
+  cell: XmlElementSpan,
+  newColumnIndex: number,
+  paragraphId: { next: number }
+): string {
+  const fragment = context.xml.slice(cell.start, cell.end)
+  const localSpans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
+  const replacements: Array<{ start: number; end: number; value: string }> = []
+  const address = localSpans.find((span) => span.name === 'hp:cellAddr')
+  if (!address) throw new HwpxEditConflictError('복제할 표 셀 주소가 없습니다.')
+  replacements.push({
+    start: address.start,
+    end: address.openEnd,
+    value: setAttribute(fragment.slice(address.start, address.openEnd), 'colAddr', String(newColumnIndex))
+  })
+  for (const text of localSpans.filter((span) => span.name === 'hp:t')) {
+    replacements.push({ start: text.openEnd, end: text.closeStart, value: '' })
+  }
+  for (const lines of localSpans.filter((span) => span.name === 'hp:linesegarray')) {
+    replacements.push({ start: lines.start, end: lines.end, value: '' })
+  }
+  for (const paragraph of localSpans.filter((span) => span.name === 'hp:p')) {
+    const tag = fragment.slice(paragraph.start, paragraph.openEnd)
+    if (attribute(tag, 'id') !== undefined) {
+      replacements.push({
+        start: paragraph.start,
+        end: paragraph.openEnd,
+        value: setAttribute(tag, 'id', String(paragraphId.next++))
+      })
+    }
+  }
+  let result = fragment
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    result = replaceRange(result, replacement.start, replacement.end, replacement.value)
+  }
+  return result
+}
+
+function shiftTextNodeId(sectionPath: string, textNodeId: string, delta: number): string {
+  return `${sectionPath}#hp:t:${targetOrdinal(sectionPath, textNodeId, TABLE_ORDINAL_MESSAGES) + delta}`
+}
+
+function tagAttributes(tag: string, omitted: readonly string[] = []): string {
+  const attributes = [...tag.matchAll(/\s([^\s=/>]+)\s*=\s*(["'])(.*?)\2/g)]
+    .map((match) => [match[1], match[3]] as const)
+    .filter(([name]) => !omitted.includes(name))
+    .sort(([left], [right]) => left.localeCompare(right))
+  return JSON.stringify(attributes)
+}
+
+function withoutLineSegments(fragment: string): string {
+  let result = fragment
+  const spans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
+  for (const lines of spans.filter((span) => span.name === 'hp:linesegarray').sort(
+    (left, right) => right.start - left.start
+  )) {
+    result = replaceRange(result, lines.start, lines.end, '')
+  }
+  return result
+}
+
+function cloneEmptySplitCell(
+  context: ReturnType<typeof locateTable>,
+  cell: XmlElementSpan,
+  column: number,
+  width: number
+): string {
+  const fragment = context.xml.slice(cell.start, cell.end)
+  const spans = scanXmlElements(fragment, TABLE_SCAN_OPTIONS)
+  const address = spans.find((span) => span.name === 'hp:cellAddr')
+  const cellSpan = spans.find((span) => span.name === 'hp:cellSpan')
+  const cellSize = spans.find((span) => span.name === 'hp:cellSz')
+  const subList = spans.find((span) => span.name === 'hp:subList')
+  const paragraphs = subList ? directChildren(spans, subList, 'hp:p') : []
+  if (!address || !cellSpan || !cellSize || !subList || !paragraphs.length) {
+    throw new HwpxEditConflictError('분할할 표 셀의 기본 구조가 없습니다.')
+  }
+  const paragraphId = numericParagraphIdCursor(context.xml, context.spans)
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: address.start,
+      end: address.openEnd,
+      value: setAttribute(fragment.slice(address.start, address.openEnd), 'colAddr', String(column))
+    },
+    {
+      start: cellSpan.start,
+      end: cellSpan.openEnd,
+      value: setAttribute(fragment.slice(cellSpan.start, cellSpan.openEnd), 'colSpan', '1')
+    },
+    {
+      start: cellSize.start,
+      end: cellSize.openEnd,
+      value: setAttribute(fragment.slice(cellSize.start, cellSize.openEnd), 'width', String(width))
+    }
+  ]
+  for (const paragraph of paragraphs.slice(1)) {
+    edits.push({ start: paragraph.start, end: paragraph.end, value: '' })
+  }
+  const firstParagraph = paragraphs[0]
+  const firstParagraphTag = fragment.slice(firstParagraph.start, firstParagraph.openEnd)
+  if (attribute(firstParagraphTag, 'id') !== undefined) {
+    edits.push({
+      start: firstParagraph.start,
+      end: firstParagraph.openEnd,
+      value: setAttribute(firstParagraphTag, 'id', String(paragraphId.next))
+    })
+  }
+  for (const text of spans.filter(
+    (span) => span.name === 'hp:t' && span.start >= firstParagraph.openEnd && span.end <= firstParagraph.closeStart
+  )) {
+    edits.push({ start: text.openEnd, end: text.closeStart, value: '' })
+  }
+  for (const lines of spans.filter((span) => span.name === 'hp:linesegarray')) {
+    edits.push({ start: lines.start, end: lines.end, value: '' })
+  }
+  let result = fragment
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    result = replaceRange(result, edit.start, edit.end, edit.value)
+  }
+  return result
+}
+
+export function legacyPlanSplitTableCell(
+  sourcePackage: HwpxSourcePackage,
+  selection: TableCellSelection
+): SplitTableCellPlan {
+  const context = locateTable(sourcePackage, selection.sectionPath, selection.textNodeId)
+  const { xml, spans, table, row: selectedRow, cell: selectedCell } = context
+  const tableTag = xml.slice(table.start, table.openEnd)
+  const rowCount = Number(attribute(tableTag, 'rowCnt'))
+  const columnCount = Number(attribute(tableTag, 'colCnt'))
+  const rows = directChildren(spans, table, 'hp:tr')
+  if (
+    !Number.isSafeInteger(rowCount) ||
+    rowCount !== rows.length ||
+    !Number.isSafeInteger(columnCount) ||
+    columnCount < 2
+  ) throw new HwpxEditConflictError('표 행·열 개수와 실제 구조가 일치하지 않습니다.')
+  if (spans.some((span) => span.name === 'hp:tbl' && span.start > table.start && span.end < table.end)) {
+    throw new HwpxEditConflictError('중첩 표가 있는 셀은 아직 분할할 수 없습니다.')
+  }
+  const selectedRowIndex = rows.findIndex((row) => row.start === selectedRow.start)
+  const selectedAddress = directChildren(spans, selectedCell, 'hp:cellAddr')[0]
+  const selectedSpan = directChildren(spans, selectedCell, 'hp:cellSpan')[0]
+  const selectedSize = directChildren(spans, selectedCell, 'hp:cellSz')[0]
+  const selectedSubList = directChildren(spans, selectedCell, 'hp:subList')[0]
+  if (!selectedAddress || !selectedSpan || !selectedSize || !selectedSubList || selectedRowIndex < 0) {
+    throw new HwpxEditConflictError('분할할 표 셀 구조를 찾을 수 없습니다.')
+  }
+  const selectedCellTag = xml.slice(selectedCell.start, selectedCell.openEnd)
+  const selectedAddressTag = xml.slice(selectedAddress.start, selectedAddress.openEnd)
+  const selectedSpanTag = xml.slice(selectedSpan.start, selectedSpan.openEnd)
+  const selectedColumn = Number(attribute(selectedAddressTag, 'colAddr'))
+  if (
+    selection.row !== selectedRowIndex ||
+    selection.column !== selectedColumn ||
+    Number(attribute(selectedAddressTag, 'rowAddr')) !== selectedRowIndex
+  ) throw new HwpxEditConflictError('선택한 표 셀 주소가 source와 일치하지 않습니다.')
+  if (
+    attribute(selectedCellTag, 'header') === '1' ||
+    Number(attribute(selectedSpanTag, 'rowSpan')) !== 1 ||
+    Number(attribute(selectedSpanTag, 'colSpan')) !== 2 ||
+    selectedColumn < 0 ||
+    selectedColumn + 1 >= columnCount
+  ) throw new HwpxEditConflictError('수평 1×2 body 병합 셀만 분할할 수 있습니다.')
+  if (attribute(selectedCellTag, 'id') !== undefined || attribute(xml.slice(selectedRow.start, selectedRow.openEnd), 'id') !== undefined) {
+    throw new HwpxEditConflictError('고유 ID가 있는 표 셀은 아직 분할할 수 없습니다.')
+  }
+  const selectedParagraphs = directChildren(spans, selectedSubList, 'hp:p')
+  if (!selectedParagraphs.length) throw new HwpxEditConflictError('문단이 없는 표 셀은 분할할 수 없습니다.')
+  const selectedContent = spans.filter(
+    (span) => span.start >= selectedSubList.openEnd && span.end <= selectedSubList.closeStart
+  )
+  if (selectedContent.some((span) => ![
+    'hp:p', 'hp:run', 'hp:t', 'hp:linesegarray', 'hp:lineseg'
+  ].includes(span.name))) {
+    throw new HwpxEditConflictError('복합 콘텐츠가 있는 표 셀은 아직 분할할 수 없습니다.')
+  }
+  selectedParagraphs.forEach((paragraph) => {
+    const runs = directChildren(spans, paragraph, 'hp:run')
+    const texts = runs.flatMap((run) => directChildren(spans, run, 'hp:t'))
+    if (runs.length !== 1 || texts.length !== 1) {
+      throw new HwpxEditConflictError('복합 콘텐츠가 있는 표 셀은 아직 분할할 수 없습니다.')
+    }
+  })
+  const evidence: Array<{ left: number; right: number }> = []
+  rows.forEach((row, rowIndex) => {
+    const cells = directChildren(spans, row, 'hp:tc')
+    let nextColumn = 0
+    for (const cell of cells) {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      const span = directChildren(spans, cell, 'hp:cellSpan')[0]
+      const size = directChildren(spans, cell, 'hp:cellSz')[0]
+      if (!address || !span || !size || attribute(xml.slice(cell.start, cell.openEnd), 'id') !== undefined) {
+        throw new HwpxEditConflictError('불완전하거나 고유 ID가 있는 표는 아직 분할할 수 없습니다.')
+      }
+      const addressTag = xml.slice(address.start, address.openEnd)
+      const spanTag = xml.slice(span.start, span.openEnd)
+      const cellColumn = Number(attribute(addressTag, 'colAddr'))
+      const rowSpan = Number(attribute(spanTag, 'rowSpan'))
+      const columnSpan = Number(attribute(spanTag, 'colSpan'))
+      const expectedSpan = cell.start === selectedCell.start ? 2 : 1
+      if (
+        Number(attribute(addressTag, 'rowAddr')) !== rowIndex ||
+        cellColumn !== nextColumn ||
+        rowSpan !== 1 ||
+        columnSpan !== expectedSpan
+      ) throw new HwpxEditConflictError('선택한 1×2 병합 외 span·불연속 주소가 있는 표는 분할할 수 없습니다.')
+      nextColumn += columnSpan
+    }
+    if (nextColumn !== columnCount) throw new HwpxEditConflictError('표의 logical 열 주소가 완전하지 않습니다.')
+    if (row.start === selectedRow.start) return
+    const left = cells.find((cell) => {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      return Number(attribute(xml.slice(address.start, address.openEnd), 'colAddr')) === selectedColumn
+    })
+    const right = cells.find((cell) => {
+      const address = directChildren(spans, cell, 'hp:cellAddr')[0]
+      return Number(attribute(xml.slice(address.start, address.openEnd), 'colAddr')) === selectedColumn + 1
+    })
+    if (!left || !right) throw new HwpxEditConflictError('분할 너비를 확인할 대응 열이 없습니다.')
+    const leftSize = directChildren(spans, left, 'hp:cellSz')[0]
+    const rightSize = directChildren(spans, right, 'hp:cellSz')[0]
+    evidence.push({
+      left: Number(attribute(xml.slice(leftSize.start, leftSize.openEnd), 'width')),
+      right: Number(attribute(xml.slice(rightSize.start, rightSize.openEnd), 'width'))
+    })
+  })
+  const widths = evidence[0]
+  if (
+    !widths ||
+    !Number.isFinite(widths.left) || widths.left <= 0 ||
+    !Number.isFinite(widths.right) || widths.right <= 0 ||
+    evidence.some((item) => item.left !== widths.left || item.right !== widths.right)
+  ) throw new HwpxEditConflictError('다른 행에서 일관된 분할 열 너비를 확인할 수 없습니다.')
+  const selectedWidth = Number(attribute(xml.slice(selectedSize.start, selectedSize.openEnd), 'width'))
+  if (selectedWidth !== widths.left + widths.right) {
+    throw new HwpxEditConflictError('병합 셀 너비와 대응 열 너비 합이 일치하지 않습니다.')
+  }
+  const firstText = spans.find(
+    (span) => span.name === 'hp:t' && span.start >= selectedCell.openEnd && span.end <= selectedCell.closeStart
+  )
+  if (!firstText) throw new HwpxEditConflictError('분할 뒤 selection을 보존할 text가 없습니다.')
+  const firstOrdinal = spans.filter((span) => span.name === 'hp:t' && span.start < firstText.start).length
+  const firstTextNodeId = `${selection.sectionPath}#hp:t:${firstOrdinal}`
+  const tableFragment = xml.slice(table.start, table.end)
+  let replacement = tableFragment
+  const tableStart = table.start
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: selectedSpan.start - tableStart,
+      end: selectedSpan.openEnd - tableStart,
+      value: setAttribute(selectedSpanTag, 'colSpan', '1')
+    },
+    {
+      start: selectedSize.start - tableStart,
+      end: selectedSize.openEnd - tableStart,
+      value: setAttribute(xml.slice(selectedSize.start, selectedSize.openEnd), 'width', String(widths.left))
+    },
+    {
+      start: selectedCell.end - tableStart,
+      end: selectedCell.end - tableStart,
+      value: cloneEmptySplitCell(context, selectedCell, selectedColumn + 1, widths.right)
+    }
+  ]
+  for (const lines of spans.filter(
+    (span) => span.name === 'hp:linesegarray' && span.start >= selectedCell.openEnd && span.end <= selectedCell.closeStart
+  )) {
+    edits.push({ start: lines.start - tableStart, end: lines.end - tableStart, value: '' })
+  }
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: firstTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: firstTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: selection.textNodeId,
+      replacementTextNodeId: firstTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function legacyPlanMergeTableCellRight(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): MergeTableCellRightPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('셀 병합은 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex
+  } = assertSimpleRectangularTable(context)
+  if (selectedColumnIndex >= columnCount - 1) {
+    throw new HwpxEditConflictError('오른쪽에 병합할 표 셀이 없습니다.')
+  }
+  const cells = directChildren(context.spans, rows[selectedRowIndex], 'hp:tc')
+  const leftCell = cells[selectedColumnIndex]
+  const rightCell = cells[selectedColumnIndex + 1]
+  const leftTag = context.xml.slice(leftCell.start, leftCell.openEnd)
+  const rightTag = context.xml.slice(rightCell.start, rightCell.openEnd)
+  if (
+    attribute(leftTag, 'header') === '1' ||
+    attribute(rightTag, 'header') === '1'
+  ) throw new HwpxEditConflictError('반복 머리글 셀은 병합할 수 없습니다.')
+  if (tagAttributes(leftTag) !== tagAttributes(rightTag)) {
+    throw new HwpxEditConflictError('모양 속성이 다른 표 셀은 아직 병합할 수 없습니다.')
+  }
+  const leftSize = directChildren(context.spans, leftCell, 'hp:cellSz')[0]
+  const rightSize = directChildren(context.spans, rightCell, 'hp:cellSz')[0]
+  const leftSizeTag = context.xml.slice(leftSize.start, leftSize.openEnd)
+  const rightSizeTag = context.xml.slice(rightSize.start, rightSize.openEnd)
+  if (tagAttributes(leftSizeTag, ['width']) !== tagAttributes(rightSizeTag, ['width'])) {
+    throw new HwpxEditConflictError('높이·geometry가 다른 표 셀은 아직 병합할 수 없습니다.')
+  }
+  const leftWidth = Number(attribute(leftSizeTag, 'width'))
+  const rightWidth = Number(attribute(rightSizeTag, 'width'))
+  if (!Number.isFinite(leftWidth) || leftWidth < 0 || !Number.isFinite(rightWidth) || rightWidth < 0) {
+    throw new HwpxEditConflictError('병합할 표 셀 너비가 올바르지 않습니다.')
+  }
+  const leftMargin = directChildren(context.spans, leftCell, 'hp:cellMargin')[0]
+  const rightMargin = directChildren(context.spans, rightCell, 'hp:cellMargin')[0]
+  if (
+    !leftMargin ||
+    !rightMargin ||
+    tagAttributes(context.xml.slice(leftMargin.start, leftMargin.openEnd)) !==
+      tagAttributes(context.xml.slice(rightMargin.start, rightMargin.openEnd))
+  ) throw new HwpxEditConflictError('여백이 다른 표 셀은 아직 병합할 수 없습니다.')
+  const leftSubList = directChildren(context.spans, leftCell, 'hp:subList')[0]
+  const rightSubList = directChildren(context.spans, rightCell, 'hp:subList')[0]
+  if (
+    tagAttributes(context.xml.slice(leftSubList.start, leftSubList.openEnd)) !==
+    tagAttributes(context.xml.slice(rightSubList.start, rightSubList.openEnd))
+  ) throw new HwpxEditConflictError('세로 정렬이 다른 표 셀은 아직 병합할 수 없습니다.')
+  const rightParagraphs = directChildren(context.spans, rightSubList, 'hp:p')
+  const movedParagraphs = rightParagraphs.map(
+    (paragraph) => withoutLineSegments(context.xml.slice(paragraph.start, paragraph.end))
+  ).join('')
+  const leftSpan = directChildren(context.spans, leftCell, 'hp:cellSpan')[0]
+  const leftSpanTag = context.xml.slice(leftSpan.start, leftSpan.openEnd)
+  const firstLeftText = context.spans.find(
+    (span) => span.name === 'hp:t' && span.start >= leftCell.openEnd && span.end <= leftCell.closeStart
+  )
+  if (!firstLeftText) throw new HwpxEditConflictError('병합 뒤 selection을 보존할 text가 없습니다.')
+  const firstLeftOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < firstLeftText.start
+  ).length
+  const firstLeftTextNodeId = `${selection.sectionPath}#hp:t:${firstLeftOrdinal}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = [
+    {
+      start: leftSpan.start - tableStart,
+      end: leftSpan.openEnd - tableStart,
+      value: setAttribute(leftSpanTag, 'colSpan', '2')
+    },
+    {
+      start: leftSize.start - tableStart,
+      end: leftSize.openEnd - tableStart,
+      value: setAttribute(leftSizeTag, 'width', String(leftWidth + rightWidth))
+    },
+    {
+      start: leftSubList.closeStart - tableStart,
+      end: leftSubList.closeStart - tableStart,
+      value: movedParagraphs
+    },
+    {
+      start: rightCell.start - tableStart,
+      end: rightCell.end - tableStart,
+      value: ''
+    }
+  ]
+  for (const lines of context.spans.filter(
+    (span) => span.name === 'hp:linesegarray' && span.start >= leftCell.openEnd && span.end <= leftCell.closeStart
+  )) {
+    edits.push({ start: lines.start - tableStart, end: lines.end - tableStart, value: '' })
+  }
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: firstLeftTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: firstLeftTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: firstLeftTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function legacyPlanInsertTableColumnAfter(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): InsertTableColumnPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('열 추가는 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex,
+    selectedColumnWidth
+  } = assertSimpleRectangularTable(context)
+  const selectedCells = rows.map((row) => directChildren(context.spans, row, 'hp:tc')[selectedColumnIndex])
+  for (const cell of selectedCells) {
+    const size = directChildren(context.spans, cell, 'hp:cellSz')[0]
+    const width = Number(attribute(context.xml.slice(size.start, size.openEnd), 'width'))
+    if (width !== selectedColumnWidth) {
+      throw new HwpxEditConflictError('행마다 너비가 다른 열은 아직 추가할 수 없습니다.')
+    }
+  }
+  const insertedTextsBeforeSelection = selectedCells.slice(0, selectedRowIndex).reduce(
+    (count, cell) => count + context.spans.filter(
+      (span) => span.name === 'hp:t' && span.start >= cell.openEnd && span.end <= cell.closeStart
+    ).length,
+    0
+  )
+  const paragraphId = numericParagraphIdCursor(context.xml, context.spans)
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({
+    start: 0,
+    end: context.table.openEnd - tableStart,
+    value: setAttribute(tableTag, 'colCnt', String(columnCount + 1))
+  })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableWidth = Number(attribute(tableSizeTag, 'width'))
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'width', String(tableWidth + selectedColumnWidth))
+  })
+  rows.forEach((row) => {
+    const cells = directChildren(context.spans, row, 'hp:tc')
+    for (let columnIndex = selectedColumnIndex + 1; columnIndex < cells.length; columnIndex += 1) {
+      const address = directChildren(context.spans, cells[columnIndex], 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'colAddr', String(columnIndex + 1))
+      })
+    }
+    const selectedCell = cells[selectedColumnIndex]
+    edits.push({
+      start: selectedCell.end - tableStart,
+      end: selectedCell.end - tableStart,
+      value: cloneEmptyCell(context, selectedCell, selectedColumnIndex + 1, paragraphId)
+    })
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    ...selection,
+    anchorTextNodeId: shiftTextNodeId(selection.sectionPath, selection.anchorTextNodeId, insertedTextsBeforeSelection),
+    focusTextNodeId: shiftTextNodeId(selection.sectionPath, selection.focusTextNodeId, insertedTextsBeforeSelection)
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: shiftTextNodeId(
+        selection.sectionPath,
+        normalized.start.textNodeId,
+        insertedTextsBeforeSelection
+      ),
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function legacyPlanDeleteTableColumn(
+  sourcePackage: HwpxSourcePackage,
+  selection: EditorSelection
+): DeleteTableColumnPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('열 삭제는 하나의 표 셀에서만 실행할 수 있습니다.')
+  const {
+    rows,
+    columnCount,
+    selectedRowIndex,
+    selectedColumnIndex,
+    selectedColumnWidth
+  } = assertSimpleRectangularTable(context)
+  if (columnCount <= 1) {
+    throw new HwpxEditConflictError('표에는 하나 이상의 열이 남아 있어야 합니다.')
+  }
+  const selectedCells = rows.map((row) => directChildren(context.spans, row, 'hp:tc')[selectedColumnIndex])
+  for (const cell of selectedCells) {
+    const size = directChildren(context.spans, cell, 'hp:cellSz')[0]
+    const width = Number(attribute(context.xml.slice(size.start, size.openEnd), 'width'))
+    if (width !== selectedColumnWidth) {
+      throw new HwpxEditConflictError('행마다 너비가 다른 열은 아직 삭제할 수 없습니다.')
+    }
+  }
+  const selectedRowCells = directChildren(context.spans, rows[selectedRowIndex], 'hp:tc')
+  const targetCell = selectedRowCells[selectedColumnIndex + 1] ?? selectedRowCells[selectedColumnIndex - 1]
+  const targetText = targetCell && context.spans.find(
+    (span) => span.name === 'hp:t' && span.start >= targetCell.openEnd && span.end <= targetCell.closeStart
+  )
+  if (!targetText) throw new HwpxEditConflictError('삭제 뒤 selection을 옮길 표 셀을 찾을 수 없습니다.')
+  const deletedTextsBeforeTarget = selectedCells.reduce(
+    (count, cell) => count + context.spans.filter(
+      (span) => span.name === 'hp:t' &&
+        span.start >= cell.openEnd &&
+        span.end <= cell.closeStart &&
+        span.start < targetText.start
+    ).length,
+    0
+  )
+  const targetOriginalOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < targetText.start
+  ).length
+  const targetTextNodeId = `${selection.sectionPath}#hp:t:${targetOriginalOrdinal - deletedTextsBeforeTarget}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({
+    start: 0,
+    end: context.table.openEnd - tableStart,
+    value: setAttribute(tableTag, 'colCnt', String(columnCount - 1))
+  })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableWidth = Number(attribute(tableSizeTag, 'width'))
+  if (tableWidth <= selectedColumnWidth) {
+    throw new HwpxEditConflictError('표 전체 너비가 삭제 후 남는 열 너비보다 작습니다.')
+  }
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'width', String(tableWidth - selectedColumnWidth))
+  })
+  rows.forEach((row) => {
+    const cells = directChildren(context.spans, row, 'hp:tc')
+    for (let columnIndex = selectedColumnIndex + 1; columnIndex < cells.length; columnIndex += 1) {
+      const address = directChildren(context.spans, cells[columnIndex], 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'colAddr', String(columnIndex - 1))
+      })
+    }
+    const selectedCell = cells[selectedColumnIndex]
+    edits.push({
+      start: selectedCell.start - tableStart,
+      end: selectedCell.end - tableStart,
+      value: ''
+    })
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: targetTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: targetTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: targetTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function legacyPlanInsertTableRowAfter(sourcePackage: HwpxSourcePackage, selection: EditorSelection): InsertTableRowPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start ||
+    context.cell.start !== endContext.cell.start
+  ) throw new HwpxEditConflictError('행 추가는 하나의 표 셀에서만 실행할 수 있습니다.')
+  const { rows, selectedRowIndex, selectedRowHeight } = assertSimpleRectangularTable(context)
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({ start: 0, end: context.table.openEnd - tableStart, value: setAttribute(tableTag, 'rowCnt', String(rows.length + 1)) })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableHeight = Number(attribute(tableSizeTag, 'height'))
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'height', String(tableHeight + selectedRowHeight))
+  })
+  for (let index = selectedRowIndex + 1; index < rows.length; index += 1) {
+    for (const cell of directChildren(context.spans, rows[index], 'hp:tc')) {
+      const address = directChildren(context.spans, cell, 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'rowAddr', String(index + 1))
+      })
+    }
+  }
+  const insertionPoint = rows[selectedRowIndex].end - tableStart
+  edits.push({ start: insertionPoint, end: insertionPoint, value: cloneEmptyRow(context, selectedRowIndex + 1) })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter: { ...selection }
+  }
+}
+
+export function legacyPlanDeleteTableRow(sourcePackage: HwpxSourcePackage, selection: EditorSelection): DeleteTableRowPlan {
+  const normalized = normalizeEditorSelection(sourcePackage, selection)
+  const context = locateTable(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const endContext = locateTable(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+  if (
+    context.table.start !== endContext.table.start ||
+    context.row.start !== endContext.row.start
+  ) throw new HwpxEditConflictError('행 삭제는 하나의 표 행에서만 실행할 수 있습니다.')
+  const { rows, selectedRowIndex, selectedRowHeight } = assertSimpleRectangularTable(context)
+  const bodyRows = rows.filter((row) => directChildren(context.spans, row, 'hp:tc').every(
+    (cell) => attribute(context.xml.slice(cell.start, cell.openEnd), 'header') !== '1'
+  ))
+  if (!bodyRows.includes(context.row)) {
+    throw new HwpxEditConflictError('반복 머리글 행은 삭제할 수 없습니다.')
+  }
+  if (bodyRows.length <= 1) {
+    throw new HwpxEditConflictError('표에는 하나 이상의 body 행이 남아 있어야 합니다.')
+  }
+  const selectedBodyIndex = bodyRows.indexOf(context.row)
+  const targetRow = bodyRows[selectedBodyIndex + 1] ?? bodyRows[selectedBodyIndex - 1]
+  const targetText = targetRow && firstTextInRow(context.spans, targetRow)
+  if (!targetText) throw new HwpxEditConflictError('삭제 뒤 selection을 옮길 표 셀을 찾을 수 없습니다.')
+  const deletedTextCount = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start >= context.row.openEnd && span.end <= context.row.closeStart
+  ).length
+  const targetOriginalOrdinal = context.spans.filter(
+    (span) => span.name === 'hp:t' && span.start < targetText.start
+  ).length
+  const targetOrdinal = targetText.start > context.row.end
+    ? targetOriginalOrdinal - deletedTextCount
+    : targetOriginalOrdinal
+  const targetTextNodeId = `${selection.sectionPath}#hp:t:${targetOrdinal}`
+  const tableFragment = context.xml.slice(context.table.start, context.table.end)
+  let replacement = tableFragment
+  const tableStart = context.table.start
+  const edits: Array<{ start: number; end: number; value: string }> = []
+  const tableTag = context.xml.slice(context.table.start, context.table.openEnd)
+  edits.push({ start: 0, end: context.table.openEnd - tableStart, value: setAttribute(tableTag, 'rowCnt', String(rows.length - 1)) })
+  const tableSize = directChildren(context.spans, context.table, 'hp:sz')[0]
+  const tableSizeTag = context.xml.slice(tableSize.start, tableSize.openEnd)
+  const tableHeight = Number(attribute(tableSizeTag, 'height'))
+  edits.push({
+    start: tableSize.start - tableStart,
+    end: tableSize.openEnd - tableStart,
+    value: setAttribute(tableSizeTag, 'height', String(tableHeight - selectedRowHeight))
+  })
+  for (let index = selectedRowIndex + 1; index < rows.length; index += 1) {
+    for (const cell of directChildren(context.spans, rows[index], 'hp:tc')) {
+      const address = directChildren(context.spans, cell, 'hp:cellAddr')[0]
+      const tag = context.xml.slice(address.start, address.openEnd)
+      edits.push({
+        start: address.start - tableStart,
+        end: address.openEnd - tableStart,
+        value: setAttribute(tag, 'rowAddr', String(index - 1))
+      })
+    }
+  }
+  edits.push({
+    start: context.row.start - tableStart,
+    end: context.row.end - tableStart,
+    value: ''
+  })
+  for (const edit of edits.sort((left, right) => right.start - left.start)) {
+    replacement = replaceRange(replacement, edit.start, edit.end, edit.value)
+  }
+  const selectionAfter: EditorSelection = {
+    sectionPath: selection.sectionPath,
+    anchorTextNodeId: targetTextNodeId,
+    anchorOffset: 0,
+    focusTextNodeId: targetTextNodeId,
+    focusOffset: 0
+  }
+  return {
+    command: {
+      type: 'replace-table-fragment',
+      sectionPath: selection.sectionPath,
+      textNodeId: normalized.start.textNodeId,
+      replacementTextNodeId: targetTextNodeId,
+      expectedFragment: tableFragment,
+      replacementFragment: replacement
+    },
+    selectionAfter
+  }
+}
+
+export function legacyApplyReplaceTableFragmentCommand(sourcePackage: HwpxSourcePackage, command: ReplaceTableFragmentCommand) {
+  const context = locateTable(sourcePackage, command.sectionPath, command.textNodeId)
+  const current = context.xml.slice(context.table.start, context.table.end)
+  if (current !== command.expectedFragment) throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
+  if (command.expectedFragment === command.replacementFragment) {
+    return { package: sourcePackage, lossReport: buildLossReport(sourcePackage, [command.sectionPath]), changed: false }
+  }
+  const nextXml = replaceRange(context.xml, context.table.start, context.table.end, command.replacementFragment)
+  return {
+    package: sourcePackage.withEntry(command.sectionPath, Buffer.from(nextXml)),
+    inverse: {
+      ...command,
+      textNodeId: command.replacementTextNodeId ?? command.textNodeId,
+      replacementTextNodeId: command.textNodeId,
+      expectedFragment: command.replacementFragment,
+      replacementFragment: command.expectedFragment
+    },
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath]),
+    changed: true
+  }
+}

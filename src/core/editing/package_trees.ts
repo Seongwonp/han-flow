@@ -10,7 +10,7 @@ import { parseSourceTree, serializeSourceTree, SourceTree } from './source_tree'
  * tree를 고치는 command는 {@link takePackageTrees}로 원래 package에서 cache를 떼어 낸 뒤 tree를 제자리에서 고치고,
  * 새 package를 만든 다음 {@link putPackageTrees}로 cache를 옮긴다. 떼어 낸 뒤 실패하면 cache는 버려지고 원래
  * package는 다음 조회 때 다시 parse한다. 따라서 cache된 tree는 언제나 key package의 bytes와 같은 문자열로 직렬화된다.
- * tree를 쓰지 않는 command(표 문자열 patch)가 만든 package에는 cache가 없어 첫 조회 때 다시 parse한다.
+ * 모든 편집 command(text·모양·문단·표 구조)가 이 방식으로 cache를 이어 간다. 편집 밖에서 만든 package는 첫 조회 때 parse한다.
  */
 
 export type PackageTrees = Map<string, SourceTree>
