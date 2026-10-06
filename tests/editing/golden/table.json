@@ -235,6 +235,7 @@
   "section0.xml 15 merge-right": "! HwpxEditConflictError: 복합 콘텐츠가 있는 표에는 아직 행을 추가할 수 없습니다.",
   "section0.xml 15 split": "! HwpxEditConflictError: 수평 1×2 body 병합 셀만 분할할 수 있습니다."
  },
+ "hanging-indent": {},
  "large-progressive": {
   "section0.xml 5 insert-row": "! HwpxEditConflictError: 반복 머리글 행을 기준으로 행을 추가할 수 없습니다.",
   "section0.xml 5 delete-row": "! HwpxEditConflictError: 반복 머리글 행을 기준으로 행을 추가할 수 없습니다.",

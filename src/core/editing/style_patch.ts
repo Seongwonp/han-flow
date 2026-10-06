@@ -400,11 +400,17 @@ function setParagraphMetrics(
   options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'indent' | 'marginBefore' | 'marginAfter'>
 ): void {
   if (options.indent !== undefined || options.marginBefore !== undefined || options.marginAfter !== undefined) {
-    const margin = findFirstSourceElement(draft.element, 'hh:margin') ??
-      insertOrderedChild(draft, paragraphChildOrder, 'margin', DEFAULT_MARGIN)
-    if (options.indent !== undefined) setHwpValueElement(draft, margin, 'intent', options.indent)
-    if (options.marginBefore !== undefined) setHwpValueElement(draft, margin, 'prev', options.marginBefore)
-    if (options.marginAfter !== undefined) setHwpValueElement(draft, margin, 'next', options.marginAfter)
+    const existing = findDescendantSourceElements(draft.element, 'hh:margin')
+    const margins = existing.length
+      ? existing
+      : [insertOrderedChild(draft, paragraphChildOrder, 'margin', DEFAULT_MARGIN)]
+    for (const margin of margins) {
+      // command 값은 실제 HWPUNIT. HwpUnitChar `hp:case` 밖(직접 `hh:margin`·`hp:default`)은 2배로 적는다.
+      const scale = margin.parent?.name === 'hp:case' ? 1 : 2
+      if (options.indent !== undefined) setHwpValueElement(draft, margin, 'intent', options.indent * scale)
+      if (options.marginBefore !== undefined) setHwpValueElement(draft, margin, 'prev', options.marginBefore * scale)
+      if (options.marginAfter !== undefined) setHwpValueElement(draft, margin, 'next', options.marginAfter * scale)
+    }
   }
   if (options.lineSpacing !== undefined) {
     const existing = findFirstSourceElement(draft.element, 'hh:lineSpacing')

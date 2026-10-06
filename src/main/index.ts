@@ -815,6 +815,20 @@ function captureVisualState(window: BrowserWindow): void {
       // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
+      // scrollWidth는 왼쪽으로 나간 내용을 세지 않는다. 글자 rect가 용지 좌우 밖에 있으면 PDF에서 잘린다.
+      outsidePageTextPages: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
+        const box = page.getBoundingClientRect()
+        const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT)
+        const range = document.createRange()
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim()) continue
+          range.selectNodeContents(node)
+          for (const rect of range.getClientRects()) {
+            if (rect.width > 0 && (rect.left < box.left - 1 || rect.right > box.right + 1)) return Number(page.dataset.pageIndex) + 1
+          }
+        }
+        return 0
+      }).filter(Boolean),
       columnCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column').length),
       columnTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) =>
         Array.from(page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column')).map((column) =>

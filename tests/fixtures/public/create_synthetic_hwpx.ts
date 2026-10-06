@@ -290,6 +290,39 @@ export function createReportTocHwpx(directory: string, fileName = 'han-flow-repo
   return path
 }
 
+/**
+ * 공공기관 행사 계획 붙임 쪽의 내어쓰기 문단(직접 작성한 합성 문서).
+ * 한/글은 음수 `hc:intent`(내어쓰기)를 첫 줄은 왼쪽 여백에서, 둘째 줄부터 `|intent|`만큼 들여 그린다.
+ * 음수를 CSS `text-indent`로만 옮기면 첫 줄이 용지 왼쪽 밖으로 나가 PDF에서 잘린다.
+ */
+const hangingIndentHeader = reportHeader.replace(
+  '</hh:paraProperties>',
+  '<hh:paraPr id="6"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="130"/><hh:margin><hc:intent value="-2620" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
+    '<hh:paraPr id="7"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-15232" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
+    '<hh:paraPr id="8"><hh:align horizontal="JUSTIFY"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing type="PERCENT" value="160"/><hh:margin><hc:intent value="-18704" unit="HWPUNIT"/><hc:left value="0" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr>' +
+    '<hh:paraPr id="9"><hh:align horizontal="LEFT"/><hh:heading type="BULLET" idRef="1" level="0"/><hh:lineSpacing type="PERCENT" value="140"/><hh:margin><hc:intent value="-4214" unit="HWPUNIT"/><hc:left value="1406" unit="HWPUNIT"/><hc:right value="458" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hh:paraPr></hh:paraProperties>'
+)
+
+const hangingIndentSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p paraPrIDRef="4"><hp:run charPrIDRef="1"><hp:secPr><hp:pagePr width="59528" height="84188"><hp:margin left="5669" right="5669" top="2834" bottom="1417" header="1417" footer="1417"/></hp:pagePr></hp:secPr><hp:t>합성 행사 개최 계획</hp:t></hp:run></hp:p>
+  ${reportParagraph('□ 행사 개요: 참여형 홍보 체계를 바탕으로 국민 참여 행사를 열고 지역 단위 활동 계획을 함께 공유하여 관심을 높인다', { paraPr: '6' })}
+  ${reportParagraph('○ (일시) 2026. 4. 7.(화) 17:00 ~ 18:00', { paraPr: '7' })}
+  ${reportParagraph('○ (참석) 정책국장, 진흥기관 부회장, 지역 담당 과장, 서포터즈 구성원, 관계 기관 담당자 등 약 15명이 참석하여 활동 계획을 함께 나눈다', { paraPr: '7' })}
+  ${reportParagraph('※ 서포터즈: 교사, 창업가 등 이해도를 갖춘 관계자 10명 내외로 구성하고 분야별 활동 결과를 정리하여 공유한다', { paraPr: '8' })}
+  ${reportParagraph('- 행사 뒤 활동 수기를 모아 우수 사례를 선정하고 영상 제작과 대외 홍보에 활용하며 활동자에게 포상한다', { paraPr: '9' })}
+</hs:sec>`
+
+export function createHangingIndentHwpx(directory: string, fileName = 'han-flow-hanging-indent.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(hangingIndentHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(hangingIndentSection))
+  zip.writeZip(path)
+  return path
+}
+
 export const roundTripSentinels = {
   headerAttribute: 'han-flow-unknown-attribute',
   headerNode: 'han-flow-unknown-header-node',

@@ -20,6 +20,18 @@ function styleChild(node: OrderedXmlNode, name: string): OrderedXmlNode | undefi
   const branch = child(switchNode ?? node, 'hp:case') ?? child(switchNode ?? node, 'hp:default')
   return branch ? descendants(branch, name)[0] : undefined
 }
+/**
+ * 문단 모양 `hh:margin` 값의 배율.
+ * 한/글은 HwpUnitChar namespace를 아는 reader용 `hp:switch/hp:case`에는 실제 HWPUNIT을, 그 밖의 직접
+ * `hh:margin`(한/글 2018 이전 저장본)과 `hp:default`에는 같은 값의 2배를 적는다(예: case 1752 / default 3504).
+ * 한/글 저장본의 `hp:lineseg`도 왼쪽 여백 6000을 `horzpos` 3000으로, 문단 앞 간격 1000을 줄 간격 500으로 배치한다.
+ */
+export function paragraphMarginScale(paraPr: OrderedXmlNode, margin: OrderedXmlNode | undefined): number {
+  if (!margin) return 1
+  const switchNode = child(paraPr, 'hp:switch')
+  const caseNode = switchNode ? child(switchNode, 'hp:case') : undefined
+  return caseNode && descendants(caseNode, 'hh:margin')[0] === margin ? 1 : 0.5
+}
 const textOf = (node: OrderedXmlNode): string => walkOrderedXml(node.children).filter((item) => item.name === '#text').map((item) => item.text ?? '').join('')
 const inlineTextOf = (node: OrderedXmlNode): string => node.children.map((item) => {
   if (item.name === '#text') return item.text ?? ''
@@ -302,7 +314,9 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   const numberings = Object.fromEntries(all.filter((node) => node.name === 'hh:numbering').map((node) => [node.attributes.id, children(node, 'hh:paraHead').map((head) => ({ pattern: textOf(head), format: head.attributes.numFormat ?? 'DIGIT' }))]))
   all.filter((node) => node.name === 'hh:paraPr').forEach((style) => {
     const marginNode = styleChild(style, 'hh:margin')
-    const getValue = (name: string) => num(child(marginNode ?? style, name)?.attributes.value)
+    // HwpUnitChar `hp:case` 밖(직접 `hh:margin`, `hp:default`)의 문단 여백·들여쓰기는 HWPUNIT의 2배로 저장된다.
+    const marginScale = paragraphMarginScale(style, marginNode)
+    const getValue = (name: string) => Math.round(num(child(marginNode ?? style, name)?.attributes.value) * marginScale)
     const heading = child(style, 'hh:heading')
     const level = num(heading?.attributes.level)
     const idRef = heading?.attributes.idRef ?? '0'

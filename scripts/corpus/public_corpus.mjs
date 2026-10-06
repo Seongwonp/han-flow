@@ -11,6 +11,7 @@ const GENERATORS = new Set([
   'createMultiColumnHwpx',
   'createRoundTripHwpx',
   'createReportTocHwpx',
+  'createHangingIndentHwpx',
   'createInvalidHwpx'
 ])
 

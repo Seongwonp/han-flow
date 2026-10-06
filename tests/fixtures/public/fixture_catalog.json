@@ -51,6 +51,12 @@
       "pipelines": ["hwpx-core", "hwpx-production"]
     },
     {
+      "id": "hanging-indent",
+      "format": "hwpx",
+      "category": "report-template",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
       "id": "large-progressive",
       "format": "hwpx",
       "category": "large-document",

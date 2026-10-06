@@ -22,6 +22,7 @@ import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layo
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { paginateViewerDocument } from '../../core/layout/pagination'
+import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
@@ -298,13 +299,16 @@ export function ParagraphView({
   editing?: ParagraphEditingProps
 }) {
   const style = document.paraStyles[paragraph.paraStyleId]
+  // 음수 intent(내어쓰기)는 첫 줄을 왼쪽 여백에 두고 둘째 줄부터 들인다. 첫 줄을 용지 밖으로 당기지 않는다.
+  const indentBox = paragraphIndentBox(style?.margin ?? {}, style?.indent)
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
-    marginLeft: hwpUnitToCssPx(style?.margin.left ?? 0),
+    marginLeft: hwpUnitToCssPx(indentBox.marginLeft),
+    paddingLeft: indentBox.paddingLeft ? hwpUnitToCssPx(indentBox.paddingLeft) : undefined,
     marginRight: hwpUnitToCssPx(style?.margin.right ?? 0),
     marginTop: hwpUnitToCssPx(style?.margin.top ?? 0),
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
-    textIndent: hwpUnitToCssPx(style?.indent ?? 0),
+    textIndent: hwpUnitToCssPx(indentBox.textIndent),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
   const activeEditing =

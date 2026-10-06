@@ -71,8 +71,9 @@ async function verifyPdf(fixture) {
   return JSON.parse(resultLine.slice('HAN_FLOW_PDF_VERIFY '.length))
 }
 
-// 화면과 PDF의 페이지별 글자 수를 비교할 production fixture. 목차 번호(`1.`)와 사설 영역 글머리를 담는다.
-const PDF_FIXTURE_IDS = new Set(['report-toc'])
+// 화면과 PDF의 페이지별 글자 수를 비교할 production fixture.
+// report-toc: 목차 번호(`1.`)와 사설 영역 글머리, hanging-indent: 내어쓰기 첫 줄이 용지 밖으로 잘리던 문단.
+const PDF_FIXTURE_IDS = new Set(['report-toc', 'hanging-indent'])
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
 try {
@@ -120,10 +121,12 @@ try {
   const large = results.find(({ fixtureId }) => fixtureId === 'large-progressive')
   const invalid = results.find(({ fixtureId }) => fixtureId === 'invalid-package')
   const reportToc = results.find(({ fixtureId }) => fixtureId === 'report-toc')
+  const hangingIndent = results.find(({ fixtureId }) => fixtureId === 'hanging-indent')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     ...pdfResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: pdfFailures }) => `${fixtureId}: PDF 검증 실패(${pdfFailures.join(', ')})`),
     reportToc?.totalPages === 3 ? undefined : 'report-toc: 표지·목차·본문 3페이지가 아님',
+    hangingIndent?.outsidePageTextPages?.length === 0 ? undefined : `hanging-indent: 용지 밖으로 나간 글자(${hangingIndent?.outsidePageTextPages?.join(', ')})`,
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
     compatibility?.imageCount === 12 ? undefined : 'images-rowspan: 이미지 12개가 decode되지 않음',
     multiColumn?.totalPages > 0 ? undefined : 'multi-column-layout: 페이지가 생성되지 않음',

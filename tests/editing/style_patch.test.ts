@@ -366,14 +366,15 @@ describe('HWPX 문단·글자 style patch', () => {
     const header = result.package.readEntry('Contents/header.xml').toString('utf8')
     const definition = header.match(/<hh:paraPr id="4"[\s\S]*?<\/hh:paraPr>/)?.[0]
     expect(definition).toContain('<hh:lineSpacing value="180" type="PERCENT" unit="HWPUNIT"/>')
-    expect(definition).toContain('<hc:intent value="-200" unit="HWPUNIT"/>')
-    expect(definition).toContain('<hc:prev value="200" unit="HWPUNIT"/>')
-    expect(definition).toContain('<hc:next value="300" unit="HWPUNIT"/>')
+    // 직접 `hh:margin`(HwpUnitChar case 밖)은 한/글처럼 실제 HWPUNIT의 2배로 적는다.
+    expect(definition).toContain('<hc:intent value="-400" unit="HWPUNIT"/>')
+    expect(definition).toContain('<hc:prev value="400" unit="HWPUNIT"/>')
+    expect(definition).toContain('<hc:next value="600" unit="HWPUNIT"/>')
     const projected = await decodeViewerDocument(result.package)
     expect(projected.paraStyles['4']).toMatchObject({
       lineSpacing: 180,
       indent: -200,
-      margin: { left: 500, right: 600, top: 200, bottom: 300 }
+      margin: { left: 250, right: 300, top: 200, bottom: 300 }
     })
     if (result.inverse?.type !== 'restore-style') throw new Error('문단 style inverse가 없습니다.')
     const restored = applyRestoreStyleCommand(result.package, result.inverse)
@@ -389,6 +390,30 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(() => applyParagraphStyleCommand(source, {
       type: 'apply-paragraph-style', sectionPath, textNodeId: anchor.textNodeId, indent: -7300
     })).toThrow('-72pt')
+  })
+
+  test('HwpUnitChar case에는 실제 HWPUNIT, default에는 2배 값을 함께 기록한다', async () => {
+    const counted = await sourceWithCounts()
+    const switched = counted.readEntry('Contents/header.xml').toString('utf8').replace(
+      /(<hh:paraPr id="0">[\s\S]*?)<hh:margin>[\s\S]*?<\/hh:margin>/,
+      '$1<hp:switch><hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar">' +
+        '<hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="1752" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hp:case>' +
+        '<hp:default><hh:margin><hc:intent value="0" unit="HWPUNIT"/><hc:left value="3504" unit="HWPUNIT"/><hc:right value="0" unit="HWPUNIT"/><hc:prev value="0" unit="HWPUNIT"/><hc:next value="0" unit="HWPUNIT"/></hh:margin></hp:default></hp:switch>'
+    )
+    expect(switched).toContain('<hp:switch>')
+    const source = counted.withEntry('Contents/header.xml', Buffer.from(switched))
+    expect((await decodeViewerDocument(source)).paraStyles['0'].margin.left).toBe(1752)
+    const result = applyParagraphStyleCommand(source, {
+      type: 'apply-paragraph-style',
+      sectionPath,
+      textNodeId: editableAnchor(source).textNodeId,
+      indent: -1310
+    })
+    const definition = result.package.readEntry('Contents/header.xml').toString('utf8')
+      .match(/<hh:paraPr id="4"[\s\S]*?<\/hh:paraPr>/)?.[0] ?? ''
+    expect(definition.match(/<hp:case[\s\S]*?<\/hp:case>/)?.[0]).toContain('<hc:intent value="-1310" unit="HWPUNIT"/>')
+    expect(definition.match(/<hp:default>[\s\S]*?<\/hp:default>/)?.[0]).toContain('<hc:intent value="-2620" unit="HWPUNIT"/>')
+    expect((await decodeViewerDocument(result.package)).paraStyles['4']).toMatchObject({ indent: -1310, margin: { left: 1752 } })
   })
 
   test('문단 모양 변경과 저장 projection이 탭 정의·목록 heading·인라인 탭을 보존한다', async () => {
