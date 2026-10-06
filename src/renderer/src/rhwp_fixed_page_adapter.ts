@@ -252,7 +252,8 @@ async function pageTextLayout(index: number, cache = true): Promise<FixedPageTex
   const layout = {
     runs,
     text,
-    nonWhitespaceCharacters: Array.from(text.normalize('NFC').replace(/\s/gu, '')).length
+    // PDF 비교 규칙(scripts/pdf_text_count.mjs)과 같이 공백·사설 영역 글자는 세지 않는다.
+    nonWhitespaceCharacters: Array.from(text.normalize('NFC').replace(/[\s\p{Co}]/gu, '')).length
   }
   if (cache) rememberTextLayout(index, layout)
   return layout

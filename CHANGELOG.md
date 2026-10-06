@@ -38,6 +38,7 @@
 - 결정적 `icon:ico` 생성기와 비서명 x64 NSIS 설치본 target(한국어·설치 경로 선택·파일 연결), Windows CI의 패키지 앱 matrix·HWP·PDF E2E와 설치본·unpacked artifact 업로드 추가
 - PDF 저장 대화상자 기본 이름을 `문서.pdf` 대신 열린 문서 이름(Windows 금지 문자 정리)으로, PDF 제목을 `Han-Flow` 대신 문서 이름으로 바꾸고 창 제목을 `<파일 이름> - Han-Flow`로 표시(Windows 경로 구분자에서 툴바가 전체 경로를 보이던 문제 포함)
 - 모든 편집 control이 `홈` 탭 하나에 있던 리본을 `파일`·`편집`·`서식`·`표`·`보기` 탭으로 나누고 확대/축소·열기·PDF를 리본으로 옮김(편집 중 기본 `서식`, 표 안 caret은 탭 전환 없이 `표` 탭 표시, WAI-ARIA tabs 키보드 이동)
+- HWPX XML 본문의 숫자처럼 보이는 글자(`1.`·`2017.`·`007`)를 숫자로 바꿔 목차 번호·날짜의 점을 잃던 문제 수정, 화면·PDF 글자 수 비교를 code point 단위로 하고 PDF로 추출되지 않는 사설 영역 글자를 제외, 표지·목차 보고서 합성 fixture와 matrix PDF 검증 추가
 
 ### V3 HWPX 편집 기반
 

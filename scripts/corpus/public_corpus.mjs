@@ -10,6 +10,7 @@ const GENERATORS = new Set([
   'createListMarkerHwpx',
   'createMultiColumnHwpx',
   'createRoundTripHwpx',
+  'createReportTocHwpx',
   'createInvalidHwpx'
 ])
 

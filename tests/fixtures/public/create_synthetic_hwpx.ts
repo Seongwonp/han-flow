@@ -227,6 +227,69 @@ export function createInvalidHwpx(directory: string, fileName = 'han-flow-invali
   return path
 }
 
+/**
+ * 표지·목차·본문 3쪽짜리 공공기관 보고서 서식 구조(직접 작성한 합성 문서).
+ * - 목차 표 첫 열의 `1.`·`2.`처럼 숫자로만 보이는 `hp:t`(XML 숫자 변환으로 `.`을 잃던 회귀)
+ * - 한컴 문자표의 보충 사설 영역 글자 U+F03DA(키캡 글머리). 글꼴에 glyph가 없으면 PDF에서 글자로 추출되지 않는다.
+ */
+export const REPORT_TOC_PUA_MARKER = String.fromCodePoint(0xf03da)
+export const REPORT_TOC_NUMERIC_TEXTS = ['1.', '2.', '3.', '4.', '007', '1e3', '0x10', ' 12 '] as const
+
+const reportHeader = header
+  .replace(
+    '</hh:charProperties>',
+    '<hh:charPr id="1" height="2400" textColor="#000000"><hh:fontRef hangul="0"/><hh:bold/></hh:charPr>' +
+      '<hh:charPr id="2" height="1500" textColor="#000000"><hh:fontRef hangul="0"/></hh:charPr></hh:charProperties>'
+  )
+  .replace(
+    '</hh:paraProperties>',
+    '<hh:paraPr id="4"><hh:align horizontal="CENTER"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing value="160"/><hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr>' +
+      '<hh:paraPr id="5"><hh:align horizontal="RIGHT"/><hh:heading type="NONE" idRef="0" level="0"/><hh:lineSpacing value="160"/><hh:margin><hc:left value="0"/><hc:right value="500"/><hc:prev value="0"/><hc:next value="0"/></hh:margin></hh:paraPr></hh:paraProperties>'
+  )
+
+const reportCell = (row: number, column: number, width: number, height: number, text: string, paraPr = '0', charPr = '2') =>
+  `<hp:tc borderFillIDRef="1"><hp:cellAddr colAddr="${column}" rowAddr="${row}"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${width}" height="${height}"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="${paraPr}"><hp:run charPrIDRef="${charPr}">${text ? `<hp:t>${text}</hp:t>` : ''}</hp:run></hp:p></hp:subList></hp:tc>`
+
+const reportParagraph = (text: string, options: { paraPr?: string; charPr?: string; pageBreak?: boolean } = {}) =>
+  `<hp:p paraPrIDRef="${options.paraPr ?? '0'}"${options.pageBreak ? ' pageBreak="1"' : ''}><hp:run charPrIDRef="${options.charPr ?? '2'}"><hp:t>${text}</hp:t></hp:run></hp:p>`
+
+const tocEntries: Array<[string, string, string]> = [
+  ['1.', '추진 배경 및 목적', '1'],
+  ['2.', '세부 추진 계획', '2'],
+  ['3.', '', '3'],
+  ['4.', '', '4']
+]
+
+const reportTocSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p paraPrIDRef="4"><hp:run charPrIDRef="1"><hp:secPr><hp:pagePr width="59528" height="84188"><hp:margin left="5102" right="5102" top="4252" bottom="4252" header="3600" footer="3600"/></hp:pagePr></hp:secPr><hp:t>합성 보고서 제목</hp:t></hp:run></hp:p>
+  ${reportParagraph('2026. 10. 6.(화)', { paraPr: '4' })}
+  ${reportParagraph('○○○○과', { paraPr: '4' })}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="2"><hp:tbl id="report-writer" rowCnt="1" colCnt="2" pageBreak="CELL"><hp:sz width="44000" height="1800"/><hp:tr>${reportCell(0, 0, 6000, 1800, '작 성 자', '4')}${reportCell(0, 1, 38000, 1800, '○○과장 ○○○ ☎000-0000')}</hp:tr></hp:tbl></hp:run></hp:p>
+  ${reportParagraph('목    차', { paraPr: '4', charPr: '1', pageBreak: true })}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="2"><hp:tbl id="report-toc" rowCnt="${tocEntries.length}" colCnt="3" pageBreak="CELL"><hp:sz width="47450" height="${tocEntries.length * 3512}"/>${tocEntries.map(([number, title, page], row) =>
+    `<hp:tr>${reportCell(row, 0, 3650, 3512, number, '5', '1')}${reportCell(row, 1, 39336, 3512, title)}${reportCell(row, 2, 4464, 3512, page, '4')}</hp:tr>`
+  ).join('')}</hp:tbl></hp:run></hp:p>
+  ${reportParagraph('1. 추진 배경', { charPr: '1', pageBreak: true })}
+  ${reportParagraph('Ⅰ 개요')}
+  ${reportParagraph(`${REPORT_TOC_PUA_MARKER} 둘째 수준 항목`)}
+  ${reportParagraph('  ○ 셋째 수준 항목')}
+  ${reportParagraph('    - 넷째 수준 항목')}
+  ${reportParagraph(`  가. ${REPORT_TOC_PUA_MARKER} : 문자표 키캡 글머리`)}
+  ${reportParagraph('  나. 숫자로만 된 글자 칸')}
+  ${REPORT_TOC_NUMERIC_TEXTS.slice(4).map((text) => reportParagraph(text)).join('\n  ')}
+</hs:sec>`
+
+export function createReportTocHwpx(directory: string, fileName = 'han-flow-report-toc.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(reportHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(reportTocSection))
+  zip.writeZip(path)
+  return path
+}
+
 export const roundTripSentinels = {
   headerAttribute: 'han-flow-unknown-attribute',
   headerNode: 'han-flow-unknown-header-node',

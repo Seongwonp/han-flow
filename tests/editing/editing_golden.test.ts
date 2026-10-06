@@ -39,7 +39,7 @@ import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
 
 // 편집 command golden 회귀(tree 전환 뒤 legacy differential을 대신한다).
-// 공개 corpus 34종마다 command family(text·style·paragraph·table)별로 결정적인 command 표본을 적용하고, 결과를
+// 공개 corpus 35종마다 command family(text·style·paragraph·table)별로 결정적인 command 표본을 적용하고, 결과를
 // `tests/editing/golden/<family>.json`의 기록과 비교한다. 기록은 바뀐 entry(section·header.xml)의 SHA-256(+ 계획이 돌려준
 // selection), 거부면 오류 class·message, 바뀌지 않으면 `unchanged`다. 바뀐 모든 command는 inverse가 원래 bytes를, 그 inverse가
 // 결과 bytes를 되살리는지(exact undo·redo) 확인한다. 되돌린 package를 다음 command에 이어 써서 tree cache hit와 주기적
@@ -341,8 +341,8 @@ describe('편집 command golden 회귀', () => {
     return { record: `${modified.join(',')} ${sha256(...parts)}${selection}`, next: back.package }
   }
 
-  test('golden 기록이 34종 fixture와 4개 family를 덮는다', () => {
-    expect(openedFixtures.length).toBe(34)
+  test('golden 기록이 35종 fixture와 4개 family를 덮는다', () => {
+    expect(openedFixtures.length).toBe(35)
     if (!UPDATE) for (const family of FAMILIES) expect(Object.keys(stored[family]).length).toBe(openedFixtures.length)
   })
 

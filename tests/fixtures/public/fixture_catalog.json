@@ -45,6 +45,12 @@
       "pipelines": ["hwpx-core"]
     },
     {
+      "id": "report-toc",
+      "format": "hwpx",
+      "category": "report-template",
+      "pipelines": ["hwpx-core", "hwpx-production"]
+    },
+    {
       "id": "large-progressive",
       "format": "hwpx",
       "category": "large-document",

@@ -15,7 +15,11 @@ const parser = new XMLParser({
   ignoreAttributes: false,
   preserveOrder: true,
   attributeNamePrefix: '',
-  trimValues: false
+  trimValues: false,
+  // 본문 text를 숫자로 바꾸지 않는다. 기본값(true)은 `<hp:t>1.</hp:t>`를 1로, `007`을 7로, `1e3`을 1000으로,
+  // ` 12 `를 공백 없는 12로 바꿔 목차 번호·코드·금액 글자를 잃는다. 속성 값은 기본값대로 문자열이다.
+  parseTagValue: false,
+  parseAttributeValue: false
 })
 
 interface ConvertContext {

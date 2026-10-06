@@ -311,6 +311,10 @@ npm run fixture:v3-windows
 npm run release:audit
 ```
 
+`verify:pdf`는 화면과 PDF의 페이지별 글자 수를 code point 단위로 비교하고, 글꼴에 glyph가 없어 PDF에서
+추출되지 않는 사설 영역 글자(한컴 문자표 글머리 등)는 양쪽에서 뺍니다. PDF 제목과 기본 파일 이름이 문서 이름인지도
+확인하며, `verify:matrix`는 표지·목차·본문 서식 fixture(`report-toc`)에 이 PDF 검증을 함께 실행합니다.
+
 `fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
 편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.
 `release:audit`는 현재 macOS app의 target·Developer ID 준비 여부·도구·서명·architecture를

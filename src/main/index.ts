@@ -812,7 +812,8 @@ function captureVisualState(window: BrowserWindow): void {
       mountedPages: document.querySelectorAll('.viewer-page').length,
       pageSizes: Array.from(document.querySelectorAll('.viewer-page')).map((page) => ({ width: page.clientWidth, height: page.clientHeight })),
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
-      pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/\\S/g) || []).length),
+      // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
+      pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       columnCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column').length),
       columnTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) =>

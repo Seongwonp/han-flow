@@ -53,6 +53,27 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
   return JSON.parse(resultLine.slice('HAN_FLOW_APP_VERIFY '.length))
 }
 
+async function verifyPdf(fixture) {
+  let standardOutput = ''
+  let standardError = ''
+  const exitCode = await new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [resolve(root, 'scripts/verify_pdf.mjs'), fixture, appBinary], {
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    child.stdout.on('data', (chunk) => { standardOutput += chunk.toString() })
+    child.stderr.on('data', (chunk) => { standardError += chunk.toString() })
+    child.once('error', reject)
+    child.once('exit', resolvePromise)
+  })
+  const resultLine = standardOutput.split('\n').find((line) => line.startsWith('HAN_FLOW_PDF_VERIFY '))
+  if (!resultLine) throw new Error(`PDF 검증 결과를 찾지 못했습니다(${exitCode}). ${standardError.trim()}`)
+  return JSON.parse(resultLine.slice('HAN_FLOW_PDF_VERIFY '.length))
+}
+
+// 화면과 PDF의 페이지별 글자 수를 비교할 production fixture. 목차 번호(`1.`)와 사설 영역 글머리를 담는다.
+const PDF_FIXTURE_IDS = new Set(['report-toc'])
+
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
 try {
   const generator = loadGenerator()
@@ -88,13 +109,21 @@ try {
     })
   }
 
+  const pdfResults = []
+  for (const fixture of fixtures.filter(({ id }) => PDF_FIXTURE_IDS.has(id))) {
+    pdfResults.push({ fixtureId: fixture.id, ...await verifyPdf(fixture.path) })
+  }
+
   const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
   const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
   const multiColumn = results.find(({ fixtureId }) => fixtureId === 'multi-column-layout')
   const large = results.find(({ fixtureId }) => fixtureId === 'large-progressive')
   const invalid = results.find(({ fixtureId }) => fixtureId === 'invalid-package')
+  const reportToc = results.find(({ fixtureId }) => fixtureId === 'report-toc')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
+    ...pdfResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: pdfFailures }) => `${fixtureId}: PDF 검증 실패(${pdfFailures.join(', ')})`),
+    reportToc?.totalPages === 3 ? undefined : 'report-toc: 표지·목차·본문 3페이지가 아님',
     continuation?.totalPages === 2 ? undefined : 'cell-continuation: 2페이지가 아님',
     compatibility?.imageCount === 12 ? undefined : 'images-rowspan: 이미지 12개가 decode되지 않음',
     multiColumn?.totalPages > 0 ? undefined : 'multi-column-layout: 페이지가 생성되지 않음',
@@ -112,6 +141,9 @@ try {
     passed: failures.length === 0,
     fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
       fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
+    })),
+    pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({
+      fixtureId, passed, screenPageTextCounts, pdfPageTextCounts: pageTextCounts, pdfTitle
     })),
     failures
   }

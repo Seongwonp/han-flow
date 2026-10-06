@@ -97,6 +97,20 @@
   "7 delete": "Contents/section0.xml da3fbb3bb59493c9b34f7c5127aeb002fadcd1b38ba500e1ebdc08b488fec245",
   "7 replace-all": "Contents/section0.xml b7ba3be835cf16c9567fa8b07dde7877c0f8dd78584d0267d8421106c652465a"
  },
+ "report-toc": {
+  "0 insert": "Contents/section0.xml 0db57e938ad0cab11f68a5da07088a0a558a4c3566258e7f20d606f37348ed50",
+  "0 delete": "Contents/section0.xml d36d2ec0dafd5ba611d175ffbd39d0cc1557f6bf457a0a203ba032bd9ef50cc7",
+  "0 replace-all": "Contents/section0.xml 3b0901535305254c0a40d3b8456ed4874dc193f3d77aa84e30dceaf7dcef850f",
+  "6 insert": "Contents/section0.xml 18ff1d503ce9609a28ebc1f3ee001d940abf25604611f6b68997612f94e00bb8",
+  "6 delete": "Contents/section0.xml 74e8b8b5cfd658d371eba2c4e00f206fb010b9edcaab4ac69d00dd9b22578c44",
+  "6 replace-all": "Contents/section0.xml 710d2f16888c14a79326434920b5fc102463d813f6f4e5f2e70450ad825e2f63",
+  "13 insert": "Contents/section0.xml 12c92a21d649fb8c7abfe74f66b10e52558d783e97a861fd896c584a73dc7704",
+  "13 delete": "Contents/section0.xml dc0e2f6c9cb16b9eae08e4be61611b1e2da8f98f37f0ebd5b136d5bda74b6338",
+  "13 replace-all": "Contents/section0.xml 821085bca326d9cc91b62eba77e42b3c69c65000773e08f2815dd7e2c6fd4dce",
+  "20 insert": "Contents/section0.xml 48dec9d48bf1d982dc079487116b72f413f782799eb4ac29c113afcc7fbea846",
+  "20 delete": "Contents/section0.xml 7c66c832e4f3f694e83260f3d597e0f635e924504c402413798be36810b67f13",
+  "20 replace-all": "Contents/section0.xml dd1b7525df9b590f90153b2431e7c38a7f3127b58874671b4ec50aabb8fc66e7"
+ },
  "large-progressive": {
   "0 insert": "Contents/section0.xml e7fd9f1be1f414b3850060e14a0f70c175b1e5dd87c2555b2505d6e5b6be5b3d",
   "0 delete": "Contents/section0.xml b0df99a0b9d9809cab3c1a10d7cc3a64c33a574b752a15d30cc8324c1ce8c723",

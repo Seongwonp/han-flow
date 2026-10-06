@@ -124,6 +124,24 @@
   "7 merge-next": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
   "7 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다."
  },
+ "report-toc": {
+  "0 split": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-previous": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-next": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 range": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "6 split": "Contents/section0.xml 01a57bc13bdc2f040d01569fa43ea655f40195a00c8d87d5bfa81ce12d0b63b9 @7:0-7:0",
+  "6 merge-previous": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
+  "6 merge-next": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
+  "6 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.",
+  "13 split": "Contents/section0.xml 019c2f239ceaa7d567ca0b24f96c719e34cdb0ad59cafa63907b1a69512046d5 @14:0-14:0",
+  "13 merge-previous": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
+  "13 merge-next": "! EditingOperationError: 병합할 인접 문단이 없습니다.",
+  "13 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다.",
+  "20 split": "Contents/section0.xml 875e77062b66727582651493b58e99a62d14ed6d5de9a4e7714f08b2acc878f8 @21:0-21:0",
+  "20 merge-previous": "Contents/section0.xml 0900d877a7fb519507ccbb133882ccf1e89575d8c272475ebf98f3ea749b8812 @20:0-20:0",
+  "20 merge-next": "Contents/section0.xml a458d9dbb6f9ad94c28efe86ed788d65acb3734487ee961f208a561b2616d3a6 @20:14-20:14",
+  "20 range": "Contents/section0.xml c94ae19494891d8da212dea27d0e6b12503e04973d1a5967cedff0e7ed3ef6a3 @20:11-20:11"
+ },
  "large-progressive": {
   "0 split": "! HwpxEditConflictError: 병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.",
   "0 merge-previous": "! HwpxEditConflictError: 병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.",

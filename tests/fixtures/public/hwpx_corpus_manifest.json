@@ -72,6 +72,13 @@
       "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 1, "estimatedPages": 2 }
     },
     {
+      "id": "report-toc",
+      "category": "report-template",
+      "generator": "createReportTocHwpx",
+      "fileName": "report-toc.hwpx",
+      "expected": { "outcome": "opened", "sections": 1, "tables": 2, "cells": 14, "resources": 0, "estimatedPages": 3 }
+    },
+    {
       "id": "large-progressive",
       "category": "large-document",
       "generator": "createSyntheticHwpx",

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { basename, extname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
+import { comparableCharacterCount } from './pdf_text_count.mjs'
 
 const fixture = process.argv[2]
 const appBinary = process.argv[3] ? resolve(process.argv[3]) : defaultAppBinary()
@@ -64,7 +65,7 @@ try {
       ?? pageInfo.match(/^Page size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/m)
     pdfPageSizes.push(match ? { widthPoints: Number(match[1]), heightPoints: Number(match[2]) } : null)
     const { standardOutput } = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', pdfPath, '-'])
-    pdfTextCounts.push((standardOutput.match(/\S/gu) ?? []).length)
+    pdfTextCounts.push(comparableCharacterCount(standardOutput))
   }
 
   const landscapePages = (state.pageSizes ?? [])
@@ -136,6 +137,7 @@ try {
     comparedPageSizes: compareAllPageSizes,
     comparedPageText: compareAllPages,
     textPreservation: state.documentFormat === 'hwp' ? Number(hwpTextPreservation.toFixed(4)) : undefined,
+    screenPageTextCounts: state.pageTextCounts,
     pageTextCounts: pdfTextCounts,
     renderedPages: renderPages,
     failures,
