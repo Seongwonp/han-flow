@@ -1,4 +1,5 @@
 import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { isRenderedStrikeShape } from './line_shape'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import {
   EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
@@ -304,7 +305,7 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
       bold: Boolean(child(style, 'hh:bold')),
       italic: Boolean(child(style, 'hh:italic')),
       underline: Boolean(underline && underline.attributes.type !== 'NONE'),
-      strikeout: Boolean(strikeout && strikeout.attributes.shape !== 'NONE'),
+      strikeout: Boolean(strikeout && isRenderedStrikeShape(strikeout.attributes.shape)),
       fontId: ref,
       fontFamily: ref ? fonts[ref] : undefined
     }

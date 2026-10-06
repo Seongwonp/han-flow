@@ -46,6 +46,7 @@
 
 ### V3 HWPX 편집 기반
 
+- 한/글 내보내기가 기본값으로 쓰는 취소선 shape="3D"를 취소선으로 그리던 문제 수정(실제 선 종류 13종만 취소선으로 인정)
 - 과거 editor store·normalized model·serializer와 저장 IPC 감사
 - KS X 6101·HWPX package, IME event, transaction과 안전 저장 1차 출처 조사
 - source package·editable model·viewer projection 분리 전략
