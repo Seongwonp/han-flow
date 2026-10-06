@@ -45,7 +45,7 @@ button { font: inherit; }
 .viewer-ribbon-controls button[aria-pressed="true"] { color: #244fd1; background: #dfe7ff; box-shadow: inset 0 0 0 1px rgba(51,94,234,.28); }
 .viewer-ribbon-controls .viewer-ribbon-save { min-width: 122px; display: flex; align-items: center; justify-content: center; gap: 7px; color: #173b9f; background: #e7edff; border-color: #c6d3ff; font-size: 12px; font-weight: 700; }
 .viewer-ribbon-icon { font-size: 19px; line-height: 1; }
-.viewer-ribbon-group-label { color: #69717d; font-size: 10px; line-height: 1; text-align: center; white-space: nowrap; }
+.viewer-ribbon-group-label { color: #69717d; font-size: 10px; line-height: 1.4; text-align: center; white-space: nowrap; }
 .viewer-style-bold { font-weight: 800; }
 .viewer-style-italic { font-family: Georgia, serif; font-style: italic; font-weight: 700; }
 .viewer-style-underline { text-decoration: underline; text-underline-offset: 3px; }

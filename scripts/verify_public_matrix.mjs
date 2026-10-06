@@ -142,7 +142,13 @@ try {
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
-    ...longNameResults.filter(({ toolbarLayout }) => !toolbarLayout?.fileName?.truncated).map(({ scale }) => `긴 파일 이름 ${scale}배: 말줄임이 적용되지 않음`),
+    // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
+    ...longNameResults
+      .filter(({ toolbarLayout }) => {
+        const fileName = toolbarLayout?.fileName
+        return !fileName?.singleLine || !fileName?.ellipsis || fileName?.title !== `${LONG_KOREAN_FILE_STEM}.hwpx`
+      })
+      .map(({ scale }) => `긴 파일 이름 ${scale}배: 한 줄 말줄임·tooltip 조건 불충족`),
     ...pdfResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: pdfFailures }) => `${fixtureId}: PDF 검증 실패(${pdfFailures.join(', ')})`),
     reportToc?.totalPages === 3 ? undefined : 'report-toc: 표지·목차·본문 3페이지가 아님',
     hangingIndent?.editingProbe?.anchorTransition?.to?.endsWith('#hp:t:0') ? undefined : 'hanging-indent: 빈 문단 합성 anchor 편집 전환이 검증되지 않음',
