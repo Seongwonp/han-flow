@@ -90,6 +90,7 @@
 - 편집 코어 tree 전환 3단계: 문단 분할(Enter)·경계 병합(Backspace·Delete)·여러 문단 범위 치환을 source tree로 옮겨 경계 `hp:t`의 inline `hp:tab` 폭·채움 attribute와 entity 표기를 보존하고(기본 표기 문단은 전환 전과 bytes·inverse·오류 동일, `hp:linesegarray`는 새로 만든 문단에서만 제거), 대형 section의 Enter+Backspace 비용을 약 18.9ms에서 5.4ms로 단축
 - 편집 코어 tree 전환 4단계: 표 행·열 추가/삭제와 1×2 셀 병합·분할을 source tree로 옮기고(공개 corpus 401 command differential에서 오류·표 fragment·selection·bytes·inverse가 전환 전과 동일, CDATA·다른 attribute 값 안의 이름·문자 참조 주소를 잘못 읽고 둘째 문단에 줄 배치 정보가 있는 병합 셀 분할에서 잘못된 XML을 쓰던 잠재 버그 수정), 큰 표의 행 추가+실행 취소 비용을 약 6.0ms에서 4.0ms로 단축
 - 편집 코어 tree 전환 정리: legacy 문자열 구현 4개와 정규식 attribute·`replaceRange`·`scanXmlElements`·CDATA `as-tag` scanner 경로를 제거하고, legacy differential을 공개 corpus 1,842 case의 SHA-256 golden 회귀와 exact undo·redo 검사로 대체해 `npm test` 시간을 약 168s에서 45s로 단축
+- HWPX entry CRC-32를 byte 단위 JS 구현에서 Node 내장 `zlib.crc32`로 교체(없으면 JS 구현으로 대체, 모든 공개 fixture entry와 무작위 buffer에서 값 동일)해 대형 section 입력 비용을 keystroke당 약 1.1ms에서 0.3ms로, Enter+Backspace를 약 3.9ms에서 2.2ms로 단축
 
 ### V2 HWP fixed-page
 

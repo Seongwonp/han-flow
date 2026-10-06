@@ -354,6 +354,35 @@ byte 단위로 같음을 확인한 뒤 교체한다. 단계마다 Save As identi
 - 2단계 전(`65b1a1d`): 49.4s(549 test). 4단계 전환 직후(legacy differential 포함): 167.7s(720 test, 문단 differential 92.4s·style 30.9s·
   text 28.3s). 정리 뒤: 45.4s(598 test, text differential 27.5s·golden 3.4s). 목표(2단계 전 + 30s)보다 34s 짧다.
 
+## 4-6. ZIP entry CRC 계산 교체 (2026-10-06)
+
+앞 단계 측정에서 남은 비용으로 적은 `withEntry`의 CRC-32를 byte 단위 JS 구현에서 Node 내장 `zlib.crc32`(native, Node 22.2+ ·
+Electron 44의 Node 24)로 바꿨다(`src/core/parser/source_package.ts`의 `crc32`). `zlib.crc32`가 없는 runtime에서는 전과 같은 JS 구현
+(`crc32Fallback`)으로 물러선다. 아이콘 생성 script(`scripts/build/make_ico.mjs`)의 PNG chunk CRC도 같은 방식으로 바꿨고 생성 결과
+`build/icon.ico`는 byte 단위로 같다. `tests/parser/source_package_crc.test.ts`가 무작위 buffer(0 B~1 MiB, offset 있는 view 포함
+128개)와 공개 fixture 34종의 모든 file entry에서 native 값 = JS 구현 = ZIP central directory 기록임을, `zlib.crc32`를 뺀 module로는
+fallback을 쓰는지 확인한다.
+
+같은 환경에서 전·후를 번갈아 세 번 잰 평균(ms, tree 경로 / `HwpxEditHistory.commit` 경로):
+
+| benchmark | 교체 전 | 교체 후 |
+| --- | --- | --- |
+| text 입력 500자(`text_edit_benchmark`) | 1.13 / 1.18 | 0.31 / 0.39 |
+| Enter+Backspace 200쌍(`paragraph_split_merge_benchmark`) | 3.93 / 3.40 | 2.21 / 2.32 |
+| 굵게 toggle 200번(`style_toggle_benchmark`, 한 번씩) | 1.00 / 1.10 | 0.37 / 0.34 |
+| 표 행 추가+undo 50쌍, 외부 fixture(`table_structure_benchmark`, 한 번씩) | 3.02 | 2.70 |
+
+남은 편집 비용은 section 문자열 직렬화와 UTF-8 bytes 생성, 문단·표 command의 fragment 조각 parse와 `hp:t` 색인 재구성이다.
+
+## 4-7. 남은 한계
+
+- 표 구조 command는 여전히 병합 없는 직사각형 표(분할은 선택한 수평 1×2 body 병합 셀 하나), 단순 텍스트 셀, 고유 ID 없는 행·셀만
+  허용한다. topology whitelist는 tree 검사로 옮겼을 뿐 넓히지 않았다(기능 확장은 별도 단계).
+- 문단·표 command의 command·inverse는 여전히 원문 fragment 문자열(`expectedFragment`/`replacementFragment`)이라 history byte 예산은
+  fragment 길이에 비례한다. 구조적 inverse(바뀐 node만 들고 있는 inverse)는 5절 위험의 history 예산 재정의와 함께 별도로 다룬다.
+- capability 판단은 아직 viewer 모델(`editing_capability.ts`)에서 하고, anchor ordinal 계약은 viewer decoder와 source tree 사이의
+  교차 parser test로 지킨다.
+
 ## 5. 위험
 
 - **공백·entity 충실도**: fast-xml-parser는 entity를 해석하고 공백·따옴표 표기를 잃는다.

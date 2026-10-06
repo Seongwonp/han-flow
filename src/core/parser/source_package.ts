@@ -1,4 +1,5 @@
 import AdmZip from 'adm-zip'
+import * as zlib from 'zlib'
 import { openHwpxZipDirectory, readEntryBounded } from './bounded_entry'
 import { parseOrderedXml } from './ordered_xml'
 import type { OrderedXmlNode } from './ordered_xml'
@@ -37,12 +38,27 @@ const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, value) => {
   return crc >>> 0
 })
 
-function crc32(bytes: Buffer): number {
+/**
+ * @internal ZIP CRC-32(IEEE 802.3, 반사 다항식 0xEDB88320)의 byte 단위 JS 구현.
+ * `zlib.crc32`가 없는 runtime의 fallback이자 test의 비교 기준이다.
+ */
+export function crc32Fallback(bytes: Uint8Array): number {
   let crc = 0xffffffff
   for (const byte of bytes) {
     crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8)
   }
   return (crc ^ 0xffffffff) >>> 0
+}
+
+/**
+ * Node 22.2+(Electron 44의 Node 24 포함)는 zlib 내장 `crc32`(native)를 제공한다. 없으면 JS 구현으로 물러선다.
+ * `zlib`을 namespace로 읽어 함수가 없는 runtime에서도 import가 실패하지 않게 한다.
+ */
+const nativeCrc32 = (zlib as { crc32?: (data: Uint8Array, value?: number) => number }).crc32
+
+/** @internal entry bytes의 ZIP CRC-32(부호 없는 32bit 정수). */
+export function crc32(bytes: Uint8Array): number {
+  return nativeCrc32 ? nativeCrc32(bytes) >>> 0 : crc32Fallback(bytes)
 }
 
 function validateRequiredEntries(entries: readonly HwpxSourceEntry[]): void {
