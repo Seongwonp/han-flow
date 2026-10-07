@@ -40,8 +40,11 @@ async function run(command, arguments_, options = {}) {
   let standardError = ''
   await new Promise((resolvePromise, reject) => {
     const child = spawn(command, arguments_, { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
-    child.stdout.on('data', (chunk) => { standardOutput += chunk.toString() })
-    child.stderr.on('data', (chunk) => { standardError += chunk.toString() })
+    // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { standardOutput += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => { standardError += chunk })
     child.once('error', reject)
     child.once('exit', (code) => {
       if (code === 0) resolvePromise()

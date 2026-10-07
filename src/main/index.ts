@@ -838,6 +838,11 @@ function captureVisualState(window: BrowserWindow): void {
         .filter((element) => !element.parentElement?.closest('.viewer-object-body, .viewer-note-body'))
         .reduce((sum, element) => sum + (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length, 0),
       objectNotice: document.querySelector('.viewer-object-banner-text')?.textContent ?? null,
+      // 쪽보다 커서 줄여 그린 자리 표시(선언 크기 축소)와 쪽 높이에 맞춰 줄인 되살린 글 상자 수.
+      fittedObjects: {
+        declared: document.querySelectorAll('.viewer-page [data-object-fitted]').length,
+        body: document.querySelectorAll('.viewer-page [data-fit-scale]').length
+      },
       // scrollWidth는 왼쪽으로 나간 내용을 세지 않는다. 글자 rect가 용지 좌우 밖에 있으면 PDF에서 잘린다.
       outsidePageTextPages: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
         const box = page.getBoundingClientRect()

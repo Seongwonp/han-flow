@@ -288,6 +288,14 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   `hp:pos treatAsChar="1"`이면 `inline`, `textWrap`이 `IN_FRONT_OF_TEXT`·`BEHIND_TEXT`이면 자리를 차지하지 않는
   `floating`, 그 밖은 `block`이다. 문단 `layoutHeight`는 줄 배치 캐시·표 높이와 함께 inline 최대 높이 + block 높이 합을
   반영하므로 무측정 첫 pagination도 자리를 잡고, 두 번째 pass는 DOM 실측을 쓴다.
+- 선언 높이가 쪽 본문 높이의 85%(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 decoder가 너비·높이를 같은 비율로 줄이고 원래
+  크기와 배율을 `fitted`에 남긴다. renderer는 이름표에 "(축소)"와 `data-object-fitted`를 붙이고, 되살린 글상자 글이 같은
+  한도를 넘으면 layout effect에서 본문에 CSS `zoom`(`data-fit-scale`)을 걸어 글을 줄인다. `zoom`은 layout 크기도 줄이므로
+  측정·pagination·PDF가 같은 높이를 보고 글자는 PDF에서도 추출된다. 한 문단이 쪽을 넘어 잘리거나 PDF에서 글이 빠지지 않게 하는
+  표시상 조정이며 원본 크기는 저장할 때 그대로다.
+- 구역 끝 각주·미주 목록은 각주·미주 문단마다 `note-list` block 하나(`s<N>:notes`, `s<N>:notes:<순번>`)로 만들어
+  pagination이 각주 사이에서 쪽을 나눌 수 있다. 이어지는 block은 `continuesKind`(같은 종류 제목·구분선 생략)와
+  `continuesNote`(같은 각주의 다음 문단, 번호 생략)를 가진다.
 - `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
 - 글상자·각주·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 자리 표시는
   `isObjectPlaceholder`로 편집 capability(`editing_capability.ts`)와 renderer `isEditableTextParagraph`에서 건너뛰므로

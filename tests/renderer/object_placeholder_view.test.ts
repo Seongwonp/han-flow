@@ -90,9 +90,11 @@ describe('원본 개체 자리 표시 renderer', () => {
     const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: findParagraph(document, hasKind('footnote')), document }))
     expect(markup).toContain('<sup data-object-kind="footnote"')
     expect(markup).toContain('class="viewer-note-marker" title="각주 1)">1)</sup>')
-    const list = blocks[blocks.length - 1].content[0]
-    expect(list.type).toBe('note-list')
-    const notes = renderToStaticMarkup(createElement(NoteListView, { item: list as any, document }))
+    // 각주·미주 문단마다 block이 하나씩이다. 이어지는 block은 구분선을 빼고 앞 block과 다른 종류일 때만 제목을 쓴다.
+    const lists = blocks.flatMap((block) => block.content).filter((item) => item.type === 'note-list')
+    expect(lists).toHaveLength(2)
+    const notes = lists.map((list) => renderToStaticMarkup(createElement(NoteListView, { item: list as any, document }))).join('')
+    expect(notes.match(/viewer-note-list-continued/g)).toHaveLength(1)
     expect(notes).toContain('<div class="viewer-note-heading">각주</div>')
     expect(notes).toContain('<div class="viewer-note-heading">미주</div>')
     expect(notes).toContain('각주 본문')

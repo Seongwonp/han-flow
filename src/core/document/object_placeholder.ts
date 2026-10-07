@@ -11,6 +11,12 @@ import type {
  * renderer(상태 표시·배너)와 main(PDF 내보내기 확인 대화상자)이 같은 이름·순서를 쓴다.
  */
 
+/**
+ * 자리 표시(와 되살린 글)가 쪽 본문 높이 가운데 차지할 수 있는 최대 비율. 같은 문단의 글 줄·여백이 함께 들어갈 자리를 남긴다.
+ * decoder는 선언 높이를, renderer는 되살린 글 높이를 이 한도에 맞춰 줄인다.
+ */
+export const OBJECT_PAGE_HEIGHT_RATIO = 0.85
+
 export const OBJECT_KIND_ORDER: readonly ViewerObjectKind[] = [
   'equation',
   'chart',

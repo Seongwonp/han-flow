@@ -62,8 +62,11 @@ function run(command, arguments_, { env, prefix, timeoutMs = 90_000 } = {}) {
       child.kill('SIGTERM')
       finish(new Error(`검증 시간이 초과되었습니다: ${command} ${arguments_.join(' ')}`))
     }, timeoutMs)
-    child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => { stderr += chunk })
     child.once('error', finish)
     child.once('exit', (code) => {
       if (code === 0) finish()

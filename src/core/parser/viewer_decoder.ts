@@ -1,5 +1,5 @@
 import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
-import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER } from '../document/object_placeholder'
+import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
   ParagraphMetricAncestor,
   ParagraphMetricCandidate,
@@ -111,6 +111,18 @@ interface DecodeContext {
   styleCharacterIds: ParagraphStyleCharacterIds
   objectOrdinals: Map<OrderedXmlNode, number>
   notes: ViewerNote[]
+  /** 자리 표시 선언 높이 한도(HWPUNIT, 쪽 본문 높이의 일정 비율). 없으면 줄이지 않는다. */
+  objectHeightLimit?: number
+}
+
+/** 선언 높이가 한도를 넘으면 너비·높이를 같은 비율로 줄인다. */
+function fitObjectSize(
+  size: { width: number; height: number } | undefined,
+  limit: number | undefined
+): { size?: { width: number; height: number }; fitted?: ViewerObjectPlaceholder['fitted'] } {
+  if (!size || !limit || !(limit > 0) || size.height <= limit) return { size }
+  const scale = limit / size.height
+  return { size: { width: Math.round(size.width * scale), height: Math.round(limit) }, fitted: { declared: size, scale } }
 }
 
 const SHAPE_ELEMENTS = new Set([
@@ -201,7 +213,7 @@ function placeholder(
   kind: ViewerObjectKind,
   extra: Partial<ViewerObjectPlaceholder> = {}
 ): ViewerObjectPlaceholder {
-  const size = declaredSize(node)
+  const { size, fitted } = fitObjectSize(declaredSize(node), context.objectHeightLimit)
   return {
     type: 'object-placeholder',
     kind,
@@ -210,6 +222,7 @@ function placeholder(
     flow: objectFlow(node),
     ...(size ? { size } : {}),
     label: OBJECT_KIND_LABELS[kind],
+    ...(fitted ? { fitted } : {}),
     ...extra
   }
 }
@@ -346,8 +359,10 @@ function decodeRunItem(
     const chart = branches.flatMap((branch) => descendants(branch, 'hp:chart'))[0]
     if (chart) {
       const decoded = decodeObject(chart, `${id}:obj${content.length}`, context)!
-      const fallbackSize = decoded.size ?? branches.flatMap((branch) => descendants(branch, 'hp:ole')).map(declaredSize).find(Boolean)
-      content.push(fallbackSize ? { ...decoded, size: fallbackSize } : decoded)
+      const fallback = decoded.size
+        ? undefined
+        : fitObjectSize(branches.flatMap((branch) => descendants(branch, 'hp:ole')).map(declaredSize).find(Boolean), context.objectHeightLimit)
+      content.push(fallback?.size ? { ...decoded, size: fallback.size, ...(fallback.fitted ? { fitted: fallback.fitted } : {}) } : decoded)
       return
     }
     const branch = child(item, 'hp:default') ?? child(item, 'hp:case')
@@ -636,15 +651,36 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
   return { fonts, charStyles, paraStyles, cellStyles, styleCharacterIds }
 }
 
-/** 구역 끝 각주·미주 목록 문단. 높이는 본문 줄 배치 캐시 합에 제목 줄을 더한 추정값이다(화면 측정이 덮어쓴다). */
-function noteListBlock(notes: ViewerNote[], id: string): ViewerParagraph | undefined {
-  if (!notes.length) return undefined
-  const groups = new Set(notes.map((note) => note.kind)).size
-  const bodyHeight = notes.reduce(
-    (sum, note) => sum + Math.max(note.paragraphs.reduce((height, paragraph) => height + paragraph.layoutHeight, 0), 1000),
-    0
-  )
-  return { id, paraStyleId: '0', pageBreak: false, layoutHeight: bodyHeight + groups * 1600, content: [{ type: 'note-list', notes }] }
+/**
+ * 구역 끝 각주·미주 목록. 쪽 사이에서 나눌 수 있게 각주·미주 문단마다 block 하나를 만든다(문단이 없는 각주는 block 하나).
+ * 첫 block id는 `${id}`, 다음은 `${id}:${순번}`이다. 각주를 미주보다 먼저 모으고 같은 종류 안에서는 문서 순서를 지킨다.
+ * 높이는 줄 배치 캐시 합(없으면 1000)에 종류 제목 줄(1600)을 더한 추정값이다(화면 측정이 덮어쓴다).
+ */
+function noteListBlocks(notes: ViewerNote[], id: string): ViewerParagraph[] {
+  const ordered = (['footnote', 'endnote'] as const).flatMap((kind) => notes.filter((note) => note.kind === kind))
+  const blocks: ViewerParagraph[] = []
+  let previousKind: ViewerNote['kind'] | undefined
+  for (const note of ordered) {
+    const parts = note.paragraphs.length ? note.paragraphs.map((paragraph) => [paragraph]) : [[]]
+    parts.forEach((paragraphs, index) => {
+      const heading = previousKind !== note.kind ? 1600 : 0
+      const height = Math.max(paragraphs.reduce((sum, paragraph) => sum + paragraph.layoutHeight, 0), 1000)
+      blocks.push({
+        id: blocks.length ? `${id}:${blocks.length}` : id,
+        paraStyleId: '0',
+        pageBreak: false,
+        layoutHeight: height + heading,
+        content: [{
+          type: 'note-list',
+          notes: [{ ...note, paragraphs }],
+          ...(previousKind ? { continuesKind: previousKind } : {}),
+          ...(index > 0 ? { continuesNote: true } : {})
+        }]
+      })
+      previousKind = note.kind
+    })
+  }
+  return blocks
 }
 
 /** 구역마다 자리 표시 종류별 개수를 진단으로 남긴다. */
@@ -686,6 +722,9 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
   const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
   const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
+  // pagination(`pagination.ts`)과 같은 쪽 본문 높이. 자리 표시가 한 쪽을 넘지 않게 선언 높이를 줄이는 한도로 쓴다.
+  const bodyHeight = num(pagePr?.attributes.height) - num(margin?.attributes.top) - num(margin?.attributes.bottom)
+  const objectHeightLimit = bodyHeight > 0 ? Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined
   const columnResults = sectionXml.map(({ path, nodes }) => decodeColumnLayout(nodes, path))
   const placeholderDiagnostics: ViewerDiagnostic[] = []
   const sections = sectionXml.map(({ path, nodes }, position) => {
@@ -696,7 +735,8 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
       sourceSection: path,
       styleCharacterIds,
       objectOrdinals: objectOrdinals(nodes),
-      notes: []
+      notes: [],
+      objectHeightLimit
     }
     const blocks = root
       ? applyParagraphMarkers(
@@ -704,10 +744,9 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
           header.paraStyles
         )
       : []
-    const noteList = noteListBlock(context.notes, `s${sectionIndex}:notes`)
     const section: ViewerSection = {
       id: `section-${sectionIndex}`,
-      blocks: noteList ? [...blocks, noteList] : blocks,
+      blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
       pageNumber: decodePageNumber(nodes),
       columnLayout: columnResults[position].columnLayout,
       headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, context).map((control) => ({

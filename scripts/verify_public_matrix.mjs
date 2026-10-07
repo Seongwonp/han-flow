@@ -40,8 +40,11 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
       env: { ...process.env, HAN_FLOW_VERIFY_DELAY_MS: String(delayMs), ...environment },
       stdio: ['ignore', 'pipe', 'pipe']
     })
-    child.stdout.on('data', (chunk) => { standardOutput += chunk.toString() })
-    child.stderr.on('data', (chunk) => { standardError += chunk.toString() })
+    // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { standardOutput += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => { standardError += chunk })
     child.once('error', reject)
     child.once('exit', (code) => {
       if (code === 0) resolvePromise()
@@ -61,8 +64,11 @@ async function verifyPdf(fixture) {
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe']
     })
-    child.stdout.on('data', (chunk) => { standardOutput += chunk.toString() })
-    child.stderr.on('data', (chunk) => { standardError += chunk.toString() })
+    // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { standardOutput += chunk })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => { standardError += chunk })
     child.once('error', reject)
     child.once('exit', resolvePromise)
   })
@@ -89,6 +95,17 @@ const OBJECT_FIXTURE_IDS = [
 ]
 // 원문 개체 종류가 matrix에 하나 이상 있어야 하는 종류.
 const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'memo', 'form-control', 'ole']
+
+// 쪽 나눔 스트레스 합성 fixture(generator 함수로 직접 만든다). 화면 overflow·용지/셀 밖 글자 0, 원문 개체 종류별 수,
+// 화면과 PDF의 페이지별 글자 수가 같아야 한다.
+// - long-objects: 쪽보다 높은 수식·글상자와 표 셀 안 글상자 → 줄여 그린 자리 표시 2개 이상
+// - footnote-flow: 각주 40개 → 구역 끝 각주 목록이 쪽을 넘어 나뉘어 3쪽
+// - inline-objects: 글자+수식·글자+글상자 문단과 셀 안 글자+수식
+const LAYOUT_STRESS_FIXTURES = [
+  { id: 'long-objects', create: 'createLongObjectHwpx' },
+  { id: 'footnote-flow', create: 'createFootnoteFlowHwpx' },
+  { id: 'inline-objects', create: 'createInlineObjectHwpx' }
+]
 
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
@@ -160,6 +177,14 @@ try {
     pdfResults.push({ fixtureId: id, ...await verifyPdf(path) })
   }
 
+  const stressResults = []
+  for (const stress of LAYOUT_STRESS_FIXTURES) {
+    const path = generator[stress.create](directory, `han-flow-${stress.id}.hwpx`)
+    stressResults.push({ fixtureId: stress.id, ...await verify(path, 500) })
+    pdfResults.push({ fixtureId: stress.id, ...await verifyPdf(path) })
+  }
+  const stress = (id) => stressResults.find(({ fixtureId }) => fixtureId === id)
+
   const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
   const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
   const multiColumn = results.find(({ fixtureId }) => fixtureId === 'multi-column-layout')
@@ -175,6 +200,13 @@ try {
     ...REQUIRED_OBJECT_KINDS
       .filter((kind) => !objectResults.some(({ sourceObjects }) => sourceObjects?.[kind] > 0))
       .map((kind) => `개체 matrix에 ${kind} 원문 fixture가 없음`),
+    ...stressResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: stressFailures }) => `${fixtureId}: 쪽 나눔 검증 실패(${stressFailures.join(', ')})`),
+    stress('long-objects')?.fittedObjects?.declared >= 2 && stress('long-objects')?.fittedObjects?.body >= 1
+      ? undefined
+      : `long-objects: 쪽보다 큰 수식·글상자를 줄여 그리지 않음(${JSON.stringify(stress('long-objects')?.fittedObjects)})`,
+    stress('footnote-flow')?.totalPages === 3 && stress('footnote-flow')?.placeholderCounts?.footnote === 40
+      ? undefined
+      : `footnote-flow: 각주 40개 목록이 3쪽으로 나뉘지 않음(${stress('footnote-flow')?.totalPages}쪽)`,
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -208,6 +240,9 @@ try {
     })),
     objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice }) => ({
       fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice
+    })),
+    layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts }) => ({
+      fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts
     })),
     longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({

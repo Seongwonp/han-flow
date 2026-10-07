@@ -136,7 +136,11 @@ describe('원본 개체 자리 표시 decoder', () => {
       '<hp:switch><hp:case hp:required-namespace="urn:future"><hp:future/></hp:case><hp:default><hp:t>대체 글</hp:t></hp:default></hp:switch>'
     ))
     const content = document.sections[0].blocks[1].content
-    expect(content[0]).toMatchObject({ kind: 'chart', label: '차트', flow: 'inline', size: { width: 20000, height: 12000 } })
+    // 시험 쪽 본문(높이 8000)의 85%를 넘는 OLE 대체 크기는 같은 비율로 줄이고 원래 선언 크기를 남긴다.
+    expect(content[0]).toMatchObject({
+      kind: 'chart', label: '차트', flow: 'inline', size: { width: 11333, height: 6800 },
+      fitted: { declared: { width: 20000, height: 12000 }, scale: 6800 / 12000 }
+    })
     expect(content[1]).toMatchObject({ type: 'text', text: '대체 글' })
     expect(content).toHaveLength(2)
   })
@@ -152,11 +156,13 @@ describe('원본 개체 자리 표시 decoder', () => {
       { type: 'object-placeholder', kind: 'footnote', element: 'hp:footNote', sourcePath: `${SECTION}#hp:footNote:0`, flow: 'marker', label: '각주', marker: '1)' },
       { type: 'object-placeholder', kind: 'endnote', element: 'hp:endNote', sourcePath: `${SECTION}#hp:endNote:0`, flow: 'marker', label: '미주', marker: '1)' }
     ])
-    const notes = blocks[blocks.length - 1]
-    expect(notes.id).toBe('s0:notes')
-    expect(notes.layoutHeight).toBeGreaterThan(0)
-    const list = notes.content[0] as ViewerNoteList
-    expect(list.notes.map((item) => [item.kind, item.marker, item.paragraphs[0].content.find((content) => content.type === 'text')])).toEqual([
+    // 쪽 사이에서 나눌 수 있게 각주·미주 문단마다 block 하나씩 둔다.
+    const noteBlocks = blocks.slice(-2)
+    expect(noteBlocks.map((block) => block.id)).toEqual(['s0:notes', 's0:notes:1'])
+    expect(noteBlocks.every((block) => block.layoutHeight > 0)).toBe(true)
+    const lists = noteBlocks.map((block) => block.content[0] as ViewerNoteList)
+    expect(lists.map((list) => [list.continuesKind, list.continuesNote])).toEqual([[undefined, undefined], ['footnote', undefined]])
+    expect(lists.flatMap((list) => list.notes).map((item) => [item.kind, item.marker, item.paragraphs[0].content.find((content) => content.type === 'text')])).toEqual([
       ['footnote', '1)', { type: 'text', text: '각주 본문', charStyleId: '0', sourceAnchor: undefined }],
       ['endnote', '1)', { type: 'text', text: '미주 본문', charStyleId: '0', sourceAnchor: undefined }]
     ])

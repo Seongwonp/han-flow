@@ -291,6 +291,7 @@ try {
     placeholderCounts: state.placeholderCounts,
     recoveredObjectCharacters: state.recoveredObjectCharacters,
     objectNotice: state.objectNotice,
+    fittedObjects: state.fittedObjects,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
     search: searchQuery ? state.search : undefined,
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,

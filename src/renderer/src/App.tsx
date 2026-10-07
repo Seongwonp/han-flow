@@ -49,7 +49,7 @@ import {
 import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
-import { countObjectPlaceholders, totalObjectPlaceholders } from '../../core/document/object_placeholder'
+import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
@@ -179,7 +179,32 @@ function paragraphsPlainText(paragraphs: readonly ViewerParagraph[]): string {
  * 원본처럼 그리지 못하는 개체의 자리 표시. 테두리 상자와 한국어 이름, 원본에서 읽은 대체 글(수식 script 등)을 보여 주고
  * 글상자 글은 읽기 전용 문단으로 안에 그린다. 화면과 인쇄(PDF)가 같은 모양이다.
  */
+/**
+ * 되살린 글이 든 자리 표시 본문이 쪽 본문 높이 한도(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 CSS `zoom`으로 글을 같은 비율로
+ * 줄여 한 쪽 안에 둔다. `zoom`은 layout 크기도 줄이므로 측정·pagination·PDF가 같은 높이를 본다. 상태 대신 DOM style을
+ * layout effect에서 바로 고쳐 같은 commit의 높이 측정이 줄인 높이를 읽게 한다.
+ */
+function useFitBodyHeight(limitPx: number | undefined) {
+  const bodyRef = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const body = bodyRef.current
+    if (!body || !limitPx) return
+    body.style.removeProperty('zoom')
+    delete body.dataset.fitScale
+    const natural = body.scrollHeight
+    if (natural <= limitPx) return
+    const scale = Math.max(limitPx / natural, 0.05)
+    body.style.setProperty('zoom', String(scale))
+    body.dataset.fitScale = scale.toFixed(3)
+  })
+  return bodyRef
+}
+
 export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerDocument }) {
+  // 일부 단위 테스트는 쪽 설정 없는 문서 조각을 넘긴다.
+  const page = document.page as ViewerDocument['page'] | undefined
+  const pageBodyHeight = page ? page.height - page.margin.top - page.margin.bottom : 0
+  const bodyRef = useFitBodyHeight(pageBodyHeight > 0 ? hwpUnitToCssPx(pageBodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined)
   const common = {
     'data-object-kind': item.kind,
     'data-object-element': item.element,
@@ -204,16 +229,17 @@ export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPl
   const hasBody = item.flow !== 'marker' && Boolean(item.paragraphs?.length)
   return <span
     {...common}
-    className={`viewer-object-placeholder viewer-object-${item.flow}${hasBody ? ' viewer-object-with-body' : ''}`}
+    className={`viewer-object-placeholder viewer-object-${item.flow}${hasBody ? ' viewer-object-with-body' : ''}${item.fitted ? ' viewer-object-fitted' : ''}`}
+    data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
     role="group"
-    aria-label={`${item.label} (원본 개체 자리 표시)`}
-    title={`${item.label}: 원본 개체를 그대로 그리지 못해 자리 표시로 보여 줍니다. 저장할 때 원본은 그대로 보존합니다.`}
+    aria-label={`${item.label} (원본 개체 자리 표시${item.fitted ? ', 쪽에 맞게 줄임' : ''})`}
+    title={`${item.label}: 원본 개체를 그대로 그리지 못해 자리 표시로 보여 줍니다.${item.fitted ? ' 원본 높이가 쪽보다 커서 줄여 표시합니다.' : ''} 저장할 때 원본은 그대로 보존합니다.`}
     style={style}
   >
-    <span className="viewer-object-label">{item.label}</span>
+    <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}</span>
     {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
     {markerText && <span className="viewer-object-fallback">{markerText}</span>}
-    {hasBody && <span className="viewer-object-body">
+    {hasBody && <span className="viewer-object-body" ref={bodyRef}>
       {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
     </span>}
   </span>
@@ -224,11 +250,12 @@ export function NoteListView({ item, document }: { item: ViewerNoteList; documen
   const groups = (['footnote', 'endnote'] as const)
     .map((kind) => ({ kind, notes: item.notes.filter((note) => note.kind === kind) }))
     .filter((group) => group.notes.length)
-  return <div className="viewer-note-list" data-object-kind="note-list" contentEditable={false}>
+  // decoder는 쪽 사이에서 나눌 수 있게 각주·미주 문단마다 block을 만든다. 이어지는 block은 구분선·같은 종류 제목·같은 각주 번호를 다시 쓰지 않는다.
+  return <div className={`viewer-note-list${item.continuesKind ? ' viewer-note-list-continued' : ''}`} data-object-kind="note-list" contentEditable={false}>
     {groups.map((group) => <section key={group.kind} className="viewer-note-group" data-note-kind={group.kind}>
-      <div className="viewer-note-heading">{group.kind === 'footnote' ? '각주' : '미주'}</div>
+      {item.continuesKind !== group.kind && <div className="viewer-note-heading">{group.kind === 'footnote' ? '각주' : '미주'}</div>}
       {group.notes.map((note) => <div key={note.sourcePath} className="viewer-note" data-source-path={note.sourcePath}>
-        <span className="viewer-note-number">{note.marker}</span>
+        <span className="viewer-note-number">{item.continuesNote ? '' : note.marker}</span>
         <div className="viewer-note-body">{note.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</div>
       </div>)}
     </section>)}

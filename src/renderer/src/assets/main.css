@@ -113,6 +113,7 @@ button { font: inherit; }
 .viewer-ruby rt { font-size: .55em; }
 .viewer-ruby-bottom { ruby-position: under; }
 .viewer-note-list { margin-top: 8px; padding-top: 4px; border-top: 1px solid #777; font-size: 9pt; white-space: normal; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-note-list-continued { margin-top: 0; padding-top: 0; border-top: none; }
 .viewer-note-heading { margin: 2px 0; color: #555; font-size: 8pt; font-weight: 600; }
 .viewer-note { display: flex; gap: 4px; align-items: baseline; }
 .viewer-note-number { flex: none; }

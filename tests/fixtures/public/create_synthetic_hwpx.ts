@@ -441,3 +441,68 @@ export function createInlineObjectHwpx(directory: string, fileName = 'han-flow-i
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 쪽보다 큰 개체·표 셀 안 글상자 합성 문서(직접 작성, 개인정보 없음). A4 쪽(본문 높이 72851 HWPUNIT).
+ * - 선언 높이 100000인 글자처럼 취급한 수식
+ * - 선언 높이 120000이고 글 60줄이 든 글상자(자리 차지)
+ * - 1×2 표 왼쪽 셀 안 글자 + 셀보다 넓은 글자처럼 취급한 글상자
+ * 자리 표시와 되살린 글이 쪽 본문을 넘지 않고(overflow 0), 화면과 PDF 글자 수가 같은지 verify:matrix가 확인한다.
+ */
+export const LONG_OBJECT_TEXTS = {
+  before: '긴 개체 앞 문단',
+  middle: '긴 수식 뒤 문단',
+  tableLead: '셀 글상자 앞 ',
+  boxInner: '셀 안 글상자 글',
+  after: '끝 문단',
+  boxLine: (index: number) => `쪽보다 긴 글상자 ${index + 1}번째 줄입니다`
+} as const
+
+const a4SecPr = '<hp:secPr><hp:pagePr width="59528" height="84189"><hp:margin left="5669" right="5669" top="5669" bottom="5669" header="2835" footer="2835"/></hp:pagePr></hp:secPr>'
+const plainParagraph = (text: string) =>
+  `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+const objectPos = (inline: boolean) =>
+  `<hp:pos treatAsChar="${inline ? 1 : 0}" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>`
+const textBox = (id: number, width: number, height: number, inline: boolean, paragraphs: string[]) =>
+  `<hp:rect id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hp:drawText lastWidth="${width}" name="" editable="0"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP">${paragraphs.map((text) => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run></hp:p>`).join('')}</hp:subList><hp:textMargin left="283" right="283" top="283" bottom="283"/></hp:drawText><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${objectPos(inline)}</hp:rect>`
+const longObjectSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>${LONG_OBJECT_TEXTS.before}</hp:t></hp:run></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:equation id="8000" zOrder="0" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" version="Equation Version 60" baseLine="86" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="40000" widthRelTo="ABSOLUTE" height="100000" heightRelTo="ABSOLUTE" protect="0"/>${objectPos(true)}<hp:script>sum from {i=1} to {n} i = {n(n+1)} over 2</hp:script></hp:equation></hp:run></hp:p>
+  ${plainParagraph(LONG_OBJECT_TEXTS.middle)}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${textBox(8001, 46000, 120000, false, Array.from({ length: 60 }, (_, index) => LONG_OBJECT_TEXTS.boxLine(index)))}</hp:run></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="long-object-table" rowCnt="1" colCnt="2"><hp:sz width="40000" height="4000"/><hp:tr>${[0, 1].map((column) => `<hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="20000" height="4000"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${column === 0 ? `<hp:t>${LONG_OBJECT_TEXTS.tableLead}</hp:t>${textBox(8002, 30000, 3000, true, [LONG_OBJECT_TEXTS.boxInner])}` : '<hp:t>오른쪽 셀</hp:t>'}</hp:run></hp:p></hp:subList></hp:tc>`).join('')}</hp:tr></hp:tbl></hp:run></hp:p>
+  ${plainParagraph(LONG_OBJECT_TEXTS.after)}
+</hs:sec>`
+
+export function createLongObjectHwpx(directory: string, fileName = 'han-flow-long-objects.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(longObjectSection))
+  zip.writeZip(path)
+  return path
+}
+
+/** 각주 40개(각 2~3줄)가 든 A4 합성 문서(직접 작성, 개인정보 없음). 구역 끝 각주 목록이 한 쪽보다 길어 쪽을 넘어 나뉘어야 한다. */
+export const FOOTNOTE_FLOW_COUNT = 40
+const footnote = (index: number) =>
+  `<hp:ctrl><hp:footNote number="${index + 1}" suffixChar="41" instId="${9000 + index}"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="${index + 1}" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>각주 ${index + 1}번 본문입니다. 구역 끝 각주 목록은 각주마다 나뉘어 쪽을 넘어 이어져야 합니다. 이 문장은 각주 하나가 여러 줄을 차지하도록 일부러 길게 적었습니다. 화면과 PDF의 글자 수가 같아야 합니다.</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:footNote></hp:ctrl>`
+const footnoteFlowSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>각주 40개 문서</hp:t></hp:run></hp:p>
+  ${Array.from({ length: FOOTNOTE_FLOW_COUNT }, (_, index) =>
+    `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>본문 ${index + 1}번 문단</hp:t>${footnote(index)}<hp:t/></hp:run><hp:linesegarray><hp:lineseg vertpos="${index * 1600}" vertsize="1000"/></hp:linesegarray></hp:p>`
+  ).join('\n  ')}
+</hs:sec>`
+
+export function createFootnoteFlowHwpx(directory: string, fileName = 'han-flow-footnote-flow.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(footnoteFlowSection))
+  zip.writeZip(path)
+  return path
+}

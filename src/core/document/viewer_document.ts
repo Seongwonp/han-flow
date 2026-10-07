@@ -117,12 +117,24 @@ export interface ViewerObjectPlaceholder {
   paragraphs?: ViewerParagraph[]
   /** 각주·미주 번호 표시(예: "1)"). */
   marker?: string
+  /**
+   * 선언 높이가 쪽 본문 높이를 넘어 `size`를 비율대로 줄였으면 원래 선언 크기와 배율. renderer는 줄였다는 표시를 하고
+   * 되살린 글이 줄인 높이를 넘으면 글도 같은 한도에 맞춰 줄인다.
+   */
+  fitted?: { declared: { width: HwpUnit; height: HwpUnit }; scale: number }
 }
 
 /** 구역 끝에 모아 보여 주는 각주·미주 본문 목록(읽기 전용). */
 export interface ViewerNoteList {
   type: 'note-list'
   notes: ViewerNote[]
+  /**
+   * 목록을 쪽 사이에서 나눌 수 있게 decoder는 각주·미주 문단마다 block 하나를 만든다. 앞 block에 이어지는 block이면
+   * 그 앞 block의 종류(같은 종류면 제목을 다시 쓰지 않는다)이고, 목록 첫 block이면 없다.
+   */
+  continuesKind?: ViewerNote['kind']
+  /** 앞 block과 같은 각주·미주의 다음 문단이면 true(번호를 다시 쓰지 않는다). */
+  continuesNote?: boolean
 }
 export interface ViewerNote { kind: 'footnote' | 'endnote'; marker: string; sourcePath: string; paragraphs: ViewerParagraph[] }
 export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; pageBreak?: string; repeatHeader: boolean; rows: ViewerTableRow[] }
