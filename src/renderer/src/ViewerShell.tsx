@@ -1,5 +1,11 @@
 import type { ReactNode, RefObject, UIEventHandler, WheelEventHandler } from 'react'
 import type { RendererEditingSession } from './renderer_state'
+import {
+  ObjectPlaceholderCounts,
+  objectPlaceholderDetailLines,
+  objectPlaceholderNotice,
+  totalObjectPlaceholders
+} from '../../core/document/object_placeholder'
 
 interface ViewerStageProps {
   stageRef: RefObject<HTMLElement>
@@ -116,6 +122,9 @@ interface ViewerStatusBarProps {
   openTiming?: string
   openTimingSlow?: boolean
   pdfStatus: string | null
+  /** 원본처럼 그리지 못해 자리 표시로 보여 주는 개체 수. 0이면 표시하지 않는다. */
+  objectPlaceholderCount?: number
+  onShowObjectPlaceholders?: () => void
 }
 
 export function ViewerStatusBar(props: ViewerStatusBarProps) {
@@ -136,7 +145,9 @@ export function ViewerStatusBar(props: ViewerStatusBarProps) {
     virtualized,
     openTiming,
     openTimingSlow,
-    pdfStatus
+    pdfStatus,
+    objectPlaceholderCount,
+    onShowObjectPlaceholders
   } = props
 
   return <footer className="viewer-status" title={title}>
@@ -151,5 +162,35 @@ export function ViewerStatusBar(props: ViewerStatusBarProps) {
     <span className={overflowPages.length ? 'viewer-status-error' : ''}>{virtualized ? '보이는 페이지 넘침' : '페이지 넘침'} {overflowPages.length}{overflowPages.length ? ` (${overflowPages.join(', ')})` : ''}</span>
     {openTiming && <span className={openTimingSlow ? 'viewer-status-error' : ''}>열기 {openTiming}</span>}
     {pdfStatus && <span className={pdfStatus.startsWith('PDF 오류') ? 'viewer-status-error' : ''}>{pdfStatus}</span>}
+    {Boolean(objectPlaceholderCount) && <button
+      type="button"
+      className="viewer-status-link viewer-status-warn"
+      title="화면에 완전히 표시되지 않는 개체 자세히 보기"
+      onClick={onShowObjectPlaceholders}
+    >표시 못 한 개체 {objectPlaceholderCount}</button>}
   </footer>
+}
+
+interface ObjectPlaceholderBannerProps {
+  counts: ObjectPlaceholderCounts
+  expanded: boolean
+  onToggleDetails: () => void
+  onDismiss: () => void
+}
+
+/** 문서에 자리 표시 개체가 있을 때 본문 위에 띄우는 닫을 수 있는 안내. 인쇄·PDF에는 나오지 않는다. */
+export function ObjectPlaceholderBanner({ counts, expanded, onToggleDetails, onDismiss }: ObjectPlaceholderBannerProps) {
+  const notice = objectPlaceholderNotice(counts)
+  if (!notice || !totalObjectPlaceholders(counts)) return null
+  return <>
+    <div className="viewer-object-banner" role="status" data-object-placeholder-total={totalObjectPlaceholders(counts)}>
+      <span className="viewer-object-banner-text" title={notice}>{notice}</span>
+      <button type="button" aria-expanded={expanded} onClick={onToggleDetails}>{expanded ? '접기' : '자세히'}</button>
+      <button type="button" aria-label="안내 닫기" title="안내 닫기" onClick={onDismiss}>닫기</button>
+    </div>
+    {expanded && <ul className="viewer-object-banner-details">
+      {objectPlaceholderDetailLines(counts).map((line) => <li key={line}>{line}</li>)}
+      <li>원본 개체는 HWPX로 저장할 때 그대로 보존합니다. PDF에는 화면과 같은 자리 표시로 나옵니다.</li>
+    </ul>}
+  </>
 }

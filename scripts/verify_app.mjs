@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
+
+const require = createRequire(import.meta.url)
 
 const fixture = process.argv[2]
 const RIBBON_TABS = ['파일', '편집', '서식', '표', '보기']
@@ -19,6 +22,10 @@ const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
 const forcedArchitecture = process.env.HAN_FLOW_VERIFY_ARCH
+// 화면 자리 표시 종류별 개수 기대값(JSON, 예: {"equation":1}). 지정하면 정확히 같아야 한다.
+const expectedPlaceholders = process.env.HAN_FLOW_VERIFY_EXPECT_PLACEHOLDERS
+  ? JSON.parse(process.env.HAN_FLOW_VERIFY_EXPECT_PLACEHOLDERS)
+  : undefined
 const appArgument = process.argv.slice(3).find((argument) => !argument.startsWith('--'))
 const appBinary = appArgument ? resolve(appArgument) : defaultAppBinary()
 const deviceScale = process.env.HAN_FLOW_VERIFY_DEVICE_SCALE
@@ -35,6 +42,25 @@ if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
 if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
   console.error('사용법: npm run verify:app -- <fixture.hwp|fixture.hwpx> [Han-Flow 실행 파일]')
   process.exit(1)
+}
+
+// HWPX section XML 안 화면에 그대로 그리지 못하는 개체 element 수. 0보다 크면 화면에 자리 표시나 되살린 글이 있어야 한다.
+const OBJECT_ELEMENT = /<hp:(?:equation|chart|ole|video|rect|ellipse|arc|polygon|curve|line|connectLine|container|textart|btn|radioBtn|checkBtn|comboBox|edit|listBox|scrollBar|dutmal|compose|footNote|endNote)[\s>/]|<hp:fieldBegin\b[^>]*\btype="MEMO"/g
+
+function sourceObjectElements(path) {
+  if (!/\.hwpx$/iu.test(path)) return undefined
+  try {
+    const AdmZip = require('adm-zip')
+    return new AdmZip(path).getEntries()
+      .filter((entry) => /^Contents\/section\d+\.xml$/u.test(entry.entryName))
+      .reduce((sum, entry) => sum + (entry.getData().toString('utf8').match(OBJECT_ELEMENT) ?? []).length, 0)
+  } catch {
+    return undefined
+  }
+}
+
+function placeholderKey(counts = {}) {
+  return Object.keys(counts).sort().map((kind) => `${kind}=${counts[kind]}`).join(',') || '없음'
 }
 
 function hash(bytes) {
@@ -139,6 +165,10 @@ try {
     }
   }
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
+  const objectElements = sourceObjectElements(resolvedFixture)
+  const placeholderTotal = Object.values(state.placeholderCounts ?? {}).reduce((sum, value) => sum + value, 0)
+  // 큰 문서는 보이는 페이지만 DOM에 있으므로 개체가 화면 밖 페이지에만 있을 수 있다. 모든 페이지가 mount됐을 때만 판정한다.
+  const allPagesMounted = state.mountedPages >= state.totalPages
   const failures = (expectedError ? [
     state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
     state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음',
@@ -160,6 +190,16 @@ try {
     state.outsidePageTextPages?.length ? `용지 밖으로 나간 글자: ${state.outsidePageTextPages.join(', ')}페이지` : undefined,
     state.cellOverflowTexts?.length ? `표 셀 밖으로 나간 글자: ${state.cellOverflowTexts.join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
+    // 회귀 방지: 원본에 개체가 있는데 화면에 자리 표시도 되살린 글도 없으면 개체가 조용히 사라진 것이다.
+    allPagesMounted && objectElements > 0 && placeholderTotal === 0 && !state.recoveredObjectCharacters
+      ? `원본 개체 ${objectElements}개가 화면에서 사라짐(자리 표시·되살린 글 없음)`
+      : undefined,
+    expectedPlaceholders && placeholderKey(expectedPlaceholders) !== placeholderKey(state.placeholderCounts)
+      ? `자리 표시 불일치: 기대 ${placeholderKey(expectedPlaceholders)}, 실제 ${placeholderKey(state.placeholderCounts)}`
+      : undefined,
+    expectedPlaceholders && Object.keys(expectedPlaceholders).length && !state.objectNotice
+      ? '자리 표시 개체 안내 배너가 표시되지 않음'
+      : undefined,
     searchQuery && !state.search?.open ? '검색 UI가 열리지 않음' : undefined,
     searchQuery && state.search?.occurrences < 1 ? '검색 결과가 없음' : undefined,
     searchQuery && state.search?.highlights < 1 ? '검색 강조가 표시되지 않음' : undefined,
@@ -246,6 +286,10 @@ try {
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
     toolbarLayout: state.toolbarLayout,
     pageTextCounts: state.pageTextCounts,
+    sourceObjectElements: objectElements,
+    placeholderCounts: state.placeholderCounts,
+    recoveredObjectCharacters: state.recoveredObjectCharacters,
+    objectNotice: state.objectNotice,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
     search: searchQuery ? state.search : undefined,
     selectionCharacters: searchQuery ? state.selectionCharacters : undefined,

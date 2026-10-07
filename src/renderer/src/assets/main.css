@@ -96,6 +96,31 @@ button { font: inherit; }
 .viewer-table-cell-selected { position: relative; z-index: 1; outline: 3px solid #335eea; outline-offset: -3px; background-image: linear-gradient(rgba(51,94,234,.1), rgba(51,94,234,.1)); }
 .viewer-image { display: inline-block; object-fit: contain; max-width: 100%; vertical-align: middle; }
 .viewer-warning { color: #a23; border: 1px dashed #a23; padding: 2px; font-size: 10px; }
+/* 원본 개체 자리 표시: 화면과 인쇄(PDF)가 같은 모양이다. */
+.viewer-object-placeholder { box-sizing: border-box; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; max-width: 100%; padding: 2px 4px; vertical-align: top; border: 1px dashed #8a6d3b; border-radius: 2px; background: #fbf7ee; color: #3d3320; font-size: 9pt; line-height: 1.3; text-indent: 0; text-align: left; white-space: pre-wrap; overflow: hidden; user-select: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-object-block { display: flex; }
+.viewer-object-placeholder { position: relative; }
+.viewer-object-with-body { padding: 0; }
+.viewer-object-with-body > .viewer-object-label { position: absolute; z-index: 1; top: 0; right: 0; padding: 0 3px; background: rgba(251,247,238,.9); font-size: 7pt; }
+.viewer-object-floating, .viewer-object-marker { flex-direction: row; align-items: baseline; gap: 4px; padding: 0 3px; vertical-align: baseline; font-size: 8pt; }
+.viewer-object-label { flex: none; color: #8a6d3b; font-size: 8pt; font-weight: 600; line-height: 1.2; }
+.viewer-object-marker { margin: 0 2px; }
+.viewer-object-marker .viewer-object-label::after { content: ":"; }
+.viewer-object-fallback { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.viewer-object-script { font-family: "D2Coding", "Consolas", "Menlo", "Noto Sans Mono CJK KR", monospace; font-size: 8pt; }
+.viewer-object-body { display: block; align-self: stretch; min-width: 0; color: #111; font-size: initial; user-select: text; }
+.viewer-note-marker { font-size: .7em; line-height: 0; vertical-align: super; color: inherit; }
+.viewer-ruby rt { font-size: .55em; }
+.viewer-ruby-bottom { ruby-position: under; }
+.viewer-note-list { margin-top: 8px; padding-top: 4px; border-top: 1px solid #777; font-size: 9pt; white-space: normal; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-note-heading { margin: 2px 0; color: #555; font-size: 8pt; font-weight: 600; }
+.viewer-note { display: flex; gap: 4px; align-items: baseline; }
+.viewer-note-number { flex: none; }
+.viewer-note-body { flex: 1; min-width: 0; }
+.viewer-object-banner { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px; background: #fff7e0; border-bottom: 1px solid #e6cf8f; color: #5c4400; font-size: 12px; }
+.viewer-object-banner-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-object-banner button { flex: none; height: 24px; padding: 0 10px; font-size: 12px; }
+.viewer-object-banner-details { margin: 0; padding: 4px 16px 8px 32px; background: #fff7e0; border-bottom: 1px solid #e6cf8f; color: #5c4400; font-size: 12px; }
 .viewer-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #4d5560; }
 .viewer-empty h1, .viewer-empty p { margin: 0; }
 .viewer-empty button { padding: 0 16px; }
@@ -103,12 +128,13 @@ button { font: inherit; }
 .viewer-error { color: #a12626; }
 .viewer-status { flex: 0 0 28px; height: 28px; display: flex; align-items: center; gap: 18px; padding: 0 16px; background: rgba(248,248,248,.94); border-top: 1px solid rgba(0,0,0,.14); color: #58606b; font-size: 11px; }
 .viewer-status-warn { color: #8a5a00; }
+.viewer-status-link { height: 20px; padding: 0 6px; border: none; background: none; font: inherit; text-decoration: underline; cursor: pointer; }
 .viewer-status-error { color: #b42318; font-weight: 600; }
 @media (prefers-color-scheme: dark) { :root, .viewer-app { background: #26282c; } .viewer-toolbar { background: rgba(42,43,47,.94); color: #f4f4f4; border-color: #151619; } .viewer-stage { background: #26282c; } .viewer-search { background: #f6f7f8; } .viewer-edit-ribbon { background: rgba(48,49,54,.96); border-color: #202126; } .viewer-ribbon-tabs { border-color: #202126; } .viewer-ribbon-tabs button { color: #c6cad2; } .viewer-ribbon-tabs button:hover { color: #f4f4f4; background: rgba(255,255,255,.06); } .viewer-ribbon-tabs button[aria-selected="true"] { color: #b9c9ff; border-bottom-color: #7d98ff; } .viewer-ribbon-tabs button[data-context="table"]:not([aria-selected="true"]) { color: #ffd59a; background: #4a3a20; } .viewer-ribbon-hint, .viewer-ribbon-zoom { color: #c6cad2; } .viewer-ribbon-group { border-color: rgba(255,255,255,.12); } .viewer-ribbon-controls button { color: #eceef2; } .viewer-ribbon-controls button:hover:not(:disabled), .viewer-style-size-control { background: #3b3d43; border-color: #626772; } .viewer-ribbon-controls button[aria-pressed="true"] { color: #dce5ff; background: #344573; } .viewer-ribbon-controls .viewer-ribbon-save { color: #e2e9ff; background: #304478; border-color: #526cae; } .viewer-ribbon-group-label, .viewer-style-color-label, .viewer-style-size, .viewer-paragraph-metric, .viewer-paragraph-metric output { color: #c6cad2; } .viewer-editing-badge { color: #dce5ff; background: #344573; border-color: #526cae; } }
 @media print {
   @page { margin: 0; }
   html, body, #root, .viewer-app { width: auto; height: auto; overflow: visible; background: white; }
-  .viewer-toolbar, .viewer-status { display: none !important; }
+  .viewer-toolbar, .viewer-status, .viewer-object-banner, .viewer-object-banner-details { display: none !important; }
   .viewer-stage { overflow: visible; padding: 0; background: white; }
   .viewer-pages { align-items: flex-start; gap: 0; transform: none !important; }
   .viewer-page { box-shadow: none; break-after: page; page-break-after: always; }

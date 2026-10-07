@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
@@ -44,7 +44,8 @@ import {
 } from './paragraph_selection'
 import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
-import { ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
+import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
+import { countObjectPlaceholders, totalObjectPlaceholders } from '../../core/document/object_placeholder'
 import { ViewerToolbar } from './ViewerToolbar'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
@@ -156,9 +157,76 @@ function Content({
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
     return <img className="viewer-image" src={`data:${resource.mime};base64,${resource.data}`} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
-  // 개체 자리 표시와 각주·미주 목록은 아직 그리지 않는다(이전과 같은 화면).
-  if (item.type === 'object-placeholder' || item.type === 'note-list') return null
+  if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
+  if (item.type === 'note-list') return <NoteListView item={item} document={document} />
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
+}
+
+/** 문단들의 글자만 이어 붙인다(줄 안 메모·필드 표시용). */
+function paragraphsPlainText(paragraphs: readonly ViewerParagraph[]): string {
+  return paragraphs.map((paragraph) => paragraph.content.map((item) =>
+    item.type === 'text' ? item.text : item.type === 'object-placeholder' ? item.fallbackText ?? '' : ''
+  ).join('')).join(' ').trim()
+}
+
+/**
+ * 원본처럼 그리지 못하는 개체의 자리 표시. 테두리 상자와 한국어 이름, 원본에서 읽은 대체 글(수식 script 등)을 보여 주고
+ * 글상자 글은 읽기 전용 문단으로 안에 그린다. 화면과 인쇄(PDF)가 같은 모양이다.
+ */
+export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerDocument }) {
+  const common = {
+    'data-object-kind': item.kind,
+    'data-object-element': item.element,
+    'data-source-path': item.sourcePath,
+    contentEditable: false as const
+  }
+  if (item.kind === 'footnote' || item.kind === 'endnote') {
+    return <sup {...common} className="viewer-note-marker" title={`${item.label} ${item.marker ?? ''}`.trim()}>{item.marker}</sup>
+  }
+  if (item.kind === 'ruby' && item.ruby) {
+    return <ruby {...common} className={`viewer-ruby viewer-ruby-${item.ruby.position}`} title="덧말">{item.fallbackText}<rt>{item.ruby.text}</rt></ruby>
+  }
+  const reserve = item.size && (item.flow === 'inline' || item.flow === 'block')
+  // 수식은 script가 선언 크기보다 길기 마련이라 폭을 최소값으로만 두어 한 줄로 읽히게 한다.
+  const style: CSSProperties = reserve
+    ? item.kind === 'equation'
+      ? { minWidth: hwpUnitToCssPx(item.size!.width), minHeight: hwpUnitToCssPx(item.size!.height) }
+      : { width: hwpUnitToCssPx(item.size!.width), minHeight: hwpUnitToCssPx(item.size!.height) }
+    : {}
+  const markerText = item.flow === 'marker' && item.paragraphs ? paragraphsPlainText(item.paragraphs) : ''
+  // 글상자처럼 되살린 문단이 있으면 이름표를 모서리에 겹쳐 두어 상자가 선언 크기보다 커지지 않게 한다.
+  const hasBody = item.flow !== 'marker' && Boolean(item.paragraphs?.length)
+  return <span
+    {...common}
+    className={`viewer-object-placeholder viewer-object-${item.flow}${hasBody ? ' viewer-object-with-body' : ''}`}
+    role="group"
+    aria-label={`${item.label} (원본 개체 자리 표시)`}
+    title={`${item.label}: 원본 개체를 그대로 그리지 못해 자리 표시로 보여 줍니다. 저장할 때 원본은 그대로 보존합니다.`}
+    style={style}
+  >
+    <span className="viewer-object-label">{item.label}</span>
+    {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
+    {markerText && <span className="viewer-object-fallback">{markerText}</span>}
+    {hasBody && <span className="viewer-object-body">
+      {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
+    </span>}
+  </span>
+}
+
+/** 구역 끝에 모은 각주·미주 본문(읽기 전용). */
+export function NoteListView({ item, document }: { item: ViewerNoteList; document: ViewerDocument }) {
+  const groups = (['footnote', 'endnote'] as const)
+    .map((kind) => ({ kind, notes: item.notes.filter((note) => note.kind === kind) }))
+    .filter((group) => group.notes.length)
+  return <div className="viewer-note-list" data-object-kind="note-list" contentEditable={false}>
+    {groups.map((group) => <section key={group.kind} className="viewer-note-group" data-note-kind={group.kind}>
+      <div className="viewer-note-heading">{group.kind === 'footnote' ? '각주' : '미주'}</div>
+      {group.notes.map((note) => <div key={note.sourcePath} className="viewer-note" data-source-path={note.sourcePath}>
+        <span className="viewer-note-number">{note.marker}</span>
+        <div className="viewer-note-body">{note.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</div>
+      </div>)}
+    </section>)}
+  </div>
 }
 
 interface ParagraphEditingProps {
@@ -282,7 +350,7 @@ export function isEditableTextParagraph(
   paragraph: ViewerParagraph,
   allowMultipleRuns = false
 ): boolean {
-  // 개체 자리 표시는 읽기 전용이라 편집 가능 여부는 글자 run만으로 정한다(`editing_capability.ts`와 같은 규칙).
+  // 개체 자리 표시는 읽기 전용으로 그 자리에 그리고, 편집 가능 여부는 글자 run만으로 정한다(`editing_capability.ts`와 같은 규칙).
   const content = paragraph.content.filter((item) => !isObjectPlaceholder(item))
   return (
     content.length > 0 &&
@@ -362,7 +430,14 @@ export function ParagraphView({
     data-measure-block-id={measurable ? paragraph.id : undefined}
     style={css}
   >{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
-    ? editableTexts.map((editableText, index) => <ParagraphInputSurface
+    ? paragraph.content.map((item, contentIndex) => {
+      if (isObjectPlaceholder(item)) {
+        return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} />
+      }
+      const index = editableTexts.indexOf(item as ViewerText)
+      if (index < 0) return null
+      const editableText = editableTexts[index]
+      return <ParagraphInputSurface
       key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
       text={editableText.text}
       sourceAnchor={editableText.sourceAnchor!}
@@ -446,7 +521,8 @@ export function ParagraphView({
         )
         if (moved) activeEditing.onEditorSelectionChange(moved)
       }}
-    />)
+    />
+    })
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
 }
 
@@ -838,6 +914,10 @@ export default function App() {
     const top = event.currentTarget.getBoundingClientRect().top
     changeZoomAt(pinchZoom(zoom, event.deltaY), event.clientY - top)
   }
+  const objectPlaceholderCounts = useMemo(() => document ? countObjectPlaceholders(document) : {}, [document])
+  const objectPlaceholderTotal = totalObjectPlaceholders(objectPlaceholderCounts)
+  const [objectNotice, setObjectNotice] = useState({ dismissed: false, expanded: false })
+  useEffect(() => setObjectNotice({ dismissed: false, expanded: false }), [openedPath])
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
   const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
 
@@ -1793,7 +1873,9 @@ export default function App() {
       const path = await api().exportPdf({
         width: fixedPage ? fixedPage.width / 96 : hwpUnitToInches(effectiveDocument!.page.width),
         height: fixedPage ? fixedPage.height / 96 : hwpUnitToInches(effectiveDocument!.page.height),
-        preferCssPageSize: Boolean(fixedDocument)
+        preferCssPageSize: Boolean(fixedDocument),
+        // main이 내보내기 전에 원본과 다르게 나올 개체를 확인받는다(E2E 경로는 확인하지 않는다).
+        ...(!fixedDocument && objectPlaceholderTotal ? { objectPlaceholders: objectPlaceholderCounts } : {})
       })
       setPdfStatus(path ? 'PDF 저장 완료' : null)
       setPrinting(false)
@@ -1904,6 +1986,12 @@ export default function App() {
       onMergeTableCellRight={() => void mergeTableCellRight()}
       onSplitTableCell={() => void splitTableCell()}
     />
+    {effectiveDocument && !loading && !objectNotice.dismissed && <ObjectPlaceholderBanner
+      counts={objectPlaceholderCounts}
+      expanded={objectNotice.expanded}
+      onToggleDetails={() => setObjectNotice((current) => ({ ...current, expanded: !current.expanded }))}
+      onDismiss={() => setObjectNotice({ dismissed: true, expanded: false })}
+    />}
     <ViewerStage
       stageRef={stageRef}
       loading={loading}
@@ -2002,6 +2090,8 @@ export default function App() {
         loadTiming.openToFirstPaintMs > 1000
       )}
       pdfStatus={pdfStatus}
+      objectPlaceholderCount={effectiveDocument ? objectPlaceholderTotal : 0}
+      onShowObjectPlaceholders={() => setObjectNotice({ dismissed: false, expanded: true })}
     />
   </main>
 }

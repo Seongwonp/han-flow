@@ -14,6 +14,7 @@ import {
 import { isDevToolsShortcut } from './dev_tools_shortcut'
 import { findProjectedSurface } from './e2e_surface_follow'
 import { APP_TITLE, suggestedPdfExportPath, windowTitle } from './export_file_name'
+import { PDF_OBJECT_WARNING_CONTINUE, pdfObjectPlaceholderConfirmation } from './pdf_export_warning'
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
@@ -818,6 +819,16 @@ function captureVisualState(window: BrowserWindow): void {
       // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
+      // 원본처럼 그리지 못한 개체 자리 표시(종류별)와, 그 안에서 되살린 글(글상자 글·수식 script·각주 본문 등) 글자 수.
+      placeholderCounts: Array.from(document.querySelectorAll('.viewer-page [data-object-kind]')).reduce((counts, element) => {
+        const kind = element.dataset.objectKind
+        if (kind && kind !== 'note-list') counts[kind] = (counts[kind] || 0) + 1
+        return counts
+      }, {}),
+      recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby'))
+        .filter((element) => !element.parentElement?.closest('.viewer-object-body, .viewer-note-body'))
+        .reduce((sum, element) => sum + (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length, 0),
+      objectNotice: document.querySelector('.viewer-object-banner-text')?.textContent ?? null,
       // scrollWidth는 왼쪽으로 나간 내용을 세지 않는다. 글자 rect가 용지 좌우 밖에 있으면 PDF에서 잘린다.
       outsidePageTextPages: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
         const box = page.getBoundingClientRect()
@@ -1188,7 +1199,7 @@ app.whenReady().then(() => {
     app.quit()
     return true
   })
-  ipcMain.handle('pdf:export', async (event, options: { width: number; height: number; preferCssPageSize?: boolean }) => {
+  ipcMain.handle('pdf:export', async (event, options: { width: number; height: number; preferCssPageSize?: boolean; objectPlaceholders?: unknown }) => {
     if (
       !options ||
       typeof options !== 'object' ||
@@ -1198,6 +1209,12 @@ app.whenReady().then(() => {
       throw new Error('PDF 용지 크기가 올바르지 않습니다.')
     }
     const testPath = testValue('HAN_FLOW_PDF_EXPORT_PATH')
+    // 원본처럼 그리지 못한 개체가 있으면 저장 위치를 묻기 전에 확인받는다. E2E 경로(`HAN_FLOW_PDF_EXPORT_PATH`)는 묻지 않는다.
+    const confirmation = testPath ? undefined : pdfObjectPlaceholderConfirmation(options.objectPlaceholders)
+    if (confirmation) {
+      const { response } = await showMessageBox(BrowserWindow.fromWebContents(event.sender), confirmation)
+      if (response !== PDF_OBJECT_WARNING_CONTINUE) return null
+    }
     const targetPath = testPath ?? (await showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
       title: 'PDF로 내보내기',
       defaultPath: suggestedPdfExportPath(currentDocumentPaths.get(event.sender.id), lastDialogDirectory),

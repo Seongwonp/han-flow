@@ -65,7 +65,7 @@ const api = {
     return () => ipcRenderer.removeListener('pdf:finish', handler)
   },
   pdfReady: (requestId: string) => ipcRenderer.send('pdf:ready', requestId),
-  exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean }) => ipcRenderer.invoke('pdf:export', options),
+  exportPdf: (options: { width: number; height: number; preferCssPageSize?: boolean; objectPlaceholders?: Record<string, number> }) => ipcRenderer.invoke('pdf:export', options),
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
   startEditing: (request: EditingStartRequest) => invokeEditing('editing:start', request),
