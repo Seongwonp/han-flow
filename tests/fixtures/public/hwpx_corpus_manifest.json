@@ -885,6 +885,70 @@
         "estimatedPages": 1,
         "placeholders": {}
       }
+    },
+    {
+      "id": "ext-hwpxlib-ole",
+      "category": "ole-objects",
+      "source": "file",
+      "file": "external/ext-hwpxlib-ole.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimpleOLE.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-10-07",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "bc4a762086e19eee05b14f7288e1443bc948a22ac8837d710c1cefa9f074a8b1",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 1,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 1,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1,
+        "placeholders": {
+          "ole": 1
+        }
+      }
+    },
+    {
+      "id": "ext-hwpxlib-buttons",
+      "category": "form-controls",
+      "source": "file",
+      "file": "external/ext-hwpxlib-buttons.hwpx",
+      "origin": {
+        "url": "https://github.com/neolord0/hwpxlib/blob/f9fd2255ac0fc57414e0b657d115e7de51d31c65/testFile/reader_writer/SimpleButtons.hwpx",
+        "publisher": "neolord0/hwpxlib",
+        "license": "Apache-2.0",
+        "retrievedAt": "2026-10-07",
+        "producer": "Hancom Office Hangul (Windows)"
+      },
+      "sha256": "bc16c2e5e4171a467f97a7b70141e06109693a1558f4ed70e821aeec24a253e4",
+      "personalData": false,
+      "expected": {
+        "outcome": "opened",
+        "sections": 1,
+        "tables": 0,
+        "cells": 0,
+        "resources": 0,
+        "markedParagraphs": 0,
+        "bulletParagraphs": 0,
+        "numberedParagraphs": 0,
+        "diagnostics": 1,
+        "multiColumnSections": 0,
+        "declaredColumns": 1,
+        "estimatedPages": 1,
+        "placeholders": {
+          "form-control": 3
+        }
+      }
     }
   ]
 }

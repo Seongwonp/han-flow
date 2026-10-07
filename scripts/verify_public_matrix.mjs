@@ -77,7 +77,18 @@ const PDF_FIXTURE_IDS = new Set(['report-toc', 'hanging-indent'])
 
 // 원본 개체 자리 표시 회귀 검증용 external fixture(hwpx-core 전용 공개 파일). 화면 자리 표시 종류별 개수는 corpus manifest
 // 기대값과 같아야 하고, 문서 안내 배너가 보여야 하며, PDF 내보내기(E2E 경로는 확인 대화상자를 건너뛴다)가 화면과 같은 글자를 담아야 한다.
-const OBJECT_FIXTURE_IDS = ['ext-hwpxlib-equation', 'ext-pyhwpx-text-box-fields']
+// verify_app은 원문 종류별 개체 수(source_object_census)보다 화면 자리 표시가 적으면 실패한다. 종류마다 하나 이상:
+// 수식, 글상자, 각주·미주, 메모, 양식 컨트롤(명령 단추·선택 상자·라디오 단추), OLE.
+const OBJECT_FIXTURE_IDS = [
+  'ext-hwpxlib-equation',
+  'ext-pyhwpx-text-box-fields',
+  'ext-pyhwpx-foot-endnotes',
+  'ext-pyhwpx-memos',
+  'ext-hwpxlib-buttons',
+  'ext-hwpxlib-ole'
+]
+// 원문 개체 종류가 matrix에 하나 이상 있어야 하는 종류.
+const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'memo', 'form-control', 'ole']
 
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
@@ -159,7 +170,11 @@ try {
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     ...objectResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: objectFailures }) => `${fixtureId}: 자리 표시 검증 실패(${objectFailures.join(', ')})`),
-    ...objectResults.filter(({ recoveredObjectCharacters }) => !(recoveredObjectCharacters > 0)).map(({ fixtureId }) => `${fixtureId}: 수식 script·글상자 글이 화면에 없음`),
+    ...objectResults.filter(({ recoveredObjectCharacters }) => !(recoveredObjectCharacters > 0)).map(({ fixtureId }) => `${fixtureId}: 수식 script·글상자 글·각주·메모·단추 이름·개체 설명이 화면에 없음`),
+    ...objectResults.filter(({ sourceObjectComparison }) => sourceObjectComparison !== 'compared').map(({ fixtureId, sourceObjectComparison }) => `${fixtureId}: 원문 개체 비교 안 함(${sourceObjectComparison})`),
+    ...REQUIRED_OBJECT_KINDS
+      .filter((kind) => !objectResults.some(({ sourceObjects }) => sourceObjects?.[kind] > 0))
+      .map((kind) => `개체 matrix에 ${kind} 원문 fixture가 없음`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -191,8 +206,8 @@ try {
     fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
       fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
     })),
-    objects: objectResults.map(({ fixtureId, passed, totalPages, placeholderCounts, recoveredObjectCharacters, objectNotice }) => ({
-      fixtureId, passed, totalPages, placeholderCounts, recoveredObjectCharacters, objectNotice
+    objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice }) => ({
+      fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice
     })),
     longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({

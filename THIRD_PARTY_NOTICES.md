@@ -39,11 +39,11 @@ MIT 라이선스 원문은 macOS 앱의
 
 ## 테스트 fixture
 
-`tests/fixtures/public/external/`의 HWPX 26종은 한/글(Hancom Office Hangul)로 저장된 공개
+`tests/fixtures/public/external/`의 HWPX 28종은 한/글(Hancom Office Hangul)로 저장된 공개
 테스트 파일을 원본 그대로 복사한 것이다. 각 파일의 출처 URL·commit·SHA-256은
 `tests/fixtures/public/hwpx_corpus_manifest.json`에 기록한다. 배포 앱에는 포함하지 않는다.
 
-### `neolord0/hwpxlib` testFile 13종
+### `neolord0/hwpxlib` testFile 15종
 
 - 라이선스: Apache License 2.0
 - 원 저장소: https://github.com/neolord0/hwpxlib (commit `f9fd225`)

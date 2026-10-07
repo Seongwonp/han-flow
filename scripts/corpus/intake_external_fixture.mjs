@@ -79,6 +79,8 @@ const observation = await observeHwpxPath(values.id, sourcePath, bytes)
 const expected = { outcome: observation.outcome }
 if (observation.outcome === 'opened') {
   for (const metric of EXACT_METRICS) expected[metric] = observation.metrics[metric]
+  // 원본 개체 자리 표시 종류별 개수도 고정한다(verify:corpus가 exact 비교, 개체가 없으면 빈 object).
+  expected.placeholders = observation.metrics.placeholders ?? {}
 } else {
   expected.errorCode = observation.errorCode
 }

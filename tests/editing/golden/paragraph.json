@@ -530,5 +530,15 @@
   "12 merge-previous": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
   "12 merge-next": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
   "12 range": "! HwpxEditConflictError: 서로 다른 문단 구조나 표 cell을 가로질러 편집할 수 없습니다."
+ },
+ "ext-hwpxlib-ole": {
+  "0 split": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-previous": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-next": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다."
+ },
+ "ext-hwpxlib-buttons": {
+  "0 split": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-previous": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다.",
+  "0 merge-next": "! HwpxEditConflictError: 복합 run이 있는 문단은 아직 나눌 수 없습니다."
  }
 }

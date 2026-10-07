@@ -3,10 +3,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
-
-const require = createRequire(import.meta.url)
+import { hwpxSourceObjectCensus, placeholderShortfalls } from './source_object_census.mjs'
 
 const fixture = process.argv[2]
 const RIBBON_TABS = ['파일', '편집', '서식', '표', '보기']
@@ -44,18 +42,16 @@ if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
   process.exit(1)
 }
 
-// HWPX section XML 안 화면에 그대로 그리지 못하는 개체 element 수. 0보다 크면 화면에 자리 표시나 되살린 글이 있어야 한다.
-const OBJECT_ELEMENT = /<hp:(?:equation|chart|ole|video|rect|ellipse|arc|polygon|curve|line|connectLine|container|textart|btn|radioBtn|checkBtn|comboBox|edit|listBox|scrollBar|dutmal|compose|footNote|endNote)[\s>/]|<hp:fieldBegin\b[^>]*\btype="MEMO"/g
-
-function sourceObjectElements(path) {
-  if (!/\.hwpx$/iu.test(path)) return undefined
+/**
+ * HWPX 원문의 종류별 개체 수(`source_object_census.mjs`). HWP는 rhwp가 개체까지 고정 페이지로 그리므로 대상이 아니다.
+ * ZIP·XML을 읽지 못하면 조용히 건너뛰지 않고 오류 message를 돌려 실패로 만든다.
+ */
+function sourceObjects(path) {
+  if (!/\.hwpx$/iu.test(path)) return { counts: undefined }
   try {
-    const AdmZip = require('adm-zip')
-    return new AdmZip(path).getEntries()
-      .filter((entry) => /^Contents\/section\d+\.xml$/u.test(entry.entryName))
-      .reduce((sum, entry) => sum + (entry.getData().toString('utf8').match(OBJECT_ELEMENT) ?? []).length, 0)
-  } catch {
-    return undefined
+    return { counts: hwpxSourceObjectCensus(path) }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) }
   }
 }
 
@@ -165,10 +161,12 @@ try {
     }
   }
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
-  const objectElements = sourceObjectElements(resolvedFixture)
-  const placeholderTotal = Object.values(state.placeholderCounts ?? {}).reduce((sum, value) => sum + value, 0)
+  const source = expectedError ? { counts: undefined } : sourceObjects(resolvedFixture)
   // 큰 문서는 보이는 페이지만 DOM에 있으므로 개체가 화면 밖 페이지에만 있을 수 있다. 모든 페이지가 mount됐을 때만 판정한다.
   const allPagesMounted = state.mountedPages >= state.totalPages
+  const shortfalls = source.counts && allPagesMounted ? placeholderShortfalls(source.counts, state.placeholderCounts) : []
+  const objectComparison = !source.counts ? (source.error ? 'scan-failed' : 'not-applicable')
+    : allPagesMounted ? 'compared' : 'skipped-not-all-pages-mounted'
   const failures = (expectedError ? [
     state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
     state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음',
@@ -190,9 +188,10 @@ try {
     state.outsidePageTextPages?.length ? `용지 밖으로 나간 글자: ${state.outsidePageTextPages.join(', ')}페이지` : undefined,
     state.cellOverflowTexts?.length ? `표 셀 밖으로 나간 글자: ${state.cellOverflowTexts.join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
-    // 회귀 방지: 원본에 개체가 있는데 화면에 자리 표시도 되살린 글도 없으면 개체가 조용히 사라진 것이다.
-    allPagesMounted && objectElements > 0 && placeholderTotal === 0 && !state.recoveredObjectCharacters
-      ? `원본 개체 ${objectElements}개가 화면에서 사라짐(자리 표시·되살린 글 없음)`
+    source.error ? `원본 개체 검사 실패: ${source.error}` : undefined,
+    // 회귀 방지: 원본 종류별 개체 수보다 화면 자리 표시가 적으면 개체가 조용히 사라진 것이다.
+    shortfalls.length
+      ? `원본 개체가 화면에서 사라짐: ${shortfalls.map(({ kind, source: count, screen }) => `${kind} 원본 ${count} / 화면 ${screen}`).join(', ')}`
       : undefined,
     expectedPlaceholders && placeholderKey(expectedPlaceholders) !== placeholderKey(state.placeholderCounts)
       ? `자리 표시 불일치: 기대 ${placeholderKey(expectedPlaceholders)}, 실제 ${placeholderKey(state.placeholderCounts)}`
@@ -286,7 +285,9 @@ try {
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
     toolbarLayout: state.toolbarLayout,
     pageTextCounts: state.pageTextCounts,
-    sourceObjectElements: objectElements,
+    sourceObjects: source.counts ? Object.fromEntries(Object.entries(source.counts).filter(([, count]) => count > 0)) : undefined,
+    sourceObjectComparison: objectComparison,
+    objectShortfalls: shortfalls,
     placeholderCounts: state.placeholderCounts,
     recoveredObjectCharacters: state.recoveredObjectCharacters,
     objectNotice: state.objectNotice,

@@ -423,5 +423,15 @@
   "12 insert": "Contents/section0.xml fec1489c085e5b0a24f04b3d88e66a64b4039f77601dabc1250fdb6f543752b9",
   "12 delete": "unchanged",
   "12 replace-all": "Contents/section0.xml 45f427848c4eabae4c3da79d2bf8204a5e2096206957f1adcb8499cd7e2876a8"
+ },
+ "ext-hwpxlib-ole": {
+  "0 insert": "Contents/section0.xml 966932977b4a6cc4e6196988b6348861437a12855b9b6bd1b6f93379f7eed910",
+  "0 delete": "unchanged",
+  "0 replace-all": "Contents/section0.xml 1474f22cb1690ab4f72227d29c337246a931e277c7b66efe9765a096c81181aa"
+ },
+ "ext-hwpxlib-buttons": {
+  "0 insert": "Contents/section0.xml 2bdb17201bf4329c69ebb74f7c4a501cd945fb0e981a8b8c1a314ee2c043e6c5",
+  "0 delete": "unchanged",
+  "0 replace-all": "Contents/section0.xml 4d4588aee23965acf7634cfee41eb3a87449c684e70776d35a4cf01247f8d2f7"
  }
 }

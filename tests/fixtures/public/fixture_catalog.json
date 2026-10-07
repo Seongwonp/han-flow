@@ -255,6 +255,20 @@
       "category": "paragraph-layout",
       "provenance": "external",
       "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-ole",
+      "format": "hwpx",
+      "category": "ole-objects",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
+    },
+    {
+      "id": "ext-hwpxlib-buttons",
+      "format": "hwpx",
+      "category": "form-controls",
+      "provenance": "external",
+      "pipelines": ["hwpx-core"]
     }
   ]
 }

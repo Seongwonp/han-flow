@@ -116,8 +116,8 @@ Mac·로컬 기기 측정은 별도 절로 분리합니다. 날짜별 상세는 
 | --- | --- |
 | Jest (`npm test -- --runInBand`) | 43 suites passed·2 skipped, 292 passed·12 skipped |
 | parser probe (`npm run test:probe`) | 18 passed |
-| 공개 HWPX corpus (`npm run verify:corpus`) | 35/35 (synthetic 9종 + 한/글 저장본 external 26종, invalid-package 1종 의도적 거부) |
-| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 26종 371 run: anchor 95.7%·text 편집 89.8%·글자 가중 92.8%·표 셀 66/66·글자 모양 78.2%·문단 모양 90.2%·글자 칸 없는 빈 문단 44/46 (2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
+| 공개 HWPX corpus (`npm run verify:corpus`) | 39/39 (synthetic 11종 + 한/글 저장본 external 28종, invalid-package 1종 의도적 거부 포함) |
+| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 28종 373 run: anchor 95.7%·text 편집 89.8%·글자 가중 92.8%·표 셀 66/66·글자 모양 77.7%·문단 모양 90.2%·문단 나눔 270/399(capability·코어 불일치 0)·글자 칸 없는 빈 문단 44/46 (2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
 | 공개 fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | Windows CI (`windows-latest`) | test·typecheck·probe·corpus·build·package, 패키지 앱 HWPX·HWP matrix·PDF E2E, 비서명 NSIS artifact 통과 |
 | Linux CI (`ubuntu-latest`, xvfb) | 같은 자동 관문과 `package:linux`, 패키지 앱 HWPX·HWP matrix·PDF E2E, unpacked artifact 통과 |

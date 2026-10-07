@@ -730,5 +730,19 @@
   "12 align": "Contents/header.xml,Contents/section0.xml c369eddf2fab06760bd1fb697d456839f741600870f7f78c48045aa151ea8d2a",
   "12 spacing": "Contents/header.xml,Contents/section0.xml 912d19d6252f734ce43ec76f4a7bbd84c885b8632b3de29d510beaabac685bde",
   "12 cell": "! HwpxEditConflictError: 표 셀 모양은 일반 body 셀에서만 편집할 수 있습니다."
+ },
+ "ext-hwpxlib-ole": {
+  "0 bold": "! HwpxEditConflictError: 복합 run은 아직 style을 편집할 수 없습니다.",
+  "0 italic-underline-size-color": "! HwpxEditConflictError: 복합 run은 아직 style을 편집할 수 없습니다.",
+  "0 align": "Contents/header.xml,Contents/section0.xml 4110e3f6ff72b386cc1af36609decd0d529539400d4f8e5b31189d3d7caa759d",
+  "0 spacing": "Contents/header.xml,Contents/section0.xml a5691589a6d11759600e9e8957f24806b46a2ed251b0fe8f4ac0bb7b965fdd1e",
+  "0 cell": "! HwpxEditConflictError: 표 셀 모양은 일반 body 셀에서만 편집할 수 있습니다."
+ },
+ "ext-hwpxlib-buttons": {
+  "0 bold": "! HwpxEditConflictError: 복합 run은 아직 style을 편집할 수 없습니다.",
+  "0 italic-underline-size-color": "! HwpxEditConflictError: 복합 run은 아직 style을 편집할 수 없습니다.",
+  "0 align": "Contents/header.xml,Contents/section0.xml 51824b62b96f6d5fdd4fed753666bcdea402c6aa0ab23d768cbb042ca8ed4d13",
+  "0 spacing": "Contents/header.xml,Contents/section0.xml 0d0e89ceb1ce5dc088dfdcc5b176ef681b928af8ee32ff95296d17cca1f272db",
+  "0 cell": "! HwpxEditConflictError: 표 셀 모양은 일반 body 셀에서만 편집할 수 있습니다."
  }
 }

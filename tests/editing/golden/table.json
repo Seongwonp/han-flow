@@ -615,5 +615,7 @@
   "section0.xml 15 delete-column": "! HwpxEditConflictError: 표에는 하나 이상의 열이 남아 있어야 합니다.",
   "section0.xml 15 merge-right": "! HwpxEditConflictError: 오른쪽에 병합할 표 셀이 없습니다.",
   "section0.xml 15 split": "! HwpxEditConflictError: 표 행·열 개수와 실제 구조가 일치하지 않습니다."
- }
+ },
+ "ext-hwpxlib-ole": {},
+ "ext-hwpxlib-buttons": {}
 }

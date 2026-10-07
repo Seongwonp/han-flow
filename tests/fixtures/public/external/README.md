@@ -40,7 +40,7 @@ npm run corpus:intake -- ~/Downloads/양식.hwpx --id gov-form-01 --category off
 ```
 
 helper는 파일을 `external/<id>.hwpx`로 복사하고 SHA-256을 계산한 뒤, 현재 decoder로 한 번 열어
-section·table·cell·resource·목록·다단·`estimatedPages` 기대값을 채워 manifest와 catalog에
+section·table·cell·resource·목록·다단·`estimatedPages`·원본 개체 자리 표시 종류별 개수(`placeholders`) 기대값을 채워 manifest와 catalog에
 항목을 추가한다. `--retrieved-at YYYY-MM-DD`를 생략하면 오늘 날짜를 쓴다. `--producer`는 문서
 속성이나 배포처로 확인한 저장 제품(`Hancom Office 2024 Windows`, `Hancom Docs web`, 모르면
 `unknown`)을 적는다. decoder가 열지 못한 파일은 `rejected`로 기록되므로 원인을 조사해 최소
