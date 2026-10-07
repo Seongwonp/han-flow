@@ -15,6 +15,7 @@ import {
   EMPTY_PARAGRAPH_RUN_CONTROLS,
   emptyParagraphAnchorId
 } from '../editing/empty_paragraph_anchor'
+import { ParagraphStructureAccess, paragraphStructureViolation } from '../editing/paragraph_structure'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
 
@@ -378,6 +379,13 @@ function placeholderLayoutHeight(content: readonly ViewerContent[]): number {
   return inline + block
 }
 
+/** viewer ordered XML용 {@link ParagraphStructureAccess}(편집 코어와 같은 문단 구조 규칙). */
+const orderedParagraphStructureAccess: ParagraphStructureAccess<OrderedXmlNode> = {
+  elementName: (node) => node.name === '#text' ? undefined : node.name,
+  children: (node) => node.children,
+  isBlank: (node) => node.name === '#text' && !(node.text ?? '').trim()
+}
+
 function decodeParagraph(
   node: OrderedXmlNode,
   id: string,
@@ -411,6 +419,7 @@ function decodeParagraph(
   )
   const layoutHeight = Math.max(measuredLayoutHeight, tableLayoutHeight, placeholderLayoutHeight(content))
   const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
+  const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess)?.block
   return {
     id,
     paraStyleId: node.attributes.paraPrIDRef ?? '0',
@@ -418,7 +427,8 @@ function decodeParagraph(
     ...(node.attributes.columnBreak === '1' ? { columnBreak: true } : {}),
     layoutTop,
     layoutHeight,
-    content
+    content,
+    ...(structureBlock ? { structureBlock } : {})
   }
 }
 

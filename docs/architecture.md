@@ -221,6 +221,15 @@ cell별 range scope를 공유한다. 그 밖의 셀은 문단별 range scope를 
 paragraph만 범위 치환·분할·병합 대상으로 사용한다. 다른 cell이나 머리말·꼬리말 subList를
 가로지르는 요청은 renderer scope와 core source 검사 양쪽에서 차단한다.
 
+문단 구조 command(Enter 분할·경계 병합·여러 문단 범위)를 받을 수 있는 문단의 규칙은
+`src/core/editing/paragraph_structure.ts` 하나에 있다. 문단 자식은 `hp:run`·`hp:linesegarray`, 각 run은 직속 `hp:t`
+하나와 그 안의 `hp:lineBreak`·`hp:tab`뿐이어야 한다. 편집 코어(`paragraph_patch.ts`)는 source tree에, viewer decoder는
+ordered XML에 같은 함수를 적용하고, decoder는 위반 사유를 `ViewerParagraph.structureBlock`(`PARAGRAPH_HAS_OBJECT`·
+`PARAGRAPH_COMPLEX_RUN`)으로 남긴다. capability는 이 값으로 문단 구조를 막고, 막힌 문단 쪽 경계 병합과 그 문단을
+가로지르는 여러 문단 범위도 막는다(막힌 문단은 문단 하나 scope, 그 뒤 문단은 새 구간 scope). renderer는
+`topLevelParagraphStructure`·`cellParagraphStructure`로 같은 gate와 scope를 받아 Enter·Backspace·Delete를 코어에 보내지
+않고 상태 막대에 이유를 알린다. 글자 입력·삭제와 글자·문단 모양은 그대로 허용한다.
+
 표 셀 모양 command는 선택 anchor에서 `hp:tc` ancestry를 다시 찾고 header·cellSpan을 검증한다.
 선택 셀이 참조하는 `hh:borderFill`을 새 ID로 복제한 뒤 단색 `hc:winBrush`와 사방 border 속성만
 수정하고, 해당 `hp:tc`의 `borderFillIDRef`만 교체한다. 공유 원본 style과 다른 셀은 그대로

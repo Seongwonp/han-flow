@@ -13,6 +13,7 @@ import {
   splitHwpxTextContent
 } from './text_patch'
 import { buildLossReport } from './xml_scan'
+import { ParagraphStructureAccess, paragraphStructureViolation } from './paragraph_structure'
 import { putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
   elementCloseTag,
@@ -91,8 +92,6 @@ interface ParagraphContext {
   scope: SourceElement
 }
 
-const RUN_CONTENT = new Set(['hp:t', 'hp:lineBreak', 'hp:tab'])
-
 function locateParagraph(
   sourcePackage: HwpxSourcePackage,
   sectionPath: string,
@@ -134,44 +133,26 @@ function isBlankNode(tree: SourceTree, node: SourceNode): boolean {
   return node.kind === 'text' && !textRaw(tree, node).trim()
 }
 
+/** 편집 source tree용 {@link ParagraphStructureAccess}. */
+export function sourceParagraphStructureAccess(tree: SourceTree): ParagraphStructureAccess<SourceNode> {
+  return {
+    elementName: (node) => node.kind === 'element' ? node.name : undefined,
+    children: (node) => node.kind === 'element' ? node.children : [],
+    isBlank: (node) => isBlankNode(tree, node)
+  }
+}
+
 /**
  * 문단이 `hp:run`(+ `hp:linesegarray`)만으로 되어 있고 각 run이 `hp:t` 하나(와 앞뒤 공백)만 가지는지 확인하고
- * run 목록을 돌려준다. 검사 순서와 오류 message는 전환 전과 같다.
+ * run 목록을 돌려준다. 규칙은 capability와 함께 쓰는 {@link paragraphStructureViolation}이고, 오류 message는 전환 전과 같다.
  */
 function assertSimpleParagraph(context: ParagraphContext): SourceElement[] {
   const { tree, paragraph } = context
-  const children = paragraph.children.filter((child): child is SourceElement => child.kind === 'element')
-  if (children.some((child) => child.name !== 'hp:run' && child.name !== 'hp:linesegarray')) {
-    throw new HwpxEditConflictError('제어·표·도형이 섞인 문단은 아직 나눌 수 없습니다.')
-  }
-  const runs = children.filter((child) => child.name === 'hp:run')
-  if (!runs.length) throw new HwpxEditConflictError('텍스트 run이 없는 문단은 나눌 수 없습니다.')
-  if (paragraph.children.some((child) => child.kind !== 'element' && !isBlankNode(tree, child))) {
-    throw new HwpxEditConflictError('알 수 없는 문단 콘텐츠가 있어 나눌 수 없습니다.')
-  }
-  for (const run of runs) {
-    const directTexts = run.children.filter(
-      (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:t'
-    )
-    if (
-      directTexts.length !== 1 ||
-      !everyDescendantElement(run, (element) => RUN_CONTENT.has(element.name))
-    ) {
-      throw new HwpxEditConflictError('복합 run이 있는 문단은 아직 나눌 수 없습니다.')
-    }
-    if (run.children.some((child) => child !== directTexts[0] && !isBlankNode(tree, child))) {
-      throw new HwpxEditConflictError('알 수 없는 run 콘텐츠가 있어 나눌 수 없습니다.')
-    }
-  }
-  return runs
-}
-
-function everyDescendantElement(element: SourceElement, predicate: (element: SourceElement) => boolean): boolean {
-  for (const child of element.children) {
-    if (child.kind !== 'element') continue
-    if (!predicate(child) || !everyDescendantElement(child, predicate)) return false
-  }
-  return true
+  const violation = paragraphStructureViolation<SourceNode>(paragraph, sourceParagraphStructureAccess(tree))
+  if (violation) throw new HwpxEditConflictError(violation.message)
+  return paragraph.children.filter(
+    (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:run'
+  )
 }
 
 function nextParagraphOpenTag(tree: SourceTree, paragraph: SourceElement): string {

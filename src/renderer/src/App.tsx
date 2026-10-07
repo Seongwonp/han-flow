@@ -5,9 +5,13 @@ import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fi
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import {
+  cellParagraphStructure,
   EditingCapabilities,
   editingCapabilities,
-  reconcileEditingSelection
+  EditingCapabilityReason,
+  ParagraphStructureGate,
+  reconcileEditingSelection,
+  topLevelParagraphStructure
 } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
 import { isEmptyParagraphAnchorId } from '../../core/editing/empty_paragraph_anchor'
@@ -27,7 +31,7 @@ import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_num
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
-import { ParagraphInputSurface } from './ParagraphInputSurface'
+import { ParagraphInputSurface, ParagraphStructureAction } from './ParagraphInputSurface'
 import {
   editingCapabilityStatus,
   editingErrorCode,
@@ -239,6 +243,12 @@ interface ParagraphEditingProps {
   rangeScope?: string
   allowParagraphMergePrevious?: boolean
   allowParagraphMergeNext?: boolean
+  /**
+   * 본문 문단 id → 문단 구조 gate와 여러 문단 범위 scope(`editing_capability.ts`의 `topLevelParagraphStructure`).
+   * 표 셀은 대신 {@link structureGate}와 {@link rangeScope}를 문단마다 직접 넘긴다.
+   */
+  structureOf?: (paragraphId: string) => { rangeScope: string; gate: ParagraphStructureGate } | undefined
+  structureGate?: ParagraphStructureGate
   editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
@@ -261,7 +271,7 @@ interface ParagraphEditingProps {
     inputType: 'deleteContentBackward' | 'deleteContentForward',
     timestamp: number
   ) => void
-  onParagraphStructureUnavailable: () => void
+  onParagraphStructureUnavailable: (reason?: EditingCapabilityReason) => void
   onHistory?: (direction: HistoryDirection) => void
   tableCellSelection?: TableCellSelection
   onTableCellSelectionChange: (selection: TableCellSelection) => void
@@ -400,10 +410,21 @@ export function ParagraphView({
   const sectionPath = editableTexts?.[0]?.sourceAnchor?.sectionPath
   // 글자 칸 없는 빈 문단의 합성 anchor: 첫 입력만 받고 문단 나눔·병합·여러 문단 범위에는 끼지 않는다.
   const emptyParagraph = Boolean(editableTexts?.some((text) => isEmptyParagraphText(text)))
+  // 문단 구조 command(Enter·경계 병합·여러 문단 범위) gate는 capability와 같은 규칙(`paragraph_structure.ts`)을 쓴다.
+  // 개체가 든 문단은 글자 입력은 그대로 받고 문단 나눔·병합·여러 문단 범위에서만 빠진다.
+  const structure = activeEditing?.structureOf?.(paragraph.id)
+  const structureGate: ParagraphStructureGate = activeEditing?.structureGate ?? structure?.gate ??
+    (paragraph.structureBlock ? { split: paragraph.structureBlock, mergePrevious: paragraph.structureBlock, mergeNext: paragraph.structureBlock } : {})
+  const structureBlocked = Boolean(structureGate.split)
   const rangeScope = sectionPath && activeEditing
-    ? (emptyParagraph ? undefined : activeEditing.rangeScope) ??
-      paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange) && !emptyParagraph)
+    ? (emptyParagraph ? undefined : activeEditing.rangeScope ?? structure?.rangeScope) ??
+      paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange) && !emptyParagraph && !structureBlocked)
     : undefined
+  const paragraphStructureUnavailable = (action: ParagraphStructureAction) => {
+    activeEditing?.onParagraphStructureUnavailable(
+      emptyParagraph ? 'EMPTY_PARAGRAPH' : action === 'split' ? structureGate.split : structureGate[action] ?? structureGate.split
+    )
+  }
   const editorHost = () => activeEditing?.editorHostRef?.current ?? paragraphRef.current
   const readEditorSelection = () => {
     const host = editorHost()
@@ -428,6 +449,7 @@ export function ParagraphView({
     onKeyUp={() => syncEditorSelection(true)}
     className="viewer-paragraph"
     data-measure-block-id={measurable ? paragraph.id : undefined}
+    data-paragraph-structure-block={activeEditing && structureBlocked ? structureGate.split : undefined}
     style={css}
   >{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
     ? paragraph.content.map((item, contentIndex) => {
@@ -474,8 +496,10 @@ export function ParagraphView({
       onMergeParagraph={activeEditing.onMergeParagraph}
       allowMergePrevious={!emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
       allowMergeNext={!emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
-      allowParagraphStructure={activeEditing.allowParagraphStructure && !emptyParagraph}
-      onParagraphStructureUnavailable={activeEditing.onParagraphStructureUnavailable}
+      mergePreviousBlocked={!emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true) && Boolean(structureGate.mergePrevious)}
+      mergeNextBlocked={!emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true) && Boolean(structureGate.mergeNext)}
+      allowParagraphStructure={activeEditing.allowParagraphStructure && !emptyParagraph && !structureBlocked}
+      onParagraphStructureUnavailable={paragraphStructureUnavailable}
       onHistory={activeEditing.onHistory}
       onBoundaryNavigate={(direction, selection) => {
         const host = editorHost()
@@ -564,6 +588,9 @@ export function TableView({
       : undefined
     const selected = equalTableCellSelections(cellSelection, editing?.tableCellSelection)
     const cellMode = editing ? tableCellEditingMode(cell, measurable) : undefined
+    const cellStructure = cellMode === 'structure' && cellRangeScope
+      ? cellParagraphStructure(cell.paragraphs, cellRangeScope)
+      : undefined
     const selectCell = () => {
       if (!cellSelection || !editing) return
       globalThis.getSelection()?.removeAllRanges()
@@ -611,7 +638,9 @@ export function TableView({
               allowMultipleRuns: false,
               allowParagraphRange: cell.paragraphs.length > 1,
               allowParagraphStructure: true,
-              rangeScope: cellRangeScope,
+              rangeScope: cellStructure?.[paragraphIndex].rangeScope ?? cellRangeScope,
+              structureOf: undefined,
+              structureGate: cellStructure?.[paragraphIndex].gate ?? {},
               allowParagraphMergePrevious: paragraphIndex > 0,
               allowParagraphMergeNext: paragraphIndex < cell.paragraphs.length - 1
             }
@@ -623,6 +652,8 @@ export function TableView({
                 allowParagraphRange: false,
                 allowParagraphStructure: false,
                 rangeScope: undefined,
+                structureOf: undefined,
+                structureGate: undefined,
                 allowParagraphMergePrevious: false,
                 allowParagraphMergeNext: false
               }
@@ -1349,14 +1380,22 @@ export default function App() {
     [document, editingSelection]
   )
   const paragraphStructureReason = editingCapabilityState.paragraphStructure.reason
-  const paragraphStructureUnavailable = useCallback(() => {
+  const paragraphStructureUnavailable = useCallback((reason?: EditingCapabilityReason) => {
     setEditingStatus(
       editingCapabilityStatus(
         '문단 나눔·병합',
-        paragraphStructureReason === 'EMPTY_PARAGRAPH' ? 'EMPTY_PARAGRAPH' : 'TABLE_CELL_STRUCTURE'
+        reason ?? (paragraphStructureReason === 'EMPTY_PARAGRAPH' ? 'EMPTY_PARAGRAPH' : 'TABLE_CELL_STRUCTURE')
       ) ?? '편집 중'
     )
   }, [paragraphStructureReason])
+  const topLevelStructure = useMemo(
+    () => document ? topLevelParagraphStructure(document) : undefined,
+    [document]
+  )
+  const structureOf = useCallback(
+    (paragraphId: string) => topLevelStructure?.get(paragraphId),
+    [topLevelStructure]
+  )
   const {
     activeStyle,
     activeCellStyle,
@@ -2025,7 +2064,7 @@ export default function App() {
             key={paragraph.id}
             paragraph={paragraph}
             document={effectiveDocument}
-            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
+            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
           />)
           const body = page.columns && page.columnLayout
             ? <ViewerColumnFlow

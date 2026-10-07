@@ -7,6 +7,7 @@ import {
   ViewerText
 } from '../document/viewer_document'
 import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import type { ParagraphStructureBlock } from './paragraph_structure'
 import { EditorSelection } from './selection'
 import { isSurrogateBoundarySafe } from './xml_scan'
 
@@ -19,6 +20,10 @@ export type EditingCapabilityReason =
   | 'MULTI_PARAGRAPH_SELECTION'
   | 'TABLE_CELL_STRUCTURE'
   | 'EMPTY_PARAGRAPH'
+  /** 문단에 수식·글상자·그림·구역 정의·제어 같은 개체가 있어 문단 나눔·병합·여러 문단 범위를 할 수 없다. */
+  | 'PARAGRAPH_HAS_OBJECT'
+  /** 문단 run 구조(빈 run, run 하나에 글자 칸 여러 개 등)가 문단 나눔·병합·여러 문단 범위 규칙을 벗어난다. */
+  | 'PARAGRAPH_COMPLEX_RUN'
 
 export interface EditingCapabilityState {
   available: boolean
@@ -45,6 +50,17 @@ export interface EditingAnchorContext {
    * `hp:t`를 만든 뒤에는 일반 anchor로 바뀐다.
    */
   emptyParagraph?: boolean
+  /**
+   * 이 anchor가 든 문단의 문단 구조 command 차단 이유. `split`은 Enter 분할·여러 문단 범위, `mergePrevious`·`mergeNext`는
+   * 문단 맨 앞 Backspace·맨 끝 Delete 병합(인접 문단 포함)이다. 편집 코어와 같은 규칙(`paragraph_structure.ts`)을 쓴다.
+   */
+  structureGate?: ParagraphStructureGate
+}
+
+export interface ParagraphStructureGate {
+  split?: EditingCapabilityReason
+  mergePrevious?: EditingCapabilityReason
+  mergeNext?: EditingCapabilityReason
 }
 
 export interface EditingCapabilities {
@@ -83,8 +99,10 @@ function paragraphContexts(
   texts: readonly ViewerText[],
   structure: EditingStructure,
   rangeScope: string,
-  cell?: { cellStyleId?: string; cellStructureEditable: boolean }
+  cell?: { cellStyleId?: string; cellStructureEditable: boolean },
+  structureGate?: ParagraphStructureGate
 ): EditingAnchorContext[] {
+  const gate = structureGate && Object.keys(structureGate).length ? { structureGate } : {}
   return texts.map((text) => ({
     sectionPath: text.sourceAnchor!.sectionPath,
     textNodeId: text.sourceAnchor!.textNodeId,
@@ -95,8 +113,52 @@ function paragraphContexts(
     rangeScope,
     structure,
     ...(cell ? { cellStyleId: cell.cellStyleId, cellStructureEditable: cell.cellStructureEditable } : {}),
-    ...(isEmptyParagraphAnchorId(text.sourceAnchor!.textNodeId) ? { emptyParagraph: true } : {})
+    ...(isEmptyParagraphAnchorId(text.sourceAnchor!.textNodeId) ? { emptyParagraph: true } : {}),
+    ...gate
   }))
+}
+
+const isEmptyParagraphTexts = (texts: readonly ViewerText[] | undefined): boolean =>
+  Boolean(texts?.some((text) => isEmptyParagraphAnchorId(text.sourceAnchor?.textNodeId)))
+
+/** 문단 구조 command에서 이 문단 자체를 막는 이유(빈 문단·구조 규칙 위반). */
+function ownStructureBlock(
+  paragraph: ViewerParagraph,
+  texts: readonly ViewerText[] | undefined
+): EditingCapabilityReason | undefined {
+  if (!texts) return 'PARAGRAPH_HAS_OBJECT'
+  if (isEmptyParagraphTexts(texts)) return 'EMPTY_PARAGRAPH'
+  const block: ParagraphStructureBlock | undefined = paragraph.structureBlock
+  return block
+}
+
+/**
+ * 같은 부모(구역 본문 또는 표 셀) 안 문단 목록의 문단 구조 gate와 여러 문단 범위 scope.
+ * 문단 구조 command를 받을 수 없는 문단(개체가 든 문단·빈 문단·표나 그림만 든 문단)은 여러 문단 범위를 끊는다:
+ * 그 문단은 문단 하나 scope를 쓰고, 그 뒤의 문단은 새 구간 scope(`${baseScope}:${구간 번호}`, 첫 구간은 `baseScope`)를 쓴다.
+ */
+function siblingStructure(
+  paragraphs: readonly ViewerParagraph[],
+  paragraphTexts: ReadonlyArray<readonly ViewerText[] | undefined>,
+  baseScope: string,
+  ownScope: (paragraph: ViewerParagraph) => string
+): { rangeScope: string; gate: ParagraphStructureGate }[] {
+  const blocks = paragraphs.map((paragraph, index) => ownStructureBlock(paragraph, paragraphTexts[index]))
+  let segment = 0
+  let previousBlocked = false
+  return paragraphs.map((paragraph, index) => {
+    const block = blocks[index]
+    if (block) {
+      previousBlocked = true
+      return { rangeScope: ownScope(paragraph), gate: { split: block, mergePrevious: block, mergeNext: block } }
+    }
+    if (previousBlocked && index > 0) segment += 1
+    previousBlocked = false
+    const gate: ParagraphStructureGate = {}
+    if (index > 0 && blocks[index - 1]) gate.mergePrevious = blocks[index - 1]
+    if (index < paragraphs.length - 1 && blocks[index + 1]) gate.mergeNext = blocks[index + 1]
+    return { rangeScope: segment ? `${baseScope}:${segment}` : baseScope, gate }
+  })
 }
 
 /**
@@ -121,15 +183,18 @@ function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorCo
     const cellScope = `${sectionPath}:table-cell:${cell.sourceCellId ?? `${table.id}:r${cell.row}c${cell.column}`}`
     const paragraphTexts = cell.paragraphs.map(editableTexts)
     const cellStructureEditable = isStructureEditableCell(cell, paragraphTexts)
+    const paragraphScope = (paragraph: ViewerParagraph) => `${cellScope}:paragraph:${paragraph.id}`
+    // 구조 편집이 되는 셀 안에서도 개체가 든 문단은 문단 나눔·병합·여러 문단 범위에서 빠진다.
+    const structure = cellStructureEditable ? cellParagraphStructure(cell.paragraphs, cellScope) : undefined
     return cell.paragraphs.flatMap((paragraph, index) => {
       const texts = paragraphTexts[index]
       if (!texts) return []
       // 구조 편집이 안 되는 셀은 문단 사이 치환(문단 fragment patch)이 거부되므로 선택 범위를 문단 하나로 묶는다.
-      const rangeScope = cellStructureEditable ? cellScope : `${cellScope}:paragraph:${paragraph.id}`
+      const rangeScope = structure?.[index].rangeScope ?? paragraphScope(paragraph)
       return paragraphContexts(paragraph, texts, 'TABLE_CELL_TEXT', rangeScope, {
         cellStyleId: cell.borderFillId,
         cellStructureEditable
-      })
+      }, structure?.[index].gate)
     })
   }))
 }
@@ -151,20 +216,59 @@ function paragraphSourcePath(paragraph: ViewerParagraph): string | undefined {
   return undefined
 }
 
+function topLevelStructure(
+  blocks: readonly ViewerParagraph[],
+  blockTexts: ReadonlyArray<readonly ViewerText[] | undefined>,
+  sectionPath: string
+): { rangeScope: string; gate: ParagraphStructureGate }[] {
+  return siblingStructure(blocks, blockTexts, `${sectionPath}:top-level`, (paragraph) =>
+    isEmptyParagraphTexts(blockTexts[blocks.indexOf(paragraph)])
+      ? `${sectionPath}:empty-paragraph:${paragraph.id}`
+      : `${sectionPath}:paragraph:${paragraph.id}`
+  )
+}
+
+/**
+ * 구역 본문 문단 id → 문단 구조 gate·여러 문단 범위 scope. renderer가 본문 문단 입력 surface의 Enter·Backspace·Delete와
+ * 범위 scope를 capability와 같게 정하는 데 쓴다(표 셀은 셀 안 문단만 보면 되므로 renderer가 같은 규칙을 셀 안에서 쓴다).
+ */
+export function topLevelParagraphStructure(
+  document: ViewerDocument
+): Map<string, { rangeScope: string; gate: ParagraphStructureGate }> {
+  const result = new Map<string, { rangeScope: string; gate: ParagraphStructureGate }>()
+  for (const section of document.sections) {
+    const sectionPath = section.blocks.map(paragraphSourcePath).find((path): path is string => Boolean(path))
+    if (!sectionPath) continue
+    const structure = topLevelStructure(section.blocks, section.blocks.map(editableTexts), sectionPath)
+    section.blocks.forEach((paragraph, index) => result.set(paragraph.id, structure[index]))
+  }
+  return result
+}
+
+/**
+ * 구조 편집이 되는 표 셀 문단 목록의 문단 구조 gate와 범위 scope. `cellScope`는 셀 범위 scope(`…:table-cell:…`)이고
+ * capability(`tableContexts`)와 renderer가 같은 함수로 같은 값을 얻는다.
+ */
+export function cellParagraphStructure(
+  paragraphs: readonly ViewerParagraph[],
+  cellScope: string
+): { rangeScope: string; gate: ParagraphStructureGate }[] {
+  return siblingStructure(paragraphs, paragraphs.map(editableTexts), cellScope, (paragraph) => `${cellScope}:paragraph:${paragraph.id}`)
+}
+
 export function listEditingAnchorContexts(document: ViewerDocument): EditingAnchorContext[] {
   return document.sections.flatMap((section) => {
     const sectionPath = section.blocks
       .map(paragraphSourcePath)
       .find((path): path is string => Boolean(path))
     if (!sectionPath) return []
-    return section.blocks.flatMap((paragraph) => {
-      const texts = editableTexts(paragraph)
-      // 빈 문단은 여러 문단 범위 치환에 끼지 않도록 문단마다 따로 scope를 둔다.
-      const topLevelScope = texts?.some((text) => isEmptyParagraphAnchorId(text.sourceAnchor?.textNodeId))
-        ? `${sectionPath}:empty-paragraph:${paragraph.id}`
-        : `${sectionPath}:top-level`
+    const blockTexts = section.blocks.map(editableTexts)
+    // 빈 문단(`empty-paragraph`)·개체가 든 문단(`paragraph`)은 여러 문단 범위 치환에 끼지 않도록 문단마다 따로 scope를 둔다.
+    const structure = topLevelStructure(section.blocks, blockTexts, sectionPath)
+    return section.blocks.flatMap((paragraph, index) => {
+      const texts = blockTexts[index]
       const topLevel = texts
-        ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', topLevelScope)
+        ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', structure[index].rangeScope, undefined, structure[index].gate)
         : []
       const nested = paragraph.content.flatMap((item) =>
         item.type === 'table' ? tableContexts(item, sectionPath) : []
@@ -305,9 +409,11 @@ export function editingCapabilities(
       ? unavailable('EMPTY_PARAGRAPH')
       : !topLevel && !structuralCell
         ? unavailable('TABLE_CELL_STRUCTURE')
-        : !sameRun
-          ? unavailable('MULTI_RUN_SELECTION')
-          : { available: true },
+        : focus.structureGate?.split
+          ? unavailable(focus.structureGate.split)
+          : !sameRun
+            ? unavailable('MULTI_RUN_SELECTION')
+            : { available: true },
     cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },

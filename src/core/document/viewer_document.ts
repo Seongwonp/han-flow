@@ -1,3 +1,4 @@
+import type { ParagraphStructureBlock } from '../editing/paragraph_structure'
 export type HwpUnit = number
 
 export interface ViewerDocument {
@@ -43,7 +44,21 @@ export interface ViewerResource { id: string; path: string; mime: string; data: 
 export interface ViewerColumnDefinition { width: HwpUnit; gap: HwpUnit }
 export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[] }
 export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; columnLayout?: ViewerColumnLayout; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
-export interface ViewerParagraph { id: string; paraStyleId: string; pageBreak: boolean; columnBreak?: boolean; layoutTop?: HwpUnit; layoutHeight: HwpUnit; marker?: string; content: ViewerContent[] }
+export interface ViewerParagraph {
+  id: string
+  paraStyleId: string
+  pageBreak: boolean
+  columnBreak?: boolean
+  layoutTop?: HwpUnit
+  layoutHeight: HwpUnit
+  marker?: string
+  content: ViewerContent[]
+  /**
+   * 원본 문단이 문단 구조 command(Enter 분할·경계 병합·여러 문단 범위)의 대상이 될 수 없는 이유. 없으면 구조 규칙을 통과한다.
+   * 편집 코어와 같은 규칙(`editing/paragraph_structure.ts`)으로 decoder가 채운다. 글자 입력 가능 여부와는 관계없다.
+   */
+  structureBlock?: ParagraphStructureBlock
+}
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage | ViewerObjectPlaceholder | ViewerNoteList
 export interface ViewerSourceAnchor { sectionPath: string; textNodeId: string }
 export interface ViewerText {

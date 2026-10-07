@@ -3,7 +3,8 @@
 실제 한/글 저장본에서 편집기가 얼마나 고칠 수 있는지 재는 도구와 첫 측정 결과입니다.
 원본 JSON은 [`editing_coverage_2026-09-29.json`](editing_coverage_2026-09-29.json)(기준선),
 [`editing_coverage_2026-09-29-after.json`](editing_coverage_2026-09-29-after.json)(아래 "개선 후")와
-[`editing_coverage_2026-10-06.json`](editing_coverage_2026-10-06.json)(아래 "2026-10-06 빈 문단", 가장 최근 측정)에 있습니다.
+[`editing_coverage_2026-10-06.json`](editing_coverage_2026-10-06.json)(아래 "2026-10-06 빈 문단")과
+[`editing_coverage_2026-10-07.json`](editing_coverage_2026-10-07.json)(아래 "2026-10-07 개체가 든 문단의 문단 구조", 가장 최근 측정)에 있습니다.
 같은 날 앞선 "셀 모양" 측정은 그 변경을 담은 commit의 같은 파일에 있습니다.
 다시 재려면 `npm run corpus:editing-coverage -- --output <file>`를 실행합니다(약 6초).
 
@@ -18,6 +19,9 @@
   (`applyCharacterStyleCommand`·`applyParagraphStyleCommand`·`applyCellStyleCommand`·
   `planInsertTableRowAfter`+`planInsertTableColumnAfter`)를 dry-run해 거부 여부를 봅니다.
   같은 구조 서명(본문 글자·lineseg 제외)의 문단/셀은 결과를 재사용합니다.
+- **문단 구조**(2026-10-07 추가): 문단의 첫 편집 가능 run caret에서 `paragraphStructure` capability가 열리고
+  `planSplitParagraph`(Enter)도 plan을 만들면 편집 가능입니다. capability는 열었는데 코어가 거부하면
+  `paragraphStructureMismatch`로 따로 셉니다(UI가 Enter를 받고 오류로 끝나는 경우).
 - **표 셀 편집 가능**: 셀에 직접 속한 `hp:t`가 하나 이상이고 모두 textEditable.
 - **글자 가중**: 편집 가능 run의 공백 아닌 글자 / 전체 공백 아닌 글자.
 - 보고서에는 개수와 고정 사유 code만 들어가고 본문·경로는 들어가지 않습니다(probe test가 확인).
@@ -81,6 +85,19 @@
   byte 단위로 같습니다(외부 371 run, text 89.8%, 글자 가중 92.8%, 글자 style 78.2%, 문단 style 90.2%, 표 셀 100%).
 - 자리 표시는 편집 capability에서 건너뛰므로(`isObjectPlaceholder`) 같은 문단 글자 run의 편집 여부가 그대로이고,
   되살린 글은 source anchor가 없어 편집 대상이 아닙니다. 화면 기준으로는 외부 fixture의 글상자 53자가 다시 보입니다.
+
+## 2026-10-07 — 개체가 든 문단의 문단 구조
+
+- **불일치**: 문단 구조 capability(`editing_capability.ts`)는 개체 자리 표시를 빼고 글자만 보아 Enter·경계 병합·여러 문단
+  범위를 열었지만, 편집 코어(`paragraph_patch.ts`)는 run 안에 `hp:t`·`hp:lineBreak`·`hp:tab` 밖의 element(수식·글상자·
+  구역 정의·제어 등)가 있으면 거부했습니다. 새 지표로 재면 고치기 전 외부 26종 33문단·합성 3문단에서 capability가 열고 코어가
+  거부했습니다(`paragraph_patch: 복합 run이 있는 문단은 아직 나눌 수 없습니다.`).
+- **수정**: 판정을 `src/core/editing/paragraph_structure.ts` 하나로 모아 코어와 decoder가 함께 쓰고, decoder가
+  `ViewerParagraph.structureBlock`을 채워 capability가 `PARAGRAPH_HAS_OBJECT`(또는 `PARAGRAPH_COMPLEX_RUN`)로 막습니다.
+  인접 문단이 막힌 쪽 경계 병합과 그 문단을 가로지르는 여러 문단 범위도 같이 막고, 글자 입력·글자/문단 모양은 그대로 엽니다.
+- **수치**: 문단 구조 편집 가능은 외부 270/397·합성 19,580/19,626 그대로이고 불일치가 33·3 → 0입니다. 막힌 문단의 사유는
+  `capability: PARAGRAPH_HAS_OBJECT`(외부 33·합성 3)로 바뀌었습니다. 기존 지표(text·글자 가중·글자/문단 style·표 셀·표 구조)는
+  변경 전 측정과 같습니다.
 
 ## 외부 fixture category별 (기준선)
 

@@ -396,3 +396,48 @@ export function createRoundTripHwpx(
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 글자와 개체가 한 문단에 섞인 합성 문서(직접 작성, 개인정보 없음).
+ * - 본문: 일반 문단 → 글자 + 글자처럼 취급한 수식 → 일반 문단 → 글자 + 글상자(`hp:rect`/`hp:drawText`) → 일반 문단
+ * - 표 셀 하나: 글자 + 수식 문단, 일반 문단
+ * 글자 입력은 되고 문단 나눔·병합·여러 문단 범위는 막혀야 하는 문단(capability `PARAGRAPH_HAS_OBJECT`)을 만든다.
+ */
+export const INLINE_OBJECT_TEXTS = {
+  before: '앞 문단',
+  equationLead: '수식 앞 ',
+  equationTail: ' 수식 뒤',
+  middle: '가운데 문단',
+  textBoxLead: '글상자 앞 ',
+  textBoxInner: '상자 안 글',
+  after: '끝 문단',
+  cellEquationLead: '셀 수식 앞 ',
+  cellPlain: '셀 일반 문단'
+} as const
+
+const inlineEquation = (id: number) =>
+  `<hp:equation id="${id}" zOrder="0" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" version="Equation Version 60" baseLine="61" textColor="#000000" baseUnit="1000" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="3000" widthRelTo="ABSOLUTE" height="1200" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="56" right="56" top="0" bottom="0"/><hp:script>a over b</hp:script></hp:equation>`
+const inlineTextBox =
+  `<hp:rect id="7001" zOrder="1" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="4000" height="1600"/><hp:curSz width="4000" height="1600"/><hp:drawText lastWidth="4000" name="" editable="0"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${INLINE_OBJECT_TEXTS.textBoxInner}</hp:t></hp:run></hp:p></hp:subList><hp:textMargin left="100" right="100" top="100" bottom="100"/></hp:drawText><hp:sz width="4000" widthRelTo="ABSOLUTE" height="1600" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/></hp:rect>`
+const inlineObjectParagraph = (runs: string) =>
+  `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1200"/></hp:linesegarray></hp:p>`
+const inlineObjectSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="20000" height="20000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr></hp:run><hp:run charPrIDRef="0"><hp:t>구역 첫 문단</hp:t></hp:run></hp:p>
+  ${inlineObjectParagraph(`<hp:t>${INLINE_OBJECT_TEXTS.before}</hp:t>`)}
+  ${inlineObjectParagraph(`<hp:t>${INLINE_OBJECT_TEXTS.equationLead}</hp:t>${inlineEquation(7000)}<hp:t>${INLINE_OBJECT_TEXTS.equationTail}</hp:t>`)}
+  ${inlineObjectParagraph(`<hp:t>${INLINE_OBJECT_TEXTS.middle}</hp:t>`)}
+  ${inlineObjectParagraph(`<hp:t>${INLINE_OBJECT_TEXTS.textBoxLead}</hp:t>${inlineTextBox}`)}
+  ${inlineObjectParagraph(`<hp:t>${INLINE_OBJECT_TEXTS.after}</hp:t>`)}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:tbl id="inline-object-table" rowCnt="1" colCnt="1"><hp:sz width="12000" height="3000"/><hp:tr><hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="12000" height="3000"/><hp:cellMargin left="100" right="100" top="100" bottom="100"/><hp:subList vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${INLINE_OBJECT_TEXTS.cellEquationLead}</hp:t>${inlineEquation(7002)}</hp:run></hp:p><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${INLINE_OBJECT_TEXTS.cellPlain}</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>
+</hs:sec>`
+
+export function createInlineObjectHwpx(directory: string, fileName = 'han-flow-inline-objects.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(inlineObjectSection))
+  zip.writeZip(path)
+  return path
+}

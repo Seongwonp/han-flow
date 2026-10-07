@@ -40,10 +40,18 @@ interface ParagraphInputSurfaceProps {
   allowMergePrevious?: boolean
   allowMergeNext?: boolean
   allowParagraphStructure?: boolean
-  onParagraphStructureUnavailable?: () => void
+  /**
+   * 문단 경계 병합이 이 문단이나 인접 문단의 개체·구조 때문에 막혔으면 true. `allowMerge*`와 달리 경계에서 Backspace·Delete를
+   * 받아 {@link onParagraphStructureUnavailable}로 이유를 알린다(편집 코어를 부르지 않는다).
+   */
+  mergePreviousBlocked?: boolean
+  mergeNextBlocked?: boolean
+  onParagraphStructureUnavailable?: (action: ParagraphStructureAction) => void
   /** 브라우저 기본 undo/redo(`historyUndo`/`historyRedo`)를 앱 transaction history로 보낸다. */
   onHistory?: (direction: HistoryDirection) => void
 }
+
+export type ParagraphStructureAction = 'split' | 'mergePrevious' | 'mergeNext'
 
 function textSelection(element: HTMLElement): TextSelection {
   const selection = globalThis.getSelection()
@@ -123,6 +131,8 @@ export function ParagraphInputSurface({
   allowMergePrevious = false,
   allowMergeNext = false,
   allowParagraphStructure = true,
+  mergePreviousBlocked = false,
+  mergeNextBlocked = false,
   onParagraphStructureUnavailable,
   onHistory
 }: ParagraphInputSurfaceProps) {
@@ -142,6 +152,7 @@ export function ParagraphInputSurface({
   const onSplitParagraphRef = useRef(onSplitParagraph)
   const onMergeParagraphRef = useRef(onMergeParagraph)
   const onParagraphStructureUnavailableRef = useRef(onParagraphStructureUnavailable)
+  const mergeBlockedRef = useRef({ previous: mergePreviousBlocked, next: mergeNextBlocked })
   const onHistoryRef = useRef(onHistory)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
@@ -156,6 +167,7 @@ export function ParagraphInputSurface({
   onSplitParagraphRef.current = onSplitParagraph
   onMergeParagraphRef.current = onMergeParagraph
   onParagraphStructureUnavailableRef.current = onParagraphStructureUnavailable
+  mergeBlockedRef.current = { previous: mergePreviousBlocked, next: mergeNextBlocked }
   onHistoryRef.current = onHistory
 
   useLayoutEffect(() => {
@@ -264,9 +276,11 @@ export function ParagraphInputSurface({
       inputType: 'deleteContentBackward' | 'deleteContentForward'
     ): boolean => {
       const direction = inputType === 'deleteContentBackward' ? 'previous' : 'next'
+      const blocked = mergeBlockedRef.current[direction]
       if (
-        (direction === 'previous' && !allowMergePrevious) ||
-        (direction === 'next' && !allowMergeNext)
+        !blocked &&
+        ((direction === 'previous' && !allowMergePrevious) ||
+          (direction === 'next' && !allowMergeNext))
       ) return false
       const nativeSelection = textSelection(element)
       const modeledSelection = getRangeSelectionRef.current?.() ?? {
@@ -283,8 +297,8 @@ export function ParagraphInputSurface({
       ) return false
       const boundary = direction === 'previous' ? 0 : element.textContent?.length ?? 0
       if (modeledSelection.focusOffset !== boundary) return false
-      if (!allowParagraphStructure) {
-        onParagraphStructureUnavailableRef.current?.()
+      if (!allowParagraphStructure || blocked) {
+        onParagraphStructureUnavailableRef.current?.(direction === 'previous' ? 'mergePrevious' : 'mergeNext')
         return true
       }
       onMergeParagraphRef.current?.(
@@ -314,7 +328,7 @@ export function ParagraphInputSurface({
         event.preventDefault()
         if (event.isComposing || controller.isComposing) return
         if (!allowParagraphStructure) {
-          onParagraphStructureUnavailableRef.current?.()
+          onParagraphStructureUnavailableRef.current?.('split')
           return
         }
         const modeledSelection = getRangeSelectionRef.current?.()

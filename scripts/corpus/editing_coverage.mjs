@@ -45,7 +45,8 @@ function loadEditingCore() {
     emptyParagraphAnchorId: loadTypeScriptModule('src/core/editing/empty_paragraph_anchor.ts').emptyParagraphAnchorId,
     ...loadTypeScriptModule('src/core/editing/style_patch.ts'),
     applyCellStyleCommand: loadTypeScriptModule('src/core/editing/cell_style_patch.ts').applyCellStyleCommand,
-    ...loadTypeScriptModule('src/core/editing/table_patch.ts')
+    ...loadTypeScriptModule('src/core/editing/table_patch.ts'),
+    planSplitParagraph: loadTypeScriptModule('src/core/editing/paragraph_patch.ts').planSplitParagraph
   }
   return editingCore
 }
@@ -227,7 +228,7 @@ function anchoredIds(document) {
 }
 
 function emptyRejections() {
-  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, tableCell: {}, tableStructure: {} }
+  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, paragraphStructure: {}, tableCell: {}, tableStructure: {} }
 }
 
 function count(histogram, key, amount = 1) {
@@ -295,6 +296,8 @@ export async function measureEditingCoverage(path) {
     charStyleEditable: 0,
     paragraphs: structure.paragraphs.length,
     paraStyleEditable: 0,
+    paragraphStructureEditable: 0,
+    paragraphStructureMismatch: 0,
     noTextParagraphs: 0,
     noTextParagraphsEditable: 0,
     tableCells: structure.cells.length,
@@ -445,6 +448,21 @@ export async function measureEditingCoverage(path) {
     }
     if (reason) count(rejections.paraStyle, reason)
     else metrics.paraStyleEditable += 1
+
+    // 문단 구조(Enter 분할): capability가 열고 paragraph_patch plan도 만들어지면 편집 가능이다. capability가 열었는데
+    // 코어가 거부하면 UI가 Enter를 받고 오류로 끝나는 불일치(`paragraphStructureMismatch`)로 따로 센다.
+    if (target) {
+      const capabilities = runState.get(target.textNodeId).capabilities
+      const structureReason = !capabilities.paragraphStructure.available
+        ? `capability: ${capabilities.paragraphStructure.reason}`
+        : memoAttempt(runKey('split', target), 'paragraph_patch', () =>
+            core.planSplitParagraph(sourcePackage, collapsed(target.sectionPath, target.textNodeId)))
+      if (!structureReason) metrics.paragraphStructureEditable += 1
+      else {
+        count(rejections.paragraphStructure, structureReason)
+        if (capabilities.paragraphStructure.available) metrics.paragraphStructureMismatch += 1
+      }
+    }
   }
 
   // 3) 표 셀: 셀에 직접 속한 hp:t가 모두 편집 가능해야 셀 글자를 고칠 수 있다. `hp:t`가 없는 빈 셀은 셀 문단이 모두
@@ -508,6 +526,7 @@ export async function measureEditingCoverage(path) {
 
 const SUM_KEYS = [
   'textRuns', 'anchored', 'textEditable', 'charStyleEditable', 'paragraphs', 'paraStyleEditable',
+  'paragraphStructureEditable', 'paragraphStructureMismatch',
   'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
   'characters', 'editableCharacters'
@@ -523,6 +542,7 @@ function withRatios(metrics) {
       textEditable: ratio(metrics.textEditable, metrics.textRuns),
       charStyleEditable: ratio(metrics.charStyleEditable, metrics.textRuns),
       paraStyleEditable: ratio(metrics.paraStyleEditable, metrics.paragraphs),
+      paragraphStructureEditable: ratio(metrics.paragraphStructureEditable, metrics.paragraphs),
       noTextParagraphsEditable: ratio(metrics.noTextParagraphsEditable, metrics.noTextParagraphs),
       tableCellsEditable: ratio(metrics.tableCellsEditable, metrics.tableCells),
       tableStructureEditable: ratio(metrics.tableStructureEditable, metrics.tables),
