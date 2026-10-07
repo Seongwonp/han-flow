@@ -251,6 +251,39 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 - HWPX package index와 decoder worker 생성·취소·오류 전달(section 디코딩은 main thread에서 하지 않음)
 - renderer 준비 완료 후 `webContents.printToPDF` 실행과 파일 저장
 
+### 원본 개체 자리 표시
+
+viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
+그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 위치에 남긴다.
+
+| 원본 element | kind | 화면 |
+| --- | --- | --- |
+| `hp:equation` | `equation` | "수식" 상자 + `hp:script` 원문(고정폭) |
+| `hp:chart`(`hp:switch` 안 차트, OLE 대체본 크기 사용) | `chart` | "차트" 상자 |
+| `hp:ole` | `ole` | "OLE 개체" 상자 + `hp:shapeComment` |
+| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 읽기 전용 문단 |
+| 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자 |
+| `hp:btn`·`hp:radioBtn`·`hp:checkBtn`·`hp:comboBox`·`hp:edit`·`hp:listBox`·`hp:scrollBar` | `form-control` | "양식 컨트롤" 상자 + caption·값 |
+| `hp:video` | `video` | "동영상" 상자 |
+| `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 본문은 구역 끝 `note-list` |
+| `hp:ctrl/hp:fieldBegin type="MEMO"` | `memo` | 줄 안 "메모: …" 표시 |
+| `hp:dutmal` | `ruby` | HTML ruby(본말 + 덧말) |
+| 그 밖의 run 자식 `hp:*`(`hp:compose` 포함) | `unknown` | "알 수 없는 개체" 상자 |
+
+- 크기는 `hp:curSz`(가로·세로가 모두 0보다 크면) → `hp:sz` → `hp:orgSz` 순서의 HWPUNIT이다. 흐름은
+  `hp:pos treatAsChar="1"`이면 `inline`, `textWrap`이 `IN_FRONT_OF_TEXT`·`BEHIND_TEXT`이면 자리를 차지하지 않는
+  `floating`, 그 밖은 `block`이다. 문단 `layoutHeight`는 줄 배치 캐시·표 높이와 함께 inline 최대 높이 + block 높이 합을
+  반영하므로 무측정 첫 pagination도 자리를 잡고, 두 번째 pass는 DOM 실측을 쓴다.
+- `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
+- 글상자·각주·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 자리 표시는
+  `isObjectPlaceholder`로 편집 capability(`editing_capability.ts`)와 renderer `isEditableTextParagraph`에서 건너뛰므로
+  같은 문단 글자 run의 편집 가능 여부는 자리 표시를 넣기 전과 같다(편집 coverage 수치 불변).
+- 누름틀·하이퍼링크 등 본문 run에 글이 그대로 있는 필드는 자리 표시를 만들지 않는다.
+- 구역마다 종류별 개수를 `HWPX_OBJECT_PLACEHOLDER_<KIND>` 진단으로 남기고, corpus 요약은 `placeholders`(종류별 개수)를
+  manifest 기대값과 정확히 비교한다. renderer는 `countObjectPlaceholders`로 안내 배너("이 문서에는 화면에 완전히 표시되지
+  않는 개체가 N개 있습니다 (…)")·상태 막대를 만들고, PDF 내보내기 요청에 개수를 실어 보내면 main이 저장 위치를 묻기 전에
+  `dialog.showMessageBox`(창에 연결)로 [그래도 내보내기]/[취소]를 묻는다. E2E 경로(`HAN_FLOW_PDF_EXPORT_PATH`)는 묻지 않는다.
+
 ### Decoder worker
 
 모든 HWPX section 디코딩은 heap 한도(`maxOldGenerationSizeMb` 1024)와 wall-clock timeout(120초)을

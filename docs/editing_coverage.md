@@ -74,6 +74,14 @@
 - **범위 밖**: 표만 든 문단(합성 8종의 `NO_TEXT_NODE` 8, 외부의 표 옆 `<hp:t/>` 문단 `NOT_LISTED_PARAGRAPH_HAS_TABLE` 19)은
   표와 caret 위치를 함께 다뤄야 해서 이번에 열지 않았습니다.
 
+## 2026-10-07 — 원본 개체 자리 표시(편집 수치 불변)
+
+- decoder가 수식·글상자·도형·각주/미주·메모·덧말 등을 `object-placeholder`로 남기고 글상자·각주·메모 안 글을 읽기 전용
+  문단으로 되살리도록 바꾼 뒤 `npm run corpus:editing-coverage`를 다시 쟀습니다. 합계와 fixture별 결과가 변경 전 측정과
+  byte 단위로 같습니다(외부 371 run, text 89.8%, 글자 가중 92.8%, 글자 style 78.2%, 문단 style 90.2%, 표 셀 100%).
+- 자리 표시는 편집 capability에서 건너뛰므로(`isObjectPlaceholder`) 같은 문단 글자 run의 편집 여부가 그대로이고,
+  되살린 글은 source anchor가 없어 편집 대상이 아닙니다. 화면 기준으로는 외부 fixture의 글상자 53자가 다시 보입니다.
+
 ## 외부 fixture category별 (기준선)
 
 | category | 종 | runs | text 편집 | 글자 가중 | 글자 style | 표 셀 | 표 구조 |
@@ -125,5 +133,7 @@ page-numbering 66.7% → 100%, header-footer 0% → 33.3%, equations·ruby-text�
    조건을 셀 문단으로 넓히면 글자 style 45.0% → 최대 73.9%(+107 run)입니다.
 4. **글상자·각주·필드는 decoder 범위 문제**: 글자 기준 최대 손실(글상자 53자)이지만 decoder·
    layout·anchor 모델을 함께 바꿔야 하므로 tree 모델의 "subList 일반화" 단계에서 다룹니다.
+   (2026-10-07: 글상자 53자·각주/미주 본문·메모 내용은 화면에 **읽기 전용**으로 되살렸습니다. 편집 anchor는 여전히 없으므로
+   이 문서의 편집 수치는 바뀌지 않았고 사유 code도 `DECODER_SKIPS_TEXT_BOX` 등 그대로입니다. 아래 절 참고.)
 5. **(반영됨, 2026-10-06, 표만 든 문단 제외) 빈 run·빈 셀(`NO_TEXT_NODE` 46 문단·17 셀)**: caret을 둘 `hp:t`가 없어 입력 자체가 불가합니다.
    tree 모델에서 "빈 run에 text 삽입" 연산을 1급으로 두어야 양식 문서를 채울 수 있습니다.

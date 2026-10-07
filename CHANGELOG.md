@@ -32,6 +32,8 @@
 - 한/글 저장본 공개 테스트 HWPX 26종(hwpxlib·python-hwpx, Apache-2.0)을 sha256·출처와 함께 external corpus로 반입, 전부 열림
 - 실제 한/글 HWPX용 `source: file` manifest(sha256·출처·라이선스·`personalData: false`)·catalog `external` provenance·`corpus:intake` helper와 확보 계획 추가
 - 편집 가능 비율 측정 `corpus:editing-coverage`(run·문단·표 셀·표 구조별 capability와 patch dry-run, 거부 사유 histogram)와 기준선 추가: 외부 26종 text 편집 79.5%·글자 가중 89.3%(빈 `<hp:t/>`·표 셀 text 해제 후 89.8%·92.8%)
+- HWPX decoder가 그리지 못해 조용히 버리던 수식·차트·OLE·글상자·도형·양식 컨트롤·동영상·각주/미주·메모·덧말을 선언 크기의 읽기 전용 자리 표시(`object-placeholder`, 구역 끝 각주·미주 목록)로 남기고 수식 script·글상자 글(외부 fixture 53자)·각주/미주 본문·메모 내용을 되살림, 구역별 종류별 진단과 corpus `placeholders` 기대값 추가(편집 coverage 수치 불변)
+- 자리 표시를 화면·표 셀·PDF에서 같은 테두리 상자와 한국어 이름표로 그리고, 문서 안내 배너·상태 막대 개수 표시와 PDF 내보내기 전 [그래도 내보내기]/[취소] 확인(E2E 경로 제외)을 추가, 패키지 앱 검증에 `placeholderCounts`와 개체 소실 회귀 검사·수식/글상자 matrix 항목 추가
 
 ### Sprint 5 Windows 배포 후보
 
