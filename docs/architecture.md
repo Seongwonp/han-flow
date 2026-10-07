@@ -432,6 +432,17 @@ Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 각 page MediaBo
 글자 수가 같아야 한다. HWP는 화면의 별도 text layer와 인쇄 SVG의 추출 경로가 다르므로 전체
 98%, 각 page 96% 이상을 요구한다. 첫·중간·끝 page와 모든 가로 page를 PNG로 다시 만든다.
 
+HWP 페이지 SVG는 `<img>`로 그리므로 Chromium PDF는 그 안의 글자를 원문 cluster(ActualText) 없이
+기록하고, PDF ToUnicode를 글꼴 cmap에서만 만든다. Noto Sans/Serif CJK(함초롬바탕·돋움 대체 글꼴,
+Linux CI의 `fonts-noto-cjk`)는 PDF에 Type 3 글꼴로 들어가며, `locl` GSUB가 고른 언어별 대체 glyph는
+cmap에 없어 ToUnicode가 U+0000이 된다. 언어 선언이 없거나 영어 UI locale이면 ASCII 숫자가,
+한국어이면 괄호·마침표·빗금이 화면과 PDF에 보이면서도 PDF 검색·복사·추출에서 빠진다.
+`safeSvg`는 SVG root에 `font-feature-settings: "locl" 0`과 기본 `xml:lang="ko"`를 넣어 cmap 기본
+glyph만 쓰게 한다. rhwp가 글자마다 `textLength`로 폭을 고정하므로 배치는 바뀌지 않는다. 공개 HWP
+fixture는 이 경로의 숫자·문장 부호 줄을 담고 `verify:hwp-matrix`가 manifest의
+`requiredPdfText`가 PDF 텍스트에 있는지 확인한다. rhwp가 가운뎃점(U+00B7)을 `<circle>`로 그리는
+경우처럼 SVG에 글자로 남지 않는 문자는 여전히 추출되지 않으며 보존율 허용 범위에 포함된다.
+
 visual state는 고정 지연 직후 바로 읽지 않는다. background decode가 끝나고 DOM measurement가
 완료된 뒤 전체·mount page signature가 250ms 간격으로 3회 같을 때만 상태를 확정한다. 대형
 문서의 partial model → full model → measured pagination 전환 중간값을 최종 결과로 오인하지

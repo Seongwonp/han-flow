@@ -10,6 +10,7 @@ import {
   HwpWorkerOpenResult,
   HwpWorkerOperation
 } from './hwp_worker_protocol'
+import { applyExtractableTextDefaults } from './svg_text_extraction'
 
 const PAGE_CACHE_LIMIT = 20
 const TEXT_LAYOUT_CACHE_LIMIT = 20
@@ -172,6 +173,7 @@ function safeSvg(svg: string): string {
       throw new Error('HWP 페이지 SVG 스타일에서 외부 리소스를 발견했습니다.')
     }
   }
+  applyExtractableTextDefaults(root)
   return new XMLSerializer().serializeToString(root)
 }
 

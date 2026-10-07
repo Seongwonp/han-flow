@@ -264,10 +264,11 @@ npm run probe:hwp -- /path/to/document.hwp --pdf /path/to/reference.pdf
 ## 공개 HWP 회귀 fixture
 
 `tests/fixtures/public/synthetic-layout.hwp`는 외부 문서나 blank template을 복사하지 않고
-`HwpDocument.createEmpty()`에서 생성하고 FileHeader를 5.0.3.2로 기록한 6,656 byte의 고정
-HWP다. 자체 문자열, 플랫폼 독립 고정 PNG, 3×3 표와 두 쪽 반복 머리말을 포함하며 전체 SHA-256
-`2400fcee7aa03235870701aeea044d084a652bdfb60efa52264f1774d8725317`을 manifest에 기록한다.
-Windows 독립 두 생성 결과는 byte 단위로 같았고 export 자기 재로드 전후 모두 2쪽이었다.
+`HwpDocument.createEmpty()`에서 생성하고 FileHeader를 5.0.3.2로 기록한 7,168 byte의 고정
+HWP다. 자체 문자열, 플랫폼 독립 고정 PNG, 3×3 표와 두 쪽 반복 머리말, 함초롬바탕 숫자·문장 부호
+줄을 포함하며 전체 SHA-256
+`7e40649ecf6d26f4ab6b698018b06ae6c599400d49856e999352c7481aacb458`을 manifest에 기록한다.
+`verify:hwp-matrix`의 재생성 결과와 byte 단위로 같고 export 자기 재로드 전후 모두 2쪽이다.
 
 `npm run verify:hwp-matrix`의 독립 관찰 결과는 다음과 같다.
 
@@ -276,7 +277,7 @@ Windows 독립 두 생성 결과는 byte 단위로 같았고 export 자기 재�
 | kordoc semantic oracle | section 1, 표 1, 셀 9, 이미지/resource 1/1 |
 | rhwp SVG | 2쪽, 이미지 요소 1, 위험 요소·속성 0 |
 | production 앱 | 2쪽, overflow 0, 반복 머리말 2쪽·2회 검색 |
-| production PDF | 2쪽 A4, 텍스트 보존율 98.6% |
+| production PDF | 2쪽 A4, 텍스트 보존율 98.8%, `requiredPdfText` 5개 추출 |
 | 지원 불가 입력 | 암호·배포용·DRM·비지원 version·손상 오류 코드 5종 |
 
 private AIDA HWP 재검증에서는 인쇄 직전 마지막 SVG image decode가 끝나기 전에

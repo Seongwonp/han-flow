@@ -6,8 +6,8 @@
   "license": "Apache-2.0",
   "containsPersonalData": false,
   "hwpVersion": "5.0.3.2",
-  "sha256": "2400fcee7aa03235870701aeea044d084a652bdfb60efa52264f1774d8725317",
-  "sizeBytes": 6656,
+  "sha256": "7e40649ecf6d26f4ab6b698018b06ae6c599400d49856e999352c7481aacb458",
+  "sizeBytes": 7168,
   "expected": {
     "sections": 1,
     "pages": 2,
@@ -17,6 +17,13 @@
     "resources": 1,
     "headerSearchPages": 2,
     "headerSearchOccurrences": 2,
-    "minimumPdfTextPreservation": 0.98
+    "minimumPdfTextPreservation": 0.98,
+    "requiredPdfText": [
+      "3.5cm×4.5cm",
+      "(1급,2급)",
+      "2016.12.30.",
+      "120g/㎡",
+      "[0]"
+    ]
   }
 }

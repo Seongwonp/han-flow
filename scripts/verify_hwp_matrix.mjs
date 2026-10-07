@@ -156,8 +156,25 @@ try {
       resolve(root, 'scripts/verify_pdf.mjs'),
       fixture,
       appBinary
-    ], { prefix: 'HAN_FLOW_PDF_VERIFY ', timeoutMs: 120_000 })
+    ], {
+      env: { HAN_FLOW_KEEP_VERIFY_OUTPUT: '1' },
+      prefix: 'HAN_FLOW_PDF_VERIFY ',
+      timeoutMs: 120_000
+    })
   ])
+  // 보존율은 글자 수만 비교하므로 특정 글자가 빠져도 다른 글자 수에 묻힐 수 있다. 함초롬바탕 대체
+  // 글꼴(Noto Serif CJK KR)의 숫자·문장 부호처럼 화면에는 보이지만 PDF에서 추출되지 않던 문자열을
+  // manifest에 고정하고, 공백을 뺀 PDF 전체 텍스트에 그대로 있는지 확인한다.
+  let pdfText = ''
+  if (pdf.artifacts) {
+    try {
+      pdfText = (await run('pdftotext', [join(pdf.artifacts, 'document.pdf'), '-'])).replace(/\s+/gu, '')
+    } finally {
+      await rm(pdf.artifacts, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    }
+  }
+  const missingPdfText = (manifest.expected.requiredPdfText ?? [])
+    .filter((text) => !pdfText.includes(text.replace(/\s+/gu, '')))
   const unsupportedResults = []
   for (const fixtureCase of unsupportedFixtures) {
     unsupportedResults.push(await run(process.execPath, [
@@ -217,6 +234,11 @@ try {
     'PDF 텍스트 보존율 미달',
     failures
   )
+  check(
+    missingPdfText.length === 0,
+    `PDF에서 추출되지 않는 문자열: ${missingPdfText.join(', ')}`,
+    failures
+  )
   unsupportedResults.forEach((result, index) => {
     const fixtureCase = unsupportedFixtures[index]
     check(
@@ -239,6 +261,7 @@ try {
     repeatedHeaderOccurrences: app.search?.occurrences ?? 0,
     pdfPages: pdf.pdfPages,
     pdfTextPreservation: pdf.textPreservation,
+    missingPdfText,
     unsupportedCases: unsupportedResults.map((result) => result.errorCode),
     failures
   }

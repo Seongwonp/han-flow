@@ -114,6 +114,20 @@ window.addEventListener('DOMContentLoaded', async () => {
       )
     )
 
+    // 실제 HWP의 기본 글꼴인 함초롬바탕을 지정한다. createEmpty 문서는 글자 모양을 공유하므로 이
+    // 서식은 문서 전체에 적용된다. 함초롬바탕이 없는 Linux에서는 rhwp fallback 목록의 Noto Serif
+    // CJK KR로 그려지므로, 이 줄의 숫자·괄호·마침표·빗금(locl 대체 glyph 후보)이 PDF에서 추출되는지
+    // verify:hwp-matrix가 manifest의 requiredPdfText로 확인한다.
+    expectOk('문단 6', documentModel.insertParagraph(0, 5))
+    const serifDigits = '규격 3.5cm×4.5cm (1급, 2급) 2016. 12. 30. 120g/㎡ [0]'
+    expectOk('바탕 숫자 문장', documentModel.insertText(0, 6, 0, serifDigits))
+    const serifFontId = documentModel.findOrCreateFontId('함초롬바탕')
+    if (serifFontId < 0) throw new Error('함초롬바탕 글꼴 ID를 만들 수 없습니다.')
+    expectOk(
+      '바탕 숫자 글꼴',
+      documentModel.applyCharFormat(0, 6, 0, serifDigits.length, JSON.stringify({ fontId: serifFontId }))
+    )
+
     const verify = JSON.parse(documentModel.exportHwpVerify())
     const bytes = documentModel.exportHwp()
     ipcRenderer.send(RESULT_CHANNEL, {

@@ -8,6 +8,9 @@
 
 `public/synthetic-layout.hwp`는 Han-Flow가 직접 작성한 문자열과 고정 PNG만 넣은 2쪽 합성
 문서다. 3×3 표, PNG resource 1개, 두 페이지에 반복되는 머리말과 강제 쪽 나누기를 포함한다.
+기본 글꼴은 함초롬바탕이고 숫자·괄호·마침표·빗금이 섞인 한 줄(`3.5cm×4.5cm (1급, 2급) …`)을
+넣었다. 함초롬바탕이 없는 Linux에서는 Noto Serif CJK KR로 그려지며, manifest의
+`requiredPdfText` 문자열이 PDF 텍스트에 그대로 남는지 `verify:hwp-matrix`가 확인한다.
 개인정보와 외부 문서 원문은 없다.
 
 - 생성: `npm run fixture:hwp`
