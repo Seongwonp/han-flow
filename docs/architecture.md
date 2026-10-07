@@ -189,8 +189,13 @@ paragraph style의 `heading`은 header의 bullet 문자 또는 numbering `paraHe
 결합한다. decoder가 동일 문단 목록 안에서 번호를 증가시켜 `ViewerParagraph.marker`를 만들고,
 renderer는 marker를 본문 앞에 읽기 전용 텍스트로 표시한다. 현재 문자 bullet과 DIGIT 번호를
 지원하며 다른 번호 체계는 원문 format 정보를 모델에 보존한 뒤 후속 formatter에서 확장한다.
-문단 margin과 line spacing은 직접 자식뿐 아니라 `hp:switch`의 지원 가능한 `hp:case`와
-fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규화한다.
+문단 margin과 line spacing은 직접 자식뿐 아니라 paraPr 안 모든 `hp:switch`의 `hp:case`와
+fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규화한다. 각 `hh:margin`의 단위는
+`src/core/document/paragraph_margin_units.ts`가 그 node의 조상 경로만으로 정한다: HwpUnitChar namespace
+`hp:case` 안이면 실제 HWPUNIT, `hp:default` 안이나 직접 자식이면 2배 값, 다른 namespace `hp:case` 안이면 단위를
+모르는 node다. viewer는 HwpUnitChar case를 먼저, 없으면 문서 순서상 첫 2배 node를 읽는다. 문단 모양 command는
+같은 판정으로 case(×1)·default(×2)·직접(×2) representation을 모두 고치고 줄 간격(PERCENT)은 모든 representation을
+같은 값으로 맞추며, 단위를 모르는 representation에 여백·줄 간격이 있으면 원본을 바꾸지 않고 거부한다.
 
 문단 모양 command는 run 내부가 아니라 `paraPrIDRef`만 교체하므로 `hp:t` 안의 `hp:tab`을
 수정하지 않는다. 원본 paraPr를 복제할 때 `tabPrIDRef`와 `hh:heading`의 raw 구조를 불변식으로

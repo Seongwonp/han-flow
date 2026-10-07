@@ -8,8 +8,16 @@ import {
   locateHwpxTextElement
 } from './text_patch'
 import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import {
+  hwpUnitToStoredScale,
+  ParagraphMetricAncestor,
+  paragraphMetricUnit,
+  ParagraphMetricUnit,
+  requiredNamespaceOf
+} from '../document/paragraph_margin_units'
 import { packageEntryTree, PackageTrees, putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
+  decodeXmlEntities,
   elementCloseTag,
   elementOpenTag,
   escapeXmlAttribute,
@@ -19,6 +27,7 @@ import {
   getSourceAttribute,
   nearestSourceAncestor,
   parseSourceFragment,
+  parseTagAttributes,
   parseSourceTree,
   rawTextOffset,
   readTagAttribute,
@@ -395,30 +404,56 @@ function setHwpValueElement(draft: DefinitionDraft, margin: SourceElement, name:
   ))
 }
 
+/** paraPr 안 `name` node와 각 node의 단위(paraPr 아래 조상 경로 기준, `paragraph_margin_units.ts`). */
+function paragraphMetricElements(
+  draft: DefinitionDraft,
+  name: string
+): { element: SourceElement; unit: ParagraphMetricUnit }[] {
+  return findDescendantSourceElements(draft.element, name).map((element) => {
+    const ancestors: ParagraphMetricAncestor[] = []
+    for (let parent = element.parent; parent && parent !== draft.element; parent = parent.parent) {
+      const attributes = Object.fromEntries(
+        parseTagAttributes(elementOpenTag(draft.tree, parent)).map((attribute) => [attribute.name, decodeXmlEntities(attribute.rawValue)])
+      )
+      ancestors.unshift({ name: parent.name, requiredNamespace: requiredNamespaceOf(attributes) })
+    }
+    return { element, unit: paragraphMetricUnit(ancestors) }
+  })
+}
+
 function setParagraphMetrics(
   draft: DefinitionDraft,
   options: Pick<ApplyParagraphStyleCommand, 'lineSpacing' | 'indent' | 'marginBefore' | 'marginAfter'>
 ): void {
   if (options.indent !== undefined || options.marginBefore !== undefined || options.marginAfter !== undefined) {
-    const existing = findDescendantSourceElements(draft.element, 'hh:margin')
-    const margins = existing.length
-      ? existing
-      : [insertOrderedChild(draft, paragraphChildOrder, 'margin', DEFAULT_MARGIN)]
-    for (const margin of margins) {
-      // command 값은 실제 HWPUNIT. HwpUnitChar `hp:case` 밖(직접 `hh:margin`·`hp:default`)은 2배로 적는다.
-      const scale = margin.parent?.name === 'hp:case' ? 1 : 2
+    const existing = paragraphMetricElements(draft, 'hh:margin')
+    if (existing.some((margin) => margin.unit === 'unknown')) {
+      // 단위를 모르는 representation을 그대로 두면 그 namespace를 아는 reader가 옛 값을 읽는다.
+      throw new HwpxEditConflictError('알 수 없는 형식의 문단 여백 정의가 있어 문단 여백·들여쓰기 변경을 중단했습니다.')
+    }
+    if (!existing.length) insertOrderedChild(draft, paragraphChildOrder, 'margin', DEFAULT_MARGIN)
+    // 새 `hh:margin`도 들어간 자리(직접 또는 다음 형제가 있는 switch branch)의 조상 경로로 단위를 정한다.
+    const margins = existing.length ? existing : paragraphMetricElements(draft, 'hh:margin')
+    for (const { element: margin, unit } of margins) {
+      // command 값은 실제 HWPUNIT. HwpUnitChar `hp:case`는 그대로, 그 밖(직접 `hh:margin`·`hp:default`)은 2배로 적는다.
+      const scale = hwpUnitToStoredScale(unit) ?? 1
       if (options.indent !== undefined) setHwpValueElement(draft, margin, 'intent', options.indent * scale)
       if (options.marginBefore !== undefined) setHwpValueElement(draft, margin, 'prev', options.marginBefore * scale)
       if (options.marginAfter !== undefined) setHwpValueElement(draft, margin, 'next', options.marginAfter * scale)
     }
   }
   if (options.lineSpacing !== undefined) {
-    const existing = findFirstSourceElement(draft.element, 'hh:lineSpacing')
-    if (existing) {
-      setSourceAttribute(draft.tree, existing, 'type', 'PERCENT')
-      setSourceAttribute(draft.tree, existing, 'value', String(options.lineSpacing))
-      setSourceAttribute(draft.tree, existing, 'unit', 'HWPUNIT')
-    } else {
+    // 줄 간격은 PERCENT로 적으므로 단위 배율이 없다. case·default·직접 representation을 모두 같은 값으로 맞춘다.
+    const existing = paragraphMetricElements(draft, 'hh:lineSpacing')
+    if (existing.some((lineSpacing) => lineSpacing.unit === 'unknown')) {
+      throw new HwpxEditConflictError('알 수 없는 형식의 줄 간격 정의가 있어 줄 간격 변경을 중단했습니다.')
+    }
+    for (const { element } of existing) {
+      setSourceAttribute(draft.tree, element, 'type', 'PERCENT')
+      setSourceAttribute(draft.tree, element, 'value', String(options.lineSpacing))
+      setSourceAttribute(draft.tree, element, 'unit', 'HWPUNIT')
+    }
+    if (!existing.length) {
       insertOrderedChild(
         draft,
         paragraphChildOrder,

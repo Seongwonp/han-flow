@@ -34,6 +34,7 @@
 - 편집 가능 비율 측정 `corpus:editing-coverage`(run·문단·표 셀·표 구조별 capability와 patch dry-run, 거부 사유 histogram)와 기준선 추가: 외부 26종 text 편집 79.5%·글자 가중 89.3%(빈 `<hp:t/>`·표 셀 text 해제 후 89.8%·92.8%)
 - HWPX decoder가 그리지 못해 조용히 버리던 수식·차트·OLE·글상자·도형·양식 컨트롤·동영상·각주/미주·메모·덧말을 선언 크기의 읽기 전용 자리 표시(`object-placeholder`, 구역 끝 각주·미주 목록)로 남기고 수식 script·글상자 글(외부 fixture 53자)·각주/미주 본문·메모 내용을 되살림, 구역별 종류별 진단과 corpus `placeholders` 기대값 추가(편집 coverage 수치 불변)
 - 자리 표시를 화면·표 셀·PDF에서 같은 테두리 상자와 한국어 이름표로 그리고, 문서 안내 배너·상태 막대 개수 표시와 PDF 내보내기 전 [그래도 내보내기]/[취소] 확인(E2E 경로 제외)을 추가, 패키지 앱 검증에 `placeholderCounts`와 개체 소실 회귀 검사·수식/글상자 matrix 항목 추가
+- 문단 여백 단위(HwpUnitChar `hp:case` ×1, `hp:default`·직접 ×2)를 읽기·쓰기 공통 판정 모듈로 옮겨 node별 조상 경로로 정하고, 여러 `hp:switch`·모르는 namespace case·중첩 구조에서 읽기 값과 저장 값이 어긋나던 문제와 목록 heading switch 뒤 여백을 0으로 읽던 문제 수정(편집은 모든 representation을 함께 갱신)
 
 ### Sprint 5 Windows 배포 후보
 
