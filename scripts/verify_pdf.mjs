@@ -3,11 +3,32 @@ import { tmpdir } from 'node:os'
 import { basename, extname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
-import { comparableCharacterCount } from './pdf_text_count.mjs'
+import { existsSync } from 'node:fs'
+import { pdfTextReport, textCensus } from './pdf_text_count.mjs'
 
 const fixture = process.argv[2]
 const appBinary = process.argv[3] ? resolve(process.argv[3]) : defaultAppBinary()
 const keepArtifacts = process.env.HAN_FLOW_KEEP_VERIFY_OUTPUT === '1'
+
+/**
+ * PDF 텍스트에 그대로 있어야 하는 문자열: 환경 변수 `HAN_FLOW_PDF_REQUIRED_TEXT`(JSON 문자열 배열)와 fixture 옆
+ * manifest(`<fixture>.json`의 `expected.requiredPdfText`, 예: 공개 HWP fixture)를 합친다.
+ */
+async function requiredPdfTexts() {
+  const required = []
+  if (process.env.HAN_FLOW_PDF_REQUIRED_TEXT) {
+    const parsed = JSON.parse(process.env.HAN_FLOW_PDF_REQUIRED_TEXT)
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+      throw new Error('HAN_FLOW_PDF_REQUIRED_TEXT는 문자열 JSON 배열이어야 합니다.')
+    }
+    required.push(...parsed)
+  }
+  const manifestPath = `${resolve(fixture)}.json`
+  if (existsSync(manifestPath)) {
+    required.push(...(JSON.parse(await readFile(manifestPath, 'utf8')).expected?.requiredPdfText ?? []))
+  }
+  return [...new Set(required)]
+}
 
 if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
   console.error('사용법: npm run verify:pdf -- <fixture.hwp|fixture.hwpx> [Han-Flow 실행 파일]')
@@ -58,6 +79,7 @@ try {
   const documentStem = basename(fixture, extname(fixture))
   const suggestedPdfName = state.suggestedPdfPath ? basename(state.suggestedPdfPath) : undefined
   const pdfTextCounts = []
+  const pdfCensus = []
   const pdfPageSizes = []
   for (let page = 1; page <= pdfPages; page += 1) {
     const { standardOutput: pageInfo } = await run('pdfinfo', ['-f', String(page), '-l', String(page), pdfPath])
@@ -65,8 +87,18 @@ try {
       ?? pageInfo.match(/^Page size:\s+([\d.]+)\s+x\s+([\d.]+)\s+pts/m)
     pdfPageSizes.push(match ? { widthPoints: Number(match[1]), heightPoints: Number(match[2]) } : null)
     const { standardOutput } = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', pdfPath, '-'])
-    pdfTextCounts.push(comparableCharacterCount(standardOutput))
+    const census = textCensus(standardOutput)
+    pdfCensus.push(census)
+    pdfTextCounts.push(census.comparable)
   }
+  const { standardOutput: pdfText } = await run('pdftotext', [pdfPath, '-'])
+  // 화면 census는 mount된 페이지만 있다(`page`는 1부터 센 번호). PDF census는 모든 페이지다.
+  const census = pdfTextReport({
+    screenCensus: state.pageTextCensus ?? [],
+    pdfCensus,
+    pdfText,
+    requiredText: await requiredPdfTexts()
+  })
 
   const landscapePages = (state.pageSizes ?? [])
     .map((size, index) => size.width > size.height ? index + 1 : 0)
@@ -120,7 +152,9 @@ try {
       : undefined,
     compareAllPages && state.documentFormat === 'hwp' && hwpLowTextPages.length
       ? `HWP PDF 페이지별 텍스트 보존율 부족: ${hwpLowTextPages.join(', ')}페이지`
-      : undefined
+      : undefined,
+    // 사설 영역 글자는 비교 글자 수에서 빼지만 숫자는 그렇지 않다. 비교 글자 수가 같아도 숫자·필수 문자열이 빠지면 실패다.
+    ...census.failures
   ].filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -139,6 +173,9 @@ try {
     textPreservation: state.documentFormat === 'hwp' ? Number(hwpTextPreservation.toFixed(4)) : undefined,
     screenPageTextCounts: state.pageTextCounts,
     pageTextCounts: pdfTextCounts,
+    // 통과 규칙과 별도로 항상 남기는 census. 화면 값은 mount된 페이지 번호(1부터)별, PDF 값은 페이지 순서 배열이다.
+    // raw는 공백 외 전체 code point, privateUse는 비교에서 제외한 사설 영역 글자, digits는 ASCII 숫자다.
+    ...census.fields,
     renderedPages: renderPages,
     failures,
     artifacts: keepArtifacts ? directory : undefined

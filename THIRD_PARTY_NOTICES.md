@@ -18,6 +18,15 @@ V4 공개 배포 전 production dependency 전체 inventory를 별도로 생성�
 MIT 라이선스 원문은 macOS 앱의
 `Contents/Resources/licenses/rhwp-MIT.txt`에 포함한다.
 
+### rhwp 한컴 PUA 표시 대체 표
+
+- 역할: HWPX 화면에서 한컴 전용 사설 영역 기호(예: U+F03DA)를 표준 Unicode 글자로 표시
+  (`src/core/document/hancom_pua_display.ts`, 원문·저장 bytes는 바꾸지 않음)
+- 출처: rhwp `src/renderer/hancom_pua.rs`의 `VERIFIED_HANCOM_PUA_DISPLAY`
+  (https://github.com/edwardkim/rhwp, commit `1a76570e833917d15817415a53c09ad61ab3203f`, v0.8.7)
+- 저작권: Copyright (c) 2025–2026 Edward Kim
+- 라이선스: MIT(위 `@rhwp/core`와 같은 원문 `rhwp-MIT.txt`)
+
 ## 개발 전용 구성요소
 
 ### `kordoc` 4.2.7

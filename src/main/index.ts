@@ -818,6 +818,15 @@ function captureVisualState(window: BrowserWindow): void {
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
+      // PDF 비교 census(scripts/pdf_text_count.mjs textCensus와 같은 규칙): 비교 글자·공백 외 전체·사설 영역·ASCII 숫자.
+      pageTextCensus: Array.from(document.querySelectorAll('.viewer-page')).map((page) => {
+        const number = Number(page.dataset.pageIndex) + 1
+        if (page.dataset.textRaw !== undefined) {
+          return { page: number, comparable: Number(page.dataset.textCharacters || 0), raw: Number(page.dataset.textRaw), privateUse: Number(page.dataset.textPrivateUse || 0), digits: Number(page.dataset.textDigits || 0) }
+        }
+        const text = page.innerText
+        return { page: number, comparable: (text.match(/[^\\s\\p{Co}]/gu) || []).length, raw: (text.match(/\\S/gu) || []).length, privateUse: (text.match(/\\p{Co}/gu) || []).length, digits: (text.match(/[0-9]/g) || []).length }
+      }),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       // 원본처럼 그리지 못한 개체 자리 표시(종류별)와, 그 안에서 되살린 글(글상자 글·수식 script·각주 본문 등) 글자 수.
       placeholderCounts: Array.from(document.querySelectorAll('.viewer-page [data-object-kind]')).reduce((counts, element) => {

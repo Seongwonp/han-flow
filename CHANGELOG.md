@@ -36,6 +36,7 @@
 - 자리 표시를 화면·표 셀·PDF에서 같은 테두리 상자와 한국어 이름표로 그리고, 문서 안내 배너·상태 막대 개수 표시와 PDF 내보내기 전 [그래도 내보내기]/[취소] 확인(E2E 경로 제외)을 추가, 패키지 앱 검증에 `placeholderCounts`와 개체 소실 회귀 검사·수식/글상자 matrix 항목 추가
 - 문단 여백 단위(HwpUnitChar `hp:case` ×1, `hp:default`·직접 ×2)를 읽기·쓰기 공통 판정 모듈로 옮겨 node별 조상 경로로 정하고, 여러 `hp:switch`·모르는 namespace case·중첩 구조에서 읽기 값과 저장 값이 어긋나던 문제와 목록 heading switch 뒤 여백을 0으로 읽던 문제 수정(편집은 모든 representation을 함께 갱신)
 - 문단 구조 편집 판정을 편집 코어와 capability가 함께 쓰는 규칙으로 모아 수식·글상자 등 개체가 든 문단에서 Enter·경계 병합·여러 문단 범위를 `PARAGRAPH_HAS_OBJECT` 이유와 함께 막고(글자 입력은 유지) UI가 열고 코어가 거부하던 외부 33·합성 3문단 불일치를 0으로, `corpus:editing-coverage`에 문단 구조 지표 추가
+- `verify:pdf` 결과에 페이지별 공백 외 전체 글자·제외한 사설 영역 글자·ASCII 숫자 수(화면/PDF)를 항상 남기고 숫자나 `requiredPdfText`가 PDF에서 빠지면 실패, HWPX 화면은 rhwp 검증 한컴 PUA 표(MIT)로 U+F03DA 같은 기호를 표준 글자로 표시(원문·편집·저장은 원래 글자 유지)
 
 ### Sprint 5 Windows 배포 후보
 

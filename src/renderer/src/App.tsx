@@ -50,6 +50,7 @@ import { EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { countObjectPlaceholders, totalObjectPlaceholders } from '../../core/document/object_placeholder'
+import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
@@ -154,7 +155,8 @@ function Content({
   editing?: ParagraphEditingProps
 }) {
   if (item.type === 'text') {
-    return <span style={textCss(item, document)}>{item.text}</span>
+    // 화면 표시만 검증된 한컴 PUA 기호를 표준 글자로 바꾼다(편집 입력 surface와 원문은 그대로).
+    return <span style={textCss(item, document)}>{hancomPuaDisplayText(item.text)}</span>
   }
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
@@ -168,9 +170,9 @@ function Content({
 
 /** 문단들의 글자만 이어 붙인다(줄 안 메모·필드 표시용). */
 function paragraphsPlainText(paragraphs: readonly ViewerParagraph[]): string {
-  return paragraphs.map((paragraph) => paragraph.content.map((item) =>
+  return hancomPuaDisplayText(paragraphs.map((paragraph) => paragraph.content.map((item) =>
     item.type === 'text' ? item.text : item.type === 'object-placeholder' ? item.fallbackText ?? '' : ''
-  ).join('')).join(' ').trim()
+  ).join('')).join(' ').trim())
 }
 
 /**
@@ -451,7 +453,7 @@ export function ParagraphView({
     data-measure-block-id={measurable ? paragraph.id : undefined}
     data-paragraph-structure-block={activeEditing && structureBlocked ? structureGate.split : undefined}
     style={css}
-  >{paragraph.marker && <span className="viewer-paragraph-marker">{paragraph.marker} </span>}{editableTexts && activeEditing
+  >{paragraph.marker && <span className="viewer-paragraph-marker">{hancomPuaDisplayText(paragraph.marker)} </span>}{editableTexts && activeEditing
     ? paragraph.content.map((item, contentIndex) => {
       if (isObjectPlaceholder(item)) {
         return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} />
@@ -726,6 +728,7 @@ function FixedPageView({
     data-page-index={page.index}
     data-page-ready={ready}
     data-text-characters={textLayout?.nonWhitespaceCharacters ?? 0}
+    {...fixedPageTextCensus(textLayout?.text)}
     role="document"
     aria-label={`${page.index + 1}페이지`}
     style={{ width: page.width, height: page.height }}
@@ -744,6 +747,19 @@ function FixedPageView({
     />}
     {textLayout && <FixedPageTextLayer layout={textLayout} searchQuery={searchQuery} />}
   </article>
+}
+
+/**
+ * PDF 비교용 페이지 글자 census(`scripts/pdf_text_count.mjs`의 `textCensus`와 같은 규칙, code point 단위):
+ * 공백 외 전체 글자·사설 영역 글자·ASCII 숫자. E2E visual state가 화면 쪽 값으로 읽는다.
+ */
+function fixedPageTextCensus(text: string | undefined): Record<string, number> {
+  const normalized = (text ?? '').normalize('NFC')
+  return {
+    'data-text-raw': (normalized.match(/\S/gu) ?? []).length,
+    'data-text-private-use': (normalized.match(/\p{Co}/gu) ?? []).length,
+    'data-text-digits': (normalized.match(/[0-9]/g) ?? []).length
+  }
 }
 
 function highlightedText(text: string, query: string): Array<{ text: string; hit: boolean }> {

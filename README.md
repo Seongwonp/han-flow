@@ -322,8 +322,17 @@ npm run release:audit
 ```
 
 `verify:pdf`는 화면과 PDF의 페이지별 글자 수를 code point 단위로 비교하고, 글꼴에 glyph가 없어 PDF에서
-추출되지 않는 사설 영역 글자(한컴 문자표 글머리 등)는 양쪽에서 뺍니다. PDF 제목과 기본 파일 이름이 문서 이름인지도
-확인하며, `verify:matrix`는 표지·목차·본문 서식 fixture(`report-toc`)에 이 PDF 검증을 함께 실행합니다.
+추출되지 않는 사설 영역 글자(한컴 문자표 글머리 등)는 양쪽에서 뺍니다. 그 제외가 다른 손실을 가리지 않도록 결과에는
+통과 여부와 관계없이 페이지별 공백 외 전체 글자 수(`screenPageRawCounts`·`pdfPageRawCounts`), 제외한 사설 영역 글자 수
+(`screenPagePrivateUseCounts`·`pdfPagePrivateUseCounts`·`excludedPrivateUse`), ASCII 숫자 수(`screenPageDigitCounts`·
+`pdfPageDigitCounts`·`digits`)를 함께 남기고, 화면보다 PDF에서 숫자가 적은 페이지가 있거나 필수 문자열(fixture 옆
+manifest의 `requiredPdfText` 또는 `HAN_FLOW_PDF_REQUIRED_TEXT` JSON 배열)이 PDF 텍스트에 없으면 실패합니다. PDF 제목과
+기본 파일 이름이 문서 이름인지도 확인하며, `verify:matrix`는 표지·목차·본문 서식 fixture(`report-toc`)에 이 PDF 검증을
+함께 실행합니다.
+
+HWPX 화면은 rhwp가 한/글 PDF와 대조해 의미를 확인한 한컴 PUA 기호 표(MIT, `THIRD_PARTY_NOTICES.md`)에 있는 글자만
+표준 Unicode로 바꿔 그립니다(예: U+F03DA → □). 바꾼 글자는 PDF에서도 추출됩니다. 원문·편집 입력 칸·저장 bytes는 원래
+글자를 유지하고, 표에 없는 PUA와 HWP(rhwp `@rhwp/core` 0.7.19 SVG) 화면은 그대로입니다.
 
 `fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
 편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.
