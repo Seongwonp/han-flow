@@ -236,7 +236,8 @@ export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPl
     title={`${item.label}: 원본 개체를 그대로 그리지 못해 자리 표시로 보여 줍니다.${item.fitted ? ' 원본 높이가 쪽보다 커서 줄여 표시합니다.' : ''} 저장할 때 원본은 그대로 보존합니다.`}
     style={style}
   >
-    <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}</span>
+    {/* 줄 안 표시의 쌍점은 CSS ::after가 아니라 글자로 둔다. ::after 글은 화면 innerText에 없지만 PDF에는 추출돼 글자 수가 어긋난다. */}
+    <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}{item.flow === 'marker' && (item.fallbackText || markerText) ? ':' : ''}</span>
     {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
     {markerText && <span className="viewer-object-fallback">{markerText}</span>}
     {hasBody && <span className="viewer-object-body" ref={bodyRef}>

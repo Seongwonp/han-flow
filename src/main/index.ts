@@ -927,7 +927,27 @@ function captureVisualState(window: BrowserWindow): void {
         const panels = Array.from(toolbar.querySelectorAll('.viewer-ribbon-panel'))
         const originallyHidden = panels.map((panel) => panel.hidden)
         const overflowing = new Set()
+        const canvas = document.createElement('canvas').getContext('2d')
+        const textWidth = (element, text) => {
+          const style = getComputedStyle(element)
+          canvas.font = style.font || [style.fontStyle, style.fontWeight, style.fontSize, style.fontFamily].join(' ')
+          return canvas.measureText(text).width
+        }
+        // select는 가장 긴 option 글자, 글자 input은 값(없으면 placeholder)이 글자 칸(clientWidth - 좌우 padding)에 들어가야 한다.
+        // ribbon select는 화살표를 padding 안에 그리므로(main.css) 오른쪽 padding이 화살표 자리다.
+        const measureFields = () => {
+          for (const element of toolbar.querySelectorAll('select, input')) {
+            if (!element.getClientRects().length) continue
+            if (element.tagName === 'INPUT' && !['text', 'search', ''].includes(element.type)) continue
+            const style = getComputedStyle(element)
+            const texts = element.tagName === 'SELECT' ? Array.from(element.options).map((option) => option.text) : [element.value || element.placeholder || '']
+            const longest = Math.max(0, ...texts.map((text) => textWidth(element, text)))
+            const available = element.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight)
+            if (longest > available + 0.5) overflowing.add(element.getAttribute('aria-label') || element.className || element.tagName)
+          }
+        }
         const measure = () => {
+          measureFields()
           for (const element of toolbar.querySelectorAll('button, output, .viewer-file-name, .viewer-ribbon-group-label, .viewer-editing-badge')) {
             if (!element.getClientRects().length) continue
             // 파일 이름은 의도한 말줄임이므로 가로 넘침은 세지 않는다.

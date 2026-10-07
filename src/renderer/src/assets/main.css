@@ -39,7 +39,9 @@ button { font: inherit; }
 .viewer-ribbon-group:last-child { border-right: 0; }
 .viewer-ribbon-controls { display: flex; align-items: center; gap: 6px; min-height: 48px; }
 .viewer-ribbon-controls button { min-width: 40px; height: 40px; padding: 0 10px; white-space: nowrap; border: 1px solid transparent; border-radius: 7px; color: #303640; background: transparent; cursor: pointer; font-size: 15px; }
-.viewer-ribbon-controls select { max-width: 150px; height: 32px; padding: 0 8px; border: 1px solid #c3cad4; border-radius: 6px; background: #fff; color: #303640; }
+/* 기본 select 화살표는 OS마다 폭이 달라 글자 끝을 가린다(Windows "0.12mm"). 화살표를 padding 안에 직접 그려 글자 칸을 고정한다. */
+.viewer-ribbon-controls select { appearance: none; -webkit-appearance: none; box-sizing: border-box; max-width: 200px; height: 32px; padding: 0 26px 0 8px; border: 1px solid #c3cad4; border-radius: 6px; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23596170' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 9px center / 10px 6px; color: #303640; font: 12px/1.2 system-ui, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", sans-serif; }
+.viewer-ribbon-controls select:disabled { opacity: .55; }
 .viewer-ribbon-controls button:hover:not(:disabled) { border-color: #c3cad4; background: #fff; box-shadow: 0 1px 4px rgba(20,25,35,.1); }
 .viewer-ribbon-controls button:disabled, .viewer-style-color:disabled { cursor: default; opacity: .38; }
 .viewer-ribbon-controls button[aria-pressed="true"] { color: #244fd1; background: #dfe7ff; box-shadow: inset 0 0 0 1px rgba(51,94,234,.28); }
@@ -58,7 +60,7 @@ button { font: inherit; }
 .viewer-style-color::-webkit-color-swatch-wrapper { padding: 1px; }
 .viewer-style-color::-webkit-color-swatch { border: 1px solid #9aa1aa; border-radius: 4px; }
 .viewer-ribbon-cell-controls { align-items: center; }
-.viewer-ribbon-cell-controls select { width: 78px; }
+.viewer-ribbon-cell-controls select { width: 96px; }
 .viewer-ribbon-cell-controls button { min-width: 58px; font-size: 11px; }
 .viewer-ribbon-spacing-controls { gap: 9px; }
 .viewer-paragraph-metric { display: grid; grid-template-columns: 42px 40px 48px 40px; align-items: center; gap: 2px; color: #4c535d; font-size: 10px; }
@@ -105,7 +107,6 @@ button { font: inherit; }
 .viewer-object-floating, .viewer-object-marker { flex-direction: row; align-items: baseline; gap: 4px; padding: 0 3px; vertical-align: baseline; font-size: 8pt; }
 .viewer-object-label { flex: none; color: #8a6d3b; font-size: 8pt; font-weight: 600; line-height: 1.2; }
 .viewer-object-marker { margin: 0 2px; }
-.viewer-object-marker .viewer-object-label::after { content: ":"; }
 .viewer-object-fallback { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .viewer-object-script { font-family: "D2Coding", "Consolas", "Menlo", "Noto Sans Mono CJK KR", monospace; font-size: 8pt; }
 .viewer-object-body { display: block; align-self: stretch; min-width: 0; color: #111; font-size: initial; user-select: text; }

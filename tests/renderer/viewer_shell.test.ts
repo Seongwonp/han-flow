@@ -103,6 +103,24 @@ describe('viewer shell components', () => {
     expect(rule('.viewer-ribbon-tabs button')).toEqual(expect.stringContaining('white-space: nowrap'))
   })
 
+  test('리본 select는 화살표를 오른쪽 padding 안에 그려 가장 긴 option(0.12mm)의 끝이 가려지지 않는다', () => {
+    const css = readFileSync(join(__dirname, '../../src/renderer/src/assets/main.css'), 'utf8')
+    const rule = (selector: string) => css.match(new RegExp(`(?:^|\\n)${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`))?.[1] ?? ''
+    const select = rule('.viewer-ribbon-controls select')
+    expect(select).toContain('appearance: none')
+    expect(select).toContain('box-sizing: border-box')
+    expect(select).toContain('right 9px center / 10px 6px')
+    const padding = select.match(/padding: 0 (\d+)px 0 (\d+)px/)!
+    const [paddingRight, paddingLeft] = [Number(padding[1]), Number(padding[2])]
+    // 화살표(오른쪽 9px + 폭 10px)가 오른쪽 padding 안에 들어간다.
+    expect(paddingRight).toBeGreaterThanOrEqual(9 + 10 + 4)
+    const fontSize = Number(select.match(/font: (\d+)px/)![1])
+    const width = Number(rule('.viewer-ribbon-cell-controls select').match(/width: (\d+)px/)![1])
+    // 테두리 2px를 뺀 글자 칸이 "0.12mm"(6글자)를 넓은 UI 글꼴(Segoe UI·맑은 고딕·Noto Sans CJK의 숫자·영문 평균 0.62em) 기준 여유 있게 담는다.
+    const textBox = width - paddingLeft - paddingRight - 2
+    expect(textBox).toBeGreaterThanOrEqual(Math.ceil('0.12mm'.length * fontSize * 0.62 * 1.2))
+  })
+
   test('toolbar는 보기 action과 편집 ribbon 상태를 props로만 표시한다', () => {
     const markup = renderToStaticMarkup(createElement(ViewerToolbar, {
       fileName: 'sample.hwpx',

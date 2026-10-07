@@ -105,7 +105,7 @@ describe('원본 개체 자리 표시 renderer', () => {
     const memos = await open('ext-pyhwpx-memos.hwpx')
     const memo = renderToStaticMarkup(createElement(ParagraphView, { paragraph: findParagraph(memos, hasKind('memo')), document: memos }))
     expect(memo).toContain('class="viewer-object-placeholder viewer-object-marker"')
-    expect(memo).toContain('<span class="viewer-object-label">메모</span><span class="viewer-object-fallback">메모 1</span>')
+    expect(memo).toContain('<span class="viewer-object-label">메모:</span><span class="viewer-object-fallback">메모 1</span>')
     const dutmal = await open('ext-hwpxlib-dutmal.hwpx')
     const ruby = renderToStaticMarkup(createElement(ParagraphView, { paragraph: findParagraph(dutmal, hasKind('ruby')), document: dutmal }))
     expect(ruby).toContain('class="viewer-ruby viewer-ruby-top" title="덧말">테스트_본말<rt>테스트_닷말</rt></ruby>')
