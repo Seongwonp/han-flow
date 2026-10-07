@@ -268,7 +268,9 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 ### 원본 개체 자리 표시
 
 viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
-그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 위치에 남긴다.
+그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 흐름 위치에 남긴다.
+원본 좌표·회전·쪽 배치(글 앞·뒤, 쪽 기준 위치)와 개체 자체의 그림(수식 조판, 차트·OLE·도형 그리기)은 재현하지 않으며,
+상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주·미주 본문은 쪽 아래가 아니라 구역 끝 목록에 둔다.
 
 | 원본 element | kind | 화면 |
 | --- | --- | --- |
