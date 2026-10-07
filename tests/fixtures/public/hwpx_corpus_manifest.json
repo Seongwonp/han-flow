@@ -7,28 +7,28 @@
       "category": "document-baseline",
       "generator": "createSyntheticHwpx",
       "options": { "fileName": "baseline.hwpx" },
-      "expected": { "outcome": "opened", "sections": 2, "tables": 1, "cells": 4, "resources": 1, "estimatedPages": 3 }
+      "expected": { "outcome": "opened", "sections": 2, "tables": 1, "cells": 4, "resources": 1, "estimatedPages": 3, "placeholders": {} }
     },
     {
       "id": "cell-continuation",
       "category": "table-pagination",
       "generator": "createCellFragmentHwpx",
       "fileName": "cell-continuation.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 2, "cells": 3, "resources": 0, "estimatedPages": 3 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 2, "cells": 3, "resources": 0, "estimatedPages": 3, "placeholders": {} }
     },
     {
       "id": "images-rowspan",
       "category": "images-and-span",
       "generator": "createCompatibilityHwpx",
       "fileName": "images-rowspan.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 5, "resources": 12, "estimatedPages": 1 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 5, "resources": 12, "estimatedPages": 1, "placeholders": {} }
     },
     {
       "id": "table-columns",
       "category": "table-structure",
       "generator": "createTableColumnHwpx",
       "fileName": "table-columns.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 9, "resources": 0, "estimatedPages": 1 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 9, "resources": 0, "estimatedPages": 1, "placeholders": {} }
     },
     {
       "id": "list-markers",
@@ -44,7 +44,8 @@
         "markedParagraphs": 4,
         "bulletParagraphs": 2,
         "numberedParagraphs": 2,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -61,7 +62,8 @@
         "diagnostics": 0,
         "multiColumnSections": 1,
         "declaredColumns": 2,
-        "estimatedPages": 2
+        "estimatedPages": 2,
+        "placeholders": {}
       }
     },
     {
@@ -69,21 +71,21 @@
       "category": "package-preservation",
       "generator": "createRoundTripHwpx",
       "fileName": "round-trip-sentinels.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 1, "estimatedPages": 2 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 1, "estimatedPages": 2, "placeholders": {} }
     },
     {
       "id": "report-toc",
       "category": "report-template",
       "generator": "createReportTocHwpx",
       "fileName": "report-toc.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 2, "cells": 14, "resources": 0, "estimatedPages": 3 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 2, "cells": 14, "resources": 0, "estimatedPages": 3, "placeholders": {} }
     },
     {
       "id": "hanging-indent",
       "category": "report-template",
       "generator": "createHangingIndentHwpx",
       "fileName": "hanging-indent.hwpx",
-      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 0, "estimatedPages": 1 }
+      "expected": { "outcome": "opened", "sections": 1, "tables": 1, "cells": 4, "resources": 0, "estimatedPages": 1, "placeholders": {} }
     },
     {
       "id": "large-progressive",
@@ -95,7 +97,7 @@
         "paragraphsPerExtraSection": 250,
         "imageBytes": 5242880
       },
-      "expected": { "outcome": "opened", "sections": 80, "tables": 1, "cells": 4, "resources": 1, "minimumEstimatedPages": 50 }
+      "expected": { "outcome": "opened", "sections": 80, "tables": 1, "cells": 4, "resources": 1, "minimumEstimatedPages": 50, "placeholders": {} }
     },
     {
       "id": "invalid-package",
@@ -127,10 +129,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "text-box": 1 }
       }
     },
     {
@@ -159,7 +162,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -185,10 +189,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "text-box": 2 }
       }
     },
     {
@@ -217,7 +222,8 @@
         "diagnostics": 2,
         "multiColumnSections": 1,
         "declaredColumns": 3,
-        "estimatedPages": 2
+        "estimatedPages": 2,
+        "placeholders": {}
       }
     },
     {
@@ -246,7 +252,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -275,7 +282,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -301,10 +309,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 2,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "text-box": 1, "shape": 1 }
       }
     },
     {
@@ -333,7 +342,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -359,10 +369,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "equation": 1 }
       }
     },
     {
@@ -391,7 +402,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -420,7 +432,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -446,10 +459,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "ruby": 1 }
       }
     },
     {
@@ -478,7 +492,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -507,7 +522,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -536,7 +552,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -565,7 +582,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -594,7 +612,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -623,7 +642,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -649,10 +669,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "memo": 2 }
       }
     },
     {
@@ -678,10 +699,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 2,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "footnote": 1, "endnote": 1 }
       }
     },
     {
@@ -707,10 +729,11 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 0,
+        "diagnostics": 1,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": { "text-box": 5 }
       }
     },
     {
@@ -739,7 +762,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -768,7 +792,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -797,7 +822,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -826,7 +852,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     },
     {
@@ -855,7 +882,8 @@
         "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
-        "estimatedPages": 1
+        "estimatedPages": 1,
+        "placeholders": {}
       }
     }
   ]

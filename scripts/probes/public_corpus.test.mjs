@@ -79,6 +79,30 @@ test('public corpus 판정은 exact metric과 minimum page 차이를 모두 보�
   }), ['estimatedPages 최소 50, 실제 49'])
 })
 
+test('public corpus placeholders 기대값은 종류별 개수를 정확히 비교하고 알 수 없는 종류를 거부한다', () => {
+  const expected = { ...fixture, expected: { outcome: 'opened', placeholders: { equation: 1, 'text-box': 2 } } }
+  assert.deepEqual(evaluateCorpusFixture(expected, {
+    outcome: 'opened',
+    metrics: { placeholders: { 'text-box': 2, equation: 1 } }
+  }), [])
+  assert.deepEqual(evaluateCorpusFixture(expected, {
+    outcome: 'opened',
+    metrics: { placeholders: { equation: 1 } }
+  }), ['placeholders 기대 equation=1,text-box=2, 실제 equation=1'])
+  assert.deepEqual(evaluateCorpusFixture({ ...fixture, expected: { outcome: 'opened', placeholders: {} } }, {
+    outcome: 'opened',
+    metrics: { placeholders: { memo: 1 } }
+  }), ['placeholders 기대 없음, 실제 memo=1'])
+  assert.throws(() => validateCorpusManifest(manifestOf({
+    ...fixture,
+    expected: { outcome: 'opened', placeholders: { picture: 1 } }
+  })), /알 수 없는 placeholders 종류/)
+  assert.throws(() => validateCorpusManifest(manifestOf({
+    ...fixture,
+    expected: { outcome: 'opened', placeholders: { equation: 0 } }
+  })), /placeholders.equation 기대값/)
+})
+
 test('public corpus report는 본문 없이 합계와 fixture별 실패를 결정적으로 만든다', () => {
   const manifest = validateCorpusManifest({ schemaVersion: 1, suite: 'test', fixtures: [fixture] })
   const report = createCorpusReport(manifest, [{
@@ -97,7 +121,8 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
       diagnostics: 0,
       multiColumnSections: 0,
       declaredColumns: 0,
-      estimatedPages: 3
+      estimatedPages: 3,
+      placeholders: { equation: 2, 'text-box': 1 }
     }
   }])
   assert.equal(report.passed, true)
@@ -113,7 +138,8 @@ test('public corpus report는 본문 없이 합계와 fixture별 실패를 결�
     diagnostics: 0,
     multiColumnSections: 0,
     declaredColumns: 0,
-    estimatedPages: 3
+    estimatedPages: 3,
+    placeholders: { equation: 2, 'text-box': 1 }
   })
   assert.equal(JSON.stringify(report).includes('본문'), false)
 })

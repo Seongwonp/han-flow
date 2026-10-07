@@ -35,6 +35,12 @@ export const EXACT_METRICS = [
   'estimatedPages'
 ]
 
+// 원본처럼 그리지 못해 자리 표시로 보여 주는 개체 종류(`src/core/document/viewer_document.ts`의 ViewerObjectKind).
+export const PLACEHOLDER_KINDS = [
+  'equation', 'chart', 'ole', 'text-box', 'shape', 'form-control', 'video',
+  'footnote', 'endnote', 'memo', 'field', 'ruby', 'unknown'
+]
+
 export function fixtureSource(fixture) {
   return fixture.source ?? 'generator'
 }
@@ -116,8 +122,26 @@ export function validateCorpusManifest(manifest) {
         throw new Error(`${fixture.id}: ${metric} 기대값이 올바르지 않습니다.`)
       }
     }
+    validatePlaceholderExpectation(fixture)
   }
   return manifest
+}
+
+function validatePlaceholderExpectation(fixture) {
+  const value = fixture.expected.placeholders
+  if (value === undefined) return
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${fixture.id}: placeholders 기대값은 종류별 개수 object여야 합니다.`)
+  }
+  for (const [kind, amount] of Object.entries(value)) {
+    if (!PLACEHOLDER_KINDS.includes(kind)) throw new Error(`${fixture.id}: 알 수 없는 placeholders 종류입니다: ${kind}`)
+    if (!Number.isSafeInteger(amount) || amount < 1) throw new Error(`${fixture.id}: placeholders.${kind} 기대값이 올바르지 않습니다.`)
+  }
+}
+
+// 종류별 개수 object를 PLACEHOLDER_KINDS 순서의 비교 가능한 문자열로 만든다(0개 종류는 뺀다).
+export function formatPlaceholderCounts(counts = {}) {
+  return PLACEHOLDER_KINDS.filter((kind) => counts[kind]).map((kind) => `${kind}=${counts[kind]}`).join(',') || '없음'
 }
 
 function rejectUnknownKeys(fixture, object, allowed, label) {
@@ -180,8 +204,10 @@ export function summarizeViewerDocument(document, estimatedPages) {
     diagnostics: document.diagnostics.length,
     multiColumnSections: document.sections.filter((section) => (section.columnLayout?.count ?? 1) > 1).length,
     declaredColumns: document.sections.reduce((sum, section) => sum + (section.columnLayout?.count ?? 0), 0),
-    estimatedPages
+    estimatedPages,
+    placeholders: {}
   }
+  const placeholderCounts = {}
   const visitParagraphs = (paragraphs) => {
     for (const paragraph of paragraphs) {
       summary.paragraphs += 1
@@ -198,6 +224,24 @@ export function summarizeViewerDocument(document, estimatedPages) {
             summary.cells += row.cells.length
             for (const cell of row.cells) visitParagraphs(cell.paragraphs)
           }
+        } else if (item.type === 'object-placeholder') {
+          placeholderCounts[item.kind] = (placeholderCounts[item.kind] ?? 0) + 1
+          if (item.paragraphs) visitPlaceholderParagraphs(item.paragraphs)
+        } else if (item.type === 'note-list') {
+          for (const note of item.notes) visitPlaceholderParagraphs(note.paragraphs)
+        }
+      }
+    }
+  }
+  // 글상자·각주·메모 본문 안 문단은 본문 문단·글자 수에 넣지 않고 그 안의 자리 표시만 센다.
+  const visitPlaceholderParagraphs = (paragraphs) => {
+    for (const paragraph of paragraphs) {
+      for (const item of paragraph.content) {
+        if (item.type === 'object-placeholder') {
+          placeholderCounts[item.kind] = (placeholderCounts[item.kind] ?? 0) + 1
+          if (item.paragraphs) visitPlaceholderParagraphs(item.paragraphs)
+        } else if (item.type === 'table') {
+          for (const row of item.rows) for (const cell of row.cells) visitPlaceholderParagraphs(cell.paragraphs)
         }
       }
     }
@@ -207,6 +251,7 @@ export function summarizeViewerDocument(document, estimatedPages) {
     for (const header of section.headers) visitParagraphs(header.paragraphs)
     for (const footer of section.footers) visitParagraphs(footer.paragraphs)
   }
+  summary.placeholders = Object.fromEntries(PLACEHOLDER_KINDS.filter((kind) => placeholderCounts[kind]).map((kind) => [kind, placeholderCounts[kind]]))
   return summary
 }
 
@@ -227,6 +272,11 @@ export function evaluateCorpusFixture(fixture, observation) {
     if (fixture.expected[metric] !== undefined && observation.metrics?.[metric] !== fixture.expected[metric]) {
       failures.push(`${metric} 기대 ${fixture.expected[metric]}, 실제 ${observation.metrics?.[metric] ?? '없음'}`)
     }
+  }
+  if (fixture.expected.placeholders !== undefined) {
+    const expected = formatPlaceholderCounts(fixture.expected.placeholders)
+    const actual = formatPlaceholderCounts(observation.metrics?.placeholders)
+    if (expected !== actual) failures.push(`placeholders 기대 ${expected}, 실제 ${actual}`)
   }
   if (
     fixture.expected.minimumEstimatedPages !== undefined &&
@@ -278,7 +328,11 @@ export function createCorpusReport(manifest, observations) {
       diagnostics: opened.reduce((sum, fixture) => sum + (fixture.metrics?.diagnostics ?? 0), 0),
       multiColumnSections: opened.reduce((sum, fixture) => sum + (fixture.metrics?.multiColumnSections ?? 0), 0),
       declaredColumns: opened.reduce((sum, fixture) => sum + (fixture.metrics?.declaredColumns ?? 0), 0),
-      estimatedPages: opened.reduce((sum, fixture) => sum + (fixture.metrics?.estimatedPages ?? 0), 0)
+      estimatedPages: opened.reduce((sum, fixture) => sum + (fixture.metrics?.estimatedPages ?? 0), 0),
+      placeholders: Object.fromEntries(PLACEHOLDER_KINDS.map((kind) => [
+        kind,
+        opened.reduce((sum, fixture) => sum + (fixture.metrics?.placeholders?.[kind] ?? 0), 0)
+      ]).filter(([, amount]) => amount > 0))
     },
     passed: fixtures.every((fixture) => fixture.passed),
     fixtures

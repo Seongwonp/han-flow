@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
@@ -156,6 +156,8 @@ function Content({
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
     return <img className="viewer-image" src={`data:${resource.mime};base64,${resource.data}`} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
+  // 개체 자리 표시와 각주·미주 목록은 아직 그리지 않는다(이전과 같은 화면).
+  if (item.type === 'object-placeholder' || item.type === 'note-list') return null
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
 }
 
@@ -280,10 +282,12 @@ export function isEditableTextParagraph(
   paragraph: ViewerParagraph,
   allowMultipleRuns = false
 ): boolean {
+  // 개체 자리 표시는 읽기 전용이라 편집 가능 여부는 글자 run만으로 정한다(`editing_capability.ts`와 같은 규칙).
+  const content = paragraph.content.filter((item) => !isObjectPlaceholder(item))
   return (
-    paragraph.content.length > 0 &&
-    (allowMultipleRuns || paragraph.content.length === 1) &&
-    paragraph.content.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))
+    content.length > 0 &&
+    (allowMultipleRuns || content.length === 1) &&
+    content.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))
   )
 }
 

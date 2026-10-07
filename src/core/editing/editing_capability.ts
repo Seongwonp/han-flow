@@ -1,4 +1,5 @@
 import {
+  isObjectPlaceholder,
   ViewerDocument,
   ViewerParagraph,
   ViewerTable,
@@ -68,11 +69,13 @@ export interface EditingSelectionProjection {
 }
 
 function editableTexts(paragraph: ViewerParagraph): ViewerText[] | undefined {
-  if (!paragraph.content.length) return undefined
-  if (!paragraph.content.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))) {
+  // 개체 자리 표시는 읽기 전용 표시일 뿐이라 같은 문단 글자 run의 편집 가능 여부에 끼지 않는다.
+  const content = paragraph.content.filter((item) => !isObjectPlaceholder(item))
+  if (!content.length) return undefined
+  if (!content.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))) {
     return undefined
   }
-  return paragraph.content as ViewerText[]
+  return content as ViewerText[]
 }
 
 function paragraphContexts(
