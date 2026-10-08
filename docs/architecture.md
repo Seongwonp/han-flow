@@ -351,7 +351,10 @@ transaction 적용, projection 디코딩(`projectEditTransaction`·`decodeViewer
   각자 worker에서 병렬로 돈다. 편집을 끝내거나 창을 닫거나 다른 문서로 교체하면 worker를 종료하고 대기 요청은
   `EDITING_SESSION_EXPIRED`로 끝낸다.
 - main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답 projection의 structured clone 역직렬화와 renderer IPC
-  직렬화, 저장 목적지 `lstat`/`stat`, 대화상자.
+  직렬화, 저장 목적지 `lstat`/`stat`, 대화상자. large-progressive(80 section)의 keystroke 하나 commit에서 main 점유는
+  p50 771ms → 93ms(event loop utilization active), 왕복 지연은 p50 771ms → 660ms였다
+  (`HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/editing_worker_benchmark.test.ts`, Linux x64 Jest 기준).
+  남은 93ms는 매 commit 전체 문서 projection을 다시 만드는 현재 방식에서 오는 역직렬화 비용이다.
 
 ### HWP Web Worker
 
