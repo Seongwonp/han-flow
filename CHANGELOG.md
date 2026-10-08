@@ -26,6 +26,7 @@
 - EOL Electron 28.3.3을 Electron 44.4.5(Chromium 152·Node 24)로 올리고 drag-and-drop `File.path` 제거를 `webUtils.getPathForFile`로, 대화상자 Downloads 기본 폴더 변경을 마지막 폴더 기억으로 대응
 - Electron 44 요구사항에 맞춰 macOS 패키지 `minimumSystemVersion`을 13.0으로 지정
 - OS 파일 열기 경로를 포커스된 창(없으면 최근 창·새 창)으로 전달하고 대화상자를 요청한 창에 연결, `document:import`·`editing:start`는 main이 건넨 경로와 끌어 놓은 일반 문서 파일만 창별 허용목록(실제 경로 비교)으로 받으며 미사용 `dialog:openImage` 제거
+- 편집 엔진(package·source tree·history·projection 디코딩·Save As 검증)을 창별 worker thread로 옮겨 heap 한도(1.5 GiB)와 요청별 timeout(시작 120초·command·실행 취소 60초·저장 180초)을 걸고, timeout·crash·OOM은 worker를 종료해 `EDITING_ENGINE_TIMEOUT`·`EDITING_ENGINE_CRASHED`·`EDITING_RESOURCE_EXHAUSTED`로 session을 끝내며 남은 저장 임시 파일 정리
 
 ### Sprint 4 호환성 corpus
 

@@ -8,7 +8,8 @@ import {
   editingErrorCode,
   editingErrorStatus,
   editingSelectionProjectionStatus,
-  editingStatusTone
+  editingStatusTone,
+  isEditingEngineFailure
 } from '../../src/renderer/src/editing_error_status'
 
 function transported(error: EditingErrorPayload): unknown {
@@ -87,5 +88,33 @@ describe('renderer 편집 오류 안내', () => {
     expect(editingSelectionProjectionStatus('COLLAPSED')).toContain('남아 있는 위치로 이동')
     expect(editingSelectionProjectionStatus('CLEARED')).toContain('다시 선택')
     expect(editingSelectionProjectionStatus('CURRENT')).toBeNull()
+  })
+
+  test('편집 엔진 timeout·crash·메모리 초과는 세션 종료로 안내하고 편집 모드를 닫게 한다', () => {
+    const cases = [
+      ['EDITING_ENGINE_TIMEOUT', '편집 시간 초과 · 편집 세션 종료 · '],
+      ['EDITING_ENGINE_CRASHED', '편집 오류 · 편집 세션 종료 · '],
+      ['EDITING_RESOURCE_EXHAUSTED', '편집 메모리 한도 초과 · 편집 세션 종료 · ']
+    ] as const
+    for (const [code, prefix] of cases) {
+      const reason = transported({
+        code,
+        message: '보기 모드로 돌아갑니다.',
+        recoverable: true,
+        recovery: 'restart-session'
+      })
+      const status = editingErrorStatus('편집', reason)
+      expect(status).toBe(`${prefix}보기 모드로 돌아갑니다.`)
+      expect(editingStatusTone(status)).toBe('error')
+      expect(editingErrorCode(reason)).toBe(code)
+      expect(isEditingEngineFailure(reason)).toBe(true)
+    }
+    expect(isEditingEngineFailure(transported({
+      code: 'EDITING_SESSION_EXPIRED',
+      message: '편집 session이 종료되었습니다.',
+      recoverable: true,
+      recovery: 'restart-session'
+    }))).toBe(false)
+    expect(isEditingEngineFailure(new Error('IPC 실패'))).toBe(false)
   })
 })

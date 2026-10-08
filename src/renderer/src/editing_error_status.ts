@@ -1,4 +1,4 @@
-import { readEditingError } from '../../core/editing/editing_error'
+import { isEditingEngineFailureCode, readEditingError } from '../../core/editing/editing_error'
 import type {
   EditingCapabilityReason,
   EditingSelectionProjectionStatus
@@ -8,6 +8,11 @@ export type EditingStatusTone = 'normal' | 'warning' | 'error'
 
 export function editingErrorCode(reason: unknown) {
   return readEditingError(reason)?.code
+}
+
+/** 편집 엔진(worker)을 timeout·crash·메모리 초과로 종료해 session이 끝난 오류인지. 편집 모드를 닫아야 한다. */
+export function isEditingEngineFailure(reason: unknown): boolean {
+  return isEditingEngineFailureCode(readEditingError(reason)?.code)
 }
 
 export function editingErrorStatus(action: string, reason: unknown): string | null {
@@ -30,6 +35,12 @@ export function editingErrorStatus(action: string, reason: unknown): string | nu
       return `${action} 요청 오류 · ${error.message}`
     case 'EDITING_SAVE_FAILED':
       return `저장 실패 · 변경 내용은 유지했습니다. ${error.message}`
+    case 'EDITING_ENGINE_TIMEOUT':
+      return `${action} 시간 초과 · 편집 세션 종료 · ${error.message}`
+    case 'EDITING_ENGINE_CRASHED':
+      return `${action} 오류 · 편집 세션 종료 · ${error.message}`
+    case 'EDITING_RESOURCE_EXHAUSTED':
+      return `${action} 메모리 한도 초과 · 편집 세션 종료 · ${error.message}`
     case 'EDITING_INTERNAL':
       return `${action} 오류 · ${error.message}`
   }

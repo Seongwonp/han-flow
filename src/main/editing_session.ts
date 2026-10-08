@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import { lstat, stat } from 'fs/promises'
+import { lstat, stat, unlink } from 'fs/promises'
 import { basename, dirname, extname, join, resolve } from 'path'
+import { Worker, type ResourceLimits } from 'worker_threads'
 import {
   EditingActionResult,
   EditingCharacterStyleRequest,
@@ -8,6 +9,7 @@ import {
   EditingCommitRequest,
   EditingDeleteTableRowRequest,
   EditingDeleteTableColumnRequest,
+  EditingHistoryStatus,
   EditingInsertTableColumnRequest,
   EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
@@ -20,29 +22,123 @@ import {
   EditingStartResult
 } from '../core/editing/editing_contract'
 import { EditingOperationError } from '../core/editing/editing_error'
-import { editingCapabilities } from '../core/editing/editing_capability'
-import { HwpxEditHistory } from '../core/editing/history'
 import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
-import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
-import { HwpxSaveAsError, saveHwpxAs } from '../core/editing/save_as'
-import { planReplaceSelection } from '../core/editing/range_edit'
+import { saveTemporaryPath } from '../core/editing/save_as'
+import type { EditingEngineSaveRequest } from './editing_engine'
 import {
-  planDeleteTableColumn,
-  planDeleteTableRow,
-  planInsertTableColumnAfter,
-  planInsertTableRowAfter,
-  planMergeTableCellRight,
-  planSplitTableCell
-} from '../core/editing/table_patch'
-import { reconcileTableCellSelection } from '../core/editing/table_cell_selection'
-import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
-import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
-import { HwpxSourcePackage } from '../core/parser/source_package'
-import { decodeViewerDocument } from '../core/parser/viewer_decoder'
+  deserializeEditingWorkerError,
+  type EditingWorkerMethod,
+  type EditingWorkerRequest,
+  type EditingWorkerResponse,
+  type EditingWorkerStartResult
+} from './editing_worker_protocol'
 
-interface EditingSession {
-  id: string
-  history: HwpxEditHistory
+export {
+  INVALID_DESTINATION_MESSAGE,
+  PROTECTED_DESTINATION_MESSAGE,
+  pdfExportFailureMessage,
+  saveAsFailureMessage
+} from './editing_save_messages'
+
+/*
+ * 편집 엔진 격리. 편집 session마다(=창마다) worker thread 하나를 resourceLimits를 걸어 만들고, 그 안에서
+ * HwpxSourcePackage·source tree cache·history·projection 디코딩·Save As 검증을 모두 실행한다.
+ * main process에는 창별 session 목록, 상태 거울(dirty 등), 원본 경로, 저장 목적지 결정만 남는다.
+ */
+
+/** 요청 종류별 wall-clock 한도. 넘으면 worker를 terminate하고 session을 끝낸다. */
+export const EDITING_ENGINE_TIMEOUTS_MS = {
+  /** package 전체 압축 해제 + 첫 projection 디코딩 */
+  start: 120_000,
+  /** text·style·문단·표 command 하나와 그 projection(refresh·loss policy 포함) */
+  command: 60_000,
+  /** 실행 취소·다시 실행과 그 projection */
+  history: 60_000,
+  /** 임시 파일 쓰기·fsync·재개봉 비교·viewer 디코딩·게시 */
+  save: 180_000
+} as const
+
+export type EditingEngineTimeouts = { [Key in keyof typeof EDITING_ENGINE_TIMEOUTS_MS]: number }
+
+/**
+ * 편집 worker 하나의 heap 한도. 편집 session은 package bytes·source tree·history·projection을 함께 들고 있으므로
+ * decoder worker(1 GiB)보다 넉넉하게 둔다. 초과 시 app abort 대신 ERR_WORKER_OUT_OF_MEMORY로 끝난다.
+ */
+export const EDITING_ENGINE_RESOURCE_LIMITS: ResourceLimits = {
+  maxOldGenerationSizeMb: 1536,
+  maxYoungGenerationSizeMb: 64
+}
+
+export interface EditingSessionManagerOptions {
+  /** 빌드된 `editing_worker.js` 경로. 테스트는 TypeScript shim 경로를 넘긴다. */
+  workerPath?: string
+  timeouts?: Partial<EditingEngineTimeouts>
+  resourceLimits?: ResourceLimits
+}
+
+const TIMEOUT_KIND: Record<EditingWorkerMethod, keyof EditingEngineTimeouts> = {
+  start: 'start',
+  commit: 'command',
+  commitRange: 'command',
+  splitParagraph: 'command',
+  mergeParagraph: 'command',
+  applyCharacterStyle: 'command',
+  applyParagraphStyle: 'command',
+  applyCellStyle: 'command',
+  insertTableRowAfter: 'command',
+  deleteTableRow: 'command',
+  insertTableColumnAfter: 'command',
+  deleteTableColumn: 'command',
+  mergeTableCellRight: 'command',
+  splitTableCell: 'command',
+  refresh: 'command',
+  lossPolicy: 'command',
+  undo: 'history',
+  redo: 'history',
+  saveAs: 'save'
+}
+
+const SESSION_ENDED_SUFFIX = '저장하지 않은 변경 내용은 반영되지 않았고 보기 모드로 돌아갑니다. 원본 문서는 바뀌지 않았습니다.'
+
+function sessionExpiredError(): EditingOperationError {
+  return new EditingOperationError(
+    'EDITING_SESSION_EXPIRED',
+    '편집 session이 종료되었습니다. 문서를 다시 열어 주세요.',
+    'restart-session'
+  )
+}
+
+function timeoutError(method: EditingWorkerMethod, timeoutMs: number): EditingOperationError {
+  const seconds = Math.ceil(timeoutMs / 1000)
+  const action = method === 'saveAs'
+    ? '변경본 저장·검증'
+    : method === 'start'
+      ? '편집 준비'
+      : method === 'undo' || method === 'redo'
+        ? '실행 취소·다시 실행'
+        : '편집 처리'
+  const saveNote = method === 'saveAs' ? ' 저장 파일은 만들지 않았고 임시 파일도 지웠습니다.' : ''
+  return new EditingOperationError(
+    'EDITING_ENGINE_TIMEOUT',
+    `${action}가 제한 시간(${seconds}초)을 넘어 편집 엔진을 중단했습니다.${saveNote} 문서가 지나치게 크거나 복잡할 수 있습니다. ${SESSION_ENDED_SUFFIX}`,
+    'restart-session'
+  )
+}
+
+function crashedError(detail?: string): EditingOperationError {
+  return new EditingOperationError(
+    'EDITING_ENGINE_CRASHED',
+    `편집 엔진이 예기치 않게 종료되었습니다${detail ? `(${detail})` : ''}. ${SESSION_ENDED_SUFFIX}`,
+    'restart-session'
+  )
+}
+
+function resourceExhaustedError(limitMb: number | undefined): EditingOperationError {
+  return new EditingOperationError(
+    'EDITING_RESOURCE_EXHAUSTED',
+    `편집 처리 중 메모리 한도${limitMb ? `(${limitMb} MiB)` : ''}를 넘어 편집 엔진을 중단했습니다. 문서가 지나치게 크거나 복잡할 수 있습니다. ${SESSION_ENDED_SUFFIX}`,
+    'restart-session'
+  )
 }
 
 function assertHwpxPath(filePath: string): void {
@@ -61,40 +157,6 @@ export interface EditingSaveAsOptions {
   overwrite?: boolean
 }
 
-export const PROTECTED_DESTINATION_MESSAGE =
-  '열려 있는 원본 문서는 덮어쓸 수 없습니다. 다른 이름이나 다른 폴더를 선택해 주세요.'
-
-export const INVALID_DESTINATION_MESSAGE =
-  '저장 위치가 올바르지 않습니다. 폴더나 바로가기(심볼릭 링크)가 아닌 .hwpx 파일 이름을 지정해 주세요.'
-
-/** PDF 내보내기(writeFileAtomically) 실패를 PDF 맥락의 한국어 안내로 바꾼다. */
-export function pdfExportFailureMessage(reason: unknown): string {
-  if (reason instanceof HwpxSaveAsError) {
-    switch (reason.code) {
-      case 'HWPX_SAVE_PROTECTED_DESTINATION':
-        return '편집 중인 원본 문서 위치에는 PDF를 저장할 수 없습니다. 다른 .pdf 파일 이름을 지정해 주세요.'
-      case 'HWPX_SAVE_INVALID_DESTINATION':
-        return 'PDF 저장 위치가 올바르지 않습니다. 폴더나 바로가기(심볼릭 링크)가 아닌 .pdf 파일 이름을 지정해 주세요.'
-      case 'HWPX_SAVE_DESTINATION_EXISTS':
-        return '같은 이름의 파일이 이미 있어 PDF를 저장하지 않았습니다. 다른 이름을 지정해 주세요.'
-      case 'HWPX_SAVE_FILESYSTEM':
-        switch (reason.systemCode) {
-          case 'EACCES':
-          case 'EPERM':
-          case 'EROFS':
-          case 'EBUSY':
-            return 'PDF 저장 위치에 쓸 권한이 없거나 기존 PDF가 다른 프로그램에서 열려 있습니다. 파일을 닫거나 다른 위치를 선택해 주세요.'
-          case 'ENOSPC':
-          case 'EDQUOT':
-            return '저장 위치의 공간이 부족해 PDF를 저장하지 못했습니다.'
-          default:
-            return 'PDF 파일을 쓰지 못했습니다. 저장 위치와 파일 상태를 확인해 주세요.'
-        }
-    }
-  }
-  return reason instanceof Error ? reason.message : String(reason)
-}
-
 function samePath(left: string, right: string): boolean {
   const a = resolve(left)
   const b = resolve(right)
@@ -103,609 +165,263 @@ function samePath(left: string, right: string): boolean {
     : a === b
 }
 
-export function saveAsFailureMessage(reason: unknown): string {
-  if (reason instanceof HwpxSaveAsError) {
-    switch (reason.code) {
-      case 'HWPX_SAVE_PROTECTED_DESTINATION':
-        return PROTECTED_DESTINATION_MESSAGE
-      case 'HWPX_SAVE_DESTINATION_EXISTS':
-        return '같은 이름의 파일이 이미 있어 저장하지 않았습니다. 교체를 확인했거나 다른 이름을 선택해 주세요.'
-      case 'HWPX_SAVE_INVALID_DESTINATION':
-        return INVALID_DESTINATION_MESSAGE
-      case 'HWPX_SAVE_FILESYSTEM':
-        switch (reason.systemCode) {
-          case 'EACCES':
-          case 'EPERM':
-          case 'EROFS':
-            return '저장 위치에 쓸 권한이 없거나 기존 파일이 다른 프로그램에서 열려 있습니다. 다른 위치를 선택하거나 파일을 닫고 다시 시도해 주세요.'
-          case 'EBUSY':
-            return '기존 파일이 다른 프로그램에서 사용 중이라 교체하지 못했습니다. 파일을 닫고 다시 시도해 주세요.'
-          case 'EXDEV':
-            return '저장 위치의 파일 시스템에서 원자적 교체를 지원하지 않아 저장하지 못했습니다. 다른 위치를 선택해 주세요.'
-          case 'ENOSPC':
-          case 'EDQUOT':
-            return '저장 위치의 공간이 부족해 저장하지 못했습니다.'
-          default:
-            return '저장 위치에 파일을 쓰지 못했습니다. 목적지와 파일 상태를 확인해 주세요.'
-        }
-    }
-  }
-  return '변경본을 검증해 저장하지 못했습니다. 목적지와 파일 상태를 확인해 주세요.'
+interface PendingRequest {
+  method: EditingWorkerMethod
+  resolve: (response: Extract<EditingWorkerResponse, { ok: true }>) => void
+  reject: (reason: Error) => void
+  timer: ReturnType<typeof setTimeout>
 }
 
-function status(session: EditingSession) {
-  return {
-    revision: session.history.package.revision,
-    savedRevision: session.history.savedRevision,
-    canUndo: session.history.canUndo,
-    canRedo: session.history.canRedo,
-    isDirty: session.history.isDirty
+/** session 하나를 맡은 worker. 끝나면(failure 설정) 다시 쓰지 않는다. */
+class EditingEngineHandle {
+  private readonly worker: Worker
+  private readonly pending = new Map<number, PendingRequest>()
+  private nextId = 1
+  private failure: Error | undefined
+  private terminated: Promise<void> | undefined
+
+  constructor(
+    workerPath: string,
+    private readonly resourceLimits: ResourceLimits,
+    private readonly timeouts: EditingEngineTimeouts,
+    private readonly onEnded: (handle: EditingEngineHandle) => void,
+    private readonly onExit: (handle: EditingEngineHandle) => void
+  ) {
+    this.worker = new Worker(workerPath, { resourceLimits })
+    // 대기 중인 요청은 timeout timer가 process를 붙잡는다. 놀고 있는 편집 worker가 종료를 막지 않게 한다.
+    this.worker.unref()
+    this.worker.on('message', (response: EditingWorkerResponse) => this.settle(response))
+    this.worker.on('error', (error: Error & { code?: string }) => {
+      this.fail(
+        error.code === 'ERR_WORKER_OUT_OF_MEMORY'
+          ? resourceExhaustedError(this.resourceLimits.maxOldGenerationSizeMb)
+          : crashedError(error.message)
+      )
+    })
+    this.worker.on('exit', (code) => {
+      this.fail(crashedError(`exit ${code}`))
+      this.onExit(this)
+    })
+  }
+
+  get ended(): boolean {
+    return this.failure !== undefined
+  }
+
+  request<T>(
+    method: EditingWorkerMethod,
+    payload?: unknown
+  ): Promise<{ value: T; status?: EditingHistoryStatus }> {
+    if (this.failure) return Promise.reject(this.failure)
+    const id = this.nextId++
+    const timeoutMs = this.timeouts[TIMEOUT_KIND[method]]
+    return new Promise((resolvePromise, rejectPromise) => {
+      const timer = setTimeout(() => this.fail(timeoutError(method, timeoutMs)), timeoutMs)
+      this.pending.set(id, {
+        method,
+        resolve: (response) => resolvePromise({ value: response.value as T, status: response.status }),
+        reject: rejectPromise,
+        timer
+      })
+      const message: EditingWorkerRequest = { id, method, payload }
+      try {
+        this.worker.postMessage(message)
+      } catch (reason) {
+        clearTimeout(timer)
+        this.pending.delete(id)
+        rejectPromise(reason instanceof Error ? reason : new Error(String(reason)))
+      }
+    })
+  }
+
+  /** 정상 종료(창 닫기·편집 끝내기·다른 문서로 교체). 대기 중인 요청은 session 만료로 끝난다. */
+  stop(): Promise<void> {
+    this.fail(sessionExpiredError())
+    return this.whenTerminated()
+  }
+
+  /** worker가 완전히 멈춘 뒤 resolve한다. 강제 종료 뒤 남은 임시 파일을 지우기 전에 기다린다. */
+  whenTerminated(): Promise<void> {
+    this.terminated ??= this.worker.terminate().then(() => undefined, () => undefined)
+    return this.terminated
+  }
+
+  private settle(response: EditingWorkerResponse): void {
+    const pending = this.pending.get(response.id)
+    if (!pending) return
+    this.pending.delete(response.id)
+    clearTimeout(pending.timer)
+    if (response.ok) pending.resolve(response)
+    else {
+      const error = deserializeEditingWorkerError(response.error) as Error & {
+        status?: EditingHistoryStatus
+      }
+      error.status = response.status
+      pending.reject(error)
+    }
+  }
+
+  private fail(reason: Error): void {
+    if (this.failure) return
+    this.failure = reason
+    for (const pending of this.pending.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(reason)
+    }
+    this.pending.clear()
+    void this.whenTerminated()
+    this.onEnded(this)
   }
 }
+
+interface EditingSession {
+  id: string
+  sourcePath: string
+  status: EditingHistoryStatus
+  /** worker에 보냈지만 아직 응답이 없는 변경 요청 수. 응답 전에 창을 닫아도 dirty로 보고 확인하게 한다. */
+  pendingMutations: number
+  engine: EditingEngineHandle
+}
+
+/** 문서를 바꾸지 않는 요청. 그 밖의 요청은 응답 전까지 dirty일 수 있다고 본다. */
+const READ_ONLY_METHODS: ReadonlySet<EditingWorkerMethod> = new Set(['refresh', 'lossPolicy', 'saveAs'])
 
 export class EditingSessionManager {
   private readonly sessions = new Map<number, EditingSession>()
   private readonly queues = new Map<number, Promise<void>>()
+  /** 아직 종료되지 않은 편집 worker. session이 끝난 뒤 terminate가 끝날 때까지도 남는다. */
+  private readonly runningEngines = new Set<EditingEngineHandle>()
+  private readonly workerPath: string
+  private readonly timeouts: EditingEngineTimeouts
+  private readonly resourceLimits: ResourceLimits
 
-  constructor(private readonly createSessionId: () => string = randomUUID) {}
+  constructor(
+    private readonly createSessionId: () => string = randomUUID,
+    options: EditingSessionManagerOptions = {}
+  ) {
+    this.workerPath = options.workerPath ?? join(__dirname, 'editing_worker.js')
+    this.timeouts = { ...EDITING_ENGINE_TIMEOUTS_MS, ...options.timeouts }
+    this.resourceLimits = options.resourceLimits ?? EDITING_ENGINE_RESOURCE_LIMITS
+  }
 
   async start(senderId: number, filePath: string): Promise<EditingStartResult> {
     return this.enqueue(senderId, async () => {
       assertHwpxPath(filePath)
-      const sourcePackage = await HwpxSourcePackage.open(filePath)
+      const engine = this.createEngine()
+      let started: { value: EditingWorkerStartResult; status?: EditingHistoryStatus }
+      try {
+        started = await engine.request<EditingWorkerStartResult>('start', { filePath })
+      } catch (reason) {
+        void engine.stop()
+        throw reason
+      }
+      if (!started.status) {
+        void engine.stop()
+        throw new Error('편집 worker가 상태를 보내지 않았습니다.')
+      }
+      const previous = this.sessions.get(senderId)
       const session: EditingSession = {
         id: this.createSessionId(),
-        history: new HwpxEditHistory(sourcePackage)
+        sourcePath: started.value.sourcePath,
+        status: started.status,
+        pendingMutations: 0,
+        engine
       }
       this.sessions.set(senderId, session)
+      if (previous) void previous.engine.stop()
       return {
         sessionId: session.id,
-        document: await decodeViewerDocument(sourcePackage),
-        ...status(session)
+        document: started.value.document,
+        ...session.status
       }
     })
   }
 
-  async commit(senderId: number, request: EditingCommitRequest): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [
-          {
-            type: 'replace-text',
-            sectionPath: request.sectionPath,
-            textNodeId: request.textNodeId,
-            from: request.from,
-            to: request.to,
-            insert: request.insert
-          }
-        ],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: { ...request.selectionAfter },
-        inputType: request.inputType,
-        compositionId: request.compositionId,
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: result.changed
-          ? await projectEditTransaction(result)
-          : await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  commit(senderId: number, request: EditingCommitRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'commit', request)
   }
 
-  async commitRange(senderId: number, request: EditingRangeCommitRequest): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const plan = planReplaceSelection(
-        session.history.package,
-        request.selectionBefore,
-        request.insert
-      )
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: plan.commands,
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: request.inputType,
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: result.changed
-          ? await projectEditTransaction(result)
-          : await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  commitRange(senderId: number, request: EditingRangeCommitRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'commitRange', request)
   }
 
-  async splitParagraph(
-    senderId: number,
-    request: EditingSplitParagraphRequest
-  ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const plan = planSplitParagraph(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'insertParagraph',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  splitParagraph(senderId: number, request: EditingSplitParagraphRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'splitParagraph', request)
   }
 
-  async mergeParagraph(
-    senderId: number,
-    request: EditingMergeParagraphRequest
-  ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const plan = planMergeParagraph(
-        session.history.package,
-        request.selectionBefore,
-        request.direction
-      )
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: request.inputType,
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  mergeParagraph(senderId: number, request: EditingMergeParagraphRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'mergeParagraph', request)
   }
 
-  async applyCharacterStyle(
+  applyCharacterStyle(
     senderId: number,
     request: EditingCharacterStyleRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      if (
-        request.selection.anchorTextNodeId !== request.selection.focusTextNodeId ||
-        request.selection.anchorTextNodeId !== request.textNodeId
-      ) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '여러 글자 run에 걸친 style 적용은 아직 지원하지 않습니다.'
-        )
-      }
-      const from = Math.min(request.selection.anchorOffset, request.selection.focusOffset)
-      const to = Math.max(request.selection.anchorOffset, request.selection.focusOffset)
-      const anchor = listHwpxTextAnchors(session.history.package, request.sectionPath).find(
-        (candidate) => candidate.textNodeId === request.textNodeId
-      )
-      if (!anchor) throw new HwpxEditConflictError('글자 style 기준 위치를 찾을 수 없습니다.')
-      const splitSelection =
-        from !== to && (from > 0 || to < anchor.text.length)
-          ? {
-              sectionPath: request.sectionPath,
-              anchorTextNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
-              anchorOffset: request.selection.anchorOffset <= request.selection.focusOffset
-                ? 0
-                : to - from,
-              focusTextNodeId: `${request.sectionPath}#hp:t:${anchor.ordinal + (from > 0 ? 1 : 0)}`,
-              focusOffset: request.selection.anchorOffset <= request.selection.focusOffset
-                ? to - from
-                : 0
-            }
-          : { ...request.selection }
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [
-          {
-            type: 'apply-character-style',
-            sectionPath: request.sectionPath,
-            textNodeId: request.textNodeId,
-            bold: request.bold,
-            italic: request.italic,
-            underline: request.underline,
-            strikeout: request.strikeout,
-            height: request.height,
-            color: request.color,
-            fontId: request.fontId,
-            from,
-            to
-          }
-        ],
-        selectionBefore: { ...request.selection },
-        selectionAfter: splitSelection,
-        inputType:
-          request.bold !== undefined
-            ? 'formatBold'
-            : request.italic !== undefined
-              ? 'formatItalic'
-              : request.underline !== undefined
-                ? 'formatUnderline'
-                : request.strikeout !== undefined
-                  ? 'formatStrikeThrough'
-            : request.height !== undefined
-              ? 'formatFontSize'
-              : request.color !== undefined
-                ? 'formatFontColor'
-                : 'formatFontName',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: result.changed
-          ? await projectEditTransaction(result)
-          : await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'applyCharacterStyle', request)
   }
 
-  async applyParagraphStyle(
+  applyParagraphStyle(
     senderId: number,
     request: EditingParagraphStyleRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [
-          {
-            type: 'apply-paragraph-style',
-            sectionPath: request.sectionPath,
-            textNodeId: request.textNodeId,
-            align: request.align,
-            lineSpacing: request.lineSpacing,
-            indent: request.indent,
-            marginBefore: request.marginBefore,
-            marginAfter: request.marginAfter
-          }
-        ],
-        selectionBefore: { ...request.selection },
-        selectionAfter: { ...request.selection },
-        inputType: request.align !== undefined
-          ? `formatAlign${request.align}`
-          : request.lineSpacing !== undefined
-            ? 'formatLineSpacing'
-            : request.indent !== undefined
-              ? 'formatIndent'
-              : request.marginBefore !== undefined
-                ? 'formatParagraphBefore'
-                : 'formatParagraphAfter',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: result.changed
-          ? await projectEditTransaction(result)
-          : await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'applyParagraphStyle', request)
   }
 
-  async undo(senderId: number, sessionId: string): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, sessionId)
-      const action = session.history.undo()
-      return {
-        document: await decodeViewerDocument(session.history.package),
-        selection: action?.selection ?? session.history.selection,
-        ...status(session)
-      }
-    })
+  undo(senderId: number, sessionId: string): Promise<EditingActionResult> {
+    return this.action(senderId, sessionId, 'undo')
   }
 
-  async redo(senderId: number, sessionId: string): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, sessionId)
-      const action = session.history.redo()
-      return {
-        document: await decodeViewerDocument(session.history.package),
-        selection: action?.selection ?? session.history.selection,
-        ...status(session)
-      }
-    })
+  redo(senderId: number, sessionId: string): Promise<EditingActionResult> {
+    return this.action(senderId, sessionId, 'redo')
   }
 
-  async applyCellStyle(
-    senderId: number,
-    request: EditingCellStyleRequest
-  ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selection
-      )
-      if (!capabilities.cellStyle.available || capabilities.focus?.textNodeId !== request.textNodeId) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '표 셀 모양은 하나의 안전한 일반 body 셀을 선택했을 때만 바꿀 수 있습니다.'
-        )
-      }
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [{
-          type: 'apply-cell-style',
-          sectionPath: request.sectionPath,
-          textNodeId: request.textNodeId,
-          backgroundColor: request.backgroundColor,
-          borderColor: request.borderColor,
-          borderWidth: request.borderWidth,
-          borderType: request.borderType
-        }],
-        selectionBefore: { ...request.selection },
-        selectionAfter: { ...request.selection },
-        inputType: 'formatTableCell',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: result.changed
-          ? await projectEditTransaction(result)
-          : await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  applyCellStyle(senderId: number, request: EditingCellStyleRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'applyCellStyle', request)
   }
 
-  async insertTableRowAfter(
+  insertTableRowAfter(
     senderId: number,
     request: EditingInsertTableRowRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selectionBefore
-      )
-      if (!capabilities.cellStyle.available) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '행 추가는 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
-        )
-      }
-      const plan = planInsertTableRowAfter(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'insertTableRowAfter',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'insertTableRowAfter', request)
   }
 
-  async deleteTableRow(
-    senderId: number,
-    request: EditingDeleteTableRowRequest
-  ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selectionBefore
-      )
-      if (!capabilities.cellStyle.available) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '행 삭제는 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
-        )
-      }
-      const plan = planDeleteTableRow(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'deleteTableRow',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  deleteTableRow(senderId: number, request: EditingDeleteTableRowRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'deleteTableRow', request)
   }
 
-  async insertTableColumnAfter(
+  insertTableColumnAfter(
     senderId: number,
     request: EditingInsertTableColumnRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selectionBefore
-      )
-      if (!capabilities.cellStyle.available) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '열 추가는 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
-        )
-      }
-      const plan = planInsertTableColumnAfter(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'insertTableColumnAfter',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'insertTableColumnAfter', request)
   }
 
-  async deleteTableColumn(
+  deleteTableColumn(
     senderId: number,
     request: EditingDeleteTableColumnRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selectionBefore
-      )
-      if (!capabilities.cellStyle.available) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '열 삭제는 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
-        )
-      }
-      const plan = planDeleteTableColumn(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'deleteTableColumn',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'deleteTableColumn', request)
   }
 
-  async mergeTableCellRight(
+  mergeTableCellRight(
     senderId: number,
     request: EditingMergeTableCellRightRequest
   ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const capabilities = editingCapabilities(
-        await decodeViewerDocument(session.history.package),
-        request.selectionBefore
-      )
-      if (!capabilities.cellStyle.available) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '셀 병합은 하나의 안전한 일반 body 셀을 선택했을 때만 실행할 수 있습니다.'
-        )
-      }
-      const plan = planMergeTableCellRight(session.history.package, request.selectionBefore)
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore: { ...request.selectionBefore },
-        selectionAfter: plan.selectionAfter,
-        inputType: 'mergeTableCellRight',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: undefined,
-        ...status(session)
-      }
-    })
+    return this.action(senderId, request.sessionId, 'mergeTableCellRight', request)
   }
 
-  async splitTableCell(
-    senderId: number,
-    request: EditingSplitTableCellRequest
-  ): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, request.sessionId)
-      const document = await decodeViewerDocument(session.history.package)
-      const projection = reconcileTableCellSelection(document, request.selection)
-      if (projection.status !== 'CURRENT' || !projection.selection) {
-        throw new EditingOperationError(
-          'EDITING_UNSUPPORTED',
-          '분할할 병합 표 셀 선택이 현재 문서와 일치하지 않습니다.'
-        )
-      }
-      const plan = planSplitTableCell(session.history.package, projection.selection)
-      const selectionBefore = {
-        sectionPath: projection.selection.sectionPath,
-        anchorTextNodeId: projection.selection.textNodeId,
-        anchorOffset: 0,
-        focusTextNodeId: projection.selection.textNodeId,
-        focusOffset: 0
-      }
-      const transaction: EditTransaction = {
-        id: request.transactionId,
-        baseRevision: session.history.package.revision,
-        commands: [plan.command],
-        selectionBefore,
-        selectionAfter: plan.selectionAfter,
-        inputType: 'splitTableCell',
-        timestamp: request.timestamp
-      }
-      const result = session.history.commitSynchronized(transaction)
-      return {
-        document: await projectEditTransaction(result),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  splitTableCell(senderId: number, request: EditingSplitTableCellRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'splitTableCell', request)
   }
 
-  async refresh(senderId: number, sessionId: string): Promise<EditingActionResult> {
-    return this.enqueue(senderId, async () => {
-      const session = this.requireSession(senderId, sessionId)
-      return {
-        document: await decodeViewerDocument(session.history.package),
-        selection: session.history.selection,
-        ...status(session)
-      }
-    })
+  refresh(senderId: number, sessionId: string): Promise<EditingActionResult> {
+    return this.action(senderId, sessionId, 'refresh')
   }
 
   suggestedSaveAsPath(senderId: number, sessionId: string): string {
     const session = this.requireSession(senderId, sessionId)
-    const sourcePath = session.history.package.sourcePath
+    const sourcePath = session.sourcePath
     const extension = extname(sourcePath)
     const stem = basename(sourcePath, extension)
     return join(dirname(sourcePath), `${stem}_수정본.hwpx`)
@@ -718,18 +434,18 @@ export class EditingSessionManager {
   isDirty(senderId: number, sessionId?: string): boolean {
     const session = this.sessions.get(senderId)
     if (!session || (sessionId !== undefined && session.id !== sessionId)) return false
-    return session.history.isDirty
+    return session.status.isDirty || session.pendingMutations > 0
   }
 
   async lossPolicy(senderId: number, sessionId: string): Promise<HwpxSaveLossPolicy> {
     return this.enqueue(senderId, async () =>
-      this.requireSession(senderId, sessionId).history.saveLossPolicy
+      this.call<HwpxSaveLossPolicy>(this.requireSession(senderId, sessionId), 'lossPolicy')
     )
   }
 
   /** 원본 보호 대상: 열려 있는 모든 편집 session의 원본 경로. PDF 내보내기도 같은 목록을 쓴다. */
   protectedSourcePaths(): string[] {
-    return [...this.sessions.values()].map((session) => session.history.package.sourcePath)
+    return [...this.sessions.values()].map((session) => session.sourcePath)
   }
 
   /**
@@ -774,47 +490,96 @@ export class EditingSessionManager {
   ): Promise<EditingSavedResult> {
     return this.enqueue(senderId, async () => {
       const session = this.requireSession(senderId, sessionId)
-      if (!session.history.isDirty) {
-        throw new EditingOperationError(
-          'EDITING_NOT_APPLICABLE',
-          '저장할 HWPX 변경 내용이 없습니다.'
-        )
+      const temporaryToken = randomUUID()
+      const request: EditingEngineSaveRequest = {
+        destinationPath,
+        overwrite: options.overwrite === true,
+        protectedPaths: this.protectedSourcePaths(),
+        temporaryToken
       }
-      let result: Awaited<ReturnType<typeof saveHwpxAs>>
-      const lossPolicy = session.history.saveLossPolicy
       try {
-        result = await saveHwpxAs(session.history.package, destinationPath, {
-          overwrite: options.overwrite === true,
-          protectedPaths: this.protectedSourcePaths()
-        })
+        return await this.call<EditingSavedResult>(session, 'saveAs', request)
       } catch (reason) {
-        throw new EditingOperationError('EDITING_SAVE_FAILED', saveAsFailureMessage(reason), 'retry')
-      }
-      session.history.markSaved()
-      return {
-        destinationPath: result.destinationPath,
-        entryCount: result.entryCount,
-        previewStatus: lossPolicy.previewStatus,
-        lossPolicy,
-        ...status(session)
+        if (session.engine.ended) {
+          // timeout·OOM으로 worker를 강제 종료했다면 worker의 finally가 돌지 못했을 수 있다.
+          // 완전히 멈춘 뒤 이 저장 요청의 임시 파일을 지운다. 목적지는 검증 뒤 link/rename으로만 게시하므로 반쯤 쓴 목적지는 없다.
+          await session.engine.whenTerminated()
+          await unlink(saveTemporaryPath(destinationPath, temporaryToken)).catch(() => undefined)
+        }
+        throw reason
       }
     })
   }
 
   stop(senderId: number): void {
+    const session = this.sessions.get(senderId)
     this.sessions.delete(senderId)
     this.queues.delete(senderId)
+    if (session) void session.engine.stop()
+  }
+
+  /** 모든 편집 worker를 끝낸다(테스트 정리용). */
+  async dispose(): Promise<void> {
+    this.sessions.clear()
+    this.queues.clear()
+    await Promise.all([...this.runningEngines].map((engine) => engine.stop()))
+  }
+
+  /** 실행 중인 편집 worker 수(진단·테스트용). */
+  get runningWorkerCount(): number {
+    return this.runningEngines.size
+  }
+
+  private createEngine(): EditingEngineHandle {
+    const engine = new EditingEngineHandle(
+      this.workerPath,
+      this.resourceLimits,
+      this.timeouts,
+      (handle) => {
+        // timeout·crash·OOM으로 끝난 worker의 session은 즉시 지운다. renderer는 다음 요청부터 만료로 본다.
+        for (const [senderId, session] of this.sessions) {
+          if (session.engine === handle) this.sessions.delete(senderId)
+        }
+      },
+      (handle) => this.runningEngines.delete(handle)
+    )
+    this.runningEngines.add(engine)
+    return engine
+  }
+
+  private action(
+    senderId: number,
+    sessionId: string,
+    method: EditingWorkerMethod,
+    request?: unknown
+  ): Promise<EditingActionResult> {
+    return this.enqueue(senderId, async () =>
+      this.call<EditingActionResult>(this.requireSession(senderId, sessionId), method, request)
+    )
+  }
+
+  private async call<T>(session: EditingSession, method: EditingWorkerMethod, payload?: unknown): Promise<T> {
+    const mutation = !READ_ONLY_METHODS.has(method)
+    if (mutation) session.pendingMutations += 1
+    try {
+      const response = await session.engine.request<T>(method, payload)
+      if (response.status) session.status = response.status
+      return response.value
+    } catch (reason) {
+      const status = (reason as { status?: EditingHistoryStatus }).status
+      if (status) {
+        session.status = status
+        delete (reason as { status?: EditingHistoryStatus }).status
+      }
+      throw reason
+    } finally {
+      if (mutation) session.pendingMutations -= 1
+    }
   }
 
   private requireSession(senderId: number, sessionId: string): EditingSession {
     const session = this.sessions.get(senderId)
-    if (!session || session.id !== sessionId) {
-      throw new EditingOperationError(
-        'EDITING_SESSION_EXPIRED',
-        '편집 session이 종료되었습니다. 문서를 다시 열어 주세요.',
-        'restart-session'
-      )
-    }
+    if (!session || session.id !== sessionId) throw sessionExpiredError()
     return session
   }
 

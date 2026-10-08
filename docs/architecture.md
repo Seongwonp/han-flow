@@ -263,6 +263,8 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 - HWPX 확장자와 패키지 필수 entry 검증
 - HWP 200 MiB·CFB magic preflight와 byte 전달
 - HWPX package index와 decoder worker 생성·취소·오류 전달(section 디코딩은 main thread에서 하지 않음)
+- 창별 편집 session 목록·dirty 상태 거울·원본 경로, 저장 대화상자와 목적지 결정(`saveAsDestinationDecision`·원본 보호),
+  닫기·문서 교체 dirty 확인. 편집 엔진(package·history·projection·Save As 검증)은 main thread에서 실행하지 않음
 - renderer 준비 완료 후 `webContents.printToPDF` 실행과 파일 저장
 
 ### 원본 개체 자리 표시
@@ -316,6 +318,40 @@ section 하나의 압축 전 크기가 2MiB 이상이면 첫 section 모델을 �
 요청으로 완성하며, 그 밖의 문서는 한 번의 worker 요청으로 전체를 디코딩한다. load ID가
 바뀌면 이전 worker를 종료하며 늦게 도착한 결과는 renderer가 무시한다. worker 오류가 발생해도
 이미 표시한 첫 section은 유지하고 상태 표시줄에 나머지 페이지 오류를 노출한다.
+
+### 편집 worker
+
+HWPX 편집 엔진은 편집 session(=창)마다 worker thread 하나(`src/main/editing_worker.ts`)에서 실행한다.
+worker가 `HwpxSourcePackage`(모든 entry 압축 해제), source tree cache(`package_trees.ts`), `HwpxEditHistory`,
+transaction 적용, projection 디코딩(`projectEditTransaction`·`decodeViewerDocument`), Save As(임시 파일 쓰기·fsync·
+재개봉 비교·viewer 디코딩·link/rename 게시)를 모두 소유한다(`src/main/editing_engine.ts`). main의
+`EditingSessionManager`는 IPC 계약을 그대로 두고 요청을 structured clone 메시지(`editing_worker_protocol.ts`)로
+넘기며, 응답에 실린 revision·savepoint·undo/redo·dirty 상태를 창별로 거울처럼 들고 있어 닫기 확인·원본 보호 목록을
+동기적으로 답한다. package·history는 worker 밖으로 나오지 않고, renderer가 쓰는 `ViewerDocument` projection과
+상태만 돌아온다. 저장 목적지 결정(`saveAsDestinationDecision`, 원본·다른 session 원본 보호, 심볼릭 링크 거부)과
+대화상자는 main에 남고, 결정된 목적지·교체 확인 여부·보호 경로·임시 파일 UUID만 worker에 넘긴다.
+
+- 격리 방식: Node `worker_threads`. 별도 V8 heap에 `resourceLimits`(`maxOldGenerationSizeMb` 1536,
+  `maxYoungGenerationSizeMb` 64, `EDITING_ENGINE_RESOURCE_LIMITS`)를 걸 수 있고, 초과하면 app abort 대신
+  `ERR_WORKER_OUT_OF_MEMORY`로 끝나 구분할 수 있다. `terminate()`는 동기 무한 loop도 멈추며, fs 접근과 build·Jest
+  실행 방식이 decoder worker와 같다. Electron `utilityProcess`는 process 단위 격리를 주지만 Electron 밖(Jest)에서
+  실제 경로를 실행할 수 없고 process 기동 비용이 크며, 필요한 heap 한도·강제 종료·fs 접근을 `worker_threads`가 모두
+  충족해 쓰지 않았다.
+  같은 process 안 thread이므로 native crash(V8·zlib 결함)는 app 전체에 미치고, ZIP entry `Buffer`는 V8 heap 밖
+  메모리라 `resourceLimits`에 잡히지 않는다. 그 크기는 `HwpxSourcePackage`의 entry 개수·개별·전체 압축 해제 한도로 묶는다.
+- 요청별 wall-clock 한도(`EDITING_ENGINE_TIMEOUTS_MS`): 편집 시작 120초, command(text·style·문단·표·refresh·
+  loss policy) 60초, 실행 취소·다시 실행 60초, 저장 180초. 넘으면 worker를 terminate하고
+  `EDITING_ENGINE_TIMEOUT`, worker 비정상 종료는 `EDITING_ENGINE_CRASHED`, heap 한도 초과는
+  `EDITING_RESOURCE_EXHAUSTED`로 끝낸다(recovery `restart-session`, 한국어 안내). 그 session은 즉시 지워져 dirty 확인·원본
+  보호 목록에서도 빠지고, renderer는 편집 모드를 닫되 마지막 문서 화면은 그대로 두고 보기 모드로 돌아간다.
+- 저장 중 강제 종료: 목적지는 검증을 마친 임시 파일을 hard link(새 파일)·rename(교체 확인)으로만 게시하므로 반쯤 쓴 목적지는
+  생기지 않는다. worker의 `finally`가 돌지 못해 남은 임시 파일은 main이 worker 종료를 기다린 뒤 미리 정한 UUID 경로
+  (`saveTemporaryPath`)로 지운다.
+- 순서: main은 창별 queue(`enqueue`)로 한 창의 요청을 하나씩 보내고 worker도 도착 순서대로 처리한다. 다른 창의 session은
+  각자 worker에서 병렬로 돈다. 편집을 끝내거나 창을 닫거나 다른 문서로 교체하면 worker를 종료하고 대기 요청은
+  `EDITING_SESSION_EXPIRED`로 끝낸다.
+- main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답 projection의 structured clone 역직렬화와 renderer IPC
+  직렬화, 저장 목적지 `lstat`/`stat`, 대화상자.
 
 ### HWP Web Worker
 

@@ -6,7 +6,23 @@ export type EditingErrorCode =
   | 'EDITING_SAVE_FAILED'
   | 'EDITING_SESSION_EXPIRED'
   | 'EDITING_UNSUPPORTED'
+  | 'EDITING_ENGINE_TIMEOUT'
+  | 'EDITING_ENGINE_CRASHED'
+  | 'EDITING_RESOURCE_EXHAUSTED'
   | 'EDITING_INTERNAL'
+
+/** 편집 worker를 종료해 session이 끝난 오류. renderer는 편집 모드를 닫고 보기 모드로 돌아간다. */
+export const EDITING_ENGINE_FAILURE_CODES = [
+  'EDITING_ENGINE_TIMEOUT',
+  'EDITING_ENGINE_CRASHED',
+  'EDITING_RESOURCE_EXHAUSTED'
+] as const
+
+export type EditingEngineFailureCode = (typeof EDITING_ENGINE_FAILURE_CODES)[number]
+
+export function isEditingEngineFailureCode(code: unknown): code is EditingEngineFailureCode {
+  return (EDITING_ENGINE_FAILURE_CODES as readonly unknown[]).includes(code)
+}
 
 export type EditingRecovery = 'preserve' | 'retry' | 'restart-session' | 'none'
 
@@ -30,6 +46,7 @@ const EDITING_ERROR_CODES: readonly EditingErrorCode[] = [
   'EDITING_SAVE_FAILED',
   'EDITING_SESSION_EXPIRED',
   'EDITING_UNSUPPORTED',
+  ...EDITING_ENGINE_FAILURE_CODES,
   'EDITING_INTERNAL'
 ]
 

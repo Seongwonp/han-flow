@@ -16,18 +16,28 @@ import {
   createRoundTripHwpx,
   createTableColumnHwpx
 } from '../fixtures/public/create_synthetic_hwpx'
+import { writeEditingWorkerShim } from './ts_worker_shim'
 
 describe('main process HWPX editing session', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-editing-session-'))
   const fixture = createRoundTripHwpx(directory)
   const columnFixture = createTableColumnHwpx(directory)
+  // 편집 엔진은 session마다 실제 worker thread(src/main/editing_worker.ts)에서 돈다.
+  const workerPath = writeEditingWorkerShim(directory)
+  const managers: EditingSessionManager[] = []
+  const editingManager = (createSessionId?: () => string): EditingSessionManager => {
+    const manager = new EditingSessionManager(createSessionId, { workerPath })
+    managers.push(manager)
+    return manager
+  }
 
-  afterAll(() => {
+  afterAll(async () => {
+    await Promise.all(managers.map((manager) => manager.dispose()))
     rmSync(directory, { recursive: true, force: true })
   })
 
   test('renderer command를 직렬화해 commit, undo, redo projection을 반환한다', async () => {
-    const manager = new EditingSessionManager(() => 'session-1')
+    const manager = editingManager(() => 'session-1')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === '공개 헤더'
@@ -90,7 +100,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('표 셀 모양을 undo/redo하고 loss policy와 Save As 재개봉에 연결한다', async () => {
-    const manager = new EditingSessionManager(() => 'cell-style-session')
+    const manager = editingManager(() => 'cell-style-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const anchor = listHwpxTextAnchors(source, sectionPath).find(
@@ -142,7 +152,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('현재 셀 아래 행 추가를 undo/redo하고 Save As 재개봉한다', async () => {
-    const manager = new EditingSessionManager(() => 'table-row-session')
+    const manager = editingManager(() => 'table-row-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const anchor = listHwpxTextAnchors(source, sectionPath).find(
@@ -181,7 +191,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('현재 표 행 삭제 뒤 selection을 재배치하고 undo/redo·Save As한다', async () => {
-    const manager = new EditingSessionManager(() => 'delete-table-row-session')
+    const manager = editingManager(() => 'delete-table-row-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const current = listHwpxTextAnchors(source, sectionPath).find(
@@ -225,7 +235,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('현재 열 오른쪽에 빈 열을 추가하고 selection·undo/redo·Save As를 보존한다', async () => {
-    const manager = new EditingSessionManager(() => 'insert-table-column-session')
+    const manager = editingManager(() => 'insert-table-column-session')
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(columnFixture)
     const anchor = listHwpxTextAnchors(source, sectionPath).find(
@@ -269,7 +279,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('현재 표 열 삭제 뒤 selection을 재배치하고 undo/redo·Save As한다', async () => {
-    const manager = new EditingSessionManager(() => 'delete-table-column-session')
+    const manager = editingManager(() => 'delete-table-column-session')
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(columnFixture)
     const current = listHwpxTextAnchors(source, sectionPath).find(
@@ -319,7 +329,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('오른쪽 표 셀을 병합하고 selection 해제·undo/redo·Save As를 보존한다', async () => {
-    const manager = new EditingSessionManager(() => 'merge-table-cell-session')
+    const manager = editingManager(() => 'merge-table-cell-session')
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(columnFixture)
     const current = listHwpxTextAnchors(source, sectionPath).find(
@@ -375,7 +385,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('선택한 1×2 병합 셀을 분할하고 undo/redo·Save As를 보존한다', async () => {
-    const manager = new EditingSessionManager(() => 'split-table-cell-session')
+    const manager = editingManager(() => 'split-table-cell-session')
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(columnFixture)
     const current = listHwpxTextAnchors(source, sectionPath).find(
@@ -437,7 +447,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('여러 run 범위를 원자적으로 치환하고 역방향 selection을 undo/redo한다', async () => {
-    const manager = new EditingSessionManager(() => 'range-session')
+    const manager = editingManager(() => 'range-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const xml = source.readEntry(sectionPath).toString('utf8').replace(
@@ -487,7 +497,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('Enter 문단 나눔을 undo/redo하고 Save As 재개봉한다', async () => {
-    const manager = new EditingSessionManager(() => 'split-session')
+    const manager = editingManager(() => 'split-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const anchor = listHwpxTextAnchors(source, sectionPath).find(
@@ -551,7 +561,7 @@ describe('main process HWPX editing session', () => {
       focusTextNodeId: anchor.textNodeId,
       focusOffset: 0
     }
-    const manager = new EditingSessionManager(() => 'merge-session')
+    const manager = editingManager(() => 'merge-session')
     const started = await manager.start(30, mergeFixture)
     const merged = await manager.mergeParagraph(30, {
       sessionId: started.sessionId,
@@ -600,7 +610,7 @@ describe('main process HWPX editing session', () => {
       focusTextNodeId: start.textNodeId,
       focusOffset: 2
     }
-    const manager = new EditingSessionManager(() => 'paragraph-range-session')
+    const manager = editingManager(() => 'paragraph-range-session')
     const started = await manager.start(31, rangeFixture)
     const committed = await manager.commitRange(31, {
       sessionId: started.sessionId,
@@ -634,7 +644,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('caret 이동을 selection으로 동기화하고 제한된 글자·문단 style을 undo/redo한다', async () => {
-    const manager = new EditingSessionManager(() => 'style-session')
+    const manager = editingManager(() => 'style-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === ''
@@ -692,7 +702,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('부분 선택 글자 style은 선택 구간 run을 분할하고 선택과 undo·redo를 이동한다', async () => {
-    const manager = new EditingSessionManager(() => 'partial-style-session')
+    const manager = editingManager(() => 'partial-style-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === ''
@@ -758,7 +768,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('표 셀 run의 부분 글자 모양과 문단 정렬을 세션 history로 적용하고 되돌린다', async () => {
-    const manager = new EditingSessionManager(() => 'cell-style-session')
+    const manager = editingManager(() => 'cell-style-session')
     const source = await HwpxSourcePackage.open(fixture)
     const sectionPath = 'Contents/section0.xml'
     const anchor = listHwpxTextAnchors(source, sectionPath).find((candidate) => candidate.text === '긴 설명')!
@@ -818,7 +828,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('기울임·밑줄·취소선 요청을 projection과 history에 반영한다', async () => {
-    const manager = new EditingSessionManager(() => 'decoration-session')
+    const manager = editingManager(() => 'decoration-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === ''
@@ -857,7 +867,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('줄 간격과 문단 앞뒤 간격 요청을 projection과 history에 반영한다', async () => {
-    const manager = new EditingSessionManager(() => 'paragraph-spacing-session')
+    const manager = editingManager(() => 'paragraph-spacing-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === ''
@@ -905,7 +915,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('부분 글자 style과 문단 정렬을 함께 적용한 package를 안전하게 저장하고 재개봉한다', async () => {
-    const manager = new EditingSessionManager(() => 'styled-save-session')
+    const manager = editingManager(() => 'styled-save-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === ''
@@ -990,7 +1000,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('일반 표 body cell의 단일 hp:t를 기존 transaction으로 편집하고 undo·redo한다', async () => {
-    const manager = new EditingSessionManager(() => 'table-cell-session')
+    const manager = editingManager(() => 'table-cell-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === '긴 설명'
@@ -1033,7 +1043,7 @@ describe('main process HWPX editing session', () => {
 
   test('병합·머리글 셀은 text commit·undo만 허용하고 표 구조·셀 style command는 거부한다', async () => {
     const mergedFixture = createCompatibilityHwpx(directory, 'merged-header-cells.hwpx')
-    const manager = new EditingSessionManager(() => 'merged-header-session')
+    const manager = editingManager(() => 'merged-header-session')
     const sectionPath = 'Contents/section0.xml'
     const source = await HwpxSourcePackage.open(mergedFixture)
     const anchors = listHwpxTextAnchors(source, sectionPath)
@@ -1110,7 +1120,7 @@ describe('main process HWPX editing session', () => {
     const sourcePath = join(directory, 'multi-paragraph-cell-source.hwpx')
     await saveHwpxAs(multiParagraphSource, sourcePath)
 
-    const manager = new EditingSessionManager(() => 'multi-paragraph-cell-session')
+    const manager = editingManager(() => 'multi-paragraph-cell-session')
     const started = await manager.start(30, sourcePath)
     const sourceAnchors = listHwpxTextAnchors(multiParagraphSource, sectionPath)
     const first = sourceAnchors.find((candidate) => candidate.text === '긴 설명')!
@@ -1156,7 +1166,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('이전 commit 뒤 caret를 옮긴 다음 text transaction을 계속 허용한다', async () => {
-    const manager = new EditingSessionManager(() => 'caret-session')
+    const manager = editingManager(() => 'caret-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === '공개 헤더'
@@ -1200,7 +1210,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('sender와 session ID가 다르면 편집 상태에 접근하지 못한다', async () => {
-    const manager = new EditingSessionManager(() => 'bound-session')
+    const manager = editingManager(() => 'bound-session')
     await manager.start(1, fixture)
     await expect(manager.undo(2, 'bound-session')).rejects.toMatchObject({
       code: 'EDITING_SESSION_EXPIRED',
@@ -1213,7 +1223,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('.hwp는 편집 session을 시작하지 않는다', async () => {
-    const manager = new EditingSessionManager()
+    const manager = editingManager()
     await expect(manager.start(1, join(directory, 'document.hwp'))).rejects.toMatchObject({
       code: 'EDITING_UNSUPPORTED',
       message: expect.stringContaining('HWPX 문서만')
@@ -1221,7 +1231,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('검증형 Save As 성공 뒤에만 savepoint를 이동하고 원본을 보존한다', async () => {
-    const manager = new EditingSessionManager(() => 'save-session')
+    const manager = editingManager(() => 'save-session')
     const sourceBytes = readFileSync(fixture)
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
@@ -1301,7 +1311,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('취소·충돌에 해당하는 저장 실패는 dirty와 목적지를 바꾸지 않는다', async () => {
-    const manager = new EditingSessionManager(() => 'failed-save-session')
+    const manager = editingManager(() => 'failed-save-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === '공개 헤더'
@@ -1339,7 +1349,7 @@ describe('main process HWPX editing session', () => {
   })
 
   test('저장 목적지 결정은 원본을 보호하고 교체 확인된 기존 파일만 덮어쓴다', async () => {
-    const manager = new EditingSessionManager(() => 'overwrite-policy-session')
+    const manager = editingManager(() => 'overwrite-policy-session')
     const source = await HwpxSourcePackage.open(fixture)
     const anchor = listHwpxTextAnchors(source, 'Contents/section0.xml').find(
       (candidate) => candidate.text === '공개 헤더'

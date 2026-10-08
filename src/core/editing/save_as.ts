@@ -20,6 +20,11 @@ export interface SaveHwpxAsOptions {
    * 확인과 게시 사이에 목적지가 생기는 경쟁 상황을 재현하는 데만 쓴다.
    */
   onBeforePublish?: () => Promise<void> | void
+  /**
+   * 임시 파일 이름에 쓸 UUID. 호출자(main process)가 미리 정해 두면 저장을 맡은 편집 worker가 중간에
+   * 종료되더라도 같은 이름(`saveTemporaryPath`)으로 남은 임시 파일을 지울 수 있다. 생략하면 새로 만든다.
+   */
+  temporaryToken?: string
 }
 
 export interface SaveHwpxAsResult {
@@ -63,8 +68,22 @@ function filesystemError(action: string, reason: unknown): HwpxSaveAsError {
 const DESTINATION_EXISTS_MESSAGE =
   '같은 이름의 파일이 이미 있습니다. 교체를 확인하지 않은 기존 파일은 덮어쓰지 않습니다.'
 
-function temporaryPathFor(destinationPath: string): string {
-  return resolve(dirname(destinationPath), `.${basename(destinationPath)}.han-flow-${randomUUID()}.tmp`)
+const TEMPORARY_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * 목적지와 같은 디렉터리의 임시 파일 경로. token은 UUID 형식만 허용해 다른 경로를 가리키지 못하게 한다.
+ * 편집 worker를 강제 종료한 main process가 남은 임시 파일을 지울 때도 같은 함수를 쓴다.
+ */
+export function saveTemporaryPath(destinationPath: string, token: string): string {
+  if (!TEMPORARY_TOKEN_PATTERN.test(token)) {
+    throw new HwpxSaveAsError('HWPX_SAVE_INVALID_DESTINATION', '임시 파일 식별자가 올바르지 않습니다.')
+  }
+  const resolvedDestination = resolve(destinationPath)
+  return resolve(dirname(resolvedDestination), `.${basename(resolvedDestination)}.han-flow-${token}.tmp`)
+}
+
+function temporaryPathFor(destinationPath: string, token: string = randomUUID()): string {
+  return saveTemporaryPath(destinationPath, token)
 }
 
 const caseInsensitivePaths = process.platform === 'win32' || process.platform === 'darwin'
@@ -305,7 +324,7 @@ export async function saveHwpxAs(
   // 검증 비용을 쓰기 전에 원본 보호와 기존 파일 정책을 먼저 확인한다.
   await assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
 
-  const temporaryPath = temporaryPathFor(resolvedDestination)
+  const temporaryPath = temporaryPathFor(resolvedDestination, options.temporaryToken)
   let temporaryExists = false
   try {
     await writeTemporarySibling(temporaryPath, sourcePackage.toBuffer())

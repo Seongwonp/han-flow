@@ -10,7 +10,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          decoder_worker: resolve(__dirname, 'src/main/decoder_worker.ts')
+          decoder_worker: resolve(__dirname, 'src/main/decoder_worker.ts'),
+          editing_worker: resolve(__dirname, 'src/main/editing_worker.ts')
         }
       }
     }

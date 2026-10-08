@@ -33,6 +33,7 @@ import { applyEditTransaction, EditTransaction } from '../../src/core/editing/tr
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 import { EditingSessionManager } from '../../src/main/editing_session'
+import { writeEditingWorkerShim } from '../main/ts_worker_shim'
 
 const sectionPath = 'Contents/section0.xml'
 const external = (name: string) => join(__dirname, '../fixtures/public/external', `${name}.hwpx`)
@@ -298,7 +299,9 @@ describe('글자 칸이 없는 빈 문단·셀 입력', () => {
     const document = await decodeViewerDocument(source)
     const body = emptyContexts(document).find((context) => context.structure === 'TOP_LEVEL_TEXT')!
     const cell = emptyContexts(document).find((context) => context.structure === 'TABLE_CELL_TEXT')!
-    const manager = new EditingSessionManager(() => 'empty-paragraph-session')
+    const manager = new EditingSessionManager(() => 'empty-paragraph-session', {
+      workerPath: writeEditingWorkerShim(directory)
+    })
     const started = await manager.start(41, fixture)
     const commit = (textNodeId: string, insert: string, timestamp: number) => manager.commit(41, {
       sessionId: started.sessionId,
@@ -332,5 +335,6 @@ describe('글자 칸이 없는 빈 문단·셀 입력', () => {
     for (const entry of source.listEntries()) {
       if (entry.path !== sectionPath) expect(reopened.readEntry(entry.path)).toEqual(source.readEntry(entry.path))
     }
+    await manager.dispose()
   })
 })
