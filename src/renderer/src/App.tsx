@@ -37,7 +37,8 @@ import {
   editingErrorCode,
   editingErrorStatus,
   editingSelectionProjectionStatus,
-  editingStatusTone
+  editingStatusTone,
+  isEditingEngineFailure
 } from './editing_error_status'
 import {
   moveParagraphEditorSelection,
@@ -1012,9 +1013,9 @@ export default function App() {
           return
         }
       } catch (reason) {
-        setEditingStatus(
-          editingErrorStatus('문서 교체', reason) ?? '문서 교체 취소'
-        )
+        const status = editingErrorStatus('문서 교체', reason) ?? '문서 교체 취소'
+        if (isEditingEngineFailure(reason)) endEditingAfterEngineFailure(status)
+        else setEditingStatus(status)
         return
       }
     }
@@ -1270,9 +1271,23 @@ export default function App() {
     setEditingSelection(projection.selection)
     setEditingSelectionNotice(editingSelectionProjectionStatus(projection.status))
   }, [])
+  // 편집 엔진(worker)이 timeout·crash·메모리 초과로 끝나면 main은 session을 이미 지웠다.
+  // 편집 모드만 닫고 마지막으로 보이던 문서 화면은 그대로 둔다.
+  const endEditingAfterEngineFailure = useCallback((status: string) => {
+    void api().stopEditing()
+    editingTransient.current.reset()
+    resetEditing()
+    setEditingStatus(status)
+  }, [])
   const recoverEditingFailure = useCallback(async (action: string, reason: unknown) => {
     const status = editingErrorStatus(action, reason) ?? '편집 중'
+    if (isEditingEngineFailure(reason)) {
+      endEditingAfterEngineFailure(status)
+      return
+    }
     const current = editingTransient.current.currentSession
+    // 엔진 실패로 편집 모드를 이미 닫았다면 뒤이어 실패한 대기 요청의 session 만료 안내로 덮어쓰지 않는다.
+    if (!current && editingErrorCode(reason) === 'EDITING_SESSION_EXPIRED') return
     if (editingErrorCode(reason) !== 'EDITING_CONFLICT' || !current) {
       setEditingStatus(status)
       return
@@ -1285,7 +1300,7 @@ export default function App() {
         `${status} · ${editingErrorStatus('편집 상태 복구', refreshReason) ?? '복구하지 못했습니다.'}`
       )
     }
-  }, [applyEditingResult])
+  }, [applyEditingResult, endEditingAfterEngineFailure])
   const updateEditingSelection = useCallback((
     anchor: ViewerSourceAnchor,
     selection: { anchorOffset: number; focusOffset: number }
@@ -1864,11 +1879,13 @@ export default function App() {
         `저장 완료 · r${result.savedRevision} · ${savedName} · ${savedStructures} · ${previewStatus}`
       )
     } catch (reason) {
-      setEditingStatus(editingErrorStatus('저장', reason) ?? '편집 중')
+      const status = editingErrorStatus('저장', reason) ?? '편집 중'
+      if (isEditingEngineFailure(reason)) endEditingAfterEngineFailure(status)
+      else setEditingStatus(status)
     } finally {
       setEditingPending((current) => Math.max(0, current - 1))
     }
-  }, [editing?.sessionId, editing?.isDirty, editingPending])
+  }, [editing?.sessionId, editing?.isDirty, editingPending, endEditingAfterEngineFailure])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && searchOpen) {

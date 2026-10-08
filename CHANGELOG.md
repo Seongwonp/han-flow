@@ -27,6 +27,7 @@
 - Electron 44 요구사항에 맞춰 macOS 패키지 `minimumSystemVersion`을 13.0으로 지정
 - OS 파일 열기 경로를 포커스된 창(없으면 최근 창·새 창)으로 전달하고 대화상자를 요청한 창에 연결, `document:import`·`editing:start`는 main이 건넨 경로와 끌어 놓은 일반 문서 파일만 창별 허용목록(실제 경로 비교)으로 받으며 미사용 `dialog:openImage` 제거
 - 편집 엔진(package·source tree·history·projection 디코딩·Save As 검증)을 창별 worker thread로 옮겨 heap 한도(1.5 GiB)와 요청별 timeout(시작 120초·command·실행 취소 60초·저장 180초)을 걸고, timeout·crash·OOM은 worker를 종료해 `EDITING_ENGINE_TIMEOUT`·`EDITING_ENGINE_CRASHED`·`EDITING_RESOURCE_EXHAUSTED`로 session을 끝내며 남은 저장 임시 파일 정리
+- 편집 엔진이 timeout·crash·메모리 초과로 중단되면 renderer가 세션 종료 안내와 함께 편집 모드를 닫고 마지막 문서 화면을 유지한 보기 모드로 돌아가며, 뒤이어 실패한 대기 요청의 만료 안내로 덮어쓰지 않음
 
 ### Sprint 4 호환성 corpus
 
