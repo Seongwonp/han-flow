@@ -268,6 +268,8 @@ function captureVisualState(window: BrowserWindow): void {
   const stateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   const searchQuery = testValue('HAN_FLOW_VISUAL_SEARCH_QUERY')
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
+  // 한 글자 입력 지연 측정(keystroke 수). 문단에 한 글자씩 넣고 입력 event부터 편집 결과가 화면 DOM에 반영될 때까지 잰다.
+  const editLatencyKeystrokes = Number(testValue('HAN_FLOW_VISUAL_EDIT_LATENCY') ?? 0)
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
@@ -281,7 +283,7 @@ function captureVisualState(window: BrowserWindow): void {
   let previousSignature = ''
   let stableSamples = 0
   let searchTriggered = !searchQuery
-  let editTriggered = !editText && !tableStructureProbeEnabled
+  let editTriggered = !editText && !tableStructureProbeEnabled && !(editLatencyKeystrokes > 0)
   let editProbe: unknown = null
   let sampledPeakWorkingSetKb = 0
   const sampleMemory = () => {
@@ -470,6 +472,108 @@ function captureVisualState(window: BrowserWindow): void {
           enabledButtons: Array.from(document.querySelectorAll('.viewer-ribbon-controls button:not(:disabled)')).map((button) => button.getAttribute('aria-label'))
         })`)
       }))
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
+    if (!editTriggered && editLatencyKeystrokes > 0) {
+      editTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      editProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-button'
+        const waitFor = async (predicate, timeout = 60000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
+          throw new Error('입력 지연 측정 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const surfaceLabel = 'HWPX 문단 편집'
+        const surfaces = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
+        const readySurface = () => surfaces().find((element) => element.dataset.inputReady === 'true' && (element.textContent ?? '').length > 0)
+        if (!readySurface()) {
+          const editButton = await waitFor(() => document.querySelector('[aria-label="HWPX 편집 시작"]'))
+          editButton.click()
+          phase = 'editable-surface'
+        }
+        let target = await waitFor(readySurface)
+        await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        const anchorId = target.dataset.sourceTextNodeId
+        const pages = () => document.querySelector('.viewer-pages')
+        const revision = () => Number(pages()?.dataset.editingRevision ?? -1)
+        const textNode = (element) => {
+          if (!element.firstChild) element.append(document.createTextNode(''))
+          return element.firstChild
+        }
+        const setSelection = (element, offset) => {
+          const node = textNode(element)
+          window.getSelection().setBaseAndExtent(node, offset, node, offset)
+        }
+        target.focus()
+        await frame(); await frame(); await sleep(500)
+        const samples = []
+        for (let index = 0; index < ${editLatencyKeystrokes}; index += 1) {
+          phase = 'keystroke-' + index
+          target = await waitFor(() => {
+            const candidate = surfaces().find((element) => element.dataset.sourceTextNodeId === anchorId)
+            return candidate?.dataset.inputReady === 'true' ? candidate : undefined
+          })
+          const original = target.textContent ?? ''
+          const before = revision()
+          const insert = String.fromCharCode(0xac00 + index)
+          setSelection(target, original.length)
+          await frame()
+          let domAt
+          const observer = new MutationObserver(() => {
+            if (domAt === undefined && revision() > before) domAt = performance.now()
+          })
+          observer.observe(pages(), { attributes: true, attributeFilter: ['data-editing-revision'] })
+          const startedAt = performance.now()
+          target.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: insert }))
+          target.textContent = original + insert
+          setSelection(target, original.length + 1)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: insert }))
+          await waitFor(() => domAt !== undefined)
+          observer.disconnect()
+          await frame()
+          const frameAt = performance.now()
+          const result = performance.getEntriesByName('han-flow:editing-result').at(-1)?.startTime
+          const commit = performance.getEntriesByName('han-flow:editing-commit').at(-1)?.startTime
+          samples.push({
+            domMs: domAt - startedAt,
+            nextFrameMs: frameAt - startedAt,
+            requestMs: result !== undefined && commit !== undefined ? result - commit : null,
+            rendererMs: result !== undefined ? domAt - result : null
+          })
+          await waitFor(() => !document.querySelector('.viewer-status')?.textContent?.includes('반영 중'))
+          await sleep(400)
+        }
+        const summary = (values) => {
+          const sorted = values.filter((value) => typeof value === 'number').sort((left, right) => left - right)
+          const round = (value) => Math.round(value * 10) / 10
+          return sorted.length ? {
+            p50: round(sorted[Math.floor(sorted.length * 0.5)]),
+            p95: round(sorted[Math.ceil(sorted.length * 0.95) - 1]),
+            max: round(sorted[sorted.length - 1])
+          } : null
+        }
+        const text = surfaces().find((element) => element.dataset.sourceTextNodeId === anchorId)?.textContent ?? ''
+        return {
+          keystrokes: samples.length,
+          totalPages: Number(pages()?.dataset.totalPages ?? 0),
+          revision: revision(),
+          textEndsWithInput: text.endsWith(Array.from({ length: samples.length }, (_, index) => String.fromCharCode(0xac00 + index)).join('')),
+          inputToDomMs: summary(samples.map((sample) => sample.domMs)),
+          inputToNextFrameMs: summary(samples.map((sample) => sample.nextFrameMs)),
+          requestRoundTripMs: summary(samples.map((sample) => sample.requestMs)),
+          rendererUpdateMs: summary(samples.map((sample) => sample.rendererMs)),
+          samples
+        }
+      })()`).catch((reason) => ({ probeError: reason instanceof Error ? reason.message : String(reason) }))
       setTimeout(() => void captureWhenReady(), 250)
       return
     }

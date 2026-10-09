@@ -323,12 +323,14 @@ section 하나의 압축 전 크기가 2MiB 이상이면 첫 section 모델을 �
 
 HWPX 편집 엔진은 편집 session(=창)마다 worker thread 하나(`src/main/editing_worker.ts`)에서 실행한다.
 worker가 `HwpxSourcePackage`(모든 entry 압축 해제), source tree cache(`package_trees.ts`), `HwpxEditHistory`,
-transaction 적용, projection 디코딩(`projectEditTransaction`·`decodeViewerDocument`), Save As(임시 파일 쓰기·fsync·
+transaction 적용, 증분 projection(`viewer_projection.ts`의 `ViewerProjectionCache`), Save As(임시 파일 쓰기·fsync·
 재개봉 비교·viewer 디코딩·link/rename 게시)를 모두 소유한다(`src/main/editing_engine.ts`). main의
 `EditingSessionManager`는 IPC 계약을 그대로 두고 요청을 structured clone 메시지(`editing_worker_protocol.ts`)로
 넘기며, 응답에 실린 revision·savepoint·undo/redo·dirty 상태를 창별로 거울처럼 들고 있어 닫기 확인·원본 보호 목록을
-동기적으로 답한다. package·history는 worker 밖으로 나오지 않고, renderer가 쓰는 `ViewerDocument` projection과
-상태만 돌아온다. 저장 목적지 결정(`saveAsDestinationDecision`, 원본·다른 session 원본 보호, 심볼릭 링크 거부)과
+동기적으로 답한다. package·history는 worker 밖으로 나오지 않고, renderer가 쓰는 projection과 상태만 돌아온다.
+projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`projectionId`와 함께), 그 밖의 command·실행 취소·
+다시 실행이면 바로 앞 projection에 대한 patch(`ViewerDocumentPatch`: `baseProjectionId`·`projectionId`·바뀐 section
+`{ index, section }`·header.xml이 바뀌었을 때만 style map·문서 진단)다. 저장 목적지 결정(`saveAsDestinationDecision`, 원본·다른 session 원본 보호, 심볼릭 링크 거부)과
 대화상자는 main에 남고, 결정된 목적지·교체 확인 여부·보호 경로·임시 파일 UUID만 worker에 넘긴다.
 
 - 격리 방식: Node `worker_threads`. 별도 V8 heap에 `resourceLimits`(`maxOldGenerationSizeMb` 1536,
@@ -350,11 +352,50 @@ transaction 적용, projection 디코딩(`projectEditTransaction`·`decodeViewer
 - 순서: main은 창별 queue(`enqueue`)로 한 창의 요청을 하나씩 보내고 worker도 도착 순서대로 처리한다. 다른 창의 session은
   각자 worker에서 병렬로 돈다. 편집을 끝내거나 창을 닫거나 다른 문서로 교체하면 worker를 종료하고 대기 요청은
   `EDITING_SESSION_EXPIRED`로 끝낸다.
-- main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답 projection의 structured clone 역직렬화와 renderer IPC
-  직렬화, 저장 목적지 `lstat`/`stat`, 대화상자. large-progressive(80 section)의 keystroke 하나 commit에서 main 점유는
-  p50 771ms → 93ms(event loop utilization active), 왕복 지연은 p50 771ms → 660ms였다
-  (`HAN_FLOW_BENCHMARK=1 npx jest --runInBand tests/performance/editing_worker_benchmark.test.ts`, Linux x64 Jest 기준).
-  남은 93ms는 매 commit 전체 문서 projection을 다시 만드는 현재 방식에서 오는 역직렬화 비용이다.
+- 증분 projection(`src/core/parser/viewer_projection.ts`): worker는 마지막으로 보낸 projection의 package·section별 해석
+  결과·header style map·그림 resource를 들고 있고, 새 package와 entry bytes를 비교해(`changedEntryPathsSince`, command
+  종류를 믿지 않으므로 실행 취소·다시 실행도 같은 규칙) 바뀐 entry만 다시 해석한다. section 해석(`decodeViewerSection`)은
+  그 section XML, header의 `styleCharacterIds`·문단 style `heading`, 쪽 크기에서 온 자리 표시 높이 한도에만 달려 있다.
+  각주·미주 번호, 목록 번호(`applyParagraphMarkers`), 개체 순번, `hp:t`·문단(빈 문단 anchor) 순번은 모두 section 안에서
+  세고, 쪽 번호 이어 세기(`startNum`)·머리말·꼬리말 상속은 renderer가 쪽 목록에서 매번 다시 정한다(`page_decorations.ts`).
+  - section XML이 바뀌면 그 section만 다시 해석한다.
+  - header.xml이 바뀌면 style map을 다시 읽어 patch에 담고, `heading`(목록 번호·글머리표) 또는 `charPrIDRef`(빈 문단
+    caret 글자 모양)가 바뀐 문단 style id를 `paraPrIDRef`·`styleIDRef`로 참조하는 section도 다시 해석한다. 글자·문단·셀
+    모양 command는 새 id만 더하므로 보통 편집한 section만 해당한다.
+  - 전체 다시 해석(전체 문서 응답): entry 목록(경로·순서)이 바뀌었을 때, section·header 밖 entry(그림·manifest 등)가
+    바뀌었을 때, 문서 쪽 크기(첫 `hp:pagePr`)나 자리 표시 높이 한도가 바뀌었을 때. refresh(충돌 복구)도 처음부터 해석한다.
+  - 동치 검사(`tests/parser/viewer_projection.test.ts`): 공개 corpus 38종에 golden 회귀와 같은 command 표본을
+    적용·되돌리기·다시 적용·되돌리기한 4,049단계에서 patch를 앞 문서에 적용한 결과가 같은 package의
+    `decodeViewerDocument`와 `toStrictEqual`로 같다(80 section large-progressive는 10단계마다와 마지막, 나머지는 매 단계 비교:
+    3,893회). patch에 없는 section·style map·쪽·resource는 앞 문서 object를 그대로 쓴다. header 목록 번호 정의 변경과
+    쪽 크기·그림 entry fallback은 따로 검사한다.
+- renderer 적용: renderer는 마지막 `projectionId`와 문서를 ref로 들고, patch의 `baseProjectionId`가 같으면
+  `applyViewerDocumentPatch`로 바뀐 section만 새 object로 바꾼다. 다르면(응답을 놓친 경우) patch를 버리고 refresh로 전체
+  문서를 받아 다시 맞춘다. revision·selection 처리(`reconcileEditingSelection`)는 전과 같다.
+- main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답의 structured clone 역직렬화와 renderer IPC 직렬화(편집
+  결과는 patch라 작다), 저장 목적지 `lstat`/`stat`, 대화상자. large-progressive(80 section, 5 MiB 그림)의 keystroke 하나
+  commit은 전체 projection 경로(매번 전체 해석 + 전체 문서 clone, 결과 12.8 MB) p50 679ms에서 worker 증분 경로 p50 7.3ms
+  (main 점유 0.75ms, 결과 75 KB)가 됐다(`HAN_FLOW_BENCHMARK=1 npx jest --runInBand
+  tests/performance/editing_worker_benchmark.test.ts`, Linux x64 Jest 기준). 실행 취소·다시 실행은 p50 16ms다.
+
+### 편집 화면 갱신(renderer)
+
+- 편집 patch가 section만 바꾸면 style map·쪽·resource object가 그대로라 측정·조판 입력(`renderStyles`)도 그대로다.
+  측정 DOM은 section마다 memo한 `MeasurementSection`이라 바뀐 section만 다시 그린다. 글꼴 목록이 바뀔 때만 글꼴을 다시 찾는다.
+- 측정값(`DocumentLayoutMeasurements`)은 section마다 그 측정에 쓴 section object와 함께 둔다. 같은 style이고 글꼴이 모두
+  준비돼 있으면 layout effect에서 바뀐 section만 그리기 전에 바로 재고(`measureDocumentLayout`), 글꼴을 내려받는 중이면
+  `fonts.ready` 다음 frame에 다시 잰다. 전체 문서로 바뀌면(열기·편집 시작·refresh) 전처럼 측정값을 비우고 모두 다시 잰다.
+- pagination은 section마다 새 쪽에서 시작하고 다단·원본 줄 위치 상태도 section마다 처음부터 세므로
+  (`paginateViewerSection`) 문서 쪽 목록은 section별 결과를 이어 붙인 것과 같다. `paginateViewerSectionsIncremental`은
+  section·위치·쪽 높이·측정 object가 그대로인 section의 쪽 object를 다시 쓴다(`tests/layout/section_pagination.test.ts`가
+  이전 문서 단위 구현과 38종 fixture에서 비교). 쪽 번호·머리말·꼬리말 decoration은 쪽 목록에서 매번 다시 정하고, 가상화
+  범위 계산도 전과 같다.
+- 편집 capability·문단 구조·자리 표시 개수는 section object별 `WeakMap` cache로 바뀐 section만 다시 센다.
+- 그림 data URL은 resource object마다 한 번만 만든다. 전에는 render마다 5 MiB base64를 이어 붙여 React가 이전 `src`와
+  글자 단위로 비교했고, 그림이 든 꼬리말이 있는 쪽마다 수십 ms가 들었다.
+- 패키지 앱 측정(`xvfb-run -a npm run benchmark:edit-latency`, large-progressive 15,004쪽, Linux x64 xvfb):
+  한 글자 입력 event부터 편집 결과가 DOM에 반영될 때까지 p50 989ms → 31ms(p95 2,084ms → 44ms), 다음 frame까지
+  p50 1,224ms → 41ms. 요청 왕복(편집 요청 시작부터 결과 도착) p50 594ms → 12ms, 결과 도착부터 DOM 반영 p50 310ms → 18ms.
 
 ### HWP Web Worker
 
