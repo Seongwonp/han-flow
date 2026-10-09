@@ -29,6 +29,7 @@
 - 편집 엔진(package·source tree·history·projection 디코딩·Save As 검증)을 창별 worker thread로 옮겨 heap 한도(1.5 GiB)와 요청별 timeout(시작 120초·command·실행 취소 60초·저장 180초)을 걸고, timeout·crash·OOM은 worker를 종료해 `EDITING_ENGINE_TIMEOUT`·`EDITING_ENGINE_CRASHED`·`EDITING_RESOURCE_EXHAUSTED`로 session을 끝내며 남은 저장 임시 파일 정리
 - 편집 엔진이 timeout·crash·메모리 초과로 중단되면 renderer가 세션 종료 안내와 함께 편집 모드를 닫고 마지막 문서 화면을 유지한 보기 모드로 돌아가며, 뒤이어 실패한 대기 요청의 만료 안내로 덮어쓰지 않음
 - 편집 worker 격리 비용 benchmark 추가: large-progressive keystroke 하나 commit의 main thread 점유 p50 771ms→93ms, 왕복 지연 p50 771ms→660ms
+- 편집 worker가 command·실행 취소·다시 실행 뒤 바뀐 section(header.xml이 바뀌면 바뀐 목록·빈 문단 style을 쓰는 section과 style map)만 다시 해석해 전체 문서 대신 projection patch를 보내고 renderer가 바뀐 section만 바꿔 적용(entry 목록·그림·쪽 크기 변경은 전체 문서, 기준 불일치는 refresh로 복구, 공개 corpus 38종 4,049단계 전체 decode 동치 검사)
 
 ### Sprint 4 호환성 corpus
 

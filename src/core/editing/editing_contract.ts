@@ -1,4 +1,5 @@
 import { ViewerDocument } from '../document/viewer_document'
+import type { ViewerDocumentPatch } from '../document/viewer_document_patch'
 import { EditorSelection } from './transaction'
 import type { ParagraphAlignment } from './style_patch'
 import type { CellBorderType } from './cell_style_patch'
@@ -20,6 +21,8 @@ export interface EditingStartRequest {
 export interface EditingStartResult extends EditingHistoryStatus {
   sessionId: string
   document: ViewerDocument
+  /** 이 문서 projection의 번호. 뒤이은 편집 결과의 patch는 이 번호부터 이어진다. */
+  projectionId: number
 }
 
 export interface EditingCommitRequest {
@@ -131,8 +134,15 @@ export interface EditingParagraphStyleRequest extends EditingStyleRequestBase {
   marginAfter?: number
 }
 
-export interface EditingActionResult extends EditingHistoryStatus {
-  document: ViewerDocument
+/**
+ * 편집 결과의 문서 projection. 보통은 바로 앞 projection에 대한 증분(`patch`: 바뀐 section과, header.xml이 바뀌었으면
+ * style map)이고, session 시작·refresh·전체 다시 해석 fallback(`viewer_projection.ts`)이면 전체 문서다.
+ */
+export type EditingProjection =
+  | { document: ViewerDocument; projectionId: number; patch?: undefined }
+  | { patch: ViewerDocumentPatch; document?: undefined; projectionId?: undefined }
+
+export type EditingActionResult = EditingHistoryStatus & EditingProjection & {
   selection?: EditorSelection
 }
 

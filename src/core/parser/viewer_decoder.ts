@@ -713,54 +713,121 @@ function applyParagraphMarkers(paragraphs: ViewerParagraph[], paraStyles: Record
   })
 }
 
-export async function decodeViewerDocument(reader: HwpxReadablePackage, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
-  const index = knownIndex ?? await reader.index()
-  const sectionPaths = options.sectionPaths ?? index.sectionPaths
-  const resourcePaths = options.resourcePaths ?? index.resourcePaths
-  const { styleCharacterIds, ...header } = decodeHeader(await reader.readOrderedXml(index.headerPath))
-  const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
-  const sectionNodes = sectionXml.flatMap(({ nodes }) => walkOrderedXml(nodes))
-  const pagePr = sectionNodes.find((node) => node.name === 'hp:pagePr')
+/** header.xml에서 읽은 style map과, section 해석이 쓰는 문단 style → 글자 모양 id. */
+export interface ViewerHeaderProjection {
+  fonts: ViewerDocument['fonts']
+  charStyles: ViewerDocument['charStyles']
+  paraStyles: ViewerDocument['paraStyles']
+  cellStyles: ViewerDocument['cellStyles']
+  styleCharacterIds: ParagraphStyleCharacterIds
+}
+
+export function decodeViewerHeader(nodes: OrderedXmlNode[]): ViewerHeaderProjection {
+  return decodeHeader(nodes)
+}
+
+/** 첫 `hp:pagePr`가 정하는 쪽 크기와 자리 표시 선언 높이 한도. */
+export interface ViewerPageGeometry {
+  page: ViewerDocument['page']
+  objectHeightLimit?: number
+}
+
+export function viewerPageGeometry(pagePr: OrderedXmlNode | undefined): ViewerPageGeometry {
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
   // pagination(`pagination.ts`)과 같은 쪽 본문 높이. 자리 표시가 한 쪽을 넘지 않게 선언 높이를 줄이는 한도로 쓴다.
   const bodyHeight = num(pagePr?.attributes.height) - num(margin?.attributes.top) - num(margin?.attributes.bottom)
-  const objectHeightLimit = bodyHeight > 0 ? Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined
-  const columnResults = sectionXml.map(({ path, nodes }) => decodeColumnLayout(nodes, path))
-  const placeholderDiagnostics: ViewerDiagnostic[] = []
-  const sections = sectionXml.map(({ path, nodes }, position) => {
-    const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
-    const root = nodes.find((node) => node.name === 'hs:sec')
-    const context: DecodeContext = {
-      sectionPath: path,
-      sourceSection: path,
-      styleCharacterIds,
-      objectOrdinals: objectOrdinals(nodes),
-      notes: [],
-      objectHeightLimit
-    }
-    const blocks = root
-      ? applyParagraphMarkers(
-          children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, context)),
-          header.paraStyles
-        )
-      : []
-    const section: ViewerSection = {
-      id: `section-${sectionIndex}`,
-      blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
-      pageNumber: decodePageNumber(nodes),
-      columnLayout: columnResults[position].columnLayout,
-      headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, context).map((control) => ({
-        ...control,
-        paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
-      })),
-      footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex, context).map((control) => ({
-        ...control,
-        paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
-      }))
-    }
-    placeholderDiagnostics.push(...objectPlaceholderDiagnostics(section, path))
-    return section
-  })
+  return {
+    page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin), headerOffset: num(margin?.attributes.header), footerOffset: num(margin?.attributes.footer) },
+    objectHeightLimit: bodyHeight > 0 ? Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined
+  }
+}
+
+/**
+ * section XML 하나의 문서 수준 입력: 문서 순서 첫 `hp:pagePr`(쪽 크기는 이 값이 있는 첫 section이 정한다)와,
+ * header에서 온 값을 읽는 문단 참조(`paraPrIDRef`는 목록 번호·글머리표, `styleIDRef`는 빈 문단 caret 글자 모양).
+ * 속성이 없는 문단은 '0'을 쓰므로 '0'은 항상 넣는다. 증분 projection이 header 변경의 영향 범위를 정하는 데 쓴다.
+ */
+export interface ViewerSectionInputs {
+  pagePr?: OrderedXmlNode
+  paraStyleRefs: Set<string>
+  styleRefs: Set<string>
+}
+
+export function viewerSectionInputs(nodes: OrderedXmlNode[]): ViewerSectionInputs {
+  const inputs: ViewerSectionInputs = { paraStyleRefs: new Set(['0']), styleRefs: new Set(['0']) }
+  const visit = (node: OrderedXmlNode): void => {
+    if (!inputs.pagePr && node.name === 'hp:pagePr') inputs.pagePr = node
+    const { paraPrIDRef, styleIDRef } = node.attributes
+    if (paraPrIDRef !== undefined) inputs.paraStyleRefs.add(paraPrIDRef)
+    if (styleIDRef !== undefined) inputs.styleRefs.add(styleIDRef)
+    for (const item of node.children) visit(item)
+  }
+  nodes.forEach(visit)
+  return inputs
+}
+
+/** section 하나의 해석 결과. 문서 진단은 다단 진단을 모든 section 순서대로 모은 뒤 자리 표시 진단을 잇는다. */
+export interface DecodedViewerSection {
+  path: string
+  section: ViewerSection
+  columnDiagnostics: ViewerDiagnostic[]
+  placeholderDiagnostics: ViewerDiagnostic[]
+}
+
+/**
+ * section XML 하나를 해석한다. 결과는 이 section의 XML, header projection(`styleCharacterIds`·문단 style의 `heading`),
+ * 쪽 크기에서 온 `objectHeightLimit`에만 달려 있다. 각주 번호·목록 번호·개체 순번·`hp:t`·문단 순번은 모두 section 안에서 센다.
+ */
+export function decodeViewerSection(
+  path: string,
+  nodes: OrderedXmlNode[],
+  header: ViewerHeaderProjection,
+  objectHeightLimit: number | undefined
+): DecodedViewerSection {
+  const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
+  const root = nodes.find((node) => node.name === 'hs:sec')
+  const context: DecodeContext = {
+    sectionPath: path,
+    sourceSection: path,
+    styleCharacterIds: header.styleCharacterIds,
+    objectOrdinals: objectOrdinals(nodes),
+    notes: [],
+    objectHeightLimit
+  }
+  const columns = decodeColumnLayout(nodes, path)
+  const blocks = root
+    ? applyParagraphMarkers(
+        children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, context)),
+        header.paraStyles
+      )
+    : []
+  const section: ViewerSection = {
+    id: `section-${sectionIndex}`,
+    blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
+    pageNumber: decodePageNumber(nodes),
+    columnLayout: columns.columnLayout,
+    headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, context).map((control) => ({
+      ...control,
+      paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
+    })),
+    footers: decodeHeaderFooters(nodes, 'hp:footer', sectionIndex, context).map((control) => ({
+      ...control,
+      paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)
+    }))
+  }
+  return {
+    path,
+    section,
+    columnDiagnostics: columns.diagnostics,
+    placeholderDiagnostics: objectPlaceholderDiagnostics(section, path)
+  }
+}
+
+/** `BinData/` 그림을 data URL용 base64로 읽는다(그림 resource 한도를 함께 검사). */
+export async function decodeViewerResources(
+  reader: HwpxReadablePackage,
+  resourcePaths: readonly string[]
+): Promise<ViewerDocument['resources']> {
   const imageBudget = new ImageResourceBudget()
   const resourceEntries: Array<[string, { id: string; path: string; mime: string; data: string }]> = []
   for (const path of resourcePaths) {
@@ -771,12 +838,41 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
     imageBudget.add(path, bytes)
     resourceEntries.push([id, { id, path, mime, data: bytes.toString('base64') }])
   }
-  const resources = Object.fromEntries(resourceEntries)
+  return Object.fromEntries(resourceEntries)
+}
+
+/** 첫 `hp:pagePr`가 있는 section(문서 순서)의 쪽 크기. */
+export function documentPageGeometry(pagePrs: ReadonlyArray<OrderedXmlNode | undefined>): ViewerPageGeometry {
+  return viewerPageGeometry(pagePrs.find((pagePr) => pagePr !== undefined))
+}
+
+/** 조각을 `decodeViewerDocument`와 같은 모양(같은 key 순서)의 문서로 모은다. */
+export function assembleViewerDocument(
+  geometry: ViewerPageGeometry,
+  header: ViewerHeaderProjection,
+  resources: ViewerDocument['resources'],
+  sections: readonly DecodedViewerSection[]
+): ViewerDocument {
+  const { styleCharacterIds: _styleCharacterIds, ...styles } = header
   return {
-    page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin), headerOffset: num(margin?.attributes.header), footerOffset: num(margin?.attributes.footer) },
-    ...header,
+    page: geometry.page,
+    ...styles,
     resources,
-    sections,
-    diagnostics: [...columnResults.flatMap(({ diagnostics }) => diagnostics), ...placeholderDiagnostics]
+    sections: sections.map((decoded) => decoded.section),
+    diagnostics: [
+      ...sections.flatMap((decoded) => decoded.columnDiagnostics),
+      ...sections.flatMap((decoded) => decoded.placeholderDiagnostics)
+    ]
   }
+}
+
+export async function decodeViewerDocument(reader: HwpxReadablePackage, knownIndex?: HwpxPackageIndex, options: ViewerDecodeOptions = {}): Promise<ViewerDocument> {
+  const index = knownIndex ?? await reader.index()
+  const sectionPaths = options.sectionPaths ?? index.sectionPaths
+  const resourcePaths = options.resourcePaths ?? index.resourcePaths
+  const header = decodeViewerHeader(await reader.readOrderedXml(index.headerPath))
+  const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
+  const geometry = documentPageGeometry(sectionXml.map(({ nodes }) => viewerSectionInputs(nodes).pagePr))
+  const sections = sectionXml.map(({ path, nodes }) => decodeViewerSection(path, nodes, header, geometry.objectHeightLimit))
+  return assembleViewerDocument(geometry, header, await decodeViewerResources(reader, resourcePaths), sections)
 }

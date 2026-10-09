@@ -183,6 +183,25 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
     return new HwpxSourcePackage(this.sourcePath, entries, this.revision + 1)
   }
 
+  /**
+   * `previous`에서 이 package로 오며 내용이 바뀐 entry 경로(entry 순서). `withEntry`는 바꾸지 않은 entry의 bytes를
+   * 그대로 공유하므로 같은 Buffer는 비교하지 않는다. entry 목록(경로·순서·종류)이 다르면 undefined다.
+   */
+  changedEntryPathsSince(previous: HwpxSourcePackage): string[] | undefined {
+    if (previous === this) return []
+    const before = previous.sourceEntries
+    const after = this.sourceEntries
+    if (before.length !== after.length) return undefined
+    const changed: string[] = []
+    for (let index = 0; index < after.length; index += 1) {
+      const left = before[index]
+      const right = after[index]
+      if (left.path !== right.path || left.type !== right.type) return undefined
+      if (left.bytes !== right.bytes && !left.bytes.equals(right.bytes)) changed.push(right.path)
+    }
+    return changed
+  }
+
   toBuffer(): Buffer {
     const zip = new AdmZip(undefined, { noSort: true })
     for (const sourceEntry of this.sourceEntries) {

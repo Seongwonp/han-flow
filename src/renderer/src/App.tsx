@@ -2,6 +2,7 @@ import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutE
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
+import { applyViewerDocumentPatch } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import {
@@ -914,6 +915,15 @@ export default function App() {
   const automaticPdfStarted = useRef(false)
   const editingTransient = useRef(new EditingImeTransientState())
   const stageRef = useRef<HTMLElement>(null)
+  // 편집 결과 patch를 적용할 기준 문서와 그 projection 번호. 편집 결과는 도착 순서대로 바로 앞 결과 위에 쌓이므로
+  // React state가 다시 그려지기 전에도 최신 값을 알아야 한다. 문서를 바꾸는 곳은 모두 `showDocument`를 거친다.
+  const documentRef = useRef<ViewerDocument | null>(null)
+  const projectionIdRef = useRef<number | undefined>(undefined)
+  const showDocument = useCallback((next: ViewerDocument | null, projectionId?: number) => {
+    documentRef.current = next
+    projectionIdRef.current = projectionId
+    setDocument(next)
+  }, [])
   editingTransient.current.synchronize(editing, editingPending)
   const effectiveDocument = useMemo(() => document ? {
     ...document,
@@ -1036,7 +1046,7 @@ export default function App() {
     editingTransient.current.reset()
     resetEditing()
     setOpenedPath(null)
-    setDocument(null)
+    showDocument(null)
     setFixedDocument(null)
     try {
       if (rhwpAdapter) (await rhwpAdapter).closeRhwpFixedPageDocument()
@@ -1083,7 +1093,7 @@ export default function App() {
         setOpenedPath(path)
         return
       }
-      setDocument(imported.document)
+      showDocument(imported.document)
       setSectionProgress({ loaded: imported.complete ? imported.sectionCount : imported.document.sections.length, total: imported.sectionCount })
       setLoadTiming({ format: 'hwpx', requestStartedAt, openReceivedAt, requestToModelMs: performance.now() - requestStartedAt, ...imported.timings })
       setFileName(documentFileName(path))
@@ -1147,7 +1157,7 @@ export default function App() {
   }, [])
   useEffect(() => api().onDocumentComplete((payload: DocumentImportComplete) => {
     if (payload.loadId !== activeLoadId.current) return
-    setDocument(payload.document)
+    showDocument(payload.document)
     setSectionProgress({ loaded: payload.document.sections.length, total: payload.document.sections.length })
   }), [])
   useEffect(() => api().onDocumentError((payload: DocumentImportBackgroundError) => {
@@ -1256,8 +1266,31 @@ export default function App() {
     if (!searchResults.length) return
     setActiveSearchResult((current) => (current + direction + searchResults.length) % searchResults.length)
   }
+  const applyEditingResultRef = useRef<(result: EditingActionResult) => void>(() => undefined)
+  const resynchronizeEditingProjection = useCallback(async () => {
+    const current = editingTransient.current.currentSession
+    if (!current) return
+    try {
+      applyEditingResultRef.current(await api().refreshEditing(current.sessionId) as EditingActionResult)
+    } catch (reason) {
+      setEditingStatus(editingErrorStatus('편집 화면 동기화', reason) ?? '편집 화면을 다시 맞추지 못했습니다.')
+    }
+  }, [])
   const applyEditingResult = useCallback((result: EditingActionResult) => {
-    setDocument(result.document)
+    let next: ViewerDocument
+    if (result.patch) {
+      const current = documentRef.current
+      if (!current || projectionIdRef.current !== result.patch.baseProjectionId) {
+        // 앞 projection을 놓쳤다(응답 직렬화 실패 등). 이 patch는 버리고 worker에서 전체 문서를 받아 다시 맞춘다.
+        void resynchronizeEditingProjection()
+        return
+      }
+      next = applyViewerDocumentPatch(current, result.patch)
+      showDocument(next, result.patch.projectionId)
+    } else {
+      next = result.document
+      showDocument(next, result.projectionId)
+    }
     setEditing((current) => current ? {
       sessionId: current.sessionId,
       revision: result.revision,
@@ -1267,10 +1300,11 @@ export default function App() {
       isDirty: result.isDirty
     } : current)
     if (result.selection) setTableCellSelection(undefined)
-    const projection = reconcileEditingSelection(result.document, result.selection)
+    const projection = reconcileEditingSelection(next, result.selection)
     setEditingSelection(projection.selection)
     setEditingSelectionNotice(editingSelectionProjectionStatus(projection.status))
   }, [])
+  applyEditingResultRef.current = applyEditingResult
   // 편집 엔진(worker)이 timeout·crash·메모리 초과로 끝나면 main은 session을 이미 지웠다.
   // 편집 모드만 닫고 마지막으로 보이던 문서 화면은 그대로 둔다.
   const endEditingAfterEngineFailure = useCallback((status: string) => {
@@ -1802,7 +1836,7 @@ export default function App() {
     setEditingStatus('편집 준비 중…')
     try {
       const result = await api().startEditing({ filePath: openedPath }) as EditingStartResult
-      setDocument(result.document)
+      showDocument(result.document, result.projectionId)
       setEditingSelectionNotice(null)
       setEditing({
         sessionId: result.sessionId,

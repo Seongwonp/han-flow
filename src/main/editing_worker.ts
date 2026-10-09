@@ -48,7 +48,11 @@ async function dispatch(request: EditingWorkerRequest): Promise<unknown> {
       if (engine) throw new EditingOperationError('EDITING_INVALID_REQUEST', '편집 worker는 session 하나만 맡습니다.')
       const opened = await EditingEngine.open((payload as { filePath: string }).filePath)
       engine = opened.engine
-      const result: EditingWorkerStartResult = { sourcePath: engine.sourcePath, document: opened.document }
+      const result: EditingWorkerStartResult = {
+        sourcePath: engine.sourcePath,
+        document: opened.document,
+        projectionId: opened.projectionId
+      }
       return result
     }
     case 'commit':

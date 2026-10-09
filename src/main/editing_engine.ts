@@ -14,6 +14,7 @@ import {
   EditingSplitParagraphRequest,
   EditingSplitTableCellRequest,
   EditingHistoryStatus,
+  EditingProjection,
   EditingSavedResult
 } from '../core/editing/editing_contract'
 import { EditingOperationError } from '../core/editing/editing_error'
@@ -32,11 +33,11 @@ import {
   planSplitTableCell
 } from '../core/editing/table_patch'
 import { reconcileTableCellSelection } from '../core/editing/table_cell_selection'
-import { EditTransaction, projectEditTransaction } from '../core/editing/transaction'
+import type { EditTransaction } from '../core/editing/transaction'
 import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
 import type { ViewerDocument } from '../core/document/viewer_document'
 import { HwpxSourcePackage } from '../core/parser/source_package'
-import { decodeViewerDocument } from '../core/parser/viewer_decoder'
+import { ViewerProjectionCache } from '../core/parser/viewer_projection'
 import { saveAsFailureMessage } from './editing_save_messages'
 
 export interface EditingEngineSaveRequest {
@@ -57,12 +58,29 @@ export type EditingEngineSaveResult = EditingSavedResult
  * main process는 `EditingSessionManager`를 통해 structured-clone 요청으로만 접근한다.
  */
 export class EditingEngine {
-  private constructor(private readonly history: HwpxEditHistory) {}
+  private constructor(
+    private readonly history: HwpxEditHistory,
+    private readonly projection: ViewerProjectionCache
+  ) {}
 
-  static async open(filePath: string): Promise<{ engine: EditingEngine; document: ViewerDocument }> {
+  static async open(
+    filePath: string
+  ): Promise<{ engine: EditingEngine; document: ViewerDocument; projectionId: number }> {
     const sourcePackage = await HwpxSourcePackage.open(filePath)
-    const engine = new EditingEngine(new HwpxEditHistory(sourcePackage))
-    return { engine, document: await decodeViewerDocument(sourcePackage) }
+    const { cache, result } = await ViewerProjectionCache.open(sourcePackage)
+    const engine = new EditingEngine(new HwpxEditHistory(sourcePackage), cache)
+    return { engine, document: result.document, projectionId: result.projectionId }
+  }
+
+  /**
+   * 현재 history package의 projection. 앞 projection에 대한 증분 patch(바뀐 section만)를 돌려주고, 증분으로 만들 수 없으면
+   * 전체 문서를 돌려준다(규칙은 `viewer_projection.ts`). renderer는 patch의 `baseProjectionId`가 자기 문서와 다르면 refresh한다.
+   */
+  private async project(): Promise<EditingProjection> {
+    const result = await this.projection.update(this.history.package)
+    return result.patch
+      ? { patch: result.patch }
+      : { document: result.document, projectionId: result.projectionId }
   }
 
   get sourcePath(): string {
@@ -99,11 +117,9 @@ export class EditingEngine {
       compositionId: request.compositionId,
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: result.changed
-        ? await projectEditTransaction(result)
-        : await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -124,11 +140,9 @@ export class EditingEngine {
       inputType: request.inputType,
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: result.changed
-        ? await projectEditTransaction(result)
-        : await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -145,9 +159,9 @@ export class EditingEngine {
       inputType: 'insertParagraph',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -168,9 +182,9 @@ export class EditingEngine {
       inputType: request.inputType,
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -243,11 +257,9 @@ export class EditingEngine {
               : 'formatFontName',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: result.changed
-        ? await projectEditTransaction(result)
-        : await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -282,11 +294,9 @@ export class EditingEngine {
               : 'formatParagraphAfter',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: result.changed
-        ? await projectEditTransaction(result)
-        : await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -295,7 +305,7 @@ export class EditingEngine {
   async undo(): Promise<EditingActionResult> {
     const action = this.history.undo()
     return {
-      document: await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: action?.selection ?? this.history.selection,
       ...this.status()
     }
@@ -304,7 +314,7 @@ export class EditingEngine {
   async redo(): Promise<EditingActionResult> {
     const action = this.history.redo()
     return {
-      document: await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: action?.selection ?? this.history.selection,
       ...this.status()
     }
@@ -312,7 +322,7 @@ export class EditingEngine {
 
   async applyCellStyle(request: EditingCellStyleRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selection
     )
     if (!capabilities.cellStyle.available || capabilities.focus?.textNodeId !== request.textNodeId) {
@@ -338,11 +348,9 @@ export class EditingEngine {
       inputType: 'formatTableCell',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: result.changed
-        ? await projectEditTransaction(result)
-        : await decodeViewerDocument(this.history.package),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -350,7 +358,7 @@ export class EditingEngine {
 
   async insertTableRowAfter(request: EditingInsertTableRowRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selectionBefore
     )
     if (!capabilities.cellStyle.available) {
@@ -369,9 +377,9 @@ export class EditingEngine {
       inputType: 'insertTableRowAfter',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -379,7 +387,7 @@ export class EditingEngine {
 
   async deleteTableRow(request: EditingDeleteTableRowRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selectionBefore
     )
     if (!capabilities.cellStyle.available) {
@@ -398,9 +406,9 @@ export class EditingEngine {
       inputType: 'deleteTableRow',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -408,7 +416,7 @@ export class EditingEngine {
 
   async insertTableColumnAfter(request: EditingInsertTableColumnRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selectionBefore
     )
     if (!capabilities.cellStyle.available) {
@@ -427,9 +435,9 @@ export class EditingEngine {
       inputType: 'insertTableColumnAfter',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -437,7 +445,7 @@ export class EditingEngine {
 
   async deleteTableColumn(request: EditingDeleteTableColumnRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selectionBefore
     )
     if (!capabilities.cellStyle.available) {
@@ -456,9 +464,9 @@ export class EditingEngine {
       inputType: 'deleteTableColumn',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
@@ -466,7 +474,7 @@ export class EditingEngine {
 
   async mergeTableCellRight(request: EditingMergeTableCellRightRequest): Promise<EditingActionResult> {
     const capabilities = editingCapabilities(
-      await decodeViewerDocument(this.history.package),
+      await this.projection.documentFor(this.history.package),
       request.selectionBefore
     )
     if (!capabilities.cellStyle.available) {
@@ -485,16 +493,16 @@ export class EditingEngine {
       inputType: 'mergeTableCellRight',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: undefined,
       ...this.status()
     }
   }
 
   async splitTableCell(request: EditingSplitTableCellRequest): Promise<EditingActionResult> {
-    const document = await decodeViewerDocument(this.history.package)
+    const document = await this.projection.documentFor(this.history.package)
     const projection = reconcileTableCellSelection(document, request.selection)
     if (projection.status !== 'CURRENT' || !projection.selection) {
       throw new EditingOperationError(
@@ -519,17 +527,20 @@ export class EditingEngine {
       inputType: 'splitTableCell',
       timestamp: request.timestamp
     }
-    const result = this.history.commitSynchronized(transaction)
+    this.history.commitSynchronized(transaction)
     return {
-      document: await projectEditTransaction(result),
+      ...(await this.project()),
       selection: this.history.selection,
       ...this.status()
     }
   }
 
   async refresh(): Promise<EditingActionResult> {
+    // 충돌 복구 등 renderer가 projection을 다시 맞출 때 쓴다. cache를 믿지 않고 처음부터 해석해 전체 문서를 보낸다.
+    const rebuilt = await this.projection.rebuild(this.history.package, 'refresh')
     return {
-      document: await decodeViewerDocument(this.history.package),
+      document: rebuilt.document,
+      projectionId: rebuilt.projectionId,
       selection: this.history.selection,
       ...this.status()
     }

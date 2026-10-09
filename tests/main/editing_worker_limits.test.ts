@@ -10,6 +10,7 @@ import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 import { EditingSessionManager, EditingSessionManagerOptions } from '../../src/main/editing_session'
 import { createRoundTripHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { projectedSessionManager, ProjectedEditingSessionManager } from './projected_session_manager'
 import { writeEditingWorkerShim } from './ts_worker_shim'
 
 const sectionPath = 'Contents/section0.xml'
@@ -139,10 +140,11 @@ describe('편집 엔진 worker 격리', () => {
   const fixture = createRoundTripHwpx(directory)
   const workerPath = writeEditingWorkerShim(directory, { name: 'editing-worker-test', preamble: PREAMBLE })
   const managers: EditingSessionManager[] = []
-  const manager = (options: Omit<EditingSessionManagerOptions, 'workerPath'> = {}): EditingSessionManager => {
+  // 편집 결과의 projection patch를 renderer처럼 적용해 `document`(전체 문서)를 붙인다.
+  const manager = (options: Omit<EditingSessionManagerOptions, 'workerPath'> = {}): ProjectedEditingSessionManager => {
     const created = new EditingSessionManager(undefined, { workerPath, ...options })
     managers.push(created)
-    return created
+    return projectedSessionManager(created)
   }
   const firstAnchor = async (path: string): Promise<HwpxTextAnchor> =>
     listHwpxTextAnchors(await HwpxSourcePackage.open(path), sectionPath).find((anchor) => anchor.text.length > 1)!

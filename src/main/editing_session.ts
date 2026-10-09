@@ -332,6 +332,7 @@ export class EditingSessionManager {
       return {
         sessionId: session.id,
         document: started.value.document,
+        projectionId: started.value.projectionId,
         ...session.status
       }
     })

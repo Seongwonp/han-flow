@@ -16,6 +16,7 @@ import {
   createRoundTripHwpx,
   createTableColumnHwpx
 } from '../fixtures/public/create_synthetic_hwpx'
+import { projectedSessionManager, ProjectedEditingSessionManager } from './projected_session_manager'
 import { writeEditingWorkerShim } from './ts_worker_shim'
 
 describe('main process HWPX editing session', () => {
@@ -25,10 +26,11 @@ describe('main process HWPX editing session', () => {
   // 편집 엔진은 session마다 실제 worker thread(src/main/editing_worker.ts)에서 돈다.
   const workerPath = writeEditingWorkerShim(directory)
   const managers: EditingSessionManager[] = []
-  const editingManager = (createSessionId?: () => string): EditingSessionManager => {
+  // 편집 결과의 projection patch를 renderer처럼 적용해 `document`(전체 문서)를 붙인다.
+  const editingManager = (createSessionId?: () => string): ProjectedEditingSessionManager => {
     const manager = new EditingSessionManager(createSessionId, { workerPath })
     managers.push(manager)
-    return manager
+    return projectedSessionManager(manager)
   }
 
   afterAll(async () => {

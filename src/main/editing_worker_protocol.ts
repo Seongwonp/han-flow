@@ -5,7 +5,8 @@ import { EditingOperationError, type EditingRecovery } from '../core/editing/edi
 /*
  * main process ↔ 편집 worker 메시지. 모두 structured clone으로 건너가는 평범한 data다.
  * 요청 하나에 응답 하나가 같은 id로 돌아온다. worker는 package·history를 돌려보내지 않고
- * renderer에 필요한 projection(ViewerDocument)과 상태만 보낸다.
+ * renderer에 필요한 projection과 상태만 보낸다. projection은 session 시작·refresh·fallback이면 전체 ViewerDocument,
+ * 그 밖에는 바뀐 section만 담은 patch(`viewer_document_patch.ts`)다.
  */
 
 export type EditingWorkerMethod =
@@ -56,6 +57,7 @@ export type EditingWorkerResponse =
 export interface EditingWorkerStartResult {
   sourcePath: string
   document: ViewerDocument
+  projectionId: number
 }
 
 export function serializeEditingWorkerError(reason: unknown): EditingWorkerErrorPayload {
