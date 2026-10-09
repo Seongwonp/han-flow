@@ -151,6 +151,15 @@ try {
     })
   }
 
+  // 강제 종료 복구: baseline 표 셀에 입력한 뒤 앱을 SIGKILL로 끝내고, 같은 user-data로 다시 띄워 복구 기록을 [복구]로 받아
+  // 입력 글자·dirty·실행 취소 기록을 확인한 뒤 Save As하고 저장본을 다시 연다.
+  const crashRecoveryResult = await verify(fixtures.find(({ id }) => id === 'baseline').path, 500, false, {
+    HAN_FLOW_VERIFY_EDIT_TEXT: '복구검증',
+    HAN_FLOW_VERIFY_EDIT_MODE: 'range',
+    HAN_FLOW_VERIFY_EDIT_CELL: '1',
+    HAN_FLOW_VERIFY_CRASH_RECOVERY: '1'
+  })
+
   // 아주 긴 한글 파일 이름: 상단 막대는 한 줄 말줄임, 버튼·리본 control은 배율 1.25·1.5에서도 줄바꿈하지 않는다.
   const longNamePath = join(directory, `${LONG_KOREAN_FILE_STEM}.hwpx`)
   await copyFile(fixtures.find(({ id }) => id === 'hanging-indent').path, longNamePath)
@@ -194,6 +203,7 @@ try {
   const hangingIndent = results.find(({ fixtureId }) => fixtureId === 'hanging-indent')
   const failures = [
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
+    crashRecoveryResult.passed ? undefined : `baseline 강제 종료 복구 실패(${crashRecoveryResult.failures.join(', ')})`,
     ...objectResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: objectFailures }) => `${fixtureId}: 자리 표시 검증 실패(${objectFailures.join(', ')})`),
     ...objectResults.filter(({ recoveredObjectCharacters }) => !(recoveredObjectCharacters > 0)).map(({ fixtureId }) => `${fixtureId}: 수식 script·글상자 글·각주·메모·단추 이름·개체 설명이 화면에 없음`),
     ...objectResults.filter(({ sourceObjectComparison }) => sourceObjectComparison !== 'compared').map(({ fixtureId, sourceObjectComparison }) => `${fixtureId}: 원문 개체 비교 안 함(${sourceObjectComparison})`),
@@ -244,6 +254,7 @@ try {
     layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts }) => ({
       fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts
     })),
+    crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },
     longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({
       fixtureId, passed, screenPageTextCounts, pdfPageTextCounts: pageTextCounts, pdfTitle

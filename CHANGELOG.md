@@ -33,6 +33,7 @@
 - 편집 화면이 바뀐 section만 다시 그리고 측정·조판하며 capability·문단 구조·자리 표시 집계를 section별로 cache하고 그림 data URL을 resource마다 한 번만 만들어, large-progressive 한 글자 입력이 DOM에 반영되기까지 p50 989ms→31ms
 - 편집 worker benchmark에 전체 projection 재현·결과 크기·실행 취소 측정을 더하고(keystroke 왕복 p50 679ms→7.3ms, 결과 12.8 MB→75 KB) 패키지 앱 한 글자 입력 지연 측정 `benchmark:edit-latency` 추가
 - 편집 session마다 `<userData>/recovery/<sessionId>/journal.hfj` 복구 기록(길이·CRC-32 한 줄 record, 원본 크기·수정 시각·SHA-256 header, history가 replay하는 forward transaction과 실행 취소·다시 실행·저장 지점)을 main이 dirty일 때만 0.5초 간격 fdatasync로 쓰고, worker가 같은 commit 경로로 replay해 revision·저장 지점까지 되살리며 끊긴 꼬리는 버리고 손상·한도 초과·replay 실패 기록은 격리
+- 앱 시작·같은 원본 열기·편집 엔진 중단 직후 남은 복구 기록을 창 대화상자([복구]·[버리기]·[나중에], 마지막 변경 시각·편집 수)로 묻고, 원본 크기·수정 시각·SHA-256이 같을 때만 원본을 열어 편집 모드·dirty로 되살리며(바뀌었거나 없으면 복구 거절), 패키지 앱 SIGKILL 강제 종료→재실행 복구→Save As·재열기 E2E(`HAN_FLOW_VERIFY_CRASH_RECOVERY`)를 baseline matrix에 추가
 
 ### Sprint 4 호환성 corpus
 

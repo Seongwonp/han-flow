@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -19,6 +19,10 @@ const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
+// 편집 뒤 앱을 SIGKILL로 강제 종료하고 같은 user-data로 다시 띄워 복구 기록에서 편집을 되살린 뒤 Save As·재열기까지 확인한다.
+const crashRecovery = process.env.HAN_FLOW_VERIFY_CRASH_RECOVERY === '1'
+// 복구 기록 flush 간격(0.5초)보다 넉넉히 기다린 뒤 강제 종료한다.
+const crashDelayMs = Number(process.env.HAN_FLOW_VERIFY_CRASH_DELAY_MS ?? 1500)
 const forcedArchitecture = process.env.HAN_FLOW_VERIFY_ARCH
 // 화면 자리 표시 종류별 개수 기대값(JSON, 예: {"equation":1}). 지정하면 정확히 같아야 한다.
 const expectedPlaceholders = process.env.HAN_FLOW_VERIFY_EXPECT_PLACEHOLDERS
@@ -34,6 +38,11 @@ const launchArguments = [
 
 if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
   console.error('HAN_FLOW_VERIFY_ARCH는 arm64 또는 x86_64여야 합니다.')
+  process.exit(1)
+}
+
+if (crashRecovery && !editText) {
+  console.error('HAN_FLOW_VERIFY_CRASH_RECOVERY는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 합니다.')
   process.exit(1)
 }
 
@@ -63,12 +72,28 @@ function hash(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
 }
 
+/** user-data의 복구 기록 파일(`recovery/<sessionId>/journal.hfj`) 크기 목록 */
+async function recoveryJournals(userData) {
+  const root = join(userData, 'recovery')
+  const names = await readdir(root).catch(() => [])
+  const journals = []
+  for (const name of names.filter((entry) => /^[0-9a-f-]{36}$/u.test(entry))) {
+    const size = await stat(join(root, name, 'journal.hfj')).then((stats) => stats.size, () => undefined)
+    if (size !== undefined) journals.push({ sessionId: name, size })
+  }
+  return journals
+}
+
 async function launch(output, userData, options = {}) {
   const launchedFixture = options.fixture ?? fixture
   const interactive = options.interactive !== false
+  // crash: 화면 상태를 쓴 뒤 종료하지 않고 기다리다가 복구 기록이 생긴 것을 확인하고 SIGKILL로 끝낸다.
+  const crash = options.crash === true
   let standardError = ''
+  let crashReport
   await new Promise((resolvePromise, reject) => {
     let settled = false
+    let killing = false
     const child = spawn(forcedArchitecture ? 'arch' : appBinary, forcedArchitecture
       ? [`-${forcedArchitecture}`, appBinary, ...launchArguments]
       : launchArguments, {
@@ -77,7 +102,7 @@ async function launch(output, userData, options = {}) {
         HAN_FLOW_E2E: '1',
         HAN_FLOW_VISUAL_TEST_FILE: resolve(launchedFixture),
         HAN_FLOW_VISUAL_STATE_OUTPUT: output,
-        HAN_FLOW_VISUAL_EXIT: '1',
+        ...(crash ? {} : { HAN_FLOW_VISUAL_EXIT: '1' }),
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
         HAN_FLOW_DIRTY_ACTION: options.dirtyAction ?? 'discard',
@@ -88,7 +113,8 @@ async function launch(output, userData, options = {}) {
         ...(interactive && styleProbe ? { HAN_FLOW_VISUAL_STYLE_PROBE: '1' } : {}),
         ...(interactive && tableStructureProbe ? { HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
-        ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {})
+        ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {}),
+        ...(options.environment ?? {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -106,7 +132,14 @@ async function launch(output, userData, options = {}) {
         JSON.parse(await readFile(output, 'utf8'))
       } catch {
         // 화면 상태 파일이 완전히 기록될 때까지 기다린다.
+        return
       }
+      if (!crash || killing) return
+      killing = true
+      // 마지막 입력의 기록이 flush 간격 안에 디스크로 내려갈 시간을 준 뒤, 정리 기회 없이 process를 끝낸다.
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, crashDelayMs))
+      crashReport = { journalsBeforeKill: await recoveryJournals(userData) }
+      child.kill('SIGKILL')
     }, 100)
     const timeout = setTimeout(() => {
       child.kill('SIGTERM')
@@ -114,19 +147,23 @@ async function launch(output, userData, options = {}) {
     }, 120_000)
     child.once('error', (error) => finish(error))
     child.once('exit', (code, signal) => {
-      if (code === 0) finish()
+      if (crash && killing && signal === 'SIGKILL') {
+        crashReport.signal = signal
+        finish()
+      } else if (code === 0 && !crash) finish()
       else finish(new Error(
         `Han-Flow가 ${signal ? `signal ${signal}` : `종료 코드 ${code}`}로 끝났습니다. ${standardError.trim()}`
       ))
     })
   })
-  return JSON.parse(await readFile(output, 'utf8'))
+  const state = JSON.parse(await readFile(output, 'utf8'))
+  return crash ? { ...state, crashReport } : state
 }
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-app-verify-'))
 try {
   const resolvedFixture = resolve(fixture)
-  const verifiesSavedFile = editSave || closeDirtyAction === 'save'
+  const verifiesSavedFile = editSave || closeDirtyAction === 'save' || crashRecovery
   const sourceHashBefore = verifiesSavedFile ? hash(await readFile(resolvedFixture)) : undefined
   const saveDestination = verifiesSavedFile
     ? configuredSaveDestination
@@ -137,11 +174,29 @@ try {
     join(directory, 'visual-state.json'),
     join(directory, 'user-data'),
     {
-      saveDestination,
-      autoSave: editSave,
-      dirtyAction: closeDirtyAction ?? 'discard'
+      saveDestination: crashRecovery ? undefined : saveDestination,
+      autoSave: editSave && !crashRecovery,
+      dirtyAction: closeDirtyAction ?? 'discard',
+      crash: crashRecovery
     }
   )
+  // 강제 종료한 앱을 같은 user-data로 다시 띄운다. 시작 문서에 남은 기록을 [복구]로 받아 편집 모드로 되살린 뒤 Save As한다.
+  const recoveredState = crashRecovery
+    ? await launch(
+      join(directory, 'recovered-visual-state.json'),
+      join(directory, 'user-data'),
+      {
+        interactive: false,
+        environment: {
+          HAN_FLOW_E2E_RECOVERY_ACTION: 'recover',
+          HAN_FLOW_VISUAL_RECOVERY_TEXT: editText,
+          HAN_FLOW_EDIT_SAVE_PATH: saveDestination,
+          HAN_FLOW_VISUAL_AUTO_SAVE: '1'
+        }
+      }
+    )
+    : undefined
+  const journalsAfterRecovery = crashRecovery ? await recoveryJournals(join(directory, 'user-data')) : undefined
   const sourceUnchanged = verifiesSavedFile
     ? hash(await readFile(resolvedFixture)) === sourceHashBefore
     : undefined
@@ -154,7 +209,11 @@ try {
       savedState = await launch(
         join(directory, 'saved-visual-state.json'),
         join(directory, 'saved-user-data'),
-        { fixture: saveDestination, interactive: false }
+        {
+          fixture: saveDestination,
+          interactive: false,
+          environment: crashRecovery ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText } : undefined
+        }
       )
     } catch {
       savedFileExists = false
@@ -256,8 +315,20 @@ try {
     tableStructureProbe && !state.editingProbe?.cellSplit ? '표 셀 분할 검증 불일치' : undefined,
     tableStructureProbe && !state.editingProbe?.splitUndoRestoredMerge ? '표 셀 분할 undo 검증 불일치' : undefined,
     tableStructureProbe && !state.editingProbe?.splitRedoRestored ? '표 셀 분할 redo 검증 불일치' : undefined,
-    editSave && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
-    editSave && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
+    editSave && !crashRecovery && !state.editingProbe?.saveStatusMatches ? 'Save As 상태 표시 불일치' : undefined,
+    editSave && !crashRecovery && !state.editingProbe?.dirtyCleared ? 'Save As 뒤 dirty 상태가 해제되지 않음' : undefined,
+    crashRecovery && !state.crashReport?.journalsBeforeKill?.length ? '강제 종료 전 복구 기록이 디스크에 없음' : undefined,
+    crashRecovery && state.crashReport?.signal !== 'SIGKILL' ? '앱을 SIGKILL로 강제 종료하지 못함' : undefined,
+    crashRecovery && recoveredState?.recoveryProbe?.probeError ? `복구 probe 오류: ${recoveredState.recoveryProbe.probeError}` : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.recovered ? '다시 띄운 앱이 편집 내용을 복구하지 않음' : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.textPresent ? '복구한 편집 화면에 입력 글자가 없음' : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.dirty ? '복구한 편집이 dirty(저장 안 됨)로 표시되지 않음' : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.undoEnabled ? '복구한 편집의 실행 취소 기록이 없음' : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.saveStatusMatches ? '복구 뒤 Save As 상태 표시 불일치' : undefined,
+    crashRecovery && !recoveredState?.recoveryProbe?.dirtyCleared ? '복구 뒤 Save As가 dirty를 해제하지 않음' : undefined,
+    crashRecovery && recoveredState?.recoveryProbe?.journalsAfterSave !== 0 ? '복구 뒤 Save As 했는데 복구 기록이 남음' : undefined,
+    crashRecovery && journalsAfterRecovery?.length ? `앱 종료 뒤 복구 기록이 남음: ${journalsAfterRecovery.length}개` : undefined,
+    crashRecovery && savedState && !savedState.expectedTextPresent ? '복구 뒤 저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
     verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
@@ -304,6 +375,16 @@ try {
       reopenedImages: savedState?.images?.length,
       reopenedOverflowPages: savedState?.overflowPages,
       reopenedTableTopologies: savedState?.tableTopologies
+    } : undefined,
+    crashRecovery: crashRecovery ? {
+      journalsBeforeKill: state.crashReport?.journalsBeforeKill,
+      signal: state.crashReport?.signal,
+      recoveryProbe: recoveredState?.recoveryProbe,
+      journalsAfterRecovery,
+      sourceUnchanged,
+      savedFileExists,
+      reopenedPages: savedState?.totalPages,
+      reopenedTextPresent: savedState?.expectedTextPresent
     } : undefined,
     dirtyClose: closeDirtyAction ? {
       action: closeDirtyAction,

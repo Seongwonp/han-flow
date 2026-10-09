@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
-import { readFile, writeFile } from 'fs/promises'
+import { readdir, readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
 import { DocumentPathNotAllowedError, DocumentPathRegistry } from './document_path_registry'
 import { OpenPathRouter, type OpenPathDecision, type OpenPathRequest } from './open_path_router'
@@ -9,8 +9,30 @@ import {
   EditingSessionManager,
   INVALID_DESTINATION_MESSAGE,
   PROTECTED_DESTINATION_MESSAGE,
-  pdfExportFailureMessage
+  pdfExportFailureMessage,
+  RecoverySourceChangedError,
+  samePath,
+  type EditingSessionLostEvent
 } from './editing_session'
+import {
+  discardQuarantinedJournal,
+  discardRecoveryJournal,
+  isRecoverySessionId,
+  readRecoveryJournal,
+  RECOVERY_DIRECTORY_NAME,
+  scanRecoveryJournals,
+  verifyRecoverySource,
+  type RecoveryJournalCandidate
+} from './recovery_journal'
+import {
+  recoveryChoiceFromTestValue,
+  recoveryFailedDialog,
+  recoveryOfferDialog,
+  recoveryUnavailableDialog,
+  type RecoveryChoice,
+  type RecoveryDialog,
+  type RecoveryPromptReason
+} from './recovery_messages'
 import { isDevToolsShortcut } from './dev_tools_shortcut'
 import { findProjectedSurface } from './e2e_surface_follow'
 import { APP_TITLE, suggestedPdfExportPath, windowTitle } from './export_file_name'
@@ -54,7 +76,15 @@ const windowsById = new Map<number, BrowserWindow>()
 const openPathRouter = new OpenPathRouter()
 let applicationQuitRequested = false
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
-const editingSessions = new EditingSessionManager()
+// 편집 복구 기록(`recovery_journal.ts`). 사용자별 app data 폴더 아래에만 쓴다.
+const recoveryDirectory = join(app.getPath('userData'), RECOVERY_DIRECTORY_NAME)
+const editingSessions = new EditingSessionManager(undefined, {
+  recovery: {
+    directory: recoveryDirectory,
+    appVersion: app.getVersion(),
+    onSessionLost: (event) => offerRecoveryAfterEngineFailure(event)
+  }
+})
 const documentPaths = new DocumentPathRegistry()
 const latestImportLoadIds = new Map<number, string>()
 // 창마다 마지막으로 열기에 성공한 문서 경로. PDF 기본 이름과 창 제목에 쓴다.
@@ -276,6 +306,10 @@ function captureVisualState(window: BrowserWindow): void {
   const tableStructureProbeEnabled = testValue('HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE') === '1'
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
+  // 강제 종료 뒤 다시 띄운 앱에서 복구한 편집 글자(HAN_FLOW_E2E_RECOVERY_ACTION=recover와 함께 쓴다).
+  const recoveryText = testValue('HAN_FLOW_VISUAL_RECOVERY_TEXT')
+  // 화면 글자에 있어야 하는 문자열(복구 뒤 저장본을 다시 열어 확인).
+  const expectedText = testValue('HAN_FLOW_VISUAL_EXPECT_TEXT')
   if (!capturePath && !stateOutput) return
   const captureDelayMs = Number(process.env['HAN_FLOW_VISUAL_CAPTURE_DELAY_MS'] ?? 2500)
   const readyTimeoutMs = Number(process.env['HAN_FLOW_VISUAL_READY_TIMEOUT_MS'] ?? 30_000)
@@ -285,6 +319,8 @@ function captureVisualState(window: BrowserWindow): void {
   let searchTriggered = !searchQuery
   let editTriggered = !editText && !tableStructureProbeEnabled && !(editLatencyKeystrokes > 0)
   let editProbe: unknown = null
+  let recoveryTriggered = !recoveryText
+  let recoveryProbe: Record<string, unknown> | null = null
   let sampledPeakWorkingSetKb = 0
   const sampleMemory = () => {
     const workingSetKb = app.getAppMetrics()
@@ -326,6 +362,62 @@ function captureVisualState(window: BrowserWindow): void {
         input.dispatchEvent(new Event('input', { bubbles: true }))
         return true
       })()`)
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
+    if (!recoveryTriggered && recoveryText) {
+      recoveryTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      recoveryProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'recovered-editing'
+        const waitFor = async (predicate, timeout = 60000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('복구 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        ${RIBBON_E2E_HELPERS}
+        const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
+        await waitFor(() => document.querySelector('.viewer-editing-badge') && status().includes('편집 내용 복구 ·'))
+        const expected = ${JSON.stringify(recoveryText)}
+        const editableTexts = Array.from(document.querySelectorAll('.viewer-editable-text')).map((element) => element.textContent ?? '')
+        const textPresent = editableTexts.some((text) => text.includes(expected))
+        const recoveredStatus = status()
+        const dirty = recoveredStatus.includes('저장 안 됨')
+        await revealRibbonControl('실행 취소')
+        const undoEnabled = document.querySelector('[aria-label="실행 취소"]')?.disabled === false
+        let saveStatusMatches
+        let dirtyCleared
+        if (${autoSaveEdit}) {
+          phase = 'save-button'
+          await revealRibbonControl('HWPX 변경본 저장')
+          const saveButton = await waitFor(() => {
+            const button = document.querySelector('[aria-label="HWPX 변경본 저장"]')
+            return button && !button.disabled ? button : undefined
+          })
+          saveButton.click()
+          phase = 'save-complete'
+          await waitFor(() => status().includes('저장 완료'))
+          saveStatusMatches = /Preview (?:갱신 안 됨|없음)/.test(status())
+          dirtyCleared = !status().includes('저장 안 됨') && saveButton.disabled
+        }
+        return { recovered: true, textPresent, dirty, undoEnabled, recoveredStatus, saveStatusMatches, dirtyCleared }
+      })()`).catch((reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason)
+      })) as Record<string, unknown>
+      // 저장 뒤에는 dirty가 아니므로 복구 기록이 지워져야 한다(지우기는 비동기라 잠깐 기다린다).
+      const remainingJournals = async () => (await readdir(recoveryDirectory).catch(() => [] as string[]))
+        .filter((name) => isRecoverySessionId(name)).length
+      let journalsAfterSave = await remainingJournals()
+      for (let attempt = 0; autoSaveEdit && journalsAfterSave > 0 && attempt < 40; attempt += 1) {
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 50))
+        journalsAfterSave = await remainingJournals()
+      }
+      recoveryProbe = { ...recoveryProbe, journalsAfterSave }
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
@@ -1106,6 +1198,12 @@ function captureVisualState(window: BrowserWindow): void {
       processPeakSumKb: processMetrics.reduce((sum, metric) => sum + metric.memory.peakWorkingSetSize, 0)
     }
     visualState.editingProbe = editProbe
+    if (recoveryText) visualState.recoveryProbe = recoveryProbe
+    if (expectedText) {
+      visualState.expectedTextPresent = await window.webContents.executeJavaScript(
+        `(document.querySelector('.viewer-pages')?.innerText ?? '').includes(${JSON.stringify(expectedText)})`
+      )
+    }
     visualState.windowTitle = window.getTitle()
     visualState.suggestedPdfPath = suggestedPdfExportPath(currentDocumentPaths.get(window.webContents.id), lastDialogDirectory)
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
@@ -1113,6 +1211,144 @@ function captureVisualState(window: BrowserWindow): void {
     if (exitWhenComplete) app.quit()
   }
   setTimeout(() => void captureWhenReady(), captureDelayMs)
+}
+
+/*
+ * 편집 복구 제안. 남은 복구 기록은 (1) 앱 시작, (2) 같은 원본 문서를 열 때, (3) 편집 엔진이 비정상 종료한 직후에 묻는다.
+ * [복구]를 고르면 main이 renderer에 `recovery:start`를 보내고, renderer가 원본을 연 뒤 `editing:recover`로 기록을 replay한다.
+ */
+const recoveryTestChoice = recoveryChoiceFromTestValue(testValue('HAN_FLOW_E2E_RECOVERY_ACTION'))
+/** 창마다 main이 복구를 시작하라고 보낸 기록. `editing:recover`는 이 기록만 받는다. */
+const pendingRecoveries = new Map<number, { journalId: string; filePath: string }>()
+/** 지금 대화상자를 띄운 기록(같은 기록을 두 번 묻지 않는다) */
+const offeringJournals = new Set<string>()
+/** 이번 실행에서 이미 답한 기록. 앱 시작 목록에서 다시 묻지 않는다(문서를 다시 열면 묻는다). */
+const answeredJournals = new Set<string>()
+/** 시작할 때 열 문서가 정해진 창. 그 문서의 기록은 문서 열기 쪽에서 묻는다. */
+const initialOpenWindows = new Map<number, string>()
+let startupRecoveryOffered = false
+
+async function askRecovery(window: BrowserWindow | null, prompt: RecoveryDialog): Promise<RecoveryChoice> {
+  if (recoveryTestChoice) {
+    return prompt.choices.includes(recoveryTestChoice) ? recoveryTestChoice : prompt.choices[prompt.cancelId]
+  }
+  const { response } = await showMessageBox(window && !window.isDestroyed() ? window : null, {
+    type: prompt.type,
+    title: prompt.title,
+    message: prompt.message,
+    detail: prompt.detail,
+    buttons: prompt.buttons,
+    defaultId: prompt.defaultId,
+    cancelId: prompt.cancelId,
+    noLink: true
+  })
+  return prompt.choices[response] ?? prompt.choices[prompt.cancelId]
+}
+
+/** 기록 하나를 묻는다. 원본이 그대로면 [복구][버리기][나중에], 바뀌었거나 없으면 복구할 수 없다고 알리고 [나중에][버리기]. */
+async function offerRecovery(
+  window: BrowserWindow,
+  candidate: RecoveryJournalCandidate,
+  reason: RecoveryPromptReason,
+  targetWindow: () => Promise<BrowserWindow | undefined>
+): Promise<void> {
+  const journalId = candidate.sessionId
+  if (offeringJournals.has(journalId) || editingSessions.activeJournalIds().has(journalId)) return
+  offeringJournals.add(journalId)
+  try {
+    const state = await verifyRecoverySource(candidate.header)
+    if (window.isDestroyed()) return
+    const choice = await askRecovery(
+      window,
+      state === 'match' ? recoveryOfferDialog(candidate, reason) : recoveryUnavailableDialog(candidate, state)
+    )
+    answeredJournals.add(journalId)
+    if (choice === 'discard') {
+      await discardRecoveryJournal(recoveryDirectory, journalId)
+      return
+    }
+    if (choice !== 'recover' || state !== 'match') return
+    const target = await targetWindow()
+    if (!target || target.isDestroyed()) return
+    const senderId = target.webContents.id
+    pendingRecoveries.set(senderId, { journalId, filePath: candidate.header.sourcePath })
+    await documentPaths.allow(senderId, candidate.header.sourcePath)
+    revealWindow(target)
+    target.webContents.send('recovery:start', { filePath: candidate.header.sourcePath, journalId })
+  } catch (reason) {
+    console.warn('편집 복구 제안 실패:', reason)
+  } finally {
+    offeringJournals.delete(journalId)
+  }
+}
+
+/** 문서를 받을 창이 비어 있으면 그 창, 아니면 새 창(load가 끝난 뒤). */
+async function emptyOrNewWindow(window: BrowserWindow): Promise<BrowserWindow | undefined> {
+  const id = window.isDestroyed() ? undefined : window.webContents.id
+  if (
+    id !== undefined &&
+    !currentDocumentPaths.has(id) &&
+    !pendingRecoveries.has(id) &&
+    !initialOpenWindows.has(id) &&
+    !editingSessions.currentSessionId(id)
+  ) {
+    return window
+  }
+  const created = createWindow()
+  await new Promise<void>((resolvePromise) => created.webContents.once('did-finish-load', () => resolvePromise()))
+  return created.isDestroyed() ? undefined : created
+}
+
+async function offerStartupRecoveries(window: BrowserWindow): Promise<void> {
+  // 목록을 읽는 동안 시작 문서 열기가 끝나도 그 문서는 문서 열기 쪽이 묻도록 먼저 기억한다.
+  const initialPaths = [...initialOpenWindows.values()]
+  const scan = await scanRecoveryJournals(recoveryDirectory, editingSessions.activeJournalIds())
+  if (scan.quarantined.length) console.warn('손상된 편집 복구 기록을 격리했습니다:', scan.quarantined)
+  for (const candidate of scan.candidates) {
+    if (answeredJournals.has(candidate.sessionId)) continue
+    // 시작하며 여는 문서의 기록은 그 문서가 열린 뒤 문서 열기 쪽에서 묻는다.
+    if (initialPaths.some((path) => samePath(path, candidate.header.sourcePath))) continue
+    const parent = BrowserWindow.getAllWindows().find((candidateWindow) => !candidateWindow.isDestroyed()) ?? window
+    await offerRecovery(parent, candidate, 'startup', () => emptyOrNewWindow(parent))
+  }
+}
+
+/** 이 창이 방금 연 HWPX 문서에 남은 기록이 있으면 묻는다(가장 최근 기록 하나). */
+async function offerRecoveryForOpenedDocument(senderId: number, filePath: string): Promise<void> {
+  const window = windowsById.get(senderId)
+  if (!window || window.isDestroyed()) return
+  const scan = await scanRecoveryJournals(recoveryDirectory, editingSessions.activeJournalIds())
+  const candidate = scan.candidates.find((entry) => samePath(entry.header.sourcePath, filePath))
+  if (!candidate) return
+  await offerRecovery(window, candidate, 'open', async () => window)
+}
+
+/** 편집 엔진이 timeout·crash·OOM으로 끝나 기록이 남았다. renderer가 "편집 세션 종료"를 처리한 뒤 곧바로 복구를 묻는다. */
+function offerRecoveryAfterEngineFailure(event: EditingSessionLostEvent): void {
+  const window = windowsById.get(event.senderId)
+  if (!window || window.isDestroyed()) return
+  setTimeout(() => {
+    void (async () => {
+      const candidate = await readRecoveryJournal(recoveryDirectory, event.journalId).catch(() => undefined)
+      if (candidate && !window.isDestroyed()) await offerRecovery(window, candidate, 'crash', async () => window)
+    })()
+  }, 100)
+}
+
+async function reportRecoveryFailure(window: BrowserWindow | null, journalId: string, reason: unknown): Promise<void> {
+  if (reason instanceof RecoverySourceChangedError) {
+    const candidate = await readRecoveryJournal(recoveryDirectory, journalId).catch(() => undefined)
+    if (!candidate) return
+    const state = await verifyRecoverySource(candidate.header)
+    const choice = await askRecovery(window, recoveryUnavailableDialog(candidate, state === 'missing' ? 'missing' : 'changed'))
+    if (choice === 'discard') await discardRecoveryJournal(recoveryDirectory, journalId)
+    return
+  }
+  const quarantinePath = (reason as { quarantinePath?: string }).quarantinePath
+  if (!quarantinePath) return
+  const message = reason instanceof Error ? reason.message : String(reason)
+  const choice = await askRecovery(window, recoveryFailedDialog(message, quarantinePath))
+  if (choice === 'discard') await discardQuarantinedJournal(recoveryDirectory, quarantinePath)
 }
 
 function focusedWindowId(): number | null {
@@ -1162,7 +1398,7 @@ function deliverOpenPath(filePath: string, receivedAt = Date.now()): void {
   applyOpenPathDecision(openPathRouter.route({ filePath, receivedAt }, focusedWindowId()))
 }
 
-function createWindow(initialOpen?: OpenPathRequest): void {
+function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   const visualCapturePath = testValue('HAN_FLOW_VISUAL_CAPTURE_PATH')
   const visualStateOutput = testValue('HAN_FLOW_VISUAL_STATE_OUTPUT')
   // Create the browser window.
@@ -1198,16 +1434,26 @@ function createWindow(initialOpen?: OpenPathRequest): void {
   window.webContents.on('did-finish-load', () => {
     openPathRouter.markReady(senderId)
     flushPendingOpen()
+    if (!startupRecoveryOffered) {
+      startupRecoveryOffered = true
+      void offerStartupRecoveries(window).catch((reason) => console.warn('편집 복구 기록 확인 실패:', reason))
+    }
   })
+  // 창을 떠나면 아직 내리지 않은 편집 기록을 바로 디스크에 쓴다.
+  window.on('blur', () => void editingSessions.flushJournal(senderId))
   window.webContents.once('destroyed', () => {
     documentImporter.cancel(senderId)
     editingSessions.stop(senderId)
     documentPaths.forget(senderId)
     latestImportLoadIds.delete(senderId)
     currentDocumentPaths.delete(senderId)
+    pendingRecoveries.delete(senderId)
+    initialOpenWindows.delete(senderId)
   })
   window.on('close', (event) => {
     if (closeApproved || !editingSessions.isDirty(senderId)) return
+    // 확인 대화상자를 띄우기 전에 기록을 내린다. 대화상자 중 OS가 앱을 끝내도 편집이 남는다.
+    void editingSessions.flushJournal(senderId)
     if (resolvingClose) {
       event.preventDefault()
       return
@@ -1281,7 +1527,10 @@ function createWindow(initialOpen?: OpenPathRequest): void {
   const openPath = requestedOpenPath ? resolve(requestedOpenPath) : undefined
   const openReceivedAt = testOpenPath ? processStartedAt : initialOpen?.receivedAt
   // renderer가 query로 받은 초기 문서를 읽을 수 있도록 load 전에 허용목록에 올린다.
-  if (openPath) void documentPaths.allow(senderId, openPath)
+  if (openPath) {
+    void documentPaths.allow(senderId, openPath)
+    initialOpenWindows.set(senderId, openPath)
+  }
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
     if (openPath) rendererUrl.searchParams.set('open', openPath)
@@ -1291,6 +1540,7 @@ function createWindow(initialOpen?: OpenPathRequest): void {
   } else {
     window.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
   }
+  return window
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -1518,6 +1768,14 @@ app.whenReady().then(() => {
     )
     if (result.ok && latestImportLoadIds.get(sender.id) === importRequest.loadId) {
       setCurrentDocumentPath(sender.id, importRequest.filePath)
+      initialOpenWindows.delete(sender.id)
+      const pending = pendingRecoveries.get(sender.id)
+      if (pending && !samePath(pending.filePath, importRequest.filePath)) pendingRecoveries.delete(sender.id)
+      // 복구하려고 연 문서가 아니면, 같은 원본에 남은 편집 기록이 있는지 확인한다.
+      if (!pendingRecoveries.has(sender.id) && isHwpxPath(importRequest.filePath)) {
+        void offerRecoveryForOpenedDocument(sender.id, importRequest.filePath)
+          .catch((reason) => console.warn('편집 복구 기록 확인 실패:', reason))
+      }
     }
     return result
   })
@@ -1546,6 +1804,32 @@ app.whenReady().then(() => {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', reason.message)
     }
     return editingSessions.start(event.sender.id, filePath)
+  }))
+
+  ipcMain.handle('editing:recover', editingIpcHandler(async (event, request: unknown) => {
+    const journalId = request && typeof request === 'object' ? (request as { journalId?: unknown }).journalId : undefined
+    if (!isRecoverySessionId(journalId)) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', '편집 복구 요청 형식이 올바르지 않습니다.')
+    }
+    // main이 이 창에 복구하라고 보낸 기록만 받는다. renderer가 임의 기록·경로를 고를 수 없다.
+    const pending = pendingRecoveries.get(event.sender.id)
+    if (!pending || pending.journalId !== journalId) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', '복구를 요청하지 않은 편집 기록입니다.')
+    }
+    pendingRecoveries.delete(event.sender.id)
+    try {
+      await documentPaths.authorize(event.sender.id, pending.filePath)
+    } catch (reason) {
+      if (!(reason instanceof DocumentPathNotAllowedError)) throw reason
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', reason.message)
+    }
+    const window = BrowserWindow.fromWebContents(event.sender)
+    try {
+      return await editingSessions.recover(event.sender.id, journalId)
+    } catch (reason) {
+      void reportRecoveryFailure(window, journalId, reason).catch((failure) => console.warn('편집 복구 실패 안내 실패:', failure))
+      throw reason
+    }
   }))
 
   ipcMain.handle('editing:commit', editingIpcHandler(async (event, request: unknown) => {

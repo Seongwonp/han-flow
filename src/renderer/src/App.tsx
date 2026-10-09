@@ -1971,6 +1971,54 @@ export default function App() {
       setEditingStatus(editingErrorStatus('편집 시작', reason) ?? '편집 시작 취소')
     }
   }
+  // main이 [복구]를 고른 편집 기록. 원본을 열고(이미 열려 있으면 그대로) 배경 로딩이 끝나면 기록을 replay한다.
+  const [pendingRecovery, setPendingRecovery] = useState<{ filePath: string; journalId: string; opened: boolean } | null>(null)
+  useEffect(() => api().onRecoveryStart((request: { filePath: string; journalId: string }) => {
+    // 엔진이 끝난 session을 renderer가 아직 모를 수 있다. 편집 상태를 먼저 정리한다.
+    if (editingTransient.current.currentSession) {
+      void api().stopEditing()
+      editingTransient.current.reset()
+      resetEditing()
+    }
+    setEditingStatus('편집 내용 복구 준비 중…')
+    setPendingRecovery({ ...request, opened: false })
+  }), [])
+  useEffect(() => {
+    if (!pendingRecovery || loading) return
+    if (openedPath !== pendingRecovery.filePath) {
+      if (pendingRecovery.opened) {
+        // 원본을 열지 못했다(오류 화면). main은 기록을 그대로 보관한다.
+        setPendingRecovery(null)
+        setEditingStatus('편집 복구 취소 · 원본 문서를 열지 못했습니다.')
+        return
+      }
+      setPendingRecovery({ ...pendingRecovery, opened: true })
+      void openPath(pendingRecovery.filePath)
+      return
+    }
+    if (documentLoading || editing || fixedDocument) return
+    const { journalId } = pendingRecovery
+    setPendingRecovery(null)
+    void (async () => {
+      setEditingStatus('편집 내용 복구 중…')
+      try {
+        const result = await api().recoverEditing({ journalId }) as EditingStartResult & { recoveredEdits: number }
+        showDocument(result.document, result.projectionId)
+        setEditingSelectionNotice(null)
+        setEditing({
+          sessionId: result.sessionId,
+          revision: result.revision,
+          savedRevision: result.savedRevision,
+          canUndo: result.canUndo,
+          canRedo: result.canRedo,
+          isDirty: result.isDirty
+        })
+        setEditingStatus(`편집 내용 복구 · 편집 ${result.recoveredEdits}개 · 확인한 뒤 다른 이름으로 저장하세요`)
+      } catch (reason) {
+        setEditingStatus(editingErrorStatus('편집 복구', reason) ?? '편집 복구 취소')
+      }
+    })()
+  }, [pendingRecovery, loading, openedPath, documentLoading, editing, fixedDocument])
   const undoEditing = useCallback(async () => {
     if (!editing || editingPending || editingTransient.current.isComposing) return
     try {

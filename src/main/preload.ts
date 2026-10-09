@@ -69,6 +69,13 @@ const api = {
   reportBenchmark: (timing: unknown) => ipcRenderer.invoke('benchmark:complete', timing),
   importDocument: (request: { filePath: string; loadId: string }) => ipcRenderer.invoke('document:import', request),
   startEditing: (request: EditingStartRequest) => invokeEditing('editing:start', request),
+  // main이 [복구]를 고른 기록을 알려 준다. renderer는 원본을 연 뒤 recoverEditing으로 기록을 replay한다.
+  onRecoveryStart: (listener: (payload: { filePath: string; journalId: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { filePath: string; journalId: string }) => listener(payload)
+    ipcRenderer.on('recovery:start', handler)
+    return () => ipcRenderer.removeListener('recovery:start', handler)
+  },
+  recoverEditing: (request: { journalId: string }) => invokeEditing('editing:recover', request),
   commitEditing: (request: EditingCommitRequest) => invokeEditing('editing:commit', request),
   commitRangeEditing: (request: EditingRangeCommitRequest) =>
     invokeEditing('editing:commitRange', request),
