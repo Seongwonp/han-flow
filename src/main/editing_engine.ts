@@ -1,3 +1,4 @@
+import { stat } from 'fs/promises'
 import {
   EditingActionResult,
   EditingCharacterStyleRequest,
@@ -39,6 +40,7 @@ import type { ViewerDocument } from '../core/document/viewer_document'
 import { HwpxSourcePackage } from '../core/parser/source_package'
 import { ViewerProjectionCache } from '../core/parser/viewer_projection'
 import { saveAsFailureMessage } from './editing_save_messages'
+import { fingerprintFile, type RecoveryJournalEntry, type RecoverySourceFingerprint } from './recovery_journal'
 
 export interface EditingEngineSaveRequest {
   destinationPath: string
@@ -58,6 +60,9 @@ export type EditingEngineSaveResult = EditingSavedResult
  * main process는 `EditingSessionManager`를 통해 structured-clone 요청으로만 접근한다.
  */
 export class EditingEngine {
+  /** 마지막 응답 뒤 history에 일어난 일. worker가 응답에 실어 main의 복구 기록(`recovery_journal.ts`)으로 보낸다. */
+  private journal: RecoveryJournalEntry[] = []
+
   private constructor(
     private readonly history: HwpxEditHistory,
     private readonly projection: ViewerProjectionCache
@@ -65,11 +70,94 @@ export class EditingEngine {
 
   static async open(
     filePath: string
-  ): Promise<{ engine: EditingEngine; document: ViewerDocument; projectionId: number }> {
-    const sourcePackage = await HwpxSourcePackage.open(filePath)
+  ): Promise<{
+    engine: EditingEngine
+    document: ViewerDocument
+    projectionId: number
+    source: RecoverySourceFingerprint
+  }> {
+    // 복구 기록 header에 넣을 원본 지문. 읽는 동안 파일이 바뀌면(크기·수정 시각) 편집을 시작하지 않는다.
+    const [sourcePackage, source] = await Promise.all([HwpxSourcePackage.open(filePath), fingerprintFile(filePath)])
+    const after = await stat(filePath)
+    if (after.size !== source.size || after.mtimeMs !== source.mtimeMs) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        '편집을 준비하는 동안 문서 파일이 바뀌었습니다. 다시 열어 주세요.'
+      )
+    }
     const { cache, result } = await ViewerProjectionCache.open(sourcePackage)
     const engine = new EditingEngine(new HwpxEditHistory(sourcePackage), cache)
-    return { engine, document: result.document, projectionId: result.projectionId }
+    return { engine, document: result.document, projectionId: result.projectionId, source }
+  }
+
+  /** 쌓인 복구 기록 record를 넘기고 비운다. */
+  takeJournal(): RecoveryJournalEntry[] {
+    const entries = this.journal
+    this.journal = []
+    return entries
+  }
+
+  /** 모든 편집 command가 지나가는 commit. history가 받아들인 transaction만 그대로 기록한다(replay가 같은 경로를 탄다). */
+  private commitTransaction(transaction: EditTransaction, at = Date.now()): void {
+    this.history.commitSynchronized(transaction)
+    this.journal.push({ type: 'commit', revision: this.history.package.revision, at, transaction })
+  }
+
+  private undoHistory(at = Date.now()): ReturnType<HwpxEditHistory['undo']> {
+    const action = this.history.undo()
+    if (action) this.journal.push({ type: 'undo', revision: this.history.package.revision, at })
+    return action
+  }
+
+  private redoHistory(at = Date.now()): ReturnType<HwpxEditHistory['redo']> {
+    const action = this.history.redo()
+    if (action) this.journal.push({ type: 'redo', revision: this.history.package.revision, at })
+    return action
+  }
+
+  private markSaved(at = Date.now()): void {
+    this.history.markSaved()
+    this.journal.push({ type: 'saved', revision: this.history.package.revision, at })
+  }
+
+  /**
+   * 복구 기록을 처음부터 다시 적용한다. live 편집과 같은 commit·undo·redo·저장 지점 경로를 타고, 단계마다 기록된 revision과
+   * 맞는지 확인한다. 하나라도 어긋나면 EDITING_RECOVERY_FAILED. 적용한 record는 다시 기록으로 내보내 새 session의 기록이 된다.
+   */
+  async replay(entries: readonly RecoveryJournalEntry[]): Promise<EditingActionResult> {
+    if (this.history.package.revision !== 0 || this.history.canUndo || this.history.canRedo) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', '복구 기록은 새로 연 편집 session에만 적용할 수 있습니다.')
+    }
+    entries.forEach((entry, index) => {
+      try {
+        switch (entry.type) {
+          case 'commit':
+            this.commitTransaction(entry.transaction, entry.at)
+            break
+          case 'undo':
+            if (!this.undoHistory(entry.at)) throw new Error('실행 취소할 편집이 없습니다.')
+            break
+          case 'redo':
+            if (!this.redoHistory(entry.at)) throw new Error('다시 실행할 편집이 없습니다.')
+            break
+          case 'saved':
+            this.markSaved(entry.at)
+            break
+          default:
+            throw new Error('알 수 없는 기록입니다.')
+        }
+        if (this.history.package.revision !== entry.revision) {
+          throw new Error(`revision이 기록(${entry.revision})과 다릅니다(${this.history.package.revision}).`)
+        }
+      } catch (reason) {
+        throw new EditingOperationError(
+          'EDITING_RECOVERY_FAILED',
+          `복구 기록 ${index + 1}/${entries.length}번째 단계를 적용하지 못했습니다: ${reason instanceof Error ? reason.message : String(reason)}`,
+          'none'
+        )
+      }
+    })
+    return this.refresh()
   }
 
   /**
@@ -117,7 +205,7 @@ export class EditingEngine {
       compositionId: request.compositionId,
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -140,7 +228,7 @@ export class EditingEngine {
       inputType: request.inputType,
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -159,7 +247,7 @@ export class EditingEngine {
       inputType: 'insertParagraph',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -182,7 +270,7 @@ export class EditingEngine {
       inputType: request.inputType,
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -257,7 +345,7 @@ export class EditingEngine {
               : 'formatFontName',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -294,7 +382,7 @@ export class EditingEngine {
               : 'formatParagraphAfter',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -303,7 +391,7 @@ export class EditingEngine {
   }
 
   async undo(): Promise<EditingActionResult> {
-    const action = this.history.undo()
+    const action = this.undoHistory()
     return {
       ...(await this.project()),
       selection: action?.selection ?? this.history.selection,
@@ -312,7 +400,7 @@ export class EditingEngine {
   }
 
   async redo(): Promise<EditingActionResult> {
-    const action = this.history.redo()
+    const action = this.redoHistory()
     return {
       ...(await this.project()),
       selection: action?.selection ?? this.history.selection,
@@ -348,7 +436,7 @@ export class EditingEngine {
       inputType: 'formatTableCell',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -377,7 +465,7 @@ export class EditingEngine {
       inputType: 'insertTableRowAfter',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -406,7 +494,7 @@ export class EditingEngine {
       inputType: 'deleteTableRow',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -435,7 +523,7 @@ export class EditingEngine {
       inputType: 'insertTableColumnAfter',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -464,7 +552,7 @@ export class EditingEngine {
       inputType: 'deleteTableColumn',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -493,7 +581,7 @@ export class EditingEngine {
       inputType: 'mergeTableCellRight',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: undefined,
@@ -527,7 +615,7 @@ export class EditingEngine {
       inputType: 'splitTableCell',
       timestamp: request.timestamp
     }
-    this.history.commitSynchronized(transaction)
+    this.commitTransaction(transaction)
     return {
       ...(await this.project()),
       selection: this.history.selection,
@@ -568,7 +656,7 @@ export class EditingEngine {
     } catch (reason) {
       throw new EditingOperationError('EDITING_SAVE_FAILED', saveAsFailureMessage(reason), 'retry')
     }
-    this.history.markSaved()
+    this.markSaved()
     return {
       destinationPath: result.destinationPath,
       entryCount: result.entryCount,

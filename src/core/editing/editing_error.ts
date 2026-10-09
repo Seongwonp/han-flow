@@ -9,6 +9,7 @@ export type EditingErrorCode =
   | 'EDITING_ENGINE_TIMEOUT'
   | 'EDITING_ENGINE_CRASHED'
   | 'EDITING_RESOURCE_EXHAUSTED'
+  | 'EDITING_RECOVERY_FAILED'
   | 'EDITING_INTERNAL'
 
 /** 편집 worker를 종료해 session이 끝난 오류. renderer는 편집 모드를 닫고 보기 모드로 돌아간다. */
@@ -47,6 +48,7 @@ const EDITING_ERROR_CODES: readonly EditingErrorCode[] = [
   'EDITING_SESSION_EXPIRED',
   'EDITING_UNSUPPORTED',
   ...EDITING_ENGINE_FAILURE_CODES,
+  'EDITING_RECOVERY_FAILED',
   'EDITING_INTERNAL'
 ]
 

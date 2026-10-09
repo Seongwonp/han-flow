@@ -18,6 +18,7 @@ import { EditingOperationError } from '../core/editing/editing_error'
 import { EditingEngine, type EditingEngineSaveRequest } from './editing_engine'
 import {
   serializeEditingWorkerError,
+  type EditingWorkerReplayRequest,
   type EditingWorkerRequest,
   type EditingWorkerResponse,
   type EditingWorkerStartResult
@@ -51,10 +52,13 @@ async function dispatch(request: EditingWorkerRequest): Promise<unknown> {
       const result: EditingWorkerStartResult = {
         sourcePath: engine.sourcePath,
         document: opened.document,
-        projectionId: opened.projectionId
+        projectionId: opened.projectionId,
+        source: opened.source
       }
       return result
     }
+    case 'replay':
+      return requireEngine().replay((payload as EditingWorkerReplayRequest).entries)
     case 'commit':
       return requireEngine().commit(payload as EditingCommitRequest)
     case 'commitRange':
@@ -113,6 +117,9 @@ parentPort?.on('message', (request: EditingWorkerRequest) => {
         status: engine?.status()
       }
     }
+    // 복구 기록 record는 응답과 같은 message로 보낸다. main은 응답을 받는 순간 기록을 갖는다.
+    const journal = engine?.takeJournal()
+    if (journal?.length) response.journal = journal
     try {
       parentPort?.postMessage(response)
     } catch (reason) {
@@ -121,7 +128,8 @@ parentPort?.on('message', (request: EditingWorkerRequest) => {
         id: request.id,
         ok: false,
         error: serializeEditingWorkerError(reason),
-        status: engine?.status()
+        status: engine?.status(),
+        ...(journal?.length ? { journal } : {})
       } satisfies EditingWorkerResponse)
     }
   })

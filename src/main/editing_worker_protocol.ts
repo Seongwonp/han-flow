@@ -1,6 +1,7 @@
 import type { ViewerDocument } from '../core/document/viewer_document'
 import type { EditingHistoryStatus } from '../core/editing/editing_contract'
 import { EditingOperationError, type EditingRecovery } from '../core/editing/editing_error'
+import type { RecoveryJournalEntry, RecoverySourceFingerprint } from './recovery_journal'
 
 /*
  * main process ↔ 편집 worker 메시지. 모두 structured clone으로 건너가는 평범한 data다.
@@ -11,6 +12,7 @@ import { EditingOperationError, type EditingRecovery } from '../core/editing/edi
 
 export type EditingWorkerMethod =
   | 'start'
+  | 'replay'
   | 'commit'
   | 'commitRange'
   | 'splitParagraph'
@@ -50,14 +52,30 @@ export type EditingWorkerErrorPayload =
       code?: string
     }
 
+/**
+ * `journal`은 이 요청으로 history에 일어난 commit·undo·redo·저장 지점이다(없으면 생략). 요청이 실패해도 history가 바뀌었을 수
+ * 있으므로(예: commit 뒤 projection 실패) 실패 응답에도 싣는다. main은 이것을 복구 기록에 덧붙인다.
+ */
 export type EditingWorkerResponse =
-  | { id: number; ok: true; value: unknown; status?: EditingHistoryStatus }
-  | { id: number; ok: false; error: EditingWorkerErrorPayload; status?: EditingHistoryStatus }
+  | { id: number; ok: true; value: unknown; status?: EditingHistoryStatus; journal?: RecoveryJournalEntry[] }
+  | {
+      id: number
+      ok: false
+      error: EditingWorkerErrorPayload
+      status?: EditingHistoryStatus
+      journal?: RecoveryJournalEntry[]
+    }
 
 export interface EditingWorkerStartResult {
   sourcePath: string
   document: ViewerDocument
   projectionId: number
+  /** worker가 실제로 읽은 원본의 크기·수정 시각·SHA-256(복구 기록 header) */
+  source: RecoverySourceFingerprint
+}
+
+export interface EditingWorkerReplayRequest {
+  entries: RecoveryJournalEntry[]
 }
 
 export function serializeEditingWorkerError(reason: unknown): EditingWorkerErrorPayload {

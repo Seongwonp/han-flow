@@ -41,6 +41,8 @@ export function editingErrorStatus(action: string, reason: unknown): string | nu
       return `${action} 오류 · 편집 세션 종료 · ${error.message}`
     case 'EDITING_RESOURCE_EXHAUSTED':
       return `${action} 메모리 한도 초과 · 편집 세션 종료 · ${error.message}`
+    case 'EDITING_RECOVERY_FAILED':
+      return `${action} 실패 · ${error.message}`
     case 'EDITING_INTERNAL':
       return `${action} 오류 · ${error.message}`
   }
