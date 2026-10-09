@@ -1,4 +1,4 @@
-import { supportsViewerColumnFlow, ViewerColumnLayout, ViewerDocument, ViewerParagraph, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { supportsViewerColumnFlow, ViewerColumnLayout, ViewerDocument, ViewerParagraph, ViewerSection, ViewerTable, ViewerTableRow } from '../document/viewer_document'
 import { cellOccupiedHeight, findSplittableCell, ParagraphHeights, tableSupportsCellSplitting } from './cell_fragment'
 
 export interface ViewerPage {
@@ -48,7 +48,8 @@ function splitRow(row: ViewerTableRow, cellIndex: number, headParagraphs: Viewer
   ]
 }
 
-function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageCapacity: number, measurements?: LayoutMeasurements): ViewerParagraph[] {
+/** @internal section pagination 동치 test가 이전 문서 단위 pagination을 재현할 때 쓴다. */
+export function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number, pageCapacity: number, measurements?: LayoutMeasurements): ViewerParagraph[] {
   const table = tableOf(block)
   if (!table || table.pageBreak !== 'CELL' || table.rows.length < 2) return [block]
   const heights = table.rows.map((row, index) => rowHeight(table, row, index, measurements))
@@ -123,14 +124,34 @@ export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] 
 }
 
 export function paginateViewerDocument(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
+  const availableHeight = pageBodyHeight(document)
+  return document.sections.flatMap((section, sectionIndex) =>
+    paginateViewerSection(section, sectionIndex, availableHeight, measurements)
+  )
+}
+
+/** pagination이 쓰는 쪽 본문 높이(HWPUNIT). */
+export function pageBodyHeight(document: Pick<ViewerDocument, 'page'>): number {
+  return document.page.height - document.page.margin.top - document.page.margin.bottom
+}
+
+/**
+ * section 하나를 쪽으로 나눈다. section은 언제나 새 쪽에서 시작하고(앞 section의 남은 쪽을 먼저 내보낸다) 다단 상태·
+ * 원본 줄 배치 위치도 section마다 처음부터 센다. 그래서 문서 pagination은 section별 결과를 이어 붙인 것과 같고,
+ * 편집으로 section 하나만 바뀌면 그 section만 다시 나누면 된다(`paginateViewerSectionsIncremental`).
+ */
+export function paginateViewerSection(
+  section: ViewerSection,
+  sectionIndex: number,
+  availableHeight: number,
+  measurements?: LayoutMeasurements
+): ViewerPage[] {
   const pages: ViewerPage[] = []
-  const availableHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
-  let activeColumnLayout: ViewerColumnLayout | undefined
-  let columnCount = 1
+  const activeColumnLayout = supportsViewerColumnFlow(section.columnLayout) ? section.columnLayout : undefined
+  const columnCount = activeColumnLayout?.count ?? 1
   let currentColumns: ViewerParagraph[][] = [[]]
   let columnIndex = 0
   let usedHeight = 0
-  let currentSectionIndex = 0
   let sectionPageIndex = 0
   let previousLayoutTop: number | undefined
   let previousBlockFragmented = false
@@ -149,7 +170,7 @@ export function paginateViewerDocument(document: ViewerDocument, measurements?: 
           columns: currentColumns.map((column) => [...column]),
           columnLayout: activeColumnLayout
         } : {}),
-        sectionIndex: currentSectionIndex,
+        sectionIndex,
         sectionPageIndex
       })
       sectionPageIndex += 1
@@ -166,32 +187,67 @@ export function paginateViewerDocument(document: ViewerDocument, measurements?: 
     previousLayoutTop = undefined
   }
 
-  document.sections.forEach((section, sectionIndex) => {
-    if (sectionIndex > 0) flush()
-    currentSectionIndex = sectionIndex
-    sectionPageIndex = 0
-    activeColumnLayout = supportsViewerColumnFlow(section.columnLayout) ? section.columnLayout : undefined
-    columnCount = activeColumnLayout?.count ?? 1
-    resetPage()
-    previousLayoutTop = undefined
-    previousBlockFragmented = false
-    section.blocks.forEach((originalBlock) => {
-      const sourceFlowRestart = Boolean(measurements && !previousBlockFragmented && currentColumn().length && originalBlock.layoutTop !== undefined && previousLayoutTop !== undefined && originalBlock.layoutTop < previousLayoutTop)
-      if (originalBlock.pageBreak) flush()
-      else if ((originalBlock.columnBreak || sourceFlowRestart) && activeColumnLayout) advanceFlow()
-      else if (sourceFlowRestart) flush()
-      const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight, availableHeight, measurements)
-      fragments.forEach((block, fragmentIndex) => {
-        const measuredHeight = measurements?.blockHeights[block.id]
-        const height = measuredHeight ?? block.layoutHeight
-        if (fragmentIndex > 0 || (currentColumn().length && height > 0 && usedHeight + height > availableHeight)) advanceFlow()
-        currentColumn().push(block)
-        usedHeight += height
-      })
-      previousBlockFragmented = fragments.length > 1
-      if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutTop
+  resetPage()
+  section.blocks.forEach((originalBlock) => {
+    const sourceFlowRestart = Boolean(measurements && !previousBlockFragmented && currentColumn().length && originalBlock.layoutTop !== undefined && previousLayoutTop !== undefined && originalBlock.layoutTop < previousLayoutTop)
+    if (originalBlock.pageBreak) flush()
+    else if ((originalBlock.columnBreak || sourceFlowRestart) && activeColumnLayout) advanceFlow()
+    else if (sourceFlowRestart) flush()
+    const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight, availableHeight, measurements)
+    fragments.forEach((block, fragmentIndex) => {
+      const measuredHeight = measurements?.blockHeights[block.id]
+      const height = measuredHeight ?? block.layoutHeight
+      if (fragmentIndex > 0 || (currentColumn().length && height > 0 && usedHeight + height > availableHeight)) advanceFlow()
+      currentColumn().push(block)
+      usedHeight += height
     })
+    previousBlockFragmented = fragments.length > 1
+    if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutTop
   })
   flush()
   return pages
+}
+
+/** section 하나의 pagination 결과와 그 입력. 입력 object가 모두 같으면 다음 pagination에서 그대로 쓴다. */
+export interface SectionPagination {
+  section: ViewerSection
+  sectionIndex: number
+  availableHeight: number
+  measurements?: LayoutMeasurements
+  pages: ViewerPage[]
+}
+
+/**
+ * section별 측정값으로 문서를 나누되, 앞 결과(`previous`)에서 section·위치·쪽 높이·측정 object가 모두 같은 section은 다시
+ * 나누지 않고 쪽 object를 그대로 쓴다. 결과는 같은 입력의 `paginateViewerSection`을 이어 붙인 것과 같다.
+ */
+export function paginateViewerSectionsIncremental(
+  document: Pick<ViewerDocument, 'page' | 'sections'>,
+  measurementsOf: (sectionIndex: number) => LayoutMeasurements | undefined,
+  previous: readonly SectionPagination[] = []
+): { pages: ViewerPage[]; sections: SectionPagination[]; reused: number } {
+  const availableHeight = pageBodyHeight(document)
+  let reused = 0
+  const sections = document.sections.map((section, sectionIndex): SectionPagination => {
+    const measurements = measurementsOf(sectionIndex)
+    const cached = previous[sectionIndex]
+    if (
+      cached &&
+      cached.section === section &&
+      cached.sectionIndex === sectionIndex &&
+      cached.availableHeight === availableHeight &&
+      cached.measurements === measurements
+    ) {
+      reused += 1
+      return cached
+    }
+    return {
+      section,
+      sectionIndex,
+      availableHeight,
+      measurements,
+      pages: paginateViewerSection(section, sectionIndex, availableHeight, measurements)
+    }
+  })
+  return { pages: sections.flatMap((section) => section.pages), sections, reused }
 }

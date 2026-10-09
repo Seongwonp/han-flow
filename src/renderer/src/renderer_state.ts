@@ -1,5 +1,5 @@
 import type { FixedPageDocument } from '../../core/document/fixed_page_document'
-import type { ViewerDocument } from '../../core/document/viewer_document'
+import type { ViewerDocument, ViewerSection } from '../../core/document/viewer_document'
 import type { EditingHistoryStatus } from '../../core/editing/editing_contract'
 import type { EditorSelection } from '../../core/editing/transaction'
 import type { TableCellSelection } from '../../core/editing/table_cell_selection'
@@ -23,6 +23,15 @@ export interface ViewerLoadTiming {
   pageInfoMs?: number
   firstPaintMs?: number
   openToFirstPaintMs?: number
+}
+
+/**
+ * 화면 측정값. section마다 그 측정에 쓴 section object와 함께 둔다. 측정에 쓴 style·쪽 크기(`styles`)가 같으면 편집 뒤에는
+ * object가 바뀐 section만 다시 재고, 나머지 section의 측정 object는 그대로 써서 section별 pagination cache가 맞게 한다.
+ */
+export interface DocumentLayoutMeasurements {
+  styles: object
+  sections: Array<{ section: ViewerSection; measurements: LayoutMeasurements } | undefined>
 }
 
 export interface RendererDocumentState {
@@ -53,7 +62,7 @@ export interface RendererViewerState {
   searchResults: FixedPageSearchResult[]
   activeSearchResult: number
   searching: boolean
-  layoutMeasurements: LayoutMeasurements | undefined
+  layoutMeasurements: DocumentLayoutMeasurements | undefined
 }
 
 export type RendererEditingSession = EditingHistoryStatus & { sessionId: string }

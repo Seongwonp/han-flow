@@ -2,6 +2,7 @@ import {
   isObjectPlaceholder,
   ViewerDocument,
   ViewerParagraph,
+  ViewerSection,
   ViewerTable,
   ViewerTableCell,
   ViewerText
@@ -228,19 +229,39 @@ function topLevelStructure(
   )
 }
 
+type ParagraphStructureEntry = { rangeScope: string; gate: ParagraphStructureGate }
+
+/**
+ * section별 결과 cache. ViewerSection은 만든 뒤 바꾸지 않으므로(편집 projection patch는 바뀐 section만 새 object로 바꾼다)
+ * 편집 뒤에는 바뀐 section만 다시 계산한다.
+ */
+const sectionStructures = new WeakMap<ViewerSection, ReadonlyArray<readonly [string, ParagraphStructureEntry]>>()
+const sectionContexts = new WeakMap<ViewerSection, readonly EditingAnchorContext[]>()
+
+function sectionSourcePath(section: ViewerSection): string | undefined {
+  return section.blocks.map(paragraphSourcePath).find((path): path is string => Boolean(path))
+}
+
+function sectionParagraphStructure(section: ViewerSection): ReadonlyArray<readonly [string, ParagraphStructureEntry]> {
+  const cached = sectionStructures.get(section)
+  if (cached) return cached
+  const sectionPath = sectionSourcePath(section)
+  const structure = sectionPath ? topLevelStructure(section.blocks, section.blocks.map(editableTexts), sectionPath) : []
+  const result = sectionPath ? section.blocks.map((paragraph, index) => [paragraph.id, structure[index]] as const) : []
+  sectionStructures.set(section, result)
+  return result
+}
+
 /**
  * 구역 본문 문단 id → 문단 구조 gate·여러 문단 범위 scope. renderer가 본문 문단 입력 surface의 Enter·Backspace·Delete와
  * 범위 scope를 capability와 같게 정하는 데 쓴다(표 셀은 셀 안 문단만 보면 되므로 renderer가 같은 규칙을 셀 안에서 쓴다).
  */
 export function topLevelParagraphStructure(
   document: ViewerDocument
-): Map<string, { rangeScope: string; gate: ParagraphStructureGate }> {
-  const result = new Map<string, { rangeScope: string; gate: ParagraphStructureGate }>()
+): Map<string, ParagraphStructureEntry> {
+  const result = new Map<string, ParagraphStructureEntry>()
   for (const section of document.sections) {
-    const sectionPath = section.blocks.map(paragraphSourcePath).find((path): path is string => Boolean(path))
-    if (!sectionPath) continue
-    const structure = topLevelStructure(section.blocks, section.blocks.map(editableTexts), sectionPath)
-    section.blocks.forEach((paragraph, index) => result.set(paragraph.id, structure[index]))
+    for (const [id, entry] of sectionParagraphStructure(section)) result.set(id, entry)
   }
   return result
 }
@@ -256,16 +277,16 @@ export function cellParagraphStructure(
   return siblingStructure(paragraphs, paragraphs.map(editableTexts), cellScope, (paragraph) => `${cellScope}:paragraph:${paragraph.id}`)
 }
 
-export function listEditingAnchorContexts(document: ViewerDocument): EditingAnchorContext[] {
-  return document.sections.flatMap((section) => {
-    const sectionPath = section.blocks
-      .map(paragraphSourcePath)
-      .find((path): path is string => Boolean(path))
-    if (!sectionPath) return []
+function sectionAnchorContexts(section: ViewerSection): readonly EditingAnchorContext[] {
+  const cached = sectionContexts.get(section)
+  if (cached) return cached
+  const sectionPath = sectionSourcePath(section)
+  let result: EditingAnchorContext[] = []
+  if (sectionPath) {
     const blockTexts = section.blocks.map(editableTexts)
     // 빈 문단(`empty-paragraph`)·개체가 든 문단(`paragraph`)은 여러 문단 범위 치환에 끼지 않도록 문단마다 따로 scope를 둔다.
     const structure = topLevelStructure(section.blocks, blockTexts, sectionPath)
-    return section.blocks.flatMap((paragraph, index) => {
+    result = section.blocks.flatMap((paragraph, index) => {
       const texts = blockTexts[index]
       const topLevel = texts
         ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', structure[index].rangeScope, undefined, structure[index].gate)
@@ -275,7 +296,13 @@ export function listEditingAnchorContexts(document: ViewerDocument): EditingAnch
       )
       return [...topLevel, ...nested]
     })
-  })
+  }
+  sectionContexts.set(section, result)
+  return result
+}
+
+export function listEditingAnchorContexts(document: ViewerDocument): EditingAnchorContext[] {
+  return document.sections.flatMap((section) => sectionAnchorContexts(section))
 }
 
 function safeOffset(text: string, requested: number): number {

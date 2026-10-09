@@ -1,6 +1,6 @@
-import { CSSProperties, DragEvent, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
+import { CSSProperties, DragEvent, memo, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatch } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -26,7 +26,7 @@ import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { paginateViewerDocument } from '../../core/layout/pagination'
+import { LayoutMeasurements, paginateViewerSectionsIncremental, SectionPagination } from '../../core/layout/pagination'
 import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
@@ -48,7 +48,7 @@ import {
   readParagraphEditorSelection,
   restoreParagraphEditorSelection
 } from './paragraph_selection'
-import { EditingImeTransientState } from './renderer_state'
+import { DocumentLayoutMeasurements, EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
@@ -73,7 +73,13 @@ function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
 }
 
-function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerDocument): CSSProperties {
+/**
+ * 문단·표·개체를 그릴 때 문서에서 읽는 값. 문서 object 대신 이것만 넘겨, 편집 patch가 section만 바꿨을 때는 같은 object가
+ * 유지되어 memo한 section 측정 DOM이 다시 그려지지 않게 한다.
+ */
+export type ViewerRenderStyles = Pick<ViewerDocument, 'page' | 'charStyles' | 'paraStyles' | 'cellStyles' | 'resources'>
+
+function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerRenderStyles): CSSProperties {
   const style = document.charStyles[item.charStyleId]
   return {
     fontFamily: style?.fontFamily ? `${cssFontFamilyName(style.fontFamily)}, ${KOREAN_SANS_STACK}` : undefined,
@@ -152,7 +158,7 @@ function Content({
   editing
 }: {
   item: ViewerContent
-  document: ViewerDocument
+  document: ViewerRenderStyles
   measurable?: boolean
   editing?: ParagraphEditingProps
 }) {
@@ -163,11 +169,25 @@ function Content({
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
-    return <img className="viewer-image" src={`data:${resource.mime};base64,${resource.data}`} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
+    return <img className="viewer-image" src={resourceDataUrl(resource)} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
   if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
   if (item.type === 'note-list') return <NoteListView item={item} document={document} />
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
+}
+
+/**
+ * 그림 resource의 data URL. 큰 그림(수 MB base64)을 render마다 이어 붙이면 새 문자열이 생기고 React가 이전 `src`와 글자 단위로
+ * 비교해, 그림이 든 머리말·꼬리말이 있는 쪽마다 수십 ms가 든다. resource object마다 한 번만 만들어 같은 문자열을 쓴다.
+ */
+const resourceDataUrls = new WeakMap<ViewerResource, string>()
+function resourceDataUrl(resource: ViewerResource): string {
+  let url = resourceDataUrls.get(resource)
+  if (url === undefined) {
+    url = `data:${resource.mime};base64,${resource.data}`
+    resourceDataUrls.set(resource, url)
+  }
+  return url
 }
 
 /** 문단들의 글자만 이어 붙인다(줄 안 메모·필드 표시용). */
@@ -202,7 +222,7 @@ function useFitBodyHeight(limitPx: number | undefined) {
   return bodyRef
 }
 
-export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerDocument }) {
+export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerRenderStyles }) {
   // 일부 단위 테스트는 쪽 설정 없는 문서 조각을 넘긴다.
   const page = document.page as ViewerDocument['page'] | undefined
   const pageBodyHeight = page ? page.height - page.margin.top - page.margin.bottom : 0
@@ -249,7 +269,7 @@ export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPl
 }
 
 /** 구역 끝에 모은 각주·미주 본문(읽기 전용). */
-export function NoteListView({ item, document }: { item: ViewerNoteList; document: ViewerDocument }) {
+export function NoteListView({ item, document }: { item: ViewerNoteList; document: ViewerRenderStyles }) {
   const groups = (['footnote', 'endnote'] as const)
     .map((kind) => ({ kind, notes: item.notes.filter((note) => note.kind === kind) }))
     .filter((group) => group.notes.length)
@@ -409,7 +429,7 @@ export function ParagraphView({
   availableWidth
 }: {
   paragraph: ViewerParagraph
-  document: ViewerDocument
+  document: ViewerRenderStyles
   measurable?: boolean
   editing?: ParagraphEditingProps
   /** 문단이 놓이는 칸(표 셀)의 안쪽 폭(HWPUNIT). 내어쓰기 폭을 이 안으로 줄인다. */
@@ -582,7 +602,58 @@ export function ParagraphView({
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
 }
 
-function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerDocument; offset: number }) {
+/**
+ * section 하나의 측정용 DOM. 편집 patch가 바꾸지 않은 section은 section·style object가 그대로라 다시 그리지 않는다.
+ */
+const MeasurementSection = memo(function MeasurementSection({
+  section,
+  styles,
+  width
+}: {
+  section: ViewerSection
+  styles: ViewerRenderStyles
+  width: number
+}) {
+  return <div data-measure-section={section.id} style={{ width }}>
+    {section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={styles} measurable />)}
+  </div>
+})
+
+/** 입력 지연 측정 hook(E2E)이 읽는 시각 표시. 이름마다 마지막 하나만 남긴다. */
+function markEditingTiming(name: string): void {
+  performance.clearMarks(name)
+  performance.mark(name)
+}
+
+function measureSectionElement(element: Element): LayoutMeasurements {
+  const blockHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).map((item) => [item.dataset.measureBlockId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
+  const tableRowHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-row-id]')).map((item) => [item.dataset.measureRowId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
+  return { blockHeights, tableRowHeights }
+}
+
+/**
+ * 측정 DOM(`container`의 section별 자식)에서 section 높이를 잰다. `reuse`가 같은 style로 잰 값이면 object가 그대로인
+ * section은 다시 재지 않고 그 측정 object를 그대로 쓴다.
+ */
+export function measureDocumentLayout(
+  document: Pick<ViewerDocument, 'sections'>,
+  styles: object,
+  container: Element,
+  reuse: DocumentLayoutMeasurements | undefined
+): DocumentLayoutMeasurements {
+  const previous = reuse?.styles === styles ? reuse : undefined
+  return {
+    styles,
+    sections: document.sections.map((section, index) => {
+      const cached = previous?.sections[index]
+      if (cached && cached.section === section) return cached
+      const element = container.children[index]
+      return element ? { section, measurements: measureSectionElement(element) } : undefined
+    })
+  }
+}
+
+function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerRenderStyles; offset: number }) {
   if (!control) return null
   return <div className={`viewer-${kind}`} style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}>
     {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
@@ -596,7 +667,7 @@ export function TableView({
   editing
 }: {
   table: ViewerTable
-  document: ViewerDocument
+  document: ViewerRenderStyles
   measurable?: boolean
   editing?: ParagraphEditingProps
 }) {
@@ -919,23 +990,46 @@ export default function App() {
   // React state가 다시 그려지기 전에도 최신 값을 알아야 한다. 문서를 바꾸는 곳은 모두 `showDocument`를 거친다.
   const documentRef = useRef<ViewerDocument | null>(null)
   const projectionIdRef = useRef<number | undefined>(undefined)
-  const showDocument = useCallback((next: ViewerDocument | null, projectionId?: number) => {
+  // 전체 문서로 바뀌었는지(편집 patch가 아닌지). 그러면 이전처럼 측정값을 비우고 모든 section을 다시 잰다.
+  const documentReplacedRef = useRef(false)
+  const showDocument = useCallback((next: ViewerDocument | null, projectionId?: number, patched = false) => {
     documentRef.current = next
     projectionIdRef.current = projectionId
+    documentReplacedRef.current = !patched
     setDocument(next)
   }, [])
   editingTransient.current.synchronize(editing, editingPending)
-  const effectiveDocument = useMemo(() => document ? {
-    ...document,
-    charStyles: Object.fromEntries(Object.entries(document.charStyles).map(([id, style]) => [id, {
-      ...style,
-      fontFamily: style.fontFamily ? fontResolutions[style.fontFamily]?.resolved ?? style.fontFamily : undefined
-    }]))
-  } : null, [document, fontResolutions])
+  // 편집 patch가 section만 바꾸면 style map object가 그대로라 아래 값도 모두 그대로다(측정 DOM memo·측정 재사용의 기준).
+  const charStyles = document?.charStyles
+  const resolvedCharStyles = useMemo(() => charStyles
+    ? Object.fromEntries(Object.entries(charStyles).map(([id, style]) => [id, {
+        ...style,
+        fontFamily: style.fontFamily ? fontResolutions[style.fontFamily]?.resolved ?? style.fontFamily : undefined
+      }]))
+    : undefined, [charStyles, fontResolutions])
+  const effectiveDocument = useMemo(
+    () => document && resolvedCharStyles ? { ...document, charStyles: resolvedCharStyles } : null,
+    [document, resolvedCharStyles]
+  )
+  const renderStyles = useMemo<ViewerRenderStyles | null>(
+    () => document && resolvedCharStyles
+      ? { page: document.page, charStyles: resolvedCharStyles, paraStyles: document.paraStyles, cellStyles: document.cellStyles, resources: document.resources }
+      : null,
+    [document?.page, resolvedCharStyles, document?.paraStyles, document?.cellStyles, document?.resources]
+  )
+  const sectionPaginationCache = useRef<SectionPagination[]>([])
   const pagination = useMemo(() => {
     const startedAt = performance.now()
-    const pages = effectiveDocument ? paginateViewerDocument(effectiveDocument, layoutMeasurements) : []
-    return { pages, layoutMs: performance.now() - startedAt }
+    // section마다 새 쪽에서 시작하므로 object가 그대로인 section(측정값 포함)은 앞 결과의 쪽을 그대로 쓴다.
+    const result = effectiveDocument
+      ? paginateViewerSectionsIncremental(
+          effectiveDocument,
+          (index) => layoutMeasurements?.sections[index]?.measurements,
+          sectionPaginationCache.current
+        )
+      : undefined
+    sectionPaginationCache.current = result?.sections ?? []
+    return { pages: result?.pages ?? [], layoutMs: performance.now() - startedAt }
   }, [effectiveDocument, layoutMeasurements])
   const pages = pagination.pages
   const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
@@ -1047,6 +1141,7 @@ export default function App() {
     resetEditing()
     setOpenedPath(null)
     showDocument(null)
+    setLayoutMeasurements(undefined)
     setFixedDocument(null)
     try {
       if (rhwpAdapter) (await rhwpAdapter).closeRhwpFixedPageDocument()
@@ -1191,26 +1286,49 @@ export default function App() {
     })
     return () => { stopPrepare(); stopFinish() }
   }, [fixedDocument])
+  // 문서가 쓰는 글꼴 목록이 바뀔 때만 글꼴을 다시 찾는다(편집 patch는 보통 style map을 바꾸지 않는다).
+  const requestedFontsKey = useMemo(() => charStyles
+    ? `doc:${JSON.stringify([...new Set(Object.values(charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font)))])}`
+    : 'none', [charStyles])
   useEffect(() => {
-    if (!document) return
-    setLayoutMeasurements(undefined)
-    const requested = Object.values(document.charStyles).map((style) => style.fontFamily).filter((font): font is string => Boolean(font))
+    if (requestedFontsKey === 'none') return
+    const requested = JSON.parse(requestedFontsKey.slice(4)) as string[]
     const fontOptions = { platform: rendererPlatform() }
     void api().getFonts()
       .then((fonts: string[]) => setFontResolutions(resolveDocumentFonts(requested, fonts, fontOptions)))
       .catch(() => setFontResolutions(resolveDocumentFonts(requested, [], fontOptions)))
-  }, [document])
-  useEffect(() => {
-    if (!effectiveDocument || !measurementRef.current) return
+  }, [requestedFontsKey])
+  const layoutMeasurementsRef = useRef(layoutMeasurements)
+  layoutMeasurementsRef.current = layoutMeasurements
+  useLayoutEffect(() => {
+    const container = measurementRef.current
+    if (!effectiveDocument || !renderStyles || !container) return
+    const replaced = documentReplacedRef.current
+    documentReplacedRef.current = false
+    const previous = replaced ? undefined : layoutMeasurementsRef.current
+    if (replaced) {
+      // 새 문서(열기·편집 시작·refresh): 이전처럼 측정값을 비우고 모든 section을 다시 잰다.
+      if (layoutMeasurementsRef.current) setLayoutMeasurements(undefined)
+    } else if (previous && previous.styles === renderStyles) {
+      // 편집 patch: style·쪽 크기가 그대로면 바뀐 section만 그리기 전에 바로 잰다(한 번에 맞는 쪽으로 그린다).
+      // 글꼴을 내려받는 중이면(또는 이번 측정이 글꼴 내려받기를 시작했으면) 아래 비동기 측정이 다시 잰다.
+      if (globalThis.document.fonts.status === 'loaded') {
+        const next = measureDocumentLayout(effectiveDocument, renderStyles, container, previous)
+        if (next.sections.length !== previous.sections.length || next.sections.some((entry, index) => entry !== previous.sections[index])) {
+          setLayoutMeasurements(next)
+        }
+        if (globalThis.document.fonts.status === 'loaded') return
+      }
+    }
+    // 그 밖(첫 측정, style·글꼴이 바뀐 편집 결과): 글꼴이 준비된 다음 frame에 잰다. style이 그대로면 바뀐 section만 잰다.
     let cancelled = false
+    const reuse = previous?.styles === renderStyles ? previous : undefined
     void globalThis.document.fonts.ready.then(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))).then(() => {
       if (cancelled || !measurementRef.current) return
-      const blockHeights = Object.fromEntries(Array.from(measurementRef.current.querySelectorAll<HTMLElement>('[data-measure-block-id]')).map((element) => [element.dataset.measureBlockId!, cssPxToHwpUnit(element.getBoundingClientRect().height)]))
-      const tableRowHeights = Object.fromEntries(Array.from(measurementRef.current.querySelectorAll<HTMLElement>('[data-measure-row-id]')).map((element) => [element.dataset.measureRowId!, cssPxToHwpUnit(element.getBoundingClientRect().height)]))
-      setLayoutMeasurements({ blockHeights, tableRowHeights })
+      setLayoutMeasurements(measureDocumentLayout(effectiveDocument, renderStyles, measurementRef.current, reuse))
     })
     return () => { cancelled = true }
-  }, [effectiveDocument])
+  }, [effectiveDocument, renderStyles])
   useEffect(() => () => {
     if (rhwpAdapter) void rhwpAdapter.then((adapter) => adapter.closeRhwpFixedPageDocument())
   }, [])
@@ -1277,6 +1395,7 @@ export default function App() {
     }
   }, [])
   const applyEditingResult = useCallback((result: EditingActionResult) => {
+    markEditingTiming('han-flow:editing-result')
     let next: ViewerDocument
     if (result.patch) {
       const current = documentRef.current
@@ -1286,7 +1405,7 @@ export default function App() {
         return
       }
       next = applyViewerDocumentPatch(current, result.patch)
-      showDocument(next, result.patch.projectionId)
+      showDocument(next, result.patch.projectionId, true)
     } else {
       next = result.document
       showDocument(next, result.projectionId)
@@ -1363,6 +1482,7 @@ export default function App() {
     if (!editing) return
     const sessionId = editing.sessionId
     const transactionId = editingTransient.current.nextTransactionId('ui')
+    markEditingTiming('han-flow:editing-commit')
     setEditingPending((current) => current + 1)
     setEditingStatus('변경 반영 중…')
     void api().commitEditing({
@@ -2059,13 +2179,15 @@ export default function App() {
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {printing && fixedDocument && <style>{fixedPagePrintCss(fixedDocument.pages)}</style>}
-    {effectiveDocument && <div ref={measurementRef} className="viewer-measurement">{effectiveDocument.sections.map((section) => <div
+    {effectiveDocument && renderStyles && <div ref={measurementRef} className="viewer-measurement">{effectiveDocument.sections.map((section) => <MeasurementSection
       key={section.id}
-      style={{ width: hwpUnitToCssPx(viewerColumnContentWidth(
+      section={section}
+      styles={renderStyles}
+      width={hwpUnitToCssPx(viewerColumnContentWidth(
         effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right,
         section.columnLayout
-      )) }}
-    >{section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={effectiveDocument} measurable />)}</div>)}</div>}
+      ))}
+    />)}</div>}
     <ViewerToolbar
       fileName={fileName}
       shortcutPlatform={shortcutPlatform}
@@ -2148,6 +2270,7 @@ export default function App() {
         zoom={zoom}
         virtualized={virtualized}
         editing={Boolean(editing)}
+        editingRevision={editing?.revision}
         topSpacer={visibleRange.topSpacer}
         bottomSpacer={visibleRange.bottomSpacer}
       >
@@ -2158,7 +2281,7 @@ export default function App() {
           const renderParagraphs = (paragraphs: typeof page.blocks) => paragraphs.map((paragraph) => <ParagraphView
             key={paragraph.id}
             paragraph={paragraph}
-            document={effectiveDocument}
+            document={renderStyles!}
             editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
           />)
           const body = page.columns && page.columnLayout
@@ -2167,7 +2290,7 @@ export default function App() {
                 columns={page.columns.map(renderParagraphs)}
               />
             : renderParagraphs(page.blocks)
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={effectiveDocument} offset={effectiveDocument.page.headerOffset} />{body}<HeaderFooterView control={decoration.footer} kind="footer" document={effectiveDocument} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} />{body}<HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

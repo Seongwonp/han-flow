@@ -3,7 +3,8 @@ import type {
   ViewerDocument,
   ViewerObjectKind,
   ViewerObjectPlaceholder,
-  ViewerParagraph
+  ViewerParagraph,
+  ViewerSection
 } from './viewer_document'
 
 /**
@@ -68,15 +69,26 @@ function visitContent(content: readonly ViewerContent[], visit: (item: ViewerObj
   }
 }
 
-/** 문서(본문·표 셀·머리말·꼬리말·글상자·각주 본문)의 모든 자리 표시를 문서 순서로 모은다. */
-export function collectObjectPlaceholders(document: Pick<ViewerDocument, 'sections'>): ViewerObjectPlaceholder[] {
+/**
+ * section별 자리 표시 목록 cache. ViewerSection은 만든 뒤 바꾸지 않으므로(편집 projection patch는 바뀐 section을 새 object로
+ * 바꾼다) section object를 key로 다시 세지 않는다.
+ */
+const sectionPlaceholders = new WeakMap<ViewerSection, readonly ViewerObjectPlaceholder[]>()
+
+function placeholdersOf(section: ViewerSection): readonly ViewerObjectPlaceholder[] {
+  const cached = sectionPlaceholders.get(section)
+  if (cached) return cached
   const result: ViewerObjectPlaceholder[] = []
   const visit = (item: ViewerObjectPlaceholder) => { result.push(item) }
-  for (const section of document.sections) {
-    visitParagraphs(section.blocks, visit)
-    for (const control of [...section.headers, ...section.footers]) visitParagraphs(control.paragraphs, visit)
-  }
+  visitParagraphs(section.blocks, visit)
+  for (const control of [...section.headers, ...section.footers]) visitParagraphs(control.paragraphs, visit)
+  sectionPlaceholders.set(section, result)
   return result
+}
+
+/** 문서(본문·표 셀·머리말·꼬리말·글상자·각주 본문)의 모든 자리 표시를 문서 순서로 모은다. */
+export function collectObjectPlaceholders(document: Pick<ViewerDocument, 'sections'>): ViewerObjectPlaceholder[] {
+  return document.sections.flatMap((section) => placeholdersOf(section))
 }
 
 /** 종류별 자리 표시 개수. 0개인 종류는 넣지 않고 key는 `OBJECT_KIND_ORDER` 순서다. */

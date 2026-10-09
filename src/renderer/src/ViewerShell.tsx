@@ -47,6 +47,8 @@ interface ViewerPageStackProps {
   zoom: number
   virtualized: boolean
   editing?: boolean
+  /** 화면에 반영된 편집 revision(E2E 입력 지연 측정이 DOM 반영 시점을 읽는다). */
+  editingRevision?: number
   topSpacer: number
   bottomSpacer: number
   children: ReactNode
@@ -61,6 +63,7 @@ export function ViewerPageStack({
   zoom,
   virtualized,
   editing,
+  editingRevision,
   topSpacer,
   bottomSpacer,
   children
@@ -79,6 +82,7 @@ export function ViewerPageStack({
     data-total-pages={totalPages}
     data-document-loading={documentLoading}
     data-layout-measured={layoutMeasured}
+    data-editing-revision={editingRevision}
     style={{ transform: `scale(${zoom})`, transformOrigin: 'top center' }}
   >
     {virtualized && <div className="viewer-page-spacer" style={{ height: topSpacer }} />}
