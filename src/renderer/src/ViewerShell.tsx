@@ -117,6 +117,8 @@ interface ViewerStatusBarProps {
   editingStatusText: string | null
   editingStatusClass: string
   editingSelectionNotice: string | null
+  /** 이 편집 session의 복구 기록이 멈췄다는 안내(main의 `editing:recoveryJournalStopped`). session이 끝날 때까지 계속 보인다. */
+  recoveryJournalNotice?: string | null
   progress?: { loaded: number; total: number } | null
   backgroundError: string | null
   hasEffectiveDocument: boolean
@@ -141,6 +143,7 @@ export function ViewerStatusBar(props: ViewerStatusBarProps) {
     editingStatusText,
     editingStatusClass,
     editingSelectionNotice,
+    recoveryJournalNotice,
     progress,
     backgroundError,
     hasEffectiveDocument,
@@ -160,6 +163,7 @@ export function ViewerStatusBar(props: ViewerStatusBarProps) {
     {editing && <span title="현재 package mutation revision과 마지막 저장 revision">편집 r{editing.revision} · 저장 r{editing.savedRevision}</span>}
     {editingStatusText && <span className={editingStatusClass}>{editingStatusText}</span>}
     {editingSelectionNotice && <span className="viewer-status-warn">{editingSelectionNotice}</span>}
+    {recoveryJournalNotice && <span className="viewer-status-error" role="status" title={recoveryJournalNotice}>복구 기록 중단 · 저장 필요</span>}
     {progress && progress.loaded < progress.total && !backgroundError && <span>불러오는 중 {progress.loaded}/{progress.total}</span>}
     {backgroundError && <span className="viewer-status-error">나머지 페이지 오류</span>}
     {hasEffectiveDocument && <span className={substitutionCount ? 'viewer-status-warn' : ''}>글꼴 대체 {substitutionCount}</span>}

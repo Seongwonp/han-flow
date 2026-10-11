@@ -113,6 +113,24 @@ describe('복구 기록 형식', () => {
     expect(() => decodeRecoveryJournal(bytes)).toThrow(expect.objectContaining({ reason: 'malformed' }))
   })
 
+  test('inverse 전용 restore-* command는 forward commit으로 받지 않는다', () => {
+    const base = commit(1, '가') as Extract<RecoveryJournalEntry, { type: 'commit' }>
+    for (const type of ['restore-style', 'restore-character-run', 'restore-cell-style']) {
+      const forged = {
+        ...base,
+        transaction: {
+          ...base.transaction,
+          commands: [{ type, sectionPath: 'Contents/section0.xml', textNodeId: 'Contents/section0.xml#hp:t:0' }]
+        }
+      }
+      expect(() => decodeRecoveryJournal(journal([forged as never]))).toThrow(
+        expect.objectContaining({ reason: 'malformed' })
+      )
+    }
+    // 편집 엔진이 forward로 만드는 종류는 그대로 받는다.
+    expect(decodeRecoveryJournal(journal([commit(1, '가')])).entries).toHaveLength(1)
+  })
+
   test('크기·record 수 한도를 넘으면 거부한다', () => {
     const bytes = journal([commit(1, '가'), commit(2, '나'), commit(3, '다')])
     expect(() => decodeRecoveryJournal(bytes, { ...RECOVERY_JOURNAL_LIMITS, maxBytes: bytes.length - 1 })).toThrow(

@@ -23,10 +23,12 @@ test('원문 개체를 decoder 자리 표시와 같은 종류로 센다', () => 
     '<hp:btn/><hp:checkBtn/>',
     '<hp:ctrl><hp:footNote><hp:subList/></hp:footNote><hp:endNote><hp:subList/></hp:endNote></hp:ctrl>',
     '<hp:ctrl><hp:fieldBegin type="MEMO"><hp:subList/></hp:fieldBegin><hp:fieldBegin type="CLICK_HERE"/></hp:ctrl>',
-    '<hp:dutmal><hp:mainText>본</hp:mainText></hp:dutmal>'
+    '<hp:dutmal><hp:mainText>본</hp:mainText></hp:dutmal>',
+    // 글자 겹치기는 decoder가 'unknown' 자리 표시(글자 겹치기)로 남긴다.
+    '<hp:compose composeText="가나"/>'
   ].join(''))])
   assert.deepEqual(nonZero(counts), {
-    equation: 2, chart: 1, ole: 1, 'text-box': 1, shape: 3, 'form-control': 2, footnote: 1, endnote: 1, memo: 1, ruby: 1
+    equation: 2, chart: 1, ole: 1, 'text-box': 1, shape: 3, 'form-control': 2, footnote: 1, endnote: 1, memo: 1, ruby: 1, unknown: 1
   })
 })
 

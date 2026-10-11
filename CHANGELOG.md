@@ -34,6 +34,7 @@
 - 편집 worker benchmark에 전체 projection 재현·결과 크기·실행 취소 측정을 더하고(keystroke 왕복 p50 679ms→7.3ms, 결과 12.8 MB→75 KB) 패키지 앱 한 글자 입력 지연 측정 `benchmark:edit-latency` 추가
 - 편집 session마다 `<userData>/recovery/<sessionId>/journal.hfj` 복구 기록(길이·CRC-32 한 줄 record, 원본 크기·수정 시각·SHA-256 header, history가 replay하는 forward transaction과 실행 취소·다시 실행·저장 지점)을 main이 dirty일 때만 0.5초 간격 fdatasync로 쓰고, worker가 같은 commit 경로로 replay해 revision·저장 지점까지 되살리며 끊긴 꼬리는 버리고 손상·한도 초과·replay 실패 기록은 격리
 - 앱 시작·같은 원본 열기·편집 엔진 중단 직후 남은 복구 기록을 창 대화상자([복구]·[버리기]·[나중에], 마지막 변경 시각·편집 수)로 묻고, 원본 크기·수정 시각·SHA-256이 같을 때만 원본을 열어 편집 모드·dirty로 되살리며(바뀌었거나 없으면 복구 거절), 패키지 앱 SIGKILL 강제 종료→재실행 복구→Save As·재열기 E2E(`HAN_FLOW_VERIFY_CRASH_RECOVERY`)를 baseline matrix에 추가
+- [저장하지 않음]으로 닫거나 앱을 끝낼 때 복구 기록 삭제를 기다린 뒤 창을 닫아 버린 편집을 다시 묻지 않고, 편집 준비·복구 중 닫힌 창의 worker를 끝내며, 복구 기록 한도 초과·쓰기 실패를 상태 막대에 계속 알리고, replay는 편집이 만드는 forward command와 단순 문단·표 조각만 적용하며, 같은 기록을 두 창이 복구하지 않게 하고, 게시 뒤 저장 timeout은 저장 파일이 있다고 안내하며, projection patch 불일치는 refresh로 다시 맞추고, 원문 개체 census에 글자 겹치기(`unknown`) 추가하고, 패키지 앱 matrix에 [저장하지 않음] 종료 뒤 남은 복구 기록 0개 확인 추가
 
 ### Sprint 4 호환성 corpus
 

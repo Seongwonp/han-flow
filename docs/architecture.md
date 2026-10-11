@@ -125,7 +125,8 @@ run 경계의 Shift+방향키 selection을 이 모델로 확장한다. cross-run
 selection으로 읽으며, 같은 section의 최상위 문단은 scope를 공유하고 표 셀 문단은 cell별 scope로
 격리한다. 글자 style command는 아직 한 run 범위만 적용한다.
 
-V3-4에서 source package와 history의 실제 소유자를 Electron main으로 확정했다. 각
+V3-4에서 source package와 history의 실제 소유자를 renderer가 아닌 main 쪽으로 확정했다(지금은 아래 "편집 worker"처럼
+창별 편집 worker thread가 소유하고 main은 session 목록·상태 거울만 둔다). 각
 `webContents.id`에는 하나의 무작위 session ID만 연결되고 commit은 sender별 queue에서
 직렬 실행된다. renderer는 source ZIP bytes나 revision을 소유하지 않으며 text node ID,
 UTF-16 diff와 전후 selection만 보낸다. 창 종료나 새 문서 열기에서는 session을 폐기한다.
@@ -348,10 +349,15 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   보호 목록에서도 빠지고, renderer는 편집 모드를 닫되 마지막 문서 화면은 그대로 두고 보기 모드로 돌아간다.
 - 저장 중 강제 종료: 목적지는 검증을 마친 임시 파일을 hard link(새 파일)·rename(교체 확인)으로만 게시하므로 반쯤 쓴 목적지는
   생기지 않는다. worker의 `finally`가 돌지 못해 남은 임시 파일은 main이 worker 종료를 기다린 뒤 미리 정한 UUID 경로
-  (`saveTemporaryPath`)로 지운다.
+  (`saveTemporaryPath`)로 지운다. 게시(link·rename)가 성공하면 worker는 응답 전에 같은 id로 `{ progress: 'published' }`
+  (`EditingWorkerProgress`)를 보낸다. 그 뒤(임시 이름 정리·폴더 fsync 중) timeout이 나면 main은 "저장 파일은 만들지 않았다"가
+  아니라 저장 파일은 이미 만들었지만 마무리를 확인하지 못했다고 안내한다.
 - 순서: main은 창별 queue(`enqueue`)로 한 창의 요청을 하나씩 보내고 worker도 도착 순서대로 처리한다. 다른 창의 session은
   각자 worker에서 병렬로 돈다. 편집을 끝내거나 창을 닫거나 다른 문서로 교체하면 worker를 종료하고 대기 요청은
-  `EDITING_SESSION_EXPIRED`로 끝낸다. timeout·crash·OOM으로 끝난 session의 저장하지 않은 편집은 아래 복구 기록에서 되살린다.
+  `EDITING_SESSION_EXPIRED`로 끝낸다. `stop`은 창별 세대를 올리고 기록 삭제·worker 종료가 끝나면 resolve하는 Promise를
+  돌려준다. 아직 끝나지 않은 `start`·`recover`는 worker를 기다린 뒤 세대가 바뀌었으면(그 사이 창이 닫힘) 새 worker를 끝내고
+  session을 만들지 않는다(`start`는 기록을 만들기 전이고, `recover`는 옛 기록을 그대로 두거나 이미 옮긴 새 기록을 남긴다).
+  timeout·crash·OOM으로 끝난 session의 저장하지 않은 편집은 아래 복구 기록에서 되살린다.
 - 증분 projection(`src/core/parser/viewer_projection.ts`): worker는 마지막으로 보낸 projection의 package·section별 해석
   결과·header style map·그림 resource를 들고 있고, 새 package와 entry bytes를 비교해(`changedEntryPathsSince`, command
   종류를 믿지 않으므로 실행 취소·다시 실행도 같은 규칙) 바뀐 entry만 다시 해석한다. section 해석(`decodeViewerSection`)은
@@ -370,8 +376,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
     3,893회). patch에 없는 section·style map·쪽·resource는 앞 문서 object를 그대로 쓴다. header 목록 번호 정의 변경과
     쪽 크기·그림 entry fallback은 따로 검사한다.
 - renderer 적용: renderer는 마지막 `projectionId`와 문서를 ref로 들고, patch의 `baseProjectionId`가 같으면
-  `applyViewerDocumentPatch`로 바뀐 section만 새 object로 바꾼다. 다르면(응답을 놓친 경우) patch를 버리고 refresh로 전체
-  문서를 받아 다시 맞춘다. revision·selection 처리(`reconcileEditingSelection`)는 전과 같다.
+  `applyViewerDocumentPatch`로 바뀐 section만 새 object로 바꾼다. 다르거나(응답을 놓친 경우) section 수·위치가 맞지 않으면
+  (`ViewerDocumentPatchMismatchError`, `applyViewerDocumentPatchIfCurrent`) 편집 실패로 다루지 않고 patch를 버린 뒤 refresh로
+  전체 문서를 받아 다시 맞춘다. revision·selection 처리(`reconcileEditingSelection`)는 전과 같다.
 - main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답의 structured clone 역직렬화와 renderer IPC 직렬화(편집
   결과는 patch라 작다), 저장 목적지 `lstat`/`stat`, 대화상자. large-progressive(80 section, 5 MiB 그림)의 keystroke 하나
   commit은 전체 projection 경로(매번 전체 해석 + 전체 문서 clone, 결과 12.8 MB) p50 679ms에서 worker 증분 경로 p50 7.3ms
@@ -399,26 +406,42 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   덧붙인다. 저장 직후·원래 상태로 되돌려 dirty가 아니면 파일을 지우고 record는 메모리에 둔다(다시 dirty가 되면 처음부터 다시 쓴다).
   디스크 쓰기는 `write` + `fdatasync`(새 파일이면 폴더 fsync)이고, 쉬고 있다가 들어온 첫 편집은 바로, 빠르게 입력하는 동안은
   마지막 flush 뒤 500ms(`RECOVERY_FLUSH_INTERVAL_MS`)가 찰 때 모아서 내린다. 창 blur, Save As 전, 닫기 확인 전에는 바로 내린다.
-  최악의 손실 구간은 앱 process 강제 종료·OS 종료 때 약 0.5초 + fdatasync 시간의 입력이다. worker 중단은 손실이 없다.
+  최악의 손실 구간은 앱 process 강제 종료·OS 종료 때 약 0.5초 + fdatasync 시간의 입력과, 그때 worker가 아직 응답하지 않은
+  요청(기록은 응답에 실려 오므로)이다. worker 중단은 중단을 일으킨 요청 말고는 손실이 없다.
   쓰기는 비동기 fs라 main event loop를 막지 않는다.
 - 지우는 때: 정상 종료(`stop`: 편집 끝내기·창 닫기·다른 문서 열기는 모두 저장 또는 [저장하지 않음]을 거친다), Save As 뒤 dirty가
-  아니게 됐을 때(위 규칙), 복구 대화상자의 [버리기]. worker 중단·앱 강제 종료에서는 남긴다(`retain`).
+  아니게 됐을 때(위 규칙), 복구 대화상자의 [버리기]. worker 중단·앱 강제 종료에서는 남긴다(`retain`). 편집 session이 있는 창의
+  `close`는 한 번 막고, dirty면 닫기 확인([저장]·[저장하지 않음])을 거친 뒤, `stop`(기록 삭제·worker 종료)이 끝나고 나서 창을
+  닫고 앱 종료를 이어 간다. 창이 다 닫힌 뒤 `will-quit`에서 종료를 미루면 Electron 44가 끝나지 않으므로 창 단계에서 기다린다.
+  닫기 확인 없이 사라진 창(renderer 비정상 종료 등)은 `window-all-closed`가 `whenStopped`를 기다린다. 그래서 버린 편집이
+  다음 실행에서 복구 제안으로 돌아오지 않는다
+  (`verify_app.mjs`가 편집 E2E마다 정상 종료 뒤 남은 기록 0개를 확인한다).
 - 저장 지점: Save As 뒤에도 session은 원본 package 위에서 계속 편집하므로 새 기준 파일로 기록을 다시 시작하지 않고 `saved`
   record를 남긴다. replay가 같은 지점에서 `markSaved`를 불러 savepoint·dirty·저장 이전으로의 실행 취소까지 그대로 되살린다.
 - 읽기: 마지막 줄이 길이·CRC·줄바꿈 중 하나라도 맞지 않으면 쓰다 끊긴 꼬리로 보고 버린다. 깨진 record 뒤에 줄이 더 있으면
   손상이다. header 손상·중간 손상·구조 오류·크기(64 MiB)·record 수(100,000)·record 하나(16 MiB) 한도 초과는 실행하지 않고
-  `quarantine-<id>-<시각>` 폴더로 옮긴다. 다른 형식 version은 손대지 않는다(그 version 앱이 열 수 있다). 쓰는 쪽도 한도에
-  닿으면 기록을 멈추고 최신 상태를 담지 못하는 파일을 지운다.
+  `quarantine-<id>-<시각>` 폴더로 옮긴다. 다른 형식 version은 손대지 않는다(그 version 앱이 열 수 있다). `commit` record의
+  command는 편집 엔진이 forward transaction에 넣는 종류(`FORWARD_EDIT_COMMAND_TYPES`)만 받는다. inverse 전용 `restore-*`는
+  구조 오류다. 쓰는 쪽도 한도에 닿거나 디스크 쓰기에 실패하면 기록을 멈춘다. 한도 초과는 최신 상태를 담지 못하는 파일을 지우고
+  (앞부분만 복구하면 사용자가 모르는 옛 상태가 되므로), 쓰기 실패는 이미 내린 앞부분을 남긴다. 어느 쪽이든 조용히 멈추지 않고
+  `onJournalStopped` → `editing:recoveryJournalStopped`로 그 창의 renderer에 알려, 그 session 동안 상태 막대에
+  "복구 기록 중단 · 저장 필요"(자세한 이유는 tooltip)를 계속 표시한다.
 - 복구(`EditingSessionManager.recover`): 새 worker로 원본을 열어 그 지문이 header와 같을 때만(다르면 `RecoverySourceChangedError`,
   기록 보관) `replay` 요청을 보낸다. worker는 live 편집과 같은 `commitSynchronized`·`undo`·`redo`·`markSaved` 경로로 record를
   차례로 적용하고 단계마다 기록된 revision과 비교한다. history grouping은 transaction timestamp로 정해지므로 같은 묶음이
-  다시 만들어진다. replay는 worker의 heap 한도와 `replay` timeout(300초) 안에서 돌고, 실패·timeout·crash한 기록은 격리한다.
-  성공하면 새 session 기록을 디스크에 내린 뒤 옛 기록을 지운다.
+  다시 만들어진다. replay는 planner를 거치지 않으므로 commit마다 먼저 `assertReplayableTransaction`(`replay_guard.ts`)으로
+  live 편집이 만들 수 있는 모양인지 본다. forward command 종류만 받고, 문단 fragment 교체는 교체 fragment가 `hp:p`만 이어 붙인
+  것이고 각 문단이 문단 구조 command 공통 규칙(`paragraphStructureViolation`)을 통과해야 하며, 표 fragment 교체는 `hp:tbl`
+  하나이고 바꾸기 전 표에 없던 element 이름을 들이거나 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
+  개수를 늘리지 않아야 한다. replay는 worker의 heap 한도와 `replay` timeout(300초) 안에서 돌고, 실패·timeout·crash한 기록은
+  격리한다. 성공하면 새 session 기록을 디스크에 내린 뒤 옛 기록을 지운다.
 - 묻는 때(`index.ts`): 앱 시작(첫 창 load 뒤 남은 기록 목록, 시작하며 여는 문서의 기록은 제외), HWPX 문서를 열었을 때 같은 원본
   경로의 기록(가장 최근 하나), 편집 엔진이 중단된 직후(renderer가 "편집 세션 종료"로 보기 모드로 돌아간 뒤). 창을 부모로 한 대화상자가
   "저장하지 않은 편집 내용이 있습니다. 복구하시겠습니까?"와 마지막 변경 시각·편집 수를 보여 주고 [복구][버리기][나중에]를 받는다.
   원본이 바뀌었거나 없으면 복구할 수 없다고 알리고 [나중에][버리기]만 준다. [복구]는 main이 `recovery:start`로 원본 경로와 기록
   ID를 보내고, renderer가 원본을 열고(배경 로딩까지 끝난 뒤) `editing:recover`를 부른다. main은 자기가 보낸 기록만 받는다.
+  사용 중인 기록(열린 session·복구 중인 기록 `activeJournalIds`, 대화상자를 띄운 기록, 창에 복구를 보낸 기록 `journalsInUse`)은
+  목록·제안에서 빼고, `recover`도 복구 중인 기록을 다른 창이 다시 집으면 거부하므로 두 창이 같은 기록을 동시에 복구하지 않는다.
   결과는 편집 모드·dirty 상태이고 사용자가 확인한 뒤 다른 이름으로 저장한다. replay 실패는 격리 위치를 알리고 [보관][버리기]를 준다.
   E2E는 `HAN_FLOW_E2E_RECOVERY_ACTION`(recover·discard·later)으로 답한다.
 - 한계: 창마다 session·기록이 따로라 여러 창이 같은 원본을 편집하다 함께 중단되면 기록이 여러 개 남고, 문서를 열 때는 가장

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'crypto'
 import { createReadStream } from 'fs'
 import { lstat, mkdir, open, readFile, readdir, rename, rm, stat, type FileHandle } from 'fs/promises'
 import { basename, dirname, join, resolve } from 'path'
+import { FORWARD_EDIT_COMMAND_TYPES } from '../core/editing/replay_guard'
 import { MAX_TRANSACTION_COMMANDS, type EditTransaction } from '../core/editing/transaction'
 import { crc32 } from '../core/parser/source_package'
 
@@ -122,17 +123,8 @@ export function encodeRecoveryRecord(record: RecoveryJournalHeader | RecoveryJou
 
 const COLON = 0x3a
 const NEWLINE = 0x0a
-const COMMAND_TYPES = new Set([
-  'replace-text',
-  'apply-character-style',
-  'apply-paragraph-style',
-  'restore-style',
-  'restore-character-run',
-  'replace-paragraph-fragment',
-  'apply-cell-style',
-  'restore-cell-style',
-  'replace-table-fragment'
-])
+/** 기록의 commit은 history가 replay하는 forward transaction이다. inverse 전용 `restore-*` command는 받지 않는다. */
+const COMMAND_TYPES: ReadonlySet<string> = FORWARD_EDIT_COMMAND_TYPES
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

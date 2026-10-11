@@ -33,6 +33,7 @@ import {
   planMergeTableCellRight,
   planSplitTableCell
 } from '../core/editing/table_patch'
+import { assertReplayableTransaction } from '../core/editing/replay_guard'
 import { reconcileTableCellSelection } from '../core/editing/table_cell_selection'
 import type { EditTransaction } from '../core/editing/transaction'
 import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
@@ -122,7 +123,8 @@ export class EditingEngine {
 
   /**
    * 복구 기록을 처음부터 다시 적용한다. live 편집과 같은 commit·undo·redo·저장 지점 경로를 타고, 단계마다 기록된 revision과
-   * 맞는지 확인한다. 하나라도 어긋나면 EDITING_RECOVERY_FAILED. 적용한 record는 다시 기록으로 내보내 새 session의 기록이 된다.
+   * 맞는지 확인한다. commit은 적용 전에 forward command 종류와 문단·표 교체 fragment 구조를 확인한다(`replay_guard.ts`).
+   * 하나라도 어긋나면 EDITING_RECOVERY_FAILED. 적용한 record는 다시 기록으로 내보내 새 session의 기록이 된다.
    */
   async replay(entries: readonly RecoveryJournalEntry[]): Promise<EditingActionResult> {
     if (this.history.package.revision !== 0 || this.history.canUndo || this.history.canRedo) {
@@ -132,6 +134,8 @@ export class EditingEngine {
       try {
         switch (entry.type) {
           case 'commit':
+            // 기록 파일은 앱 밖에서 바뀔 수 있다. planner를 거치지 않으므로 live 편집이 만들 수 있는 command인지 먼저 본다.
+            assertReplayableTransaction(entry.transaction)
             this.commitTransaction(entry.transaction, entry.at)
             break
           case 'undo':
@@ -638,7 +642,8 @@ export class EditingEngine {
     return this.history.saveLossPolicy
   }
 
-  async saveAs(request: EditingEngineSaveRequest): Promise<EditingEngineSaveResult> {
+  /** @param onPublished 검증을 마친 저장 파일을 목적지에 게시한 직후(임시 이름 정리·폴더 동기화 전) 부른다. */
+  async saveAs(request: EditingEngineSaveRequest, onPublished?: () => void): Promise<EditingEngineSaveResult> {
     if (!this.history.isDirty) {
       throw new EditingOperationError(
         'EDITING_NOT_APPLICABLE',
@@ -651,7 +656,8 @@ export class EditingEngine {
       result = await saveHwpxAs(this.history.package, request.destinationPath, {
         overwrite: request.overwrite === true,
         protectedPaths: request.protectedPaths,
-        temporaryToken: request.temporaryToken
+        temporaryToken: request.temporaryToken,
+        onPublished
       })
     } catch (reason) {
       throw new EditingOperationError('EDITING_SAVE_FAILED', saveAsFailureMessage(reason), 'retry')

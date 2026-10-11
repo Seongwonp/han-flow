@@ -334,6 +334,32 @@ describe('viewer shell components', () => {
     expect(markup).toContain('불러오는 중 1/3')
     expect(markup).toContain('글꼴 대체 1')
     expect(markup).toContain('열기 800ms')
+    expect(markup).not.toContain('복구 기록 중단')
+  })
+
+  test('복구 기록이 멈춘 session은 상태 막대에 저장 필요를 계속 알리고 이유는 tooltip에 둔다', () => {
+    const message = '복구 기록 중단 · 편집 기록이 복구 기록 한도(64 MiB·100,000건)를 넘었습니다. 비정상 종료 때 되살릴 수 없으니 지금 저장하세요.'
+    const markup = renderToStaticMarkup(createElement(ViewerStatusBar, {
+      hasDocument: true,
+      title: '',
+      pageCount: 1,
+      formatLabel: 'HWPX',
+      editing: { sessionId: 'session', revision: 9, savedRevision: 0, canUndo: true, canRedo: false, isDirty: true },
+      // 다음 편집이 상태 문구를 '편집 중'으로 바꿔도 안내는 남는다.
+      editingStatusText: '편집 중 · 저장 안 됨',
+      editingStatusClass: 'viewer-status-warn',
+      editingSelectionNotice: null,
+      recoveryJournalNotice: message,
+      backgroundError: null,
+      hasEffectiveDocument: true,
+      substitutionCount: 0,
+      overflowPages: [],
+      virtualized: false,
+      pdfStatus: null
+    }))
+    expect(markup).toContain('복구 기록 중단 · 저장 필요')
+    expect(markup).toContain(`title="${message}"`)
+    expect(markup).toContain('viewer-status-error')
   })
 
   test('page stack은 format metadata와 virtualization spacer를 공통으로 렌더링한다', () => {

@@ -1,5 +1,5 @@
 import { basename, dirname } from 'path'
-import type { RecoveryJournalCandidate, RecoverySourceState } from './recovery_journal'
+import { RECOVERY_JOURNAL_LIMITS, type RecoveryJournalCandidate, type RecoverySourceState } from './recovery_journal'
 
 /*
  * 복구 대화상자 문구(Electron에 의존하지 않는 순수 함수). 버튼 순서와 응답 번호는 여기서만 정한다.
@@ -106,4 +106,15 @@ export function recoveryFailedDialog(message: string, quarantinePath: string | u
 /** E2E 환경 변수 값(recover·discard·later)을 선택으로 바꾼다. 모르는 값이면 undefined(대화상자를 띄운다). */
 export function recoveryChoiceFromTestValue(value: string | undefined): RecoveryChoice | undefined {
   return value === 'recover' || value === 'discard' || value === 'later' ? value : undefined
+}
+
+/**
+ * 편집 중 복구 기록이 멈췄을 때 상태 막대에 계속 띄우는 안내. 한도 초과(`oversized`)는 기록 파일을 지웠고,
+ * 쓰기 실패는 이미 내린 앞부분만 남았으므로 둘 다 지금부터의 편집은 비정상 종료 때 되살릴 수 없다.
+ */
+export function recoveryJournalStoppedMessage(reason: unknown): string {
+  const oversized = Boolean(reason && typeof reason === 'object' && (reason as { reason?: unknown }).reason === 'oversized')
+  return oversized
+    ? `복구 기록 중단 · 편집 기록이 복구 기록 한도(${RECOVERY_JOURNAL_LIMITS.maxBytes / 1024 / 1024} MiB·${RECOVERY_JOURNAL_LIMITS.maxRecords.toLocaleString('ko-KR')}건)를 넘었습니다. 비정상 종료 때 되살릴 수 없으니 지금 저장하세요.`
+    : '복구 기록 중단 · 복구 기록을 디스크에 쓰지 못했습니다. 비정상 종료 때 되살릴 수 없으니 지금 저장하세요.'
 }

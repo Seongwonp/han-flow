@@ -76,6 +76,12 @@ const api = {
     return () => ipcRenderer.removeListener('recovery:start', handler)
   },
   recoverEditing: (request: { journalId: string }) => invokeEditing('editing:recover', request),
+  // 편집 session의 복구 기록이 한도 초과·쓰기 실패로 멈췄다. renderer는 그 session 동안 상태 막대에 계속 알린다.
+  onRecoveryJournalStopped: (listener: (payload: { sessionId: string; message: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { sessionId: string; message: string }) => listener(payload)
+    ipcRenderer.on('editing:recoveryJournalStopped', handler)
+    return () => ipcRenderer.removeListener('editing:recoveryJournalStopped', handler)
+  },
   commitEditing: (request: EditingCommitRequest) => invokeEditing('editing:commit', request),
   commitRangeEditing: (request: EditingRangeCommitRequest) =>
     invokeEditing('editing:commitRange', request),

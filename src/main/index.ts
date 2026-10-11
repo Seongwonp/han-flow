@@ -27,6 +27,7 @@ import {
 import {
   recoveryChoiceFromTestValue,
   recoveryFailedDialog,
+  recoveryJournalStoppedMessage,
   recoveryOfferDialog,
   recoveryUnavailableDialog,
   type RecoveryChoice,
@@ -82,7 +83,16 @@ const editingSessions = new EditingSessionManager(undefined, {
   recovery: {
     directory: recoveryDirectory,
     appVersion: app.getVersion(),
-    onSessionLost: (event) => offerRecoveryAfterEngineFailure(event)
+    onSessionLost: (event) => offerRecoveryAfterEngineFailure(event),
+    // 한도 초과·쓰기 실패로 복구 기록이 멈추면 그 창의 상태 막대에 계속 알린다(조용히 멈추지 않는다).
+    onJournalStopped: (event) => {
+      const window = windowsById.get(event.senderId)
+      if (!window || window.isDestroyed()) return
+      window.webContents.send('editing:recoveryJournalStopped', {
+        sessionId: event.sessionId,
+        message: recoveryJournalStoppedMessage(event.reason)
+      })
+    }
   }
 })
 const documentPaths = new DocumentPathRegistry()
@@ -984,6 +994,8 @@ function captureVisualState(window: BrowserWindow): void {
           styleProbe,
           saveStatusMatches,
           dirtyCleared,
+          // probe가 끝날 때(앱 종료 직전) 저장하지 않은 편집이 남았는지. dirty 종료 E2E가 닫기 확인을 실제로 거쳤는지 본다.
+          dirtyAtEnd: Boolean(document.querySelector('.viewer-status')?.textContent?.includes('저장 안 됨')),
           editableCount: document.querySelectorAll('[aria-label="' + surfaceLabel + '"]').length
         }
       })()`).catch(async (reason) => ({
@@ -1228,6 +1240,15 @@ const answeredJournals = new Set<string>()
 const initialOpenWindows = new Map<number, string>()
 let startupRecoveryOffered = false
 
+/** 다른 곳에서 쓰는 기록: 열린 편집 session·복구 중인 기록, 대화상자를 띄운 기록, 창에 복구를 시작하라고 보낸 기록. */
+function journalsInUse(): Set<string> {
+  return new Set([
+    ...editingSessions.activeJournalIds(),
+    ...offeringJournals,
+    ...[...pendingRecoveries.values()].map(({ journalId }) => journalId)
+  ])
+}
+
 async function askRecovery(window: BrowserWindow | null, prompt: RecoveryDialog): Promise<RecoveryChoice> {
   if (recoveryTestChoice) {
     return prompt.choices.includes(recoveryTestChoice) ? recoveryTestChoice : prompt.choices[prompt.cancelId]
@@ -1253,7 +1274,8 @@ async function offerRecovery(
   targetWindow: () => Promise<BrowserWindow | undefined>
 ): Promise<void> {
   const journalId = candidate.sessionId
-  if (offeringJournals.has(journalId) || editingSessions.activeJournalIds().has(journalId)) return
+  // 다른 창이 묻고 있거나 복구하려는 기록은 다시 묻지 않는다(두 창이 같은 기록을 복구하지 않게).
+  if (journalsInUse().has(journalId)) return
   offeringJournals.add(journalId)
   try {
     const state = await verifyRecoverySource(candidate.header)
@@ -1302,7 +1324,7 @@ async function emptyOrNewWindow(window: BrowserWindow): Promise<BrowserWindow | 
 async function offerStartupRecoveries(window: BrowserWindow): Promise<void> {
   // 목록을 읽는 동안 시작 문서 열기가 끝나도 그 문서는 문서 열기 쪽이 묻도록 먼저 기억한다.
   const initialPaths = [...initialOpenWindows.values()]
-  const scan = await scanRecoveryJournals(recoveryDirectory, editingSessions.activeJournalIds())
+  const scan = await scanRecoveryJournals(recoveryDirectory, journalsInUse())
   if (scan.quarantined.length) console.warn('손상된 편집 복구 기록을 격리했습니다:', scan.quarantined)
   for (const candidate of scan.candidates) {
     if (answeredJournals.has(candidate.sessionId)) continue
@@ -1317,7 +1339,7 @@ async function offerStartupRecoveries(window: BrowserWindow): Promise<void> {
 async function offerRecoveryForOpenedDocument(senderId: number, filePath: string): Promise<void> {
   const window = windowsById.get(senderId)
   if (!window || window.isDestroyed()) return
-  const scan = await scanRecoveryJournals(recoveryDirectory, editingSessions.activeJournalIds())
+  const scan = await scanRecoveryJournals(recoveryDirectory, journalsInUse())
   const candidate = scan.candidates.find((entry) => samePath(entry.header.sourcePath, filePath))
   if (!candidate) return
   await offerRecovery(window, candidate, 'open', async () => window)
@@ -1443,7 +1465,8 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   window.on('blur', () => void editingSessions.flushJournal(senderId))
   window.webContents.once('destroyed', () => {
     documentImporter.cancel(senderId)
-    editingSessions.stop(senderId)
+    // 닫기 확인을 거친 창은 이미 끝냈다. 그 밖의 경우(renderer 비정상 종료 등)는 window-all-closed가 정리를 기다린다.
+    void editingSessions.stop(senderId)
     documentPaths.forget(senderId)
     latestImportLoadIds.delete(senderId)
     currentDocumentPaths.delete(senderId)
@@ -1451,34 +1474,39 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
     initialOpenWindows.delete(senderId)
   })
   window.on('close', (event) => {
-    if (closeApproved || !editingSessions.isDirty(senderId)) return
-    // 확인 대화상자를 띄우기 전에 기록을 내린다. 대화상자 중 OS가 앱을 끝내도 편집이 남는다.
-    void editingSessions.flushJournal(senderId)
-    if (resolvingClose) {
-      event.preventDefault()
-      return
-    }
-    event.preventDefault()
+    if (closeApproved) return
     const sessionId = editingSessions.currentSessionId(senderId)
     if (!sessionId) return
+    const dirty = editingSessions.isDirty(senderId)
+    // 확인 대화상자를 띄우기 전에 기록을 내린다. 대화상자 중 OS가 앱을 끝내도 편집이 남는다.
+    if (dirty) void editingSessions.flushJournal(senderId)
+    // 편집 session이 있는 창은 session을 끝내고(복구 기록 삭제까지) 나서 닫는다. 닫힌 뒤에 지우면 앱이 먼저 끝나
+    // 다음 실행에서 버린(또는 방금 저장한) 편집을 복구하겠느냐고 묻는다.
+    event.preventDefault()
+    if (resolvingClose) return
     resolvingClose = true
-    // 닫히는 바로 그 창을 dialog 부모와 close 대상으로 쓴다.
-    void resolveDirtyEditing(senderId, sessionId, window)
-      .then((result) => {
+    void (async () => {
+      if (dirty) {
+        // 닫히는 바로 그 창을 dialog 부모와 close 대상으로 쓴다.
+        const result = await resolveDirtyEditing(senderId, sessionId, window)
         if (result.outcome === 'cancelled') {
           applicationQuitRequested = false
           return
         }
-        if (window.isDestroyed()) return
-        closeApproved = true
-        editingSessions.stop(senderId)
-        const resumeApplicationQuit = applicationQuitRequested
-        if (resumeApplicationQuit) window.once('closed', () => app.quit())
-        window.close()
-      })
-      .finally(() => {
-        resolvingClose = false
-      })
+      }
+      if (window.isDestroyed()) return
+      await editingSessions.stop(senderId)
+      closeApproved = true
+      const resumeApplicationQuit = applicationQuitRequested
+      if (window.isDestroyed()) {
+        if (resumeApplicationQuit) app.quit()
+        return
+      }
+      if (resumeApplicationQuit) window.once('closed', () => app.quit())
+      window.close()
+    })().catch((reason) => console.warn('창 닫기 처리 실패:', reason)).finally(() => {
+      resolvingClose = false
+    })
   })
   window.on('closed', () => {
     windowsById.delete(senderId)
@@ -2182,8 +2210,8 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:stop', editingIpcHandler((event) => {
-    editingSessions.stop(event.sender.id)
+  ipcMain.handle('editing:stop', editingIpcHandler(async (event) => {
+    await editingSessions.stop(event.sender.id)
     return true
   }))
 
@@ -2211,7 +2239,9 @@ app.on('before-quit', () => {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    app.quit()
+    // 닫기 확인을 거치지 않고 사라진 창(renderer 비정상 종료 등)의 기록 정리가 끝난 뒤 끝낸다.
+    // will-quit에서 종료를 미루면 Electron이 끝나지 않으므로 여기서 기다린다.
+    void editingSessions.whenStopped().finally(() => app.quit())
   }
 })
 

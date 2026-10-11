@@ -66,6 +66,15 @@ export type EditingWorkerResponse =
       journal?: RecoveryJournalEntry[]
     }
 
+/**
+ * 응답 전 진행 message. 같은 id 요청이 아직 처리 중이다.
+ * - `published`: Save As가 검증을 마친 저장 파일을 목적지에 게시했다. 그 뒤 timeout이 나도 main은 "파일을 만들지 않았다"고 알리지 않는다.
+ */
+export interface EditingWorkerProgress {
+  id: number
+  progress: 'published'
+}
+
 export interface EditingWorkerStartResult {
   sourcePath: string
   document: ViewerDocument

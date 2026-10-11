@@ -3,7 +3,7 @@
 // 버리면 화면 자리 표시 수가 이 값보다 적어져 드러나게 한다. 종류 규칙은 decoder 자리 표시와 같다.
 // - 수식 equation, 차트 chart(같은 hp:switch의 OLE 대체 그림은 세지 않음), OLE ole, 동영상 video
 // - 도형: 다른 도형·묶음 안에 들지 않은 도형 하나마다, 글(hp:drawText)이 있으면 text-box, 없으면 shape(글맵시도 shape)
-// - 양식 컨트롤 form-control, 각주 footnote, 미주 endnote, 덧말 ruby
+// - 양식 컨트롤 form-control, 각주 footnote, 미주 endnote, 덧말 ruby, 글자 겹치기 unknown(decoder가 'unknown' 자리 표시로 남긴다)
 // - 본문 밖 글(hp:subList)이 있는 필드: 메모(type="MEMO") memo, 그 밖 field
 // - hp:switch는 차트가 없으면 decoder처럼 hp:default(없으면 첫 hp:case) 하나만 본다.
 import { createRequire } from 'node:module'
@@ -11,11 +11,11 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 
 export const SOURCE_OBJECT_KINDS = [
-  'equation', 'chart', 'ole', 'text-box', 'shape', 'form-control', 'video', 'footnote', 'endnote', 'memo', 'field', 'ruby'
+  'equation', 'chart', 'ole', 'text-box', 'shape', 'form-control', 'video', 'footnote', 'endnote', 'memo', 'field', 'ruby', 'unknown'
 ]
 const SHAPES = new Set(['hp:rect', 'hp:ellipse', 'hp:arc', 'hp:polygon', 'hp:curve', 'hp:line', 'hp:connectLine', 'hp:container', 'hp:textart'])
 const FORMS = new Set(['hp:btn', 'hp:radioBtn', 'hp:checkBtn', 'hp:comboBox', 'hp:edit', 'hp:listBox', 'hp:scrollBar'])
-const SIMPLE = { 'hp:equation': 'equation', 'hp:chart': 'chart', 'hp:ole': 'ole', 'hp:video': 'video', 'hp:footNote': 'footnote', 'hp:endNote': 'endnote', 'hp:dutmal': 'ruby' }
+const SIMPLE = { 'hp:equation': 'equation', 'hp:chart': 'chart', 'hp:ole': 'ole', 'hp:video': 'video', 'hp:footNote': 'footnote', 'hp:endNote': 'endnote', 'hp:dutmal': 'ruby', 'hp:compose': 'unknown' }
 
 const nameOf = (entry) => Object.keys(entry).find((key) => key !== ':@')
 const childrenOf = (entry) => {

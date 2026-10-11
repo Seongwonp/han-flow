@@ -25,6 +25,11 @@ export interface SaveHwpxAsOptions {
    * 종료되더라도 같은 이름(`saveTemporaryPath`)으로 남은 임시 파일을 지울 수 있다. 생략하면 새로 만든다.
    */
   temporaryToken?: string
+  /**
+   * 목적지를 게시한(link·rename이 성공한) 직후, 임시 이름 정리·폴더 동기화 전에 호출된다.
+   * 편집 worker는 이것으로 main에 게시 사실을 알려, 그 뒤 timeout이 나도 저장 파일이 이미 있다고 안내하게 한다.
+   */
+  onPublished?: () => void
 }
 
 export interface SaveHwpxAsResult {
@@ -209,7 +214,8 @@ async function publishTemporary(
   temporaryPath: string,
   destinationPath: string,
   overwrite: boolean,
-  recheck: () => Promise<unknown>
+  recheck: () => Promise<unknown>,
+  onPublished?: () => void
 ): Promise<void> {
   if (!overwrite) {
     let linked = false
@@ -227,6 +233,7 @@ async function publishTemporary(
       if (!code || !LINK_UNSUPPORTED_CODES.has(code)) throw filesystemError('저장 파일 게시', reason)
     }
     if (linked) {
+      onPublished?.()
       // 목적지는 이미 게시됐다. 임시 이름 정리는 실패해도 저장 결과에 영향을 주지 않는다.
       await unlink(temporaryPath).catch(() => undefined)
       await syncDirectory(dirname(destinationPath))
@@ -240,6 +247,7 @@ async function publishTemporary(
   } catch (reason) {
     throw filesystemError('저장 파일 게시', reason)
   }
+  onPublished?.()
   await syncDirectory(dirname(destinationPath))
 }
 
@@ -342,8 +350,12 @@ export async function saveHwpxAs(
       overwrite
     )
     await options.onBeforePublish?.()
-    await publishTemporary(temporaryPath, resolvedDestination, overwrite, () =>
-      assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
+    await publishTemporary(
+      temporaryPath,
+      resolvedDestination,
+      overwrite,
+      () => assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite),
+      options.onPublished
     )
     temporaryExists = false
     return {

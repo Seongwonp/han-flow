@@ -28,6 +28,7 @@ import type { EditingEngineSaveRequest } from './editing_engine'
 import {
   deserializeEditingWorkerError,
   type EditingWorkerMethod,
+  type EditingWorkerProgress,
   type EditingWorkerReplayRequest,
   type EditingWorkerRequest,
   type EditingWorkerResponse,
@@ -94,6 +95,13 @@ export interface EditingSessionLostEvent {
   reason: Error
 }
 
+/** 편집 session의 복구 기록이 한도 초과·쓰기 실패로 멈췄다. 이 session은 더 이상 비정상 종료 대비 기록을 남기지 않는다. */
+export interface EditingJournalStoppedEvent {
+  senderId: number
+  sessionId: string
+  reason: Error
+}
+
 export interface EditingRecoveryOptions {
   /** 복구 기록 폴더(`<userData>/recovery`) */
   directory: string
@@ -102,6 +110,8 @@ export interface EditingRecoveryOptions {
   limits?: RecoveryJournalLimits
   /** 엔진이 비정상 종료해 남은 기록을 다 내린 뒤 부른다. main은 곧바로 복구를 제안한다. */
   onSessionLost?: (event: EditingSessionLostEvent) => void
+  /** 복구 기록이 멈췄을 때 부른다. main은 그 창의 renderer에 알려 상태 막대에 계속 표시하게 한다. */
+  onJournalStopped?: (event: EditingJournalStoppedEvent) => void
 }
 
 export interface EditingSessionManagerOptions {
@@ -165,7 +175,10 @@ function sessionExpiredError(): EditingOperationError {
   )
 }
 
-function timeoutError(method: EditingWorkerMethod, timeoutMs: number): EditingOperationError {
+/**
+ * @param published 저장 요청이 목적지 게시(link/rename)까지 마친 뒤 멈췄는지. worker가 게시 직후 `published` 진행 message를 보낸다.
+ */
+function timeoutError(method: EditingWorkerMethod, timeoutMs: number, published = false): EditingOperationError {
   const seconds = Math.ceil(timeoutMs / 1000)
   const action = method === 'saveAs'
     ? '변경본 저장·검증'
@@ -174,7 +187,11 @@ function timeoutError(method: EditingWorkerMethod, timeoutMs: number): EditingOp
       : method === 'undo' || method === 'redo'
         ? '실행 취소·다시 실행'
         : '편집 처리'
-  const saveNote = method === 'saveAs' ? ' 저장 파일은 만들지 않았고 임시 파일도 지웠습니다.' : ''
+  const saveNote = method !== 'saveAs'
+    ? ''
+    : published
+      ? ' 검증을 마친 저장 파일은 이미 만들었지만 저장 마무리(임시 이름 정리·폴더 동기화)를 확인하지 못했습니다. 저장한 파일을 열어 내용을 확인해 주세요.'
+      : ' 저장 파일은 만들지 않았고 임시 파일도 지웠습니다.'
   return new EditingOperationError(
     'EDITING_ENGINE_TIMEOUT',
     `${action}가 제한 시간(${seconds}초)을 넘어 편집 엔진을 중단했습니다.${saveNote} 문서가 지나치게 크거나 복잡할 수 있습니다. ${SESSION_ENDED_SUFFIX}`,
@@ -224,6 +241,8 @@ export function samePath(left: string, right: string): boolean {
 
 interface PendingRequest {
   method: EditingWorkerMethod
+  /** 저장 요청이 목적지를 게시했다(worker의 `published` 진행 message). */
+  published: boolean
   resolve: (response: Extract<EditingWorkerResponse, { ok: true }>) => void
   reject: (reason: Error) => void
   timer: ReturnType<typeof setTimeout>
@@ -247,7 +266,7 @@ class EditingEngineHandle {
     this.worker = new Worker(workerPath, { resourceLimits })
     // 대기 중인 요청은 timeout timer가 process를 붙잡는다. 놀고 있는 편집 worker가 종료를 막지 않게 한다.
     this.worker.unref()
-    this.worker.on('message', (response: EditingWorkerResponse) => this.settle(response))
+    this.worker.on('message', (response: EditingWorkerResponse | EditingWorkerProgress) => this.settle(response))
     this.worker.on('error', (error: Error & { code?: string }) => {
       this.fail(
         error.code === 'ERR_WORKER_OUT_OF_MEMORY'
@@ -273,9 +292,13 @@ class EditingEngineHandle {
     const id = this.nextId++
     const timeoutMs = this.timeouts[TIMEOUT_KIND[method]]
     return new Promise((resolvePromise, rejectPromise) => {
-      const timer = setTimeout(() => this.fail(timeoutError(method, timeoutMs)), timeoutMs)
+      const timer = setTimeout(
+        () => this.fail(timeoutError(method, timeoutMs, this.pending.get(id)?.published === true)),
+        timeoutMs
+      )
       this.pending.set(id, {
         method,
+        published: false,
         resolve: (response) => resolvePromise({
           value: response.value as T,
           status: response.status,
@@ -307,9 +330,13 @@ class EditingEngineHandle {
     return this.terminated
   }
 
-  private settle(response: EditingWorkerResponse): void {
+  private settle(response: EditingWorkerResponse | EditingWorkerProgress): void {
     const pending = this.pending.get(response.id)
     if (!pending) return
+    if ('progress' in response) {
+      if (response.progress === 'published') pending.published = true
+      return
+    }
     this.pending.delete(response.id)
     clearTimeout(pending.timer)
     if (response.ok) pending.resolve(response)
@@ -357,6 +384,15 @@ export class EditingSessionManager {
   private readonly queues = new Map<number, Promise<void>>()
   /** 아직 종료되지 않은 편집 worker. session이 끝난 뒤 terminate가 끝날 때까지도 남는다. */
   private readonly runningEngines = new Set<EditingEngineHandle>()
+  /**
+   * 창별 세대. stop(창 닫기·편집 끝내기)마다 올린다. start·recover는 시작할 때 세대를 기억하고, worker를 기다린 뒤 세대가
+   * 바뀌었으면(그 사이 창이 닫혔으면) 새 worker를 끝내고 session을 만들지 않는다.
+   */
+  private readonly generations = new Map<number, number>()
+  /** 지금 복구(replay) 중인 기록 ID. 다른 창이 같은 기록을 동시에 복구하거나 제안하지 않게 한다. */
+  private readonly recoveringJournals = new Set<string>()
+  /** stop이 시작한 기록 정리·worker 종료. 앱 종료 전에 끝날 때까지 기다린다. */
+  private readonly cleanups = new Set<Promise<void>>()
   private readonly workerPath: string
   private readonly timeouts: EditingEngineTimeouts
   private readonly resourceLimits: ResourceLimits
@@ -377,22 +413,39 @@ export class EditingSessionManager {
     return this.recovery?.directory
   }
 
-  private createJournal(sessionId: string, header: RecoveryJournalHeader): Pick<EditingSession, 'journal' | 'journalId'> {
-    if (!this.recovery) return {}
+  private createJournal(
+    senderId: number,
+    sessionId: string,
+    header: RecoveryJournalHeader
+  ): Pick<EditingSession, 'journal' | 'journalId'> {
+    const recovery = this.recovery
+    if (!recovery) return {}
     const journalId = recoveryJournalIdFor(sessionId)
-    const journal = new RecoveryJournalWriter(recoveryJournalDirectory(this.recovery.directory, journalId), header, {
-      flushIntervalMs: this.recovery.flushIntervalMs,
-      limits: this.recovery.limits,
-      onStopped: (reason) => console.warn(`복구 기록을 멈췄습니다(${journalId}): ${reason.message}`)
+    const journal = new RecoveryJournalWriter(recoveryJournalDirectory(recovery.directory, journalId), header, {
+      flushIntervalMs: recovery.flushIntervalMs,
+      limits: recovery.limits,
+      onStopped: (reason) => {
+        console.warn(`복구 기록을 멈췄습니다(${journalId}): ${reason.message}`)
+        // 조용히 멈추지 않는다. 사용자가 이 문서는 비정상 종료 때 되살릴 수 없다는 것을 알고 저장하도록 알린다.
+        recovery.onJournalStopped?.({ senderId, sessionId, reason })
+      }
     })
     return { journal, journalId }
   }
 
-  /** 열려 있는 편집 session의 복구 기록 ID. 남은 기록을 찾을 때 이 기록들은 건너뛴다. */
+  /**
+   * 사용 중인 복구 기록 ID: 열려 있는 편집 session의 기록과 지금 복구(replay) 중인 기록.
+   * 남은 기록을 찾거나 복구를 제안할 때 이 기록들은 건너뛴다.
+   */
   activeJournalIds(): Set<string> {
-    return new Set(
-      [...this.sessions.values()].flatMap((session) => (session.journalId ? [session.journalId] : []))
-    )
+    return new Set([
+      ...[...this.sessions.values()].flatMap((session) => (session.journalId ? [session.journalId] : [])),
+      ...this.recoveringJournals
+    ])
+  }
+
+  private generation(senderId: number): number {
+    return this.generations.get(senderId) ?? 0
   }
 
   /** 창의 복구 기록을 지금 디스크에 내린다(창 blur·닫기 확인 전). */
@@ -410,71 +463,103 @@ export class EditingSessionManager {
     if (!recovery || !isRecoverySessionId(journalId)) {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', '복구 기록 요청 형식이 올바르지 않습니다.')
     }
+    if (this.activeJournalIds().has(journalId)) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', '열려 있거나 복구 중인 편집 session의 기록은 복구할 수 없습니다.')
+    }
+    // 요청을 받은 순간(창 queue를 기다리기 전) 기록을 잡는다. 두 창이 같은 기록을 동시에 집거나, 기다리는 사이 다른 창이
+    // 같은 기록을 다시 제안받지 않는다.
+    this.recoveringJournals.add(journalId)
+    const generation = this.generation(senderId)
     return this.enqueue(senderId, async () => {
-      if (this.activeJournalIds().has(journalId)) {
-        throw new EditingOperationError('EDITING_INVALID_REQUEST', '열려 있는 편집 session의 기록은 복구할 수 없습니다.')
-      }
-      const candidate = await readRecoveryJournal(recovery.directory, journalId)
-      if (!candidate) {
-        throw new EditingOperationError('EDITING_RECOVERY_FAILED', '복구 기록을 찾을 수 없습니다.', 'none')
-      }
-      assertHwpxPath(candidate.header.sourcePath)
-      const engine = this.createEngine()
-      let session: EditingSession
-      let replayed: { value: EditingActionResult; status?: EditingHistoryStatus; journal?: RecoveryJournalEntry[] }
-      let replaying = false
       try {
-        const started = await engine.request<EditingWorkerStartResult>('start', { filePath: candidate.header.sourcePath })
-        if (!sameFingerprint(candidate.header, started.value.source)) throw new RecoverySourceChangedError()
-        const request: EditingWorkerReplayRequest = { entries: candidate.entries }
-        replaying = true
-        replayed = await engine.request<EditingActionResult>('replay', request)
-        replaying = false
-        if (!replayed.status || !replayed.value.document || replayed.value.projectionId === undefined) {
-          throw new Error('편집 worker가 복구 결과를 보내지 않았습니다.')
-        }
-        const id = this.createSessionId()
-        session = {
-          id,
-          sourcePath: started.value.sourcePath,
-          status: replayed.status,
-          pendingMutations: 0,
-          engine,
-          ...this.createJournal(id, candidate.header)
-        }
-        // 새 기록을 디스크에 내린 뒤에야 옛 기록을 지운다. 그 사이에 멈추면 두 기록이 남을 뿐 잃지 않는다.
-        session.journal?.append(replayed.journal ?? [], replayed.status.isDirty)
-        await session.journal?.flush()
-        await discardRecoveryJournal(recovery.directory, journalId)
-      } catch (reason) {
-        void engine.stop()
-        // replay가 실패·timeout·crash한 기록은 다시 실행하지 않도록 격리한다(사용자가 버리기 전까지 사본을 남긴다).
-        if (replaying && reason && typeof reason === 'object') {
-          await engine.whenTerminated()
-          const quarantinePath = await quarantineRecoveryJournal(recovery.directory, journalId).catch(() => undefined)
-          if (quarantinePath) (reason as { quarantinePath?: string }).quarantinePath = quarantinePath
-        }
-        throw reason
-      }
-      const previous = this.sessions.get(senderId)
-      this.sessions.set(senderId, session)
-      if (previous) {
-        void previous.journal?.discard()
-        void previous.engine.stop()
-      }
-      return {
-        sessionId: session.id,
-        document: replayed.value.document,
-        projectionId: replayed.value.projectionId,
-        recoveredEntries: candidate.entries.length,
-        recoveredEdits: candidate.editCount,
-        ...session.status
+        if (this.generation(senderId) !== generation) throw sessionExpiredError()
+        return await this.recoverJournal(senderId, journalId, recovery, generation)
+      } finally {
+        this.recoveringJournals.delete(journalId)
       }
     })
   }
 
+  private async recoverJournal(
+    senderId: number,
+    journalId: string,
+    recovery: EditingRecoveryOptions,
+    generation: number
+  ): Promise<EditingRecoverResult> {
+    const candidate = await readRecoveryJournal(recovery.directory, journalId)
+    if (!candidate) {
+      throw new EditingOperationError('EDITING_RECOVERY_FAILED', '복구 기록을 찾을 수 없습니다.', 'none')
+    }
+    assertHwpxPath(candidate.header.sourcePath)
+    const engine = this.createEngine()
+    let session: EditingSession
+    let replayed: { value: EditingActionResult; status?: EditingHistoryStatus; journal?: RecoveryJournalEntry[] }
+    let replaying = false
+    try {
+      const started = await engine.request<EditingWorkerStartResult>('start', { filePath: candidate.header.sourcePath })
+      if (!sameFingerprint(candidate.header, started.value.source)) throw new RecoverySourceChangedError()
+      const request: EditingWorkerReplayRequest = { entries: candidate.entries }
+      replaying = true
+      replayed = await engine.request<EditingActionResult>('replay', request)
+      replaying = false
+      if (!replayed.status || !replayed.value.document || replayed.value.projectionId === undefined) {
+        throw new Error('편집 worker가 복구 결과를 보내지 않았습니다.')
+      }
+      // replay하는 동안 창이 닫혔다. 새 worker만 끝내고 옛 기록은 그대로 둔다(다음에 다시 복구할 수 있다).
+      if (this.generation(senderId) !== generation) throw sessionExpiredError()
+      const id = this.createSessionId()
+      session = {
+        id,
+        sourcePath: started.value.sourcePath,
+        status: replayed.status,
+        pendingMutations: 0,
+        engine,
+        ...this.createJournal(senderId, id, candidate.header)
+      }
+      // 새 기록을 디스크에 내린 뒤에야 옛 기록을 지운다. 그 사이에 멈추면 두 기록이 남을 뿐 잃지 않는다.
+      session.journal?.append(replayed.journal ?? [], replayed.status.isDirty)
+      await session.journal?.flush()
+      await discardRecoveryJournal(recovery.directory, journalId)
+      if (this.generation(senderId) !== generation) {
+        // 옛 기록을 옮긴 사이 창이 닫혔다. 새 기록은 지우지 않고 남겨 다음 실행에서 복구할 수 있게 한다.
+        await session.journal?.retain()
+        throw sessionExpiredError()
+      }
+    } catch (reason) {
+      void engine.stop()
+      // replay가 실패·timeout·crash한 기록은 다시 실행하지 않도록 격리한다(사용자가 버리기 전까지 사본을 남긴다).
+      if (replaying && reason && typeof reason === 'object') {
+        await engine.whenTerminated()
+        const quarantinePath = await quarantineRecoveryJournal(recovery.directory, journalId).catch(() => undefined)
+        if (quarantinePath) (reason as { quarantinePath?: string }).quarantinePath = quarantinePath
+      }
+      throw reason
+    }
+    this.replaceSession(senderId, session)
+    return {
+      sessionId: session.id,
+      document: replayed.value.document,
+      projectionId: replayed.value.projectionId,
+      recoveredEntries: candidate.entries.length,
+      recoveredEdits: candidate.editCount,
+      ...session.status
+    }
+  }
+
+  /** 창의 session을 바꾼다. 앞 session(다른 문서·다시 시작)은 버리기를 고른 것과 같으므로 기록도 지운다. */
+  private replaceSession(senderId: number, session: EditingSession): void {
+    const previous = this.sessions.get(senderId)
+    this.sessions.set(senderId, session)
+    if (previous) {
+      void this.track(previous.journal?.discard())
+      void this.track(previous.engine.stop())
+    }
+  }
+
   async start(senderId: number, filePath: string): Promise<EditingStartResult> {
+    const generation = this.generation(senderId)
     return this.enqueue(senderId, async () => {
+      if (this.generation(senderId) !== generation) throw sessionExpiredError()
       assertHwpxPath(filePath)
       const engine = this.createEngine()
       let started: { value: EditingWorkerStartResult; status?: EditingHistoryStatus }
@@ -488,7 +573,11 @@ export class EditingSessionManager {
         void engine.stop()
         throw new Error('편집 worker가 상태를 보내지 않았습니다.')
       }
-      const previous = this.sessions.get(senderId)
+      // 준비하는 동안 창이 닫혔거나 편집을 끝냈다. 새 worker를 끝내고 session·기록을 만들지 않는다.
+      if (this.generation(senderId) !== generation) {
+        void this.track(engine.stop())
+        throw sessionExpiredError()
+      }
       const id = this.createSessionId()
       const session: EditingSession = {
         id,
@@ -497,15 +586,12 @@ export class EditingSessionManager {
         pendingMutations: 0,
         engine,
         ...this.createJournal(
+          senderId,
           id,
           createRecoveryJournalHeader(started.value.sourcePath, started.value.source, this.recovery?.appVersion ?? '')
         )
       }
-      this.sessions.set(senderId, session)
-      if (previous) {
-        void previous.journal?.discard()
-        void previous.engine.stop()
-      }
+      this.replaceSession(senderId, session)
       return {
         sessionId: session.id,
         document: started.value.document,
@@ -693,20 +779,39 @@ export class EditingSessionManager {
 
   /**
    * 정상 종료(편집 끝내기·창 닫기·다른 문서 열기). 호출하는 쪽이 이미 저장했거나 버리기를 골랐으므로 복구 기록도 지운다.
+   * 기록 삭제와 worker 종료가 끝나면 resolve한다. 창을 닫거나 앱을 끝내기 전에 기다려야 버린 편집이 다음 실행에서 복구 제안으로
+   * 되살아나지 않는다. 아직 끝나지 않은 start·recover는 끝난 뒤 스스로 worker를 끝내고 session을 만들지 않는다.
    */
-  stop(senderId: number): void {
+  stop(senderId: number): Promise<void> {
     const session = this.sessions.get(senderId)
     this.sessions.delete(senderId)
     this.queues.delete(senderId)
-    if (session) {
-      void session.journal?.discard()
-      void session.engine.stop()
-    }
+    this.generations.set(senderId, this.generation(senderId) + 1)
+    if (!session) return Promise.resolve()
+    return this.track(
+      Promise.all([session.journal?.discard(), session.engine.stop()]).then(() => undefined)
+    )
+  }
+
+  /** stop·session 교체가 시작한 기록 삭제·worker 종료가 모두 끝날 때까지 기다린다(앱 종료 전). */
+  async whenStopped(): Promise<void> {
+    while (this.cleanups.size) await Promise.all([...this.cleanups])
+  }
+
+  /** 정리 작업이 끝날 때까지 기억한다. 실패해도 종료를 막지 않는다. */
+  private track(operation: Promise<void> | undefined): Promise<void> {
+    if (!operation) return Promise.resolve()
+    const tracked = operation.catch(() => undefined).finally(() => this.cleanups.delete(tracked))
+    this.cleanups.add(tracked)
+    return tracked
   }
 
   /** 모든 편집 worker를 끝낸다(테스트 정리용). 복구 기록은 지우지 않고 내린 뒤 닫는다. */
   async dispose(): Promise<void> {
     const journals = [...this.sessions.values()].flatMap((session) => (session.journal ? [session.journal] : []))
+    for (const senderId of new Set([...this.sessions.keys(), ...this.queues.keys()])) {
+      this.generations.set(senderId, this.generation(senderId) + 1)
+    }
     this.sessions.clear()
     this.queues.clear()
     await Promise.all([

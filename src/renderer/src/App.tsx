@@ -2,7 +2,7 @@ import { CSSProperties, DragEvent, memo, RefObject, useCallback, useEffect, useL
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
 import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
-import { applyViewerDocumentPatch } from '../../core/document/viewer_document_patch'
+import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
 import { TextCommitIntent } from '../../core/editing/composition_input'
 import {
@@ -1398,13 +1398,14 @@ export default function App() {
     markEditingTiming('han-flow:editing-result')
     let next: ViewerDocument
     if (result.patch) {
-      const current = documentRef.current
-      if (!current || projectionIdRef.current !== result.patch.baseProjectionId) {
-        // 앞 projection을 놓쳤다(응답 직렬화 실패 등). 이 patch는 버리고 worker에서 전체 문서를 받아 다시 맞춘다.
+      const patched = applyViewerDocumentPatchIfCurrent(documentRef.current, projectionIdRef.current, result.patch)
+      if (!patched) {
+        // 앞 projection을 놓쳤거나(응답 직렬화 실패 등) section 수·위치가 지금 문서와 맞지 않는다.
+        // 이 patch는 버리고 worker에서 전체 문서를 받아 다시 맞춘다(편집 실패로 다루지 않는다).
         void resynchronizeEditingProjection()
         return
       }
-      next = applyViewerDocumentPatch(current, result.patch)
+      next = patched
       showDocument(next, result.patch.projectionId, true)
     } else {
       next = result.document
@@ -1973,6 +1974,12 @@ export default function App() {
   }
   // main이 [복구]를 고른 편집 기록. 원본을 열고(이미 열려 있으면 그대로) 배경 로딩이 끝나면 기록을 replay한다.
   const [pendingRecovery, setPendingRecovery] = useState<{ filePath: string; journalId: string; opened: boolean } | null>(null)
+  // 복구 기록이 멈춘 편집 session. 그 session이 이어지는 동안 상태 막대에 계속 알린다.
+  const [recoveryJournalStopped, setRecoveryJournalStopped] = useState<{ sessionId: string; message: string } | null>(null)
+  useEffect(() => api().onRecoveryJournalStopped((notice: { sessionId: string; message: string }) => {
+    setRecoveryJournalStopped(notice)
+    if (editingTransient.current.currentSession?.sessionId === notice.sessionId) setEditingStatus(notice.message)
+  }), [])
   useEffect(() => api().onRecoveryStart((request: { filePath: string; journalId: string }) => {
     // 엔진이 끝난 session을 renderer가 아직 모를 수 있다. 편집 상태를 먼저 정리한다.
     if (editingTransient.current.currentSession) {
@@ -2379,6 +2386,9 @@ export default function App() {
       editingStatusText={editingStatusText}
       editingStatusClass={editingStatusClass}
       editingSelectionNotice={editingSelectionNotice}
+      recoveryJournalNotice={editing && recoveryJournalStopped?.sessionId === editing.sessionId
+        ? recoveryJournalStopped.message
+        : null}
       progress={sectionProgress}
       backgroundError={backgroundError}
       hasEffectiveDocument={Boolean(effectiveDocument)}

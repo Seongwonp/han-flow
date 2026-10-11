@@ -197,6 +197,10 @@ try {
     )
     : undefined
   const journalsAfterRecovery = crashRecovery ? await recoveryJournals(join(directory, 'user-data')) : undefined
+  // 정상 종료(저장 또는 [저장하지 않음]) 뒤에는 복구 기록이 남으면 안 된다. 남으면 다음 실행이 버린 편집을 복구하겠느냐고 묻는다.
+  const journalsAfterQuit = !crashRecovery && (editText || tableStructureProbe)
+    ? await recoveryJournals(join(directory, 'user-data'))
+    : undefined
   const sourceUnchanged = verifiesSavedFile
     ? hash(await readFile(resolvedFixture)) === sourceHashBefore
     : undefined
@@ -328,6 +332,8 @@ try {
     crashRecovery && !recoveredState?.recoveryProbe?.dirtyCleared ? '복구 뒤 Save As가 dirty를 해제하지 않음' : undefined,
     crashRecovery && recoveredState?.recoveryProbe?.journalsAfterSave !== 0 ? '복구 뒤 Save As 했는데 복구 기록이 남음' : undefined,
     crashRecovery && journalsAfterRecovery?.length ? `앱 종료 뒤 복구 기록이 남음: ${journalsAfterRecovery.length}개` : undefined,
+    journalsAfterQuit?.length ? `정상 종료 뒤 복구 기록이 남음: ${journalsAfterQuit.length}개` : undefined,
+    closeDirtyAction && !crashRecovery && !editSave && editText && !state.editingProbe?.dirtyAtEnd ? '닫기 전 편집이 dirty가 아니어서 dirty 종료를 확인하지 못함' : undefined,
     crashRecovery && savedState && !savedState.expectedTextPresent ? '복구 뒤 저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
     verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
@@ -386,8 +392,10 @@ try {
       reopenedPages: savedState?.totalPages,
       reopenedTextPresent: savedState?.expectedTextPresent
     } : undefined,
+    journalsAfterQuit,
     dirtyClose: closeDirtyAction ? {
       action: closeDirtyAction,
+      dirtyAtEnd: state.editingProbe?.dirtyAtEnd,
       sourceUnchanged,
       savedFileExists,
       reopenedPages: savedState?.totalPages,

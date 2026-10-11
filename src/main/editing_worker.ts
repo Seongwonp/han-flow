@@ -18,6 +18,7 @@ import { EditingOperationError } from '../core/editing/editing_error'
 import { EditingEngine, type EditingEngineSaveRequest } from './editing_engine'
 import {
   serializeEditingWorkerError,
+  type EditingWorkerProgress,
   type EditingWorkerReplayRequest,
   type EditingWorkerRequest,
   type EditingWorkerResponse,
@@ -94,7 +95,9 @@ async function dispatch(request: EditingWorkerRequest): Promise<unknown> {
     case 'lossPolicy':
       return requireEngine().lossPolicy()
     case 'saveAs':
-      return requireEngine().saveAs(payload as EditingEngineSaveRequest)
+      return requireEngine().saveAs(payload as EditingEngineSaveRequest, () => {
+        parentPort?.postMessage({ id: request.id, progress: 'published' } satisfies EditingWorkerProgress)
+      })
     default:
       throw new EditingOperationError('EDITING_INVALID_REQUEST', '알 수 없는 편집 요청입니다.')
   }

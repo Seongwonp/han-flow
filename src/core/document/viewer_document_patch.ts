@@ -45,3 +45,22 @@ export function applyViewerDocumentPatch(document: ViewerDocument, patch: Viewer
     diagnostics: patch.diagnostics
   }
 }
+
+/**
+ * renderer가 받은 편집 projection patch를 지금 보이는 문서에 적용한다. 문서가 없거나 patch 기준(`baseProjectionId`)이 지금
+ * projection과 다르거나(앞 응답을 놓침) section 수·위치가 맞지 않으면({@link ViewerDocumentPatchMismatchError}) undefined를
+ * 돌려준다. 이때 호출자는 patch를 버리고 worker에서 전체 문서를 받아(refresh) 다시 맞춘다. 그 밖의 오류는 그대로 던진다.
+ */
+export function applyViewerDocumentPatchIfCurrent(
+  document: ViewerDocument | null | undefined,
+  projectionId: number | null | undefined,
+  patch: ViewerDocumentPatch
+): ViewerDocument | undefined {
+  if (!document || projectionId !== patch.baseProjectionId) return undefined
+  try {
+    return applyViewerDocumentPatch(document, patch)
+  } catch (reason) {
+    if (reason instanceof ViewerDocumentPatchMismatchError) return undefined
+    throw reason
+  }
+}

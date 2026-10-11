@@ -1,7 +1,8 @@
-import type { RecoveryJournalCandidate } from '../../src/main/recovery_journal'
+import { RecoveryJournalError, type RecoveryJournalCandidate } from '../../src/main/recovery_journal'
 import {
   recoveryChoiceFromTestValue,
   recoveryFailedDialog,
+  recoveryJournalStoppedMessage,
   recoveryOfferDialog,
   recoveryUnavailableDialog
 } from '../../src/main/recovery_messages'
@@ -53,6 +54,17 @@ describe('복구 대화상자 문구', () => {
     const dialog = recoveryFailedDialog('복구 기록 3/9번째 단계를 적용하지 못했습니다', '/data/recovery/quarantine-x')
     expect(dialog.choices).toEqual(['later', 'discard'])
     expect(dialog.detail).toContain('/data/recovery/quarantine-x')
+  })
+
+  test('복구 기록 중단 안내는 한도 초과와 쓰기 실패를 구분하고 저장을 권한다', () => {
+    const oversized = recoveryJournalStoppedMessage(new RecoveryJournalError('oversized', '한도'))
+    expect(oversized).toContain('복구 기록 중단')
+    expect(oversized).toContain('64 MiB')
+    expect(oversized).toContain('100,000건')
+    expect(oversized).toContain('저장하세요')
+    const failed = recoveryJournalStoppedMessage(Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }))
+    expect(failed).toContain('디스크에 쓰지 못했습니다')
+    expect(failed).toContain('저장하세요')
   })
 
   test('E2E 답은 recover·discard·later만 받는다', () => {
