@@ -27,7 +27,6 @@ const api = {
   platform: process.platform,
   getFonts: () => ipcRenderer.invoke('system:getFonts'),
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  askOpenMode: () => ipcRenderer.invoke('dialog:askOpenMode'),
   openNewWindow: () => ipcRenderer.invoke('window:openNew'),
   // Electron 32부터 File.path가 제거되어 drag-and-drop 경로는 webUtils로만 얻을 수 있다.
   // main은 renderer가 임의로 지정한 경로를 읽지 않으므로, 끌어 놓은 파일 경로를 main 허용목록에 등록한다.
@@ -116,6 +115,7 @@ const api = {
   readRhwpWasm: (assetUrl: string) => ipcRenderer.invoke('resource:readRhwpWasm', assetUrl)
 }
 
+// context isolation이 꺼진 환경에서는 renderer 전역에 API를 직접 붙이지 않는다(main은 항상 isolation을 켠다).
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('api', api)
@@ -123,6 +123,5 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in d.ts)
-  window.api = api
+  console.error('context isolation이 꺼져 있어 Han-Flow API를 노출하지 않습니다.')
 }

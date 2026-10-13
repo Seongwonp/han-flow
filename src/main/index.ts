@@ -1,6 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu, session } from 'electron'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
+import { randomUUID } from 'crypto'
 import { readdir, readFile, writeFile } from 'fs/promises'
 import { DocumentImporter } from './document_importer'
 import { DocumentPathNotAllowedError, DocumentPathRegistry } from './document_path_registry'
@@ -41,6 +42,7 @@ import { PDF_OBJECT_WARNING_CONTINUE, pdfObjectPlaceholderConfirmation } from '.
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
+import { createGuardedIpc, rendererUrlMatcher } from './ipc_guard'
 import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
@@ -74,6 +76,16 @@ const e2eUserData = testValue('HAN_FLOW_E2E_USER_DATA')
 if (benchmarkUserData ?? e2eUserData) app.setPath('userData', (benchmarkUserData ?? e2eUserData)!)
 // 창은 webContents id로 구분한다. 편집 session·문서 가져오기·경로 허용목록도 같은 id를 쓴다.
 const windowsById = new Map<number, BrowserWindow>()
+// renderer 진입 문서. 개발 빌드가 dev server를 쓰면(`ELECTRON_RENDERER_URL`) 그 origin을 쓴다.
+const rendererFile = join(__dirname, '../renderer/index.html')
+const devRendererUrl = isDev ? process.env['ELECTRON_RENDERER_URL'] || undefined : undefined
+// 모든 IPC handler는 이 등록기로만 단다. 우리 창의 최상위 renderer 문서가 보낸 요청만 처리한다(`ipc_guard.ts`).
+const ipc = createGuardedIpc(ipcMain, {
+  isTrustedWebContents: (webContents) => windowsById.get(webContents.id)?.webContents === webContents,
+  isTrustedUrl: rendererUrlMatcher({ rendererFile, devServerUrl: devRendererUrl })
+})
+// PDF 내보내기 요청마다 renderer가 인쇄 준비를 마쳤다고 알릴 때까지 기다리는 대기열(requestId → 보낸 webContents·완료).
+const pendingPdfReady = new Map<string, { sender: Electron.WebContents; resolve: () => void }>()
 const openPathRouter = new OpenPathRouter()
 let applicationQuitRequested = false
 const documentImporter = new DocumentImporter(join(__dirname, 'decoder_worker.js'))
@@ -1434,9 +1446,15 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
     trafficLightPosition: { x: 15, y: 15 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      // 보안 기본값을 명시한다. renderer는 sandbox·context isolation 안에서 preload가 노출한 API만 쓴다.
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      nodeIntegrationInSubFrames: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
       backgroundThrottling: !visualStateOutput
     }
   })
@@ -1544,6 +1562,8 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
     event.preventDefault()
     if (isAllowedExternalUrl(url)) void shell.openExternal(url)
   })
+  // renderer는 `<webview>`를 쓰지 않는다. webviewTag를 꺼 두었지만 붙이려는 시도도 막는다.
+  window.webContents.on('will-attach-webview', (event) => event.preventDefault())
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
@@ -1559,14 +1579,14 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
     void documentPaths.allow(senderId, openPath)
     initialOpenWindows.set(senderId, openPath)
   }
-  if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
+  if (devRendererUrl) {
+    const rendererUrl = new URL(devRendererUrl)
     if (openPath) rendererUrl.searchParams.set('open', openPath)
     if (openReceivedAt) rendererUrl.searchParams.set('openReceivedAt', String(openReceivedAt))
     if (pdfTestPath) rendererUrl.searchParams.set('exportPdf', '1')
     window.loadURL(rendererUrl.toString())
   } else {
-    window.loadFile(join(__dirname, '../renderer/index.html'), openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
+    window.loadFile(rendererFile, openPath ? { query: { open: openPath, openReceivedAt: String(openReceivedAt), exportPdf: pdfTestPath ? '1' : '0' } } : undefined)
   }
   return window
 }
@@ -1598,7 +1618,18 @@ app.whenReady().then(() => {
   // Windows·Linux의 기본 Electron 메뉴는 Ctrl+Z·Ctrl+= 등을 renderer 단축키와 중복 실행하므로 제거한다.
   // macOS는 ⌘Q·편집 role을 위해 기본 메뉴를 유지한다.
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
-  ipcMain.handle('benchmark:complete', async (event, timing: unknown) => {
+  // renderer는 카메라·알림·위치 등 웹 권한을 쓰지 않는다. 요청과 확인을 모두 거절한다.
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
+  session.defaultSession.setPermissionCheckHandler(() => false)
+  // renderer가 PDF 인쇄 준비를 마쳤다는 알림. 요청을 보낸 바로 그 창의 알림만 받는다.
+  ipc.on('pdf:ready', (event, requestId: unknown) => {
+    if (typeof requestId !== 'string') return
+    const pending = pendingPdfReady.get(requestId)
+    if (!pending || pending.sender !== event.sender) return
+    pendingPdfReady.delete(requestId)
+    pending.resolve()
+  })
+  ipc.handle('benchmark:complete', async (event, timing: unknown) => {
     if (!benchmarkFile || !benchmarkOutput) return false
     benchmarkMeasurements.push(timing)
     if (benchmarkMeasurements.length < benchmarkRuns) {
@@ -1615,7 +1646,7 @@ app.whenReady().then(() => {
     app.quit()
     return true
   })
-  ipcMain.handle('pdf:export', async (event, options: { width: number; height: number; preferCssPageSize?: boolean; objectPlaceholders?: unknown }) => {
+  ipc.handle('pdf:export', async (event, options: { width: number; height: number; preferCssPageSize?: boolean; objectPlaceholders?: unknown }) => {
     if (
       !options ||
       typeof options !== 'object' ||
@@ -1639,17 +1670,20 @@ app.whenReady().then(() => {
     if (!targetPath) return null
     if (!testPath) rememberDialogDirectory(targetPath)
 
-    const requestId = `${Date.now()}`
+    const requestId = randomUUID()
     try {
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => { ipcMain.removeListener('pdf:ready', ready); reject(new Error('PDF 렌더링 준비 시간이 초과되었습니다.')) }, 30_000)
-        const ready = (readyEvent: Electron.IpcMainEvent, readyId: string) => {
-          if (readyEvent.sender !== event.sender || readyId !== requestId) return
-          clearTimeout(timeout)
-          ipcMain.removeListener('pdf:ready', ready)
-          resolve()
-        }
-        ipcMain.on('pdf:ready', ready)
+        const timeout = setTimeout(() => {
+          pendingPdfReady.delete(requestId)
+          reject(new Error('PDF 렌더링 준비 시간이 초과되었습니다.'))
+        }, 30_000)
+        pendingPdfReady.set(requestId, {
+          sender: event.sender,
+          resolve: () => {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
         event.sender.send('pdf:prepare', requestId)
       })
       const printOptions: Electron.PrintToPDFOptions = {
@@ -1678,7 +1712,7 @@ app.whenReady().then(() => {
   })
 
   // 시스템 폰트 목록 가져오기
-  ipcMain.handle('system:getFonts', async () => {
+  ipc.handle('system:getFonts', async () => {
     try {
       const { default: fontList } = await import('font-list')
       return await fontList.getFonts()
@@ -1692,7 +1726,7 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.handle('resource:readRhwpWasm', async (_event, assetUrl: string) => {
+  ipc.handle('resource:readRhwpWasm', async (_event, assetUrl: string) => {
     if (typeof assetUrl !== 'string' || !assetUrl.startsWith('file:')) {
       throw new Error('패키지 내부 WASM 경로만 읽을 수 있습니다.')
     }
@@ -1712,7 +1746,7 @@ app.whenReady().then(() => {
   })
 
   // 파일 열기 대화상자 핸들러
-  ipcMain.handle('dialog:openFile', async (event) => {
+  ipc.handle('dialog:openFile', async (event) => {
     const options: Electron.OpenDialogOptions = {
       title: '문서 열기',
       defaultPath: lastDialogDirectory,
@@ -1732,25 +1766,13 @@ app.whenReady().then(() => {
     return filePaths[0]
   })
 
-  // 새 창에서 열기 대화상자
-  ipcMain.handle('dialog:askOpenMode', async (event) => {
-    const { response } = await showMessageBox(BrowserWindow.fromWebContents(event.sender), {
-      type: 'question',
-      buttons: ['현재 창에서 열기', '새 창에서 열기', '취소'],
-      defaultId: 1,
-      title: '열기 방식 선택',
-      message: '파일을 어떻게 여시겠습니까?'
-    })
-    return response // 0: Current, 1: New, 2: Cancel
-  })
-
   // 새 창 띄우기
-  ipcMain.handle('window:openNew', async () => {
+  ipc.handle('window:openNew', async () => {
     createWindow()
     return true
   })
 
-  ipcMain.handle('document:import', async (event, request: unknown) => {
+  ipc.handle('document:import', async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -1809,11 +1831,11 @@ app.whenReady().then(() => {
   })
 
   // preload가 drag-and-drop File에서 얻은 경로. 존재하는 일반 .hwp/.hwpx 파일만 등록한다.
-  ipcMain.handle('document:registerDroppedPath', (event, filePath: unknown) =>
+  ipc.handle('document:registerDroppedPath', (event, filePath: unknown) =>
     documentPaths.registerDropped(event.sender.id, filePath)
   )
 
-  ipcMain.handle('editing:start', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:start', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -1834,7 +1856,7 @@ app.whenReady().then(() => {
     return editingSessions.start(event.sender.id, filePath)
   }))
 
-  ipcMain.handle('editing:recover', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:recover', editingIpcHandler(async (event, request: unknown) => {
     const journalId = request && typeof request === 'object' ? (request as { journalId?: unknown }).journalId : undefined
     if (!isRecoverySessionId(journalId)) {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', '편집 복구 요청 형식이 올바르지 않습니다.')
@@ -1860,7 +1882,7 @@ app.whenReady().then(() => {
     }
   }))
 
-  ipcMain.handle('editing:commit', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:commit', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -1882,7 +1904,7 @@ app.whenReady().then(() => {
     return editingSessions.commit(event.sender.id, request as EditingCommitRequest)
   }))
 
-  ipcMain.handle('editing:commitRange', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:commitRange', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -1900,7 +1922,7 @@ app.whenReady().then(() => {
     return editingSessions.commitRange(event.sender.id, request as EditingRangeCommitRequest)
   }))
 
-  ipcMain.handle('editing:splitParagraph', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:splitParagraph', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -1921,7 +1943,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:mergeParagraph', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:mergeParagraph', editingIpcHandler(async (event, request: unknown) => {
     const value = request as Record<string, unknown>
     if (
       !request ||
@@ -1943,7 +1965,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:applyCharacterStyle', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:applyCharacterStyle', editingIpcHandler(async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasBold = typeof style?.['bold'] === 'boolean'
     const hasItalic = typeof style?.['italic'] === 'boolean'
@@ -1974,7 +1996,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:applyParagraphStyle', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:applyParagraphStyle', editingIpcHandler(async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasAlign = ['LEFT', 'CENTER', 'RIGHT', 'JUSTIFY'].includes(String(style?.['align']))
     const hasLineSpacing = Number.isFinite(style?.['lineSpacing'])
@@ -2001,7 +2023,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:applyCellStyle', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:applyCellStyle', editingIpcHandler(async (event, request: unknown) => {
     const style = request as Record<string, unknown>
     const hasBackground = typeof style?.['backgroundColor'] === 'string'
     const hasBorderColor = typeof style?.['borderColor'] === 'string'
@@ -2026,7 +2048,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:insertTableRowAfter', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:insertTableRowAfter', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -2047,7 +2069,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:deleteTableRow', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:deleteTableRow', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -2068,7 +2090,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:insertTableColumnAfter', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:insertTableColumnAfter', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -2089,7 +2111,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:deleteTableColumn', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:deleteTableColumn', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -2110,7 +2132,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:mergeTableCellRight', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:mergeTableCellRight', editingIpcHandler(async (event, request: unknown) => {
     if (
       !request ||
       typeof request !== 'object' ||
@@ -2131,7 +2153,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:splitTableCell', editingIpcHandler(async (event, request: unknown) => {
+  ipc.handle('editing:splitTableCell', editingIpcHandler(async (event, request: unknown) => {
     const record = request as Record<string, unknown> | null
     const selection = record?.['selection'] as Record<string, unknown> | null
     if (
@@ -2157,21 +2179,21 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:undo', editingIpcHandler((event, sessionId: unknown) => {
+  ipc.handle('editing:undo', editingIpcHandler((event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX undo 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.undo(event.sender.id, sessionId)
   }))
 
-  ipcMain.handle('editing:redo', editingIpcHandler((event, sessionId: unknown) => {
+  ipc.handle('editing:redo', editingIpcHandler((event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX redo 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.redo(event.sender.id, sessionId)
   }))
 
-  ipcMain.handle('editing:refresh', editingIpcHandler((event, sessionId: unknown) => {
+  ipc.handle('editing:refresh', editingIpcHandler((event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError(
         'EDITING_INVALID_REQUEST',
@@ -2181,7 +2203,7 @@ app.whenReady().then(() => {
     return editingSessions.refresh(event.sender.id, sessionId)
   }))
 
-  ipcMain.handle('editing:saveAsDialog', editingIpcHandler(async (event, sessionId: unknown) => {
+  ipc.handle('editing:saveAsDialog', editingIpcHandler(async (event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError(
         'EDITING_INVALID_REQUEST',
@@ -2196,7 +2218,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:resolveDirty', editingIpcHandler(async (event, sessionId: unknown) => {
+  ipc.handle('editing:resolveDirty', editingIpcHandler(async (event, sessionId: unknown) => {
     if (typeof sessionId !== 'string') {
       throw new EditingOperationError(
         'EDITING_INVALID_REQUEST',
@@ -2210,7 +2232,7 @@ app.whenReady().then(() => {
     )
   }))
 
-  ipcMain.handle('editing:stop', editingIpcHandler(async (event) => {
+  ipc.handle('editing:stop', editingIpcHandler(async (event) => {
     await editingSessions.stop(event.sender.id)
     return true
   }))
