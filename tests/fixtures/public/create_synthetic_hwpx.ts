@@ -175,6 +175,36 @@ export function createTableColumnHwpx(directory: string, fileName = 'han-flow-ta
   return path
 }
 
+/**
+ * 큰 단순 표 하나만 든 합성 문서(직접 작성). 첫 행은 반복 머리글, 나머지는 `R{행}C{열}` 글자를 담은 단순 텍스트 셀이다.
+ * 기본값(120행×4열)은 표 원문이 약 200 KiB로, 표 구조 command의 history·복구 기록 크기 회귀에 쓴다.
+ */
+export function createLargeTableHwpx(
+  directory: string,
+  options: { rows?: number; columns?: number; fileName?: string } = {}
+): string {
+  const rows = options.rows ?? 120
+  const columns = options.columns ?? 4
+  const path = join(directory, options.fileName ?? 'han-flow-large-table.hwpx')
+  const body = Array.from({ length: rows }, (_, row) =>
+    `<hp:tr>${Array.from({ length: columns }, (_, column) =>
+      columnCell(row, column, row === 0 ? `H${column + 1}` : `R${row}C${column + 1}`, 1000 + row * columns + column, row === 0)
+    ).join('')}</hp:tr>`
+  ).join('\n    ')
+  const section = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+  <hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="12000" height="12000"><hp:margin left="1000" right="1000" top="1000" bottom="1000" header="300" footer="300"/></hp:pagePr></hp:secPr><hp:tbl id="large-table" rowCnt="${rows}" colCnt="${columns}" pageBreak="CELL" repeatHeader="1"><hp:sz width="${columns * 2000}" height="${rows * 2000}"/>
+    ${body}
+  </hp:tbl></hp:run></hp:p>
+</hs:sec>`
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(section))
+  zip.writeZip(path)
+  return path
+}
+
 export function createListMarkerHwpx(directory: string, fileName = 'han-flow-list-markers.hwpx'): string {
   const path = join(directory, fileName)
   const zip = new AdmZip(undefined, { noSort: true })

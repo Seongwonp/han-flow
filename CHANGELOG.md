@@ -35,6 +35,8 @@
 - 편집 session마다 `<userData>/recovery/<sessionId>/journal.hfj` 복구 기록(길이·CRC-32 한 줄 record, 원본 크기·수정 시각·SHA-256 header, history가 replay하는 forward transaction과 실행 취소·다시 실행·저장 지점)을 main이 dirty일 때만 0.5초 간격 fdatasync로 쓰고, worker가 같은 commit 경로로 replay해 revision·저장 지점까지 되살리며 끊긴 꼬리는 버리고 손상·한도 초과·replay 실패 기록은 격리
 - 앱 시작·같은 원본 열기·편집 엔진 중단 직후 남은 복구 기록을 창 대화상자([복구]·[버리기]·[나중에], 마지막 변경 시각·편집 수)로 묻고, 원본 크기·수정 시각·SHA-256이 같을 때만 원본을 열어 편집 모드·dirty로 되살리며(바뀌었거나 없으면 복구 거절), 패키지 앱 SIGKILL 강제 종료→재실행 복구→Save As·재열기 E2E(`HAN_FLOW_VERIFY_CRASH_RECOVERY`)를 baseline matrix에 추가
 - [저장하지 않음]으로 닫거나 앱을 끝낼 때 복구 기록 삭제를 기다린 뒤 창을 닫아 버린 편집을 다시 묻지 않고, 편집 준비·복구 중 닫힌 창의 worker를 끝내며, 복구 기록 한도 초과·쓰기 실패를 상태 막대에 계속 알리고, replay는 편집이 만드는 forward command와 단순 문단·표 조각만 적용하며, 같은 기록을 두 창이 복구하지 않게 하고, 게시 뒤 저장 timeout은 저장 파일이 있다고 안내하며, projection patch 불일치는 refresh로 다시 맞추고, 원문 개체 census에 글자 겹치기(`unknown`) 추가하고, 패키지 앱 matrix에 [저장하지 않음] 종료 뒤 남은 복구 기록 0개 확인 추가
+- 모든 IPC handler를 보낸 쪽 검사(`ipc_guard.ts`: senderFrame 존재·창의 최상위 main frame·renderer 원본 URL인 패키지 `index.html` 또는 개발 dev server origin)를 거치는 등록기로만 달고 통과하지 못한 요청은 거부(handle은 `IPC_UNTRUSTED_SENDER`, on은 무시, channel·이유마다 경고 한 번)하며, `pdf:ready`를 요청별 listener 대신 UUID 대기열로 바꾸고, `webSecurity`·`webviewTag` 등 창 보안 설정 명시·`will-attach-webview` 차단·웹 권한 요청 거절, 쓰지 않던 `askOpenMode` preload API와 context isolation 없는 전역 노출 제거
+- 표 구조 command(행·열 추가·삭제, 셀 병합·분할)가 표 원문 두 벌 대신 원문 길이·SHA-256과 변경 조각(`patch-table-fragment`)만 담아 약 200 KiB 표 가운데 행 추가의 history 항목 847 KB→11 KB, 복구 기록 record 459 KB→6 KB로 줄이고(행 추가·실행 취소 반복이 64 MiB 한도에 닿는 편집 수 146→약 1.1만), 복구 기록 형식을 version 2로 올리되 version 1 기록도 읽어 replay하며, replay 검사는 변경 조각 command 모양을 확인하고 현재 표에 적용한 결과에 같은 표 규칙을 적용
 
 ### Sprint 4 호환성 corpus
 

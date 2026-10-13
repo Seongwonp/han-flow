@@ -1,4 +1,5 @@
 import {
+  applySourceEdits,
   collapseElementToSelfClosing,
   createSourceText,
   decodeXmlEntities,
@@ -21,6 +22,7 @@ import {
   serializeSourceTree,
   setSourceAttribute,
   SourceElement,
+  sourceTreeEdits,
   textRaw,
   writeTagAttribute
 } from '../../src/core/editing/source_tree'
@@ -242,5 +244,76 @@ describe('source tree attribute', () => {
     expect([0, 1, 2, 3, 5, 6].map((offset) => rawTextOffset(raw, offset))).toEqual([0, 1, 7, 12, 21, 22])
     expect(() => rawTextOffset(raw, 4)).toThrow('XML entity 중간')
     expect(() => rawTextOffset(raw, 7)).toThrow('원문을 벗어났습니다')
+  })
+})
+
+describe('원문 대비 변경 조각', () => {
+  const xml =
+    '<hp:tbl rowCnt="2" note=\'a\'>\n  <hp:tr><hp:tc><hp:cellAddr colAddr="0" rowAddr="0"/><hp:t>가😀나</hp:t></hp:tc></hp:tr>' +
+    '\n  <hp:tr><hp:tc><hp:cellAddr colAddr="0" rowAddr="1"/><hp:t>&amp;끝</hp:t></hp:tc></hp:tr>\n</hp:tbl>'
+
+  function expectRoundTrip(tree: ReturnType<typeof parseSourceTree>): ReturnType<typeof sourceTreeEdits> {
+    const edits = sourceTreeEdits(tree)
+    const serialized = serializeSourceTree(tree)
+    const { result, inverse } = applySourceEdits(tree.source, edits)
+    expect(result).toBe(serialized)
+    expect(applySourceEdits(serialized, inverse).result).toBe(tree.source)
+    return edits
+  }
+
+  test('편집하지 않은 tree는 조각이 없다', () => {
+    expect(expectRoundTrip(parseSourceTree(xml))).toEqual([])
+  })
+
+  test('attribute 값만 바꾸면 바뀐 글자만 조각이 된다', () => {
+    const tree = parseSourceTree(xml)
+    const [, second] = findSourceElements(tree, 'hp:cellAddr')
+    setSourceAttribute(tree, second, 'rowAddr', '10')
+    setSourceAttribute(tree, findSourceElements(tree, 'hp:tbl')[0], 'rowCnt', '3')
+    const edits = expectRoundTrip(tree)
+    expect(edits).toEqual([
+      [xml.indexOf('rowCnt="2"') + 'rowCnt="'.length, 1, '3'],
+      // "1" → "10": 공통 앞 글자는 남기고 뒤에 "0"만 넣는다.
+      [xml.indexOf('rowAddr="1"') + 'rowAddr="1'.length, 0, '0']
+    ])
+  })
+
+  test('node 추가·삭제·text 교체·자기 닫힘 펼치기도 원문과 결과를 오간다', () => {
+    const tree = parseSourceTree(xml)
+    const [firstRow, secondRow] = findSourceElements(tree, 'hp:tr')
+    const table = findSourceElements(tree, 'hp:tbl')[0]
+    spliceSourceChildren(tree, table, table.children.indexOf(secondRow) + 1, 0, parseSourceFragment('<hp:tr><hp:tc/></hp:tr>'))
+    replaceSourceNode(tree, firstRow, [])
+    const [text] = findSourceElements(tree, 'hp:t')
+    replaceElementChildren(tree, text, [createSourceText('바뀐 글')])
+    const cell = findSourceElements(tree, 'hp:tc').at(-1)!
+    replaceElementChildren(tree, cell, [createSourceText('x')])
+    const edits = expectRoundTrip(tree)
+    expect(edits.reduce((sum, [, deleteLength, insert]) => sum + deleteLength + insert.length, 0)).toBeLessThan(xml.length)
+  })
+
+  test('surrogate pair 가운데에서 조각을 자르지 않는다', () => {
+    const tree = parseSourceTree('<a>x😀</a>')
+    const [element] = findSourceElements(tree, 'a')
+    replaceElementChildren(tree, element, [createSourceText('x😁')])
+    const edits = expectRoundTrip(tree)
+    expect(edits).toEqual([[4, 2, '😁']])
+  })
+
+  test('범위를 벗어나거나 순서가 어긋나거나 겹치는 조각은 거부한다', () => {
+    for (const edits of [
+      [[5, 1, '']],
+      [[-1, 0, 'x']],
+      [[2, 2, 'x'], [3, 0, 'y']],
+      [[1.5, 0, 'x']],
+      [[0, 0, 1]],
+      [[0, 0]]
+    ]) {
+      expect(() => applySourceEdits('abcd', edits as never)).toThrow('원문 변경 조각')
+    }
+    expect(applySourceEdits('abcd', [[1, 1, 'X'], [2, 0, 'Y'], [4, 0, 'Z']])).toEqual({
+      result: 'aXYcdZ',
+      inverse: [[1, 1, 'b'], [2, 1, ''], [5, 1, '']]
+    })
   })
 })

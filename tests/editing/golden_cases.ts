@@ -90,6 +90,7 @@ export function applyCommand(sourcePackage: HwpxSourcePackage, command: EditComm
     case 'restore-cell-style':
       return applyRestoreCellStyleCommand(sourcePackage, command)
     case 'replace-table-fragment':
+    case 'patch-table-fragment':
       return applyReplaceTableFragmentCommand(sourcePackage, command)
     case 'replace-paragraph-fragment':
       return applyReplaceParagraphFragmentCommand(sourcePackage, command)

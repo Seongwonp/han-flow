@@ -191,6 +191,140 @@ export function serializeSourceNode(tree: SourceTree, node: SourceNode): string 
   return out.join('')
 }
 
+// ---------------------------------------------------------------------------
+// 원문 대비 변경 조각
+
+/**
+ * 원문 문자열 하나를 고치는 조각 `[offset, deleteLength, insert]`. offset·길이는 원문의 UTF-16 code unit 기준이고,
+ * 조각 목록은 offset 순서이며 서로 겹치지 않는다(앞 조각이 지우는 범위 끝 ≤ 다음 offset). JSON·structured clone으로 그대로 옮긴다.
+ */
+export type SourceEdit = readonly [offset: number, deleteLength: number, insert: string]
+
+interface EditSink {
+  copy(start: number, end: number): void
+  literal(value: string): void
+}
+
+/** {@link emitNode}와 같은 순서로, 원문에서 복사하는 구간과 새로 쓰는 문자열을 sink에 알린다. */
+function walkNode(node: SourceNode, sink: EditSink): void {
+  if (!node.dirty) {
+    sink.copy(node.start, node.end)
+    return
+  }
+  if (node.kind !== 'element') {
+    if (node.raw !== undefined) sink.literal(node.raw)
+    else sink.copy(node.start, node.end)
+    return
+  }
+  if (node.openTag !== undefined) sink.literal(node.openTag)
+  else sink.copy(node.start, node.openEnd)
+  if (node.selfClosing) {
+    if (node.children.length) throw new Error('자기 닫힘 element에 자식 node가 있습니다.')
+    return
+  }
+  for (const child of node.children) walkNode(child, sink)
+  if (node.closeTag !== undefined) sink.literal(node.closeTag)
+  else if (node.sourceSelfClosing) sink.literal(`</${node.name}>`)
+  else sink.copy(node.closeStart, node.end)
+}
+
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc00 && code <= 0xdfff
+}
+
+/** 지우는 원문과 넣는 문자열의 공통 앞·뒤를 덜어 조각을 줄인다. surrogate pair 가운데에서는 자르지 않는다. */
+function trimEdit(source: string, offset: number, deleteLength: number, insert: string): SourceEdit | undefined {
+  const deleted = source.slice(offset, offset + deleteLength)
+  let prefix = 0
+  const maxPrefix = Math.min(deleted.length, insert.length)
+  while (prefix < maxPrefix && deleted.charCodeAt(prefix) === insert.charCodeAt(prefix)) prefix += 1
+  if (prefix > 0 && isHighSurrogate(deleted.charCodeAt(prefix - 1))) prefix -= 1
+  let suffix = 0
+  const maxSuffix = Math.min(deleted.length, insert.length) - prefix
+  while (
+    suffix < maxSuffix &&
+    deleted.charCodeAt(deleted.length - 1 - suffix) === insert.charCodeAt(insert.length - 1 - suffix)
+  ) suffix += 1
+  if (suffix > 0 && isLowSurrogate(deleted.charCodeAt(deleted.length - suffix))) suffix -= 1
+  const trimmedDelete = deleteLength - prefix - suffix
+  const trimmedInsert = insert.slice(prefix, insert.length - suffix)
+  if (trimmedDelete === 0 && !trimmedInsert) return undefined
+  return [offset + prefix, trimmedDelete, trimmedInsert]
+}
+
+/**
+ * parse한 원문(`tree.source`)을 지금 tree 직렬화 결과로 바꾸는 최소 조각 목록. 편집하지 않은 node는 원문 구간 그대로
+ * 복사되므로, 바뀐 tag·text·새 node와 지운 node 자리만 조각이 된다. `applySourceEdits(tree.source, edits)`는
+ * {@link serializeSourceTree}와 같다.
+ */
+export function sourceTreeEdits(tree: SourceTree): SourceEdit[] {
+  const { source } = tree
+  const edits: SourceEdit[] = []
+  let position = 0
+  let pending = ''
+  const push = (offset: number, deleteLength: number, insert: string): void => {
+    const edit = trimEdit(source, offset, deleteLength, insert)
+    if (edit) edits.push(edit)
+  }
+  const sink: EditSink = {
+    copy(start, end) {
+      if (end <= start) return
+      if (start < position) {
+        // 원문 순서를 거스르는 복사(옮긴 node)는 새 문자열로 넣는다.
+        pending += source.slice(start, end)
+        return
+      }
+      if (start > position || pending) push(position, start - position, pending)
+      pending = ''
+      position = end
+    },
+    literal(value) {
+      pending += value
+    }
+  }
+  for (const node of tree.children) walkNode(node, sink)
+  if (position < source.length || pending) push(position, source.length - position, pending)
+  return edits
+}
+
+/**
+ * `source`에 조각을 적용한 문자열과, 결과를 다시 `source`로 되돌리는 조각(지운 원문을 담는다)을 돌려준다.
+ * 조각이 범위를 벗어나거나 순서가 어긋나거나 겹치면 오류를 던진다.
+ */
+export function applySourceEdits(
+  source: string,
+  edits: readonly SourceEdit[]
+): { result: string; inverse: SourceEdit[] } {
+  const parts: string[] = []
+  const inverse: SourceEdit[] = []
+  let position = 0
+  let shift = 0
+  for (const edit of edits) {
+    if (!Array.isArray(edit) || edit.length !== 3) throw new Error('원문 변경 조각 형식이 올바르지 않습니다.')
+    const [offset, deleteLength, insert] = edit
+    if (
+      !Number.isSafeInteger(offset) ||
+      !Number.isSafeInteger(deleteLength) ||
+      typeof insert !== 'string' ||
+      deleteLength < 0 ||
+      offset < position ||
+      offset + deleteLength > source.length
+    ) {
+      throw new Error('원문 변경 조각의 범위가 올바르지 않습니다.')
+    }
+    parts.push(source.slice(position, offset), insert)
+    inverse.push([offset + shift, insert.length, source.slice(offset, offset + deleteLength)])
+    shift += insert.length - deleteLength
+    position = offset + deleteLength
+  }
+  parts.push(source.slice(position))
+  return { result: parts.join(''), inverse }
+}
+
 /** element의 현재 여는 tag(자기 닫힘이면 tag 전체). */
 export function elementOpenTag(tree: SourceTree, element: SourceElement): string {
   return element.openTag ?? tree.source.slice(element.start, element.openEnd)

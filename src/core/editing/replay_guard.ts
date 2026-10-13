@@ -1,6 +1,8 @@
+import type { HwpxSourcePackage } from '../parser/source_package'
 import { paragraphStructureViolation } from './paragraph_structure'
 import { sourceParagraphStructureAccess } from './paragraph_patch'
 import { parseSourceTree, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
+import { resolveTableFragmentCommand } from './table_patch'
 import { HwpxEditConflictError } from './text_patch'
 import type { EditCommand, EditTransaction } from './transaction'
 
@@ -16,6 +18,11 @@ import type { EditCommand, EditTransaction } from './transaction'
  * - 표 fragment 교체: 교체 fragment는 `hp:tbl` element 하나이고, 바꾸기 전 표(`expectedFragment`, 적용 때 현재 원문과 같은지
  *   확인한다)에 없던 element 이름을 들이지 않으며, 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
  *   개수를 늘리지 않는다. 표 planner는 빈 행·열·셀을 단순 텍스트 셀에서만 복제하므로 이 범위 안이다.
+ * - 표 변경 조각(`patch-table-fragment`, planner가 만드는 형식): 기록에는 표 원문이 없으므로 replay 직전 package에서 현재 표를
+ *   찾아 길이·SHA-256을 맞춰 보고 조각을 적용한 결과 표에 위 표 fragment 규칙을 그대로 건다. 그 전에 command 모양(길이는 0 이상
+ *   정수, SHA-256은 소문자 hex 64자, 조각은 `[offset, 지울 길이, 넣을 원문]` 배열, 교체 뒤 locator는 문자열)부터 본다. 그래서 이 command는 transaction의
+ *   유일한 command여야 한다(planner의 표 transaction은 command 하나다). 이전 형식 `replace-table-fragment`는 복구 기록
+ *   version 1과, version 1 기록을 복구해 이어 쓴 기록에서 읽는다.
  */
 
 /** 편집 엔진이 forward transaction에 넣는 command 종류. */
@@ -25,7 +32,8 @@ export const FORWARD_EDIT_COMMAND_TYPES: ReadonlySet<EditCommand['type']> = new 
   'apply-paragraph-style',
   'apply-cell-style',
   'replace-paragraph-fragment',
-  'replace-table-fragment'
+  'replace-table-fragment',
+  'patch-table-fragment'
 ])
 
 /** 표 planner가 새로 만들 수 있는(개수가 늘 수 있는) 표 뼈대·단순 텍스트 셀 element. */
@@ -95,11 +103,39 @@ function assertTableReplacement(expectedFragment: string, replacementFragment: s
   }
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/
+
+/** 기록에서 읽은 표 변경 조각 command의 필드 모양을 확인한다. 조각 범위·순서는 적용할 때 현재 표 원문 기준으로 다시 본다. */
+function assertTableFragmentPatchShape(command: Extract<EditCommand, { type: 'patch-table-fragment' }>): void {
+  const value = command as unknown as Record<string, unknown>
+  const edits = value['edits']
+  if (
+    !Number.isSafeInteger(value['expectedLength']) ||
+    (value['expectedLength'] as number) < 0 ||
+    typeof value['expectedSha256'] !== 'string' ||
+    !SHA256_HEX.test(value['expectedSha256']) ||
+    (value['replacementTextNodeId'] !== undefined && typeof value['replacementTextNodeId'] !== 'string') ||
+    !Array.isArray(edits) ||
+    !edits.every((edit) =>
+      Array.isArray(edit) &&
+      edit.length === 3 &&
+      Number.isSafeInteger(edit[0]) &&
+      edit[0] >= 0 &&
+      Number.isSafeInteger(edit[1]) &&
+      edit[1] >= 0 &&
+      typeof edit[2] === 'string'
+    )
+  ) {
+    throw new HwpxEditConflictError('복구 기록의 표 변경 조각 형식이 올바르지 않습니다.')
+  }
+}
+
 /**
  * 복구 기록의 transaction 하나를 replay해도 되는지 확인한다. 통과하지 못하면 HwpxEditConflictError를 던지고,
  * replay는 그 기록 전체를 실패(격리)로 처리한다. 적용 때 하는 검사(expected fragment 일치, selection, revision)는 그대로 돈다.
+ * `sourcePackage`는 이 transaction을 적용할 package다. 표 변경 조각 command를 확인하려면 있어야 한다.
  */
-export function assertReplayableTransaction(transaction: EditTransaction): void {
+export function assertReplayableTransaction(transaction: EditTransaction, sourcePackage?: HwpxSourcePackage): void {
   for (const command of transaction.commands) {
     if (!FORWARD_EDIT_COMMAND_TYPES.has(command.type)) {
       throw new HwpxEditConflictError(`복구 기록에 편집이 만들지 않는 command(${String(command.type)})가 있습니다.`)
@@ -108,6 +144,14 @@ export function assertReplayableTransaction(transaction: EditTransaction): void 
       assertParagraphReplacement(command.replacementFragment)
     } else if (command.type === 'replace-table-fragment') {
       assertTableReplacement(command.expectedFragment, command.replacementFragment)
+    } else if (command.type === 'patch-table-fragment') {
+      if (transaction.commands.length !== 1) {
+        throw new HwpxEditConflictError('복구 기록의 표 변경 조각은 단독 transaction이어야 합니다.')
+      }
+      assertTableFragmentPatchShape(command)
+      if (!sourcePackage) throw new HwpxEditConflictError('복구 기록의 표 변경 조각을 확인할 문서가 없습니다.')
+      const { expectedFragment, replacementFragment } = resolveTableFragmentCommand(sourcePackage, command)
+      assertTableReplacement(expectedFragment, replacementFragment)
     }
   }
 }

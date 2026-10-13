@@ -95,8 +95,31 @@ describe('복구 기록 형식', () => {
     expect(() => decodeRecoveryJournal(bytes)).toThrow(expect.objectContaining({ reason: 'malformed' }))
   })
 
+  test('형식 version 1 기록도 읽되, version 1에 없던 표 변경 조각 command는 받지 않는다', () => {
+    const table = (type: 'replace-table-fragment' | 'patch-table-fragment'): RecoveryJournalEntry => {
+      const entry = commit(1, '가') as Extract<RecoveryJournalEntry, { type: 'commit' }>
+      const base = { sectionPath: 'Contents/section0.xml', textNodeId: 'Contents/section0.xml#hp:t:0' }
+      const command = type === 'replace-table-fragment'
+        ? { type, ...base, expectedFragment: '<hp:tbl/>', replacementFragment: '<hp:tbl/>' }
+        : { type, ...base, expectedLength: 9, expectedSha256: '0'.repeat(64), edits: [] }
+      return { ...entry, transaction: { ...entry.transaction, commands: [command] } }
+    }
+    const v1 = { ...header(), version: 1 }
+    expect(header().version).toBe(2)
+    const legacy = decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('replace-table-fragment'))]))
+    expect(legacy.header.version).toBe(1)
+    expect(legacy.entries).toHaveLength(1)
+    expect(() => decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('patch-table-fragment'))])))
+      .toThrow(expect.objectContaining({ reason: 'malformed' }))
+    // version 2는 두 형식을 모두 읽는다(version 1 기록을 복구해 이어 쓴 기록에는 이전 형식 command가 남는다).
+    for (const type of ['replace-table-fragment', 'patch-table-fragment'] as const) {
+      expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(header()), encodeRecoveryRecord(table(type))])).entries)
+        .toHaveLength(1)
+    }
+  })
+
   test('다른 형식 version은 거부한다', () => {
-    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 2 }), encodeRecoveryRecord(commit(1, '가'))])
+    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 3 }), encodeRecoveryRecord(commit(1, '가'))])
     expect(() => decodeRecoveryJournal(bytes)).toThrow(expect.objectContaining({ reason: 'unsupported-version' }))
   })
 

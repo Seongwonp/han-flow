@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   applyReplaceTableFragmentCommand,
+  resolveTableFragmentCommand,
   planDeleteTableColumn,
   planDeleteTableRow,
   planInsertTableColumnAfter,
@@ -569,7 +570,7 @@ describe('HWPX 표 구조 command 원문 처리(전환 전 문자열 경로의 �
     const selection = listSelectableMergedTableCells(await decodeViewerDocument(source))[0]
     expect(selection).toMatchObject({ row: 1, column: 0 })
     const plan = planSplitTableCell(source, selection)
-    expect(plan.command.replacementFragment).toContain(SPLIT_RIGHT_CELL)
+    expect(resolveTableFragmentCommand(source, plan.command).replacementFragment).toContain(SPLIT_RIGHT_CELL)
     const result = applyReplaceTableFragmentCommand(source, plan.command)
     const document = await decodeViewerDocument(result.package)
     const table = document.sections[0].blocks[0].content.find((item) => item.type === 'table')
@@ -596,9 +597,18 @@ describe('HWPX 표 구조 command 원문 처리(전환 전 문자열 경로의 �
   test('올바른 XML이 아닌 교체 fragment는 적용하지 않는다', async () => {
     const source = await HwpxSourcePackage.open(fixture)
     const plan = planInsertTableRowAfter(source, caretAt(source, 'A1'))
+    // 이전 형식(표 원문 두 벌)과 변경 조각 형식 모두 결과가 XML이 아니면 적용하지 않는다.
+    const { expectedFragment } = resolveTableFragmentCommand(source, plan.command)
+    expect(() => applyReplaceTableFragmentCommand(source, {
+      type: 'replace-table-fragment',
+      sectionPath: plan.command.sectionPath,
+      textNodeId: plan.command.textNodeId,
+      expectedFragment,
+      replacementFragment: '<hp:tbl><hp:tr>'
+    })).toThrow('표 fragment가 올바른 XML이 아니어서')
     expect(() => applyReplaceTableFragmentCommand(source, {
       ...plan.command,
-      replacementFragment: '<hp:tbl><hp:tr>'
+      edits: [[expectedFragment.length - '</hp:tbl>'.length, '</hp:tbl>'.length, '']]
     })).toThrow('표 fragment가 올바른 XML이 아니어서')
   })
 })

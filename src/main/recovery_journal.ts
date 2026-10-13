@@ -16,10 +16,15 @@ import { crc32 } from '../core/parser/source_package'
  *   - 마지막 record가 길이·CRC·줄바꿈 중 하나라도 맞지 않으면 쓰다 끊긴 꼬리로 보고 버린다. 중간 record가 깨졌으면 기록 전체를
  *     격리한다(실행하지 않는다).
  * 문서 bytes는 쓰지 않는다. command 안의 입력 글자·XML 조각만 담기며, 폴더는 0o700·파일은 0o600이다.
+ *
+ * 형식 version
+ *   - 1: 표 구조 command가 표 원문 두 벌(`replace-table-fragment`)을 담았다.
+ *   - 2: 표 구조 command가 표 원문 대비 변경 조각(`patch-table-fragment`)을 담는다. version 1 기록도 그대로 읽어 replay한다.
+ *     version 1만 아는 앱은 version 2 기록을 `unsupported-version`으로 보고 손대지 않는다(격리하지 않는다).
  */
 
 export const RECOVERY_JOURNAL_FORMAT = 'han-flow-recovery-journal'
-export const RECOVERY_JOURNAL_VERSION = 1
+export const RECOVERY_JOURNAL_VERSION = 2
 export const RECOVERY_JOURNAL_FILE = 'journal.hfj'
 export const RECOVERY_DIRECTORY_NAME = 'recovery'
 /** 빠르게 입력하는 동안 디스크에 내리는 최소 간격. 최악의 손실 구간은 이 간격 + fdatasync 시간이다. */
@@ -123,8 +128,17 @@ export function encodeRecoveryRecord(record: RecoveryJournalHeader | RecoveryJou
 
 const COLON = 0x3a
 const NEWLINE = 0x0a
-/** 기록의 commit은 history가 replay하는 forward transaction이다. inverse 전용 `restore-*` command는 받지 않는다. */
-const COMMAND_TYPES: ReadonlySet<string> = FORWARD_EDIT_COMMAND_TYPES
+/**
+ * version별로 기록의 commit이 담을 수 있는 command 종류. commit은 history가 replay하는 forward transaction이라 inverse 전용
+ * `restore-*` command는 받지 않는다. version 1에는 표 변경 조각(`patch-table-fragment`)이 없었다.
+ */
+const COMMAND_TYPES_BY_VERSION: ReadonlyMap<number, ReadonlySet<string>> = new Map([
+  [1, new Set([...FORWARD_EDIT_COMMAND_TYPES].filter((type) => type !== 'patch-table-fragment'))],
+  [RECOVERY_JOURNAL_VERSION, FORWARD_EDIT_COMMAND_TYPES]
+])
+
+/** 이 앱이 읽어 replay할 수 있는 기록 형식 version. */
+export const READABLE_RECOVERY_JOURNAL_VERSIONS: readonly number[] = [...COMMAND_TYPES_BY_VERSION.keys()]
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -142,7 +156,7 @@ function isSelection(value: unknown): boolean {
   )
 }
 
-function isTransaction(value: unknown): value is EditTransaction {
+function isTransaction(value: unknown, commandTypes: ReadonlySet<string>): value is EditTransaction {
   if (!isObject(value)) return false
   const commands = value['commands']
   return (
@@ -156,7 +170,7 @@ function isTransaction(value: unknown): value is EditTransaction {
     commands.every((command) =>
       isObject(command) &&
       typeof command['type'] === 'string' &&
-      COMMAND_TYPES.has(command['type']) &&
+      commandTypes.has(command['type']) &&
       typeof command['sectionPath'] === 'string' &&
       typeof command['textNodeId'] === 'string'
     ) &&
@@ -173,7 +187,7 @@ function validateHeader(value: unknown): RecoveryJournalHeader {
   if (!isObject(value) || value['type'] !== 'header' || value['format'] !== RECOVERY_JOURNAL_FORMAT) {
     throw new RecoveryJournalError('malformed', '복구 기록 header가 올바르지 않습니다.')
   }
-  if (value['version'] !== RECOVERY_JOURNAL_VERSION) {
+  if (typeof value['version'] !== 'number' || !COMMAND_TYPES_BY_VERSION.has(value['version'])) {
     throw new RecoveryJournalError(
       'unsupported-version',
       `지원하지 않는 복구 기록 형식 version입니다: ${String(value['version'])}`
@@ -194,13 +208,13 @@ function validateHeader(value: unknown): RecoveryJournalHeader {
   return value as unknown as RecoveryJournalHeader
 }
 
-function validateEntry(value: unknown): RecoveryJournalEntry {
+function validateEntry(value: unknown, commandTypes: ReadonlySet<string>): RecoveryJournalEntry {
   if (!isObject(value) || !isRevision(value['revision']) || !Number.isFinite(value['at'])) {
     throw new RecoveryJournalError('malformed', '복구 기록 record가 올바르지 않습니다.')
   }
   switch (value['type']) {
     case 'commit':
-      if (!isTransaction(value['transaction'])) {
+      if (!isTransaction(value['transaction'], commandTypes)) {
         throw new RecoveryJournalError('malformed', '복구 기록 transaction이 올바르지 않습니다.')
       }
       return value as unknown as RecoveryJournalEntry
@@ -262,6 +276,7 @@ export function decodeRecoveryJournal(
   const first = readRecord(bytes, 0, limits)
   if (!first) throw new RecoveryJournalError('malformed', '복구 기록 header를 읽을 수 없습니다.')
   const header = validateHeader(first.value)
+  const commandTypes = COMMAND_TYPES_BY_VERSION.get(header.version)!
   const entries: RecoveryJournalEntry[] = []
   let offset = first.next
   let tornTail = false
@@ -276,7 +291,7 @@ export function decodeRecoveryJournal(
       tornTail = true
       break
     }
-    entries.push(validateEntry(record.value))
+    entries.push(validateEntry(record.value, commandTypes))
     if (entries.length > limits.maxRecords) {
       throw new RecoveryJournalError('oversized', '복구 기록 record 수가 한도를 넘습니다.')
     }

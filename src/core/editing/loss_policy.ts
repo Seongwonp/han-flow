@@ -50,7 +50,7 @@ function commandStructure(command: EditCommand): HwpxEditedStructure {
   if (command.type === 'apply-cell-style' || command.type === 'restore-cell-style') {
     return 'table-cell-style'
   }
-  if (command.type === 'replace-table-fragment') return 'table-structure'
+  if (command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment') return 'table-structure'
   if (command.type === 'restore-style') {
     return command.target === 'character' ? 'character-style' : 'paragraph-style'
   }

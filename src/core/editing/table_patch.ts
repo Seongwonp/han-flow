@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { EditorSelection, normalizeEditorSelection } from './selection'
 import { TableCellSelection } from './table_cell_selection'
@@ -12,6 +13,7 @@ import {
 import { buildLossReport } from './xml_scan'
 import { putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
+  applySourceEdits,
   findDescendantSourceElements,
   findFirstSourceElement,
   getSourceAttribute,
@@ -22,11 +24,12 @@ import {
   replaceElementChildren,
   replaceSourceNode,
   serializeSourceNode,
-  serializeSourceTree,
   setSourceAttribute,
+  SourceEdit,
   SourceElement,
   SourceNode,
   SourceTree,
+  sourceTreeEdits,
   spliceSourceChildren,
   elementOpenTag
 } from './source_tree'
@@ -40,9 +43,13 @@ import {
  * 추가·삭제)으로 고친 뒤 직렬화한다. 손대지 않은 셀·행은 원문 표기 그대로이고, 새로 만든 빈 행·열·분할 셀은 전과 같이
  * 선택한 행·셀 원문을 복제해 `hp:t` 내용을 비우고 `hp:linesegarray`를 지우고 문단 ID를 새로 매긴 것이다.
  *
- * command·inverse는 전과 같은 `replace-table-fragment`(표 원문 fragment 교체)다. inverse가 바뀌기 전 표 bytes를 그대로
- * 들고 있어 실행 취소는 언제나 원래 bytes를 복원한다. 적용은 tree에서 표 node를 교체 fragment 조각 node로 바꾸고
- * cache를 새 package로 옮긴다.
+ * planner가 만드는 command·inverse는 `patch-table-fragment`다. 표 원문 전체 대신 바꾸기 전 표 원문의 길이·SHA-256과
+ * 원문 대비 변경 조각(`[offset, 지울 길이, 넣을 원문]`, {@link sourceTreeEdits})만 담는다. 적용은 현재 표 원문이 길이·SHA-256과
+ * 같을 때만 조각을 적용해 교체 fragment를 만들고, inverse는 그때 지운 원문을 담은 반대 조각이라 실행 취소는 언제나 원래
+ * bytes를 복원한다. 큰 표에서 행 하나를 더해도 history·복구 기록에는 바뀐 tag·행만 남는다(전에는 표 원문 두 벌).
+ *
+ * 표 원문 두 벌을 담는 `replace-table-fragment`는 이전 형식(복구 기록 version 1)을 읽기 위해 적용만 지원한다.
+ * 적용은 두 형식 모두 tree에서 표 node를 교체 fragment 조각 node로 바꾸고 cache를 새 package로 옮긴다.
  */
 
 export interface ReplaceTableFragmentCommand {
@@ -54,38 +61,54 @@ export interface ReplaceTableFragmentCommand {
   replacementTextNodeId?: string
 }
 
+/** 표 원문 대비 변경 조각만 담는 표 교체. planner가 만드는 형식이다. */
+export interface PatchTableFragmentCommand {
+  type: 'patch-table-fragment'
+  sectionPath: string
+  textNodeId: string
+  /** 바꾸기 전 표 원문의 UTF-16 길이 */
+  expectedLength: number
+  /** 바꾸기 전 표 원문(UTF-16LE)의 SHA-256 hex */
+  expectedSha256: string
+  /** 바꾸기 전 표 원문 기준 변경 조각(offset 순서, 겹치지 않음) */
+  edits: readonly SourceEdit[]
+  replacementTextNodeId?: string
+}
+
+export type TableFragmentCommand = ReplaceTableFragmentCommand | PatchTableFragmentCommand
+
 export interface InsertTableRowPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export interface DeleteTableRowPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export interface InsertTableColumnPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export interface DeleteTableColumnPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export interface MergeTableCellRightPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export interface SplitTableCellPlan {
-  command: ReplaceTableFragmentCommand
+  command: PatchTableFragmentCommand
   selectionAfter: EditorSelection
 }
 
 export type TablePatchResult =
-  | { package: HwpxSourcePackage; inverse: ReplaceTableFragmentCommand; lossReport: HwpxLossReport; changed: true }
+  | { package: HwpxSourcePackage; inverse: TableFragmentCommand; lossReport: HwpxLossReport; changed: true }
   | { package: HwpxSourcePackage; inverse?: undefined; lossReport: HwpxLossReport; changed: false }
 
 interface TableContext {
@@ -433,20 +456,27 @@ function tagAttributes(tree: SourceTree, element: SourceElement, omitted: readon
   return JSON.stringify(attributes)
 }
 
+/** 표 원문 비교용 지문. lone surrogate도 구별하도록 UTF-16LE bytes를 hash한다. */
+function fragmentSha256(fragment: string): string {
+  return createHash('sha256').update(Buffer.from(fragment, 'utf16le')).digest('hex')
+}
+
+/** 작업용 표 tree(원문 = 바꾸기 전 표)의 변경 조각으로 command를 만든다. */
 function fragmentCommand(
-  context: TableContext,
   sectionPath: string,
   locatorTextNodeId: string,
   draft: TableDraft,
   replacementTextNodeId?: string
-): ReplaceTableFragmentCommand {
+): PatchTableFragmentCommand {
+  const expected = draft.tree.source
   return {
-    type: 'replace-table-fragment',
+    type: 'patch-table-fragment',
     sectionPath,
     textNodeId: locatorTextNodeId,
     ...(replacementTextNodeId === undefined ? {} : { replacementTextNodeId }),
-    expectedFragment: serializeSourceNode(context.tree, context.table),
-    replacementFragment: serializeSourceTree(draft.tree)
+    expectedLength: expected.length,
+    expectedSha256: fragmentSha256(expected),
+    edits: sourceTreeEdits(draft.tree)
   }
 }
 
@@ -557,7 +587,7 @@ export function planSplitTableCell(
   removeLineSegments(draft.tree, cell)
   insertAfter(draft, cell, splitCell)
   return {
-    command: fragmentCommand(context, selection.sectionPath, selection.textNodeId, draft, firstTextNodeId),
+    command: fragmentCommand(selection.sectionPath, selection.textNodeId, draft, firstTextNodeId),
     selectionAfter: caret(selection.sectionPath, firstTextNodeId)
   }
 }
@@ -626,7 +656,7 @@ export function planMergeTableCellRight(
   spliceSourceChildren(draft.tree, leftList, leftList.children.length, 0, movedParagraphs)
   removeNode(draft.tree, draft.map(rightCell))
   return {
-    command: fragmentCommand(context, selection.sectionPath, normalized.start.textNodeId, draft, firstLeftTextNodeId),
+    command: fragmentCommand(selection.sectionPath, normalized.start.textNodeId, draft, firstLeftTextNodeId),
     selectionAfter: caret(selection.sectionPath, firstLeftTextNodeId)
   }
 }
@@ -681,7 +711,7 @@ export function planInsertTableColumnAfter(
   })
   const shift = (id: string): string => shiftTextNodeId(selection.sectionPath, id, insertedTextsBeforeSelection)
   return {
-    command: fragmentCommand(context, selection.sectionPath, normalized.start.textNodeId, draft, shift(normalized.start.textNodeId)),
+    command: fragmentCommand(selection.sectionPath, normalized.start.textNodeId, draft, shift(normalized.start.textNodeId)),
     selectionAfter: {
       ...selection,
       anchorTextNodeId: shift(selection.anchorTextNodeId),
@@ -735,7 +765,7 @@ export function planDeleteTableColumn(
     removeNode(draft.tree, draft.map(cells[selectedColumnIndex]))
   }
   return {
-    command: fragmentCommand(context, sectionPath, normalized.start.textNodeId, draft, targetTextNodeId),
+    command: fragmentCommand(sectionPath, normalized.start.textNodeId, draft, targetTextNodeId),
     selectionAfter: caret(sectionPath, targetTextNodeId)
   }
 }
@@ -775,7 +805,7 @@ export function planInsertTableRowAfter(sourcePackage: HwpxSourcePackage, select
   shiftRowAddresses(draft, rows, selectedRowIndex, 1)
   insertAfter(draft, draft.map(rows[selectedRowIndex]), clone)
   return {
-    command: fragmentCommand(context, selection.sectionPath, normalized.start.textNodeId, draft),
+    command: fragmentCommand(selection.sectionPath, normalized.start.textNodeId, draft),
     selectionAfter: { ...selection }
   }
 }
@@ -813,7 +843,7 @@ export function planDeleteTableRow(sourcePackage: HwpxSourcePackage, selection: 
   shiftRowAddresses(draft, rows, selectedRowIndex, -1)
   removeNode(draft.tree, draft.map(row))
   return {
-    command: fragmentCommand(context, sectionPath, normalized.start.textNodeId, draft, targetTextNodeId),
+    command: fragmentCommand(sectionPath, normalized.start.textNodeId, draft, targetTextNodeId),
     selectionAfter: caret(sectionPath, targetTextNodeId)
   }
 }
@@ -821,24 +851,73 @@ export function planDeleteTableRow(sourcePackage: HwpxSourcePackage, selection: 
 // ---------------------------------------------------------------------------
 // 적용
 
+/** 변경 조각을 현재 표에 맞춰 교체 전·후 원문으로 푼 결과. */
+interface ResolvedTableFragment {
+  context: TableContext
+  expectedFragment: string
+  replacementFragment: string
+  /** patch command의 반대 조각(교체 뒤 원문 기준). 이전 형식이면 undefined. */
+  inverseEdits?: SourceEdit[]
+}
+
+function resolveTableFragment(
+  sourcePackage: HwpxSourcePackage,
+  command: TableFragmentCommand
+): ResolvedTableFragment {
+  const context = locateTable(sourcePackage, command.sectionPath, command.textNodeId)
+  const current = serializeSourceNode(context.tree, context.table)
+  if (command.type === 'replace-table-fragment') {
+    if (current !== command.expectedFragment) {
+      throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
+    }
+    return { context, expectedFragment: current, replacementFragment: command.replacementFragment }
+  }
+  if (
+    current.length !== command.expectedLength ||
+    typeof command.expectedSha256 !== 'string' ||
+    fragmentSha256(current) !== command.expectedSha256
+  ) {
+    throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
+  }
+  if (!Array.isArray(command.edits)) {
+    throw new HwpxEditConflictError('표 변경 조각이 올바르지 않아 편집을 적용할 수 없습니다.')
+  }
+  let applied: ReturnType<typeof applySourceEdits>
+  try {
+    applied = applySourceEdits(current, command.edits)
+  } catch {
+    throw new HwpxEditConflictError('표 변경 조각이 올바르지 않아 편집을 적용할 수 없습니다.')
+  }
+  return { context, expectedFragment: current, replacementFragment: applied.result, inverseEdits: applied.inverse }
+}
+
 /**
- * `textNodeId`가 든 표의 현재 원문이 `expectedFragment`와 같으면 표 node를 `replacementFragment`를 읽은 조각 node로 바꾼다.
- * 바뀐 section tree와 cache는 새 package로 옮긴다.
+ * 표 command가 지금 package에서 바꿀 표의 교체 전·후 원문. 현재 표가 command의 기준과 다르면 HwpxEditConflictError.
+ * 복구 기록 replay 검사(`replay_guard.ts`)가 변경 조각을 적용한 결과 표를 확인할 때 쓴다.
+ */
+export function resolveTableFragmentCommand(
+  sourcePackage: HwpxSourcePackage,
+  command: TableFragmentCommand
+): { expectedFragment: string; replacementFragment: string } {
+  const { expectedFragment, replacementFragment } = resolveTableFragment(sourcePackage, command)
+  return { expectedFragment, replacementFragment }
+}
+
+/**
+ * `textNodeId`가 든 표의 현재 원문이 command의 기준(이전 형식은 `expectedFragment`, patch는 길이·SHA-256)과 같으면 표 node를
+ * 교체 fragment를 읽은 조각 node로 바꾼다. 바뀐 section tree와 cache는 새 package로 옮긴다. inverse는 command와 같은 형식이다.
  */
 export function applyReplaceTableFragmentCommand(
   sourcePackage: HwpxSourcePackage,
-  command: ReplaceTableFragmentCommand
+  command: TableFragmentCommand
 ): TablePatchResult {
-  const context = locateTable(sourcePackage, command.sectionPath, command.textNodeId)
-  if (serializeSourceNode(context.tree, context.table) !== command.expectedFragment) {
-    throw new HwpxEditConflictError('표 구조가 변경되어 편집을 적용할 수 없습니다.')
-  }
-  if (command.expectedFragment === command.replacementFragment) {
+  const { context, expectedFragment, replacementFragment, inverseEdits } = resolveTableFragment(sourcePackage, command)
+  if (expectedFragment === replacementFragment) {
     return { package: sourcePackage, lossReport: buildLossReport(sourcePackage, [command.sectionPath]), changed: false }
   }
   let replacement: SourceNode[]
   try {
-    replacement = parseSourceFragment(command.replacementFragment)
+    replacement = parseSourceFragment(replacementFragment)
   } catch {
     throw new HwpxEditConflictError('표 fragment가 올바른 XML이 아니어서 편집을 적용할 수 없습니다.')
   }
@@ -850,15 +929,28 @@ export function applyReplaceTableFragmentCommand(
   invalidateHwpxTextIndex(context.tree)
   const nextPackage = withSerializedTree(sourcePackage, command.sectionPath, context.tree)
   putPackageTrees(nextPackage, trees)
+  const locators = {
+    sectionPath: command.sectionPath,
+    textNodeId: command.replacementTextNodeId ?? command.textNodeId,
+    replacementTextNodeId: command.textNodeId
+  }
+  const inverse: TableFragmentCommand = command.type === 'patch-table-fragment'
+    ? {
+        type: 'patch-table-fragment',
+        ...locators,
+        expectedLength: replacementFragment.length,
+        expectedSha256: fragmentSha256(replacementFragment),
+        edits: inverseEdits!
+      }
+    : {
+        type: 'replace-table-fragment',
+        ...locators,
+        expectedFragment: command.replacementFragment,
+        replacementFragment: command.expectedFragment
+      }
   return {
     package: nextPackage,
-    inverse: {
-      ...command,
-      textNodeId: command.replacementTextNodeId ?? command.textNodeId,
-      replacementTextNodeId: command.textNodeId,
-      expectedFragment: command.replacementFragment,
-      replacementFragment: command.expectedFragment
-    },
+    inverse,
     lossReport: buildLossReport(sourcePackage, [command.sectionPath]),
     changed: true
   }

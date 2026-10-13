@@ -98,6 +98,13 @@ function commandBytes(transaction: EditTransaction): number {
           Buffer.byteLength(command.expectedFragment, 'utf8') +
           Buffer.byteLength(command.replacementFragment, 'utf8')
       }
+      if (command.type === 'patch-table-fragment') {
+        // 표 원문 대신 길이·SHA-256(64자)과 변경 조각만 든다. 조각마다 offset·길이 몫으로 16 bytes를 더한다.
+        return sum + common + 64 + command.edits.reduce(
+          (edits, [, , insert]) => edits + 16 + Buffer.byteLength(insert, 'utf8'),
+          0
+        )
+      }
       if (command.type === 'apply-cell-style') return sum + common + 48
       if (command.type === 'restore-cell-style') {
         return sum + common + headerMutationBytes(command.headerMutation) +

@@ -2,9 +2,13 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { assertReplayableTransaction, FORWARD_EDIT_COMMAND_TYPES } from '../../src/core/editing/replay_guard'
+import { createEditorSelection } from '../../src/core/editing/selection'
+import { planInsertTableRowAfter, resolveTableFragmentCommand } from '../../src/core/editing/table_patch'
+import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxEditConflictError } from '../../src/core/editing/text_patch'
 import type { EditCommand, EditTransaction } from '../../src/core/editing/transaction'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
+import { createTableColumnHwpx } from '../fixtures/public/create_synthetic_hwpx'
 import { casesByFamily, fixturePath, openedFixtures } from './golden_cases'
 
 const SECTION = 'Contents/section0.xml'
@@ -50,6 +54,7 @@ describe('복구 기록 replay 검사', () => {
       'apply-cell-style',
       'apply-character-style',
       'apply-paragraph-style',
+      'patch-table-fragment',
       'replace-paragraph-fragment',
       'replace-table-fragment',
       'replace-text'
@@ -110,6 +115,54 @@ describe('복구 기록 replay 검사', () => {
     )))).toThrow(HwpxEditConflictError)
   })
 
+  test('표 변경 조각은 현재 표에 적용한 결과에 같은 표 규칙을 걸고, 단독 transaction·현재 문서가 있어야 한다', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'han-flow-replay-patch-'))
+    try {
+      const source = await HwpxSourcePackage.open(createTableColumnHwpx(directory))
+      const anchor = listHwpxTextAnchors(source, SECTION).find((item) => item.text === 'A1')!
+      const caret = createEditorSelection(SECTION, anchor.textNodeId, 0)
+      const plan = planInsertTableRowAfter(source, caret)
+      const patch = plan.command
+      const forward = { ...transaction(patch), selectionBefore: caret, selectionAfter: plan.selectionAfter }
+      expect(() => assertReplayableTransaction(forward, source)).not.toThrow()
+      // 문서 없이, 또는 다른 command와 함께 들어온 변경 조각은 확인할 수 없으므로 거부한다.
+      expect(() => assertReplayableTransaction(forward)).toThrow(HwpxEditConflictError)
+      expect(() => assertReplayableTransaction({ ...forward, commands: [patch, patch] }, source)).toThrow('단독 transaction')
+      // 조작한 기록이 변경 조각으로 원래 표에 없던 그림을 끼워 넣는다.
+      const { expectedFragment } = resolveTableFragmentCommand(source, patch)
+      const textStart = expectedFragment.indexOf('<hp:t>A1</hp:t>')
+      const hostile = { ...patch, edits: [[textStart, 0, '<hp:pic/>'] as const] }
+      expect(() => assertReplayableTransaction({ ...forward, commands: [hostile] }, source)).toThrow('원래 표에 없던 콘텐츠(hp:pic)')
+      // 표 밖으로 나가는 조각, 기준과 다른 표, 형식이 틀린 조각
+      const outside = { ...patch, edits: [[0, 0, '<hp:p/>'] as const] }
+      expect(() => assertReplayableTransaction({ ...forward, commands: [outside] }, source)).toThrow(HwpxEditConflictError)
+      const stale = { ...patch, expectedSha256: '0'.repeat(64) }
+      expect(() => assertReplayableTransaction({ ...forward, commands: [stale] }, source)).toThrow('표 구조가 변경되어')
+      // 겹치거나 표 원문을 벗어나는 조각은 현재 표에 적용할 때 거부한다.
+      for (const edits of [[[10, 5, 'x'], [12, 0, 'y']], [[0, expectedFragment.length + 1, '']]]) {
+        const malformed = { ...patch, edits } as never
+        expect(() => assertReplayableTransaction({ ...forward, commands: [malformed] }, source)).toThrow('표 변경 조각이 올바르지 않아')
+      }
+      // 필드 모양이 틀린 command는 문서를 보기 전에 거부한다.
+      for (const malformed of [
+        { ...patch, edits: [[-1, 0, 'x']] },
+        { ...patch, edits: [['0', 0, '']] },
+        { ...patch, edits: [[0, 0]] },
+        { ...patch, edits: 'x' },
+        { ...patch, expectedLength: -1 },
+        { ...patch, expectedLength: '9' },
+        { ...patch, expectedSha256: 'A'.repeat(64) },
+        { ...patch, expectedSha256: undefined },
+        { ...patch, replacementTextNodeId: 3 }
+      ]) {
+        expect(() => assertReplayableTransaction({ ...forward, commands: [malformed as never] }, source)).toThrow('표 변경 조각 형식이 올바르지 않습니다')
+        expect(() => assertReplayableTransaction({ ...forward, commands: [malformed as never] })).toThrow('표 변경 조각 형식이 올바르지 않습니다')
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   // planner가 실제로 만든 command는 모두 통과해야 한다(공개 corpus golden 표본 전체). 거짓 거부는 정상 기록의 복구를 막는다.
   test('공개 corpus의 문단·표 planner command는 모두 replay 검사를 통과한다', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'han-flow-replay-guard-'))
@@ -127,7 +180,7 @@ describe('복구 기록 replay 검사', () => {
               continue // planner가 거부한 case는 기록에 남지 않는다.
             }
             if (!FORWARD_EDIT_COMMAND_TYPES.has(command.type)) continue
-            expect(() => assertReplayableTransaction(transaction(command))).not.toThrow()
+            expect(() => assertReplayableTransaction(transaction(command), original)).not.toThrow()
             passed[family] += 1
           }
         }

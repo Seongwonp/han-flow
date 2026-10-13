@@ -42,6 +42,7 @@ import {
   readRecoveryJournal,
   recoveryJournalDirectory,
   recoveryJournalIdFor,
+  RECOVERY_JOURNAL_VERSION,
   RecoveryJournalWriter,
   sameFingerprint,
   type RecoveryJournalEntry,
@@ -514,7 +515,12 @@ export class EditingSessionManager {
         status: replayed.status,
         pendingMutations: 0,
         engine,
-        ...this.createJournal(senderId, id, candidate.header)
+        // 되살린 편집에 이어지는 새 편집은 지금 형식으로 기록하므로 header도 지금 형식 version으로 쓴다(version 1 기록 복구 포함).
+        ...this.createJournal(senderId, id, {
+          ...candidate.header,
+          version: RECOVERY_JOURNAL_VERSION,
+          appVersion: recovery.appVersion || candidate.header.appVersion
+        })
       }
       // 새 기록을 디스크에 내린 뒤에야 옛 기록을 지운다. 그 사이에 멈추면 두 기록이 남을 뿐 잃지 않는다.
       session.journal?.append(replayed.journal ?? [], replayed.status.isDirty)

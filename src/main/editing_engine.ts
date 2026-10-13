@@ -135,7 +135,7 @@ export class EditingEngine {
         switch (entry.type) {
           case 'commit':
             // 기록 파일은 앱 밖에서 바뀔 수 있다. planner를 거치지 않으므로 live 편집이 만들 수 있는 command인지 먼저 본다.
-            assertReplayableTransaction(entry.transaction)
+            assertReplayableTransaction(entry.transaction, this.history.package)
             this.commitTransaction(entry.transaction, entry.at)
             break
           case 'undo':

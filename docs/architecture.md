@@ -244,7 +244,12 @@ row/cell 수, 모든 `cellAddr`, `cellSpan=1`, 단순 text-only 셀을 서로 �
 `linesegarray`는 제거한다. 새 행 이후의 `rowAddr`, table `rowCnt`와 `hp:sz` 전체 높이는 같은
 table fragment transaction에서 갱신한다. decoder는 table 높이를 host 문단 layout의 하한으로
 사용해 stale line segment가 새 행을 가리지 않게 한다. 고유 ID를 가진 row/cell, 중첩 표·이미지·제어 문자가 있는 표는 복제하지
-않는다. inverse는 원래 table XML 전체를 보관해 section의 다른 콘텐츠는 건드리지 않고 되돌린다.
+않는다. command·inverse(`patch-table-fragment`)는 표 원문 전체 대신 바꾸기 전 표 원문의 UTF-16 길이·SHA-256과 원문 대비
+변경 조각(`[offset, 지울 길이, 넣을 원문]`)만 담는다. 조각은 작업용 표 tree의 dirty node에서 바로 얻으므로(`sourceTreeEdits`)
+바뀐 tag 안의 글자·새 행·지운 행만 남는다. 적용은 현재 표 원문이 길이·SHA-256과 같을 때만 조각을 적용해 교체 fragment를 만들고,
+inverse는 그때 지운 원문을 담은 반대 조각이라 section의 다른 콘텐츠는 건드리지 않고 원래 bytes로 되돌린다. 약 200 KiB 표에서
+가운데 행 추가의 history 항목은 847 KB → 11 KB, 복구 기록 commit record는 459 KB → 6 KB다(`table_record_size.test.ts`).
+표 원문 두 벌을 담는 이전 형식 `replace-table-fragment`는 복구 기록 version 1을 읽기 위해 적용만 남겨 두었다.
 
 행 삭제도 같은 topology 검사와 table fragment command를 사용한다. 삭제할 row의 높이를
 `hp:sz`에서 빼고 뒤쪽 주소를 당긴다. 삭제된 anchor로는 inverse가 표를 다시 찾을 수 없으므로,
@@ -258,7 +263,16 @@ locator로 함께 전달한다. undo는 원래 table과 selection을 복구하�
 
 - `webContents.id`별 창 목록과 `OpenPathRouter`: macOS `open-file`, Windows·Linux 명령줄·
   `second-instance` 경로를 작업 폴더 기준 절대 경로로 바꿔 포커스된 창(없으면 최근 창, 창이 없으면 새 창)에 전달
-- 요청한 창에 연결한 열기·열기 방식 대화상자와 창별 `DocumentPathRegistry` 허용목록
+- 요청한 창에 연결한 열기 대화상자와 창별 `DocumentPathRegistry` 허용목록
+- IPC 보낸 쪽 검사(`ipc_guard.ts`): 모든 `handle`·`on` handler를 `createGuardedIpc`로만 등록해, `event.senderFrame`이 있고
+  우리 창(`windowsById`) webContents의 최상위 main frame이며 URL이 renderer 원본(패키지·빌드는 `out/renderer/index.html` file
+  경로, query·hash 무시. 개발 빌드가 `ELECTRON_RENDERER_URL`을 쓰면 그 dev server origin)일 때만 처리한다. 아니면 handle은
+  `IPC_UNTRUSTED_SENDER` 오류, on은 무시하고 channel·이유마다 한 번 경고한다. `ipc_guard.test.ts`가 src/main의 직접 등록을 막는다.
+  PDF 준비 알림(`pdf:ready`)도 요청마다 listener를 달지 않고 한 번 등록한 검사 listener가 requestId(UUID)·보낸 webContents로 찾는다.
+- 창 보안 설정: `sandbox`·`contextIsolation`·`webSecurity`를 켜고 `nodeIntegration`(worker·subframe 포함)·
+  `allowRunningInsecureContent`·`webviewTag`를 끈다. `will-attach-webview`는 막고, 새 창은 모두 거부(HTTPS만 외부 브라우저로),
+  다른 문서로의 navigation은 막는다. 웹 권한 요청·확인은 모두 거절한다. preload는 context isolation일 때만 renderer가 쓰는
+  API만 노출한다(쓰지 않던 `askOpenMode`·`dialog:askOpenMode` 제거).
 - Windows·Linux는 기본 메뉴를 제거하고 단축키를 renderer가 처리(개발 빌드만 F12·Ctrl+Shift+I DevTools)
 - 자체 HWPX UTI와 기존 한컴 HWPX UTI의 Finder 문서 연결
 - HWPX 확장자와 패키지 필수 entry 검증
@@ -392,12 +406,15 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 
 - 위치·권한: `app.getPath('userData')/recovery/<sessionId>/journal.hfj`. 폴더 0o700, 파일 0o600. session id는 소문자 UUID만
   받고 경로가 복구 폴더 바로 아래인지 확인한다(`recoveryJournalDirectory`). 폴더·파일이 링크이거나 일반 파일이 아니면 열지 않는다.
-- 형식(version 1): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
+- 형식(version 2): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
   첫 record는 header(형식·version, 앱 version, 원본 절대 경로, 원본 크기·수정 시각·SHA-256, session 시작 시각)다. 원본 지문은
   worker가 package를 읽으며 같은 파일에서 계산하고, 읽는 동안 크기·수정 시각이 바뀌면 편집을 시작하지 않는다. 그 뒤
   record는 history 순서대로 `commit`(history가 받아들인 forward `EditTransaction` 그대로: command·selection·inputType·
   compositionId·timestamp), `undo`, `redo`, `saved`(Save As 성공 지점)이며 모두 적용 뒤 package revision과 시각을 담는다.
-  문서 bytes는 쓰지 않는다(command 안의 입력 글자·XML 조각만).
+  문서 bytes는 쓰지 않는다(command 안의 입력 글자·XML 조각만). version 2는 표 구조 command를 변경 조각(`patch-table-fragment`)으로
+  담는다. version 1(표 원문 두 벌 `replace-table-fragment`) 기록도 그대로 읽어 replay하고, 복구한 뒤 이어 쓰는 새 기록은 version 2
+  header로 쓴다. version 1 기록에 version 2 command가 있으면 구조 오류다. version 1만 아는 앱은 version 2 기록을 다른 version으로
+  보고 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
 - 쓰는 곳: main. worker의 `EditingEngine`이 commit·undo·redo·markSaved를 할 때 record를 쌓고 같은 응답 message에 실어 보내면
   (`EditingWorkerResponse.journal`, 실패 응답 포함) `EditingSessionManager`가 `RecoveryJournalWriter`에 넘긴다. main에 두는
   이유는 worker가 timeout·OOM으로 강제 종료돼도 이미 응답한 편집은 main에 있어 하나도 잃지 않기 때문이다(worker 안에서 쓰면 마지막
@@ -433,7 +450,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   live 편집이 만들 수 있는 모양인지 본다. forward command 종류만 받고, 문단 fragment 교체는 교체 fragment가 `hp:p`만 이어 붙인
   것이고 각 문단이 문단 구조 command 공통 규칙(`paragraphStructureViolation`)을 통과해야 하며, 표 fragment 교체는 `hp:tbl`
   하나이고 바꾸기 전 표에 없던 element 이름을 들이거나 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
-  개수를 늘리지 않아야 한다. replay는 worker의 heap 한도와 `replay` timeout(300초) 안에서 돌고, 실패·timeout·crash한 기록은
+  개수를 늘리지 않아야 한다. 표 변경 조각은 기록에 표 원문이 없으므로 transaction의 유일한 command여야 하고, 필드 모양(길이 정수, SHA-256 hex 64자,
+  `[offset, 지울 길이, 넣을 원문]` 조각 배열)을 먼저 확인한 뒤 replay 직전 package의
+  현재 표에 길이·SHA-256을 맞춰 조각을 적용한 결과에 같은 표 규칙을 건다. replay는 worker의 heap 한도와 `replay` timeout(300초) 안에서 돌고, 실패·timeout·crash한 기록은
   격리한다. 성공하면 새 session 기록을 디스크에 내린 뒤 옛 기록을 지운다.
 - 묻는 때(`index.ts`): 앱 시작(첫 창 load 뒤 남은 기록 목록, 시작하며 여는 문서의 기록은 제외), HWPX 문서를 열었을 때 같은 원본
   경로의 기록(가장 최근 하나), 편집 엔진이 중단된 직후(renderer가 "편집 세션 종료"로 보기 모드로 돌아간 뒤). 창을 부모로 한 대화상자가

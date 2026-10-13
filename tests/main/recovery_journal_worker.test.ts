@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, utimesSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type {
@@ -7,6 +7,8 @@ import type {
   EditingParagraphStyleRequest,
   EditingSplitParagraphRequest
 } from '../../src/core/editing/editing_contract'
+import { createEditorSelection } from '../../src/core/editing/selection'
+import { resolveTableFragmentCommand } from '../../src/core/editing/table_patch'
 import { listHwpxTextAnchors, type HwpxTextAnchor } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { EditingEngine } from '../../src/main/editing_engine'
@@ -16,13 +18,16 @@ import {
   RecoverySourceChangedError
 } from '../../src/main/editing_session'
 import {
+  createRecoveryJournalHeader,
   decodeRecoveryJournal,
+  encodeRecoveryRecord,
+  fingerprintFile,
   readRecoveryJournal,
   RECOVERY_JOURNAL_FILE,
   scanRecoveryJournals,
   verifyRecoverySource
 } from '../../src/main/recovery_journal'
-import { createListMarkerHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createLargeTableHwpx, createListMarkerHwpx } from '../fixtures/public/create_synthetic_hwpx'
 import { projectedSessionManager, ProjectedEditingSessionManager } from './projected_session_manager'
 import { writeEditingWorkerShim } from './ts_worker_shim'
 
@@ -325,5 +330,42 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     expect(existsSync((failure as { quarantinePath: string }).quarantinePath)).toBe(true)
     expect((await scanRecoveryJournals(recoveryDirectory)).candidates).toEqual([])
     expect(editing.currentSessionId(41)).toBeUndefined()
+  }, 90_000)
+
+  test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 version 2 header로 쓴다', async () => {
+    const source = join(directory, 'legacy-table.hwpx')
+    copyFileSync(createLargeTableHwpx(directory, { rows: 5, columns: 2, fileName: 'legacy-table-generated.hwpx' }), source)
+    const original = await HwpxSourcePackage.open(source)
+    const anchor = listHwpxTextAnchors(original, sectionPath).find((candidate) => candidate.text === 'R2C1')!
+    const selection = createEditorSelection(sectionPath, anchor.textNodeId, 0)
+    const { engine } = await EditingEngine.open(source)
+    await engine.insertTableRowAfter({ sessionId: 'v1', transactionId: 'row', selectionBefore: selection, timestamp: 1 })
+    const [entry] = engine.takeJournal()
+    if (entry.type !== 'commit' || entry.transaction.commands[0].type !== 'patch-table-fragment') throw new Error('표 commit이 없습니다.')
+    const command = entry.transaction.commands[0]
+    const legacy = {
+      ...entry,
+      transaction: {
+        ...entry.transaction,
+        commands: [{ type: 'replace-table-fragment' as const, sectionPath, textNodeId: command.textNodeId, ...resolveTableFragmentCommand(original, command) }]
+      }
+    }
+    const recoveryDirectory = join(directory, 'legacy-recovery')
+    const journalId = '3b241101-e2bb-4255-8caf-4136c566a962'
+    mkdirSync(join(recoveryDirectory, journalId), { recursive: true })
+    const header = { ...createRecoveryJournalHeader(source, await fingerprintFile(source), '0.9.0'), version: 1 }
+    writeFileSync(join(recoveryDirectory, journalId, RECOVERY_JOURNAL_FILE), Buffer.concat([encodeRecoveryRecord(header), encodeRecoveryRecord(legacy)]))
+
+    const { raw, editing } = manager(recoveryDirectory)
+    const recovered = await editing.recover(51, journalId)
+    expect(recovered).toMatchObject({ isDirty: true, recoveredEdits: 1, canUndo: true })
+    await editing.undo(51, recovered.sessionId)
+    await editing.redo(51, recovered.sessionId)
+    await raw.flushJournal(51)
+    const rewritten = decodeRecoveryJournal(readFileSync(join(recoveryDirectory, recovered.sessionId, RECOVERY_JOURNAL_FILE)))
+    expect(rewritten.header).toMatchObject({ version: 2, appVersion: 'test', sourcePath: header.sourcePath, sourceSha256: header.sourceSha256 })
+    expect(rewritten.entries.map((item) => item.type)).toEqual(['commit', 'undo', 'redo'])
+    expect(rewritten.entries[0]).toMatchObject({ transaction: { commands: [{ type: 'replace-table-fragment' }] } })
+    raw.stop(51)
   }, 90_000)
 })

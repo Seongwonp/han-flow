@@ -26,6 +26,7 @@ import {
 } from './cell_style_patch'
 import {
   applyReplaceTableFragmentCommand,
+  PatchTableFragmentCommand,
   ReplaceTableFragmentCommand
 } from './table_patch'
 import { buildLossReport } from './xml_scan'
@@ -51,6 +52,7 @@ export type EditCommand =
   | ApplyCellStyleCommand
   | RestoreCellStyleCommand
   | ReplaceTableFragmentCommand
+  | PatchTableFragmentCommand
 
 export interface EditTransaction {
   id: string
@@ -147,7 +149,7 @@ export function applyEditTransaction(
                   ? applyCellStyleCommand(currentPackage, command)
                   : command.type === 'restore-cell-style'
                     ? applyRestoreCellStyleCommand(currentPackage, command)
-                    : command.type === 'replace-table-fragment'
+                    : command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment'
                       ? applyReplaceTableFragmentCommand(currentPackage, command)
                       : applyReplaceParagraphFragmentCommand(currentPackage, command)
     if (command.type === 'replace-text' && result.package !== currentPackage) {
