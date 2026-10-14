@@ -116,7 +116,17 @@ export function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number
     }
   })
   flush()
-  return fragments.length > 1 ? fragments : [block]
+  if (fragments.length < 2) return [block]
+  // 표와 같은 문단에 든 다른 content(표 앞·뒤 글자 등)는 조각마다 되풀이하지 않는다. 표 앞 content는 첫 조각에,
+  // 표 뒤 content는 마지막 조각에만 둔다(편집 입력 surface의 source anchor가 한 화면에 두 번 나오지 않게 한다).
+  const tableIndex = block.content.indexOf(table)
+  const last = fragments.length - 1
+  return fragments.map((fragment, fragmentIndex) => ({
+    ...fragment,
+    content: fragment.content.filter((_content, index) =>
+      index === tableIndex || (index < tableIndex ? fragmentIndex === 0 : fragmentIndex === last)
+    )
+  }))
 }
 
 export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] {

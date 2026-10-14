@@ -137,8 +137,8 @@ React의 `plaintext-only` surface는 composition 동안 browser DOM을 그대로
 낡은 React text로 DOM을 덮어쓰지 않으며 마지막 응답 뒤 selection을 복원한다. 현재 editable
 surface는 최상위 text 문단의 source anchor별 run과, 모든 문단이 단일 run인 안전한 일반 body cell에
 적용된다. 여러 run은 별도 surface로 source style을 유지하고 좌우 경계 navigation으로
-연결한다. measurement tree, 반복·병합·continuation 표, 머리말·꼬리말과 HWP fixed page에는
-적용하지 않는다.
+연결한다. measurement tree, continuation 표 조각과 HWP fixed page에는 적용하지 않는다(머리말·꼬리말·각주·미주와
+표만 든 문단의 표 앞·뒤 글자는 2026-10-14부터 아래 "표 앞·뒤 caret과 subList 글자"의 surface를 받는다).
 
 V3-4 Save As는 renderer에 경로나 writer 단계를 조합할 권한을 주지 않는다.
 `editing:saveAsDialog` 하나가 sender/session을 검증하고 Preview stale 경고, 네이티브 목적지
@@ -257,6 +257,35 @@ inverse는 그때 지운 원문을 담은 반대 조각이라 section의 다른 
 locator로 함께 전달한다. undo는 원래 table과 selection을 복구하고 redo는 다시 살아남은 anchor를
 사용한다. 반복 머리글과 마지막 하나뿐인 body 행은 삭제하지 않는다.
 
+### 표 앞·뒤 caret과 subList 글자 (2026-10-14)
+
+표만 든 본문 문단의 규칙은 `src/core/editing/table_caret.ts` 하나에 있다. `hs:sec` 직속 문단이고, 자식은 `hp:run`·`hp:linesegarray`·공백,
+run 자식은 `hp:tbl`(문단 전체에 하나)·`hp:t`·구역/쪽 정의(`hp:secPr`·`hp:ctrl`과 run에 바로 둔 `hp:header`·`hp:footer`·`hp:colPr`·
+`hp:pageNum` 등)·공백뿐이며 `hp:ctrl` 안에 각주·미주·필드 시작/끝이 없어야 한다. 표보다 앞(뒤)에 `hp:t`가 없으면 그쪽에 합성 caret
+anchor `${sectionPath}#hp:p:${paragraphOrdinal}:table-before|table-after`(`empty_paragraph_anchor.ts`)를 연다. 편집 코어(source tree)와
+viewer decoder(ordered XML, 접근자만 다르다)가 같은 함수를 쓰고 `text_ordinal_agreement.test.ts`가 공개 corpus에서 두 목록이 같은지 본다.
+
+- 첫 입력(`text_patch.ts`의 `applyTableCaretText`)은 표가 든 run 안 표 바로 앞(뒤)에 `<hp:t>…</hp:t>`를 넣고 transaction이 selection을 새
+  `#hp:t:N`으로 옮긴다. inverse는 빈 문단과 같은 `removeCreatedText`이고, 지우기 전 그 `hp:t`가 표 앞·뒤 어느 쪽인지 보고 같은 합성 anchor를
+  되돌려 준다(원래 bytes 복원). 합성 caret은 빈 문단 anchor처럼 0 위치 caret만 받는다(`isSyntheticCaretAnchorId`).
+- decoder는 표 content 앞·뒤에 빈 합성 text를 두되 표 id(`…:tbl${n}`)는 합성 text를 빼고 센 위치로 정해 caret 유무로 표 id가 바뀌지 않는다.
+- capability는 표 하나와 anchor 있는 글자만 든 본문 문단(`tableParagraphTexts`)의 글자를 `TOP_LEVEL_TEXT`·`tableParagraph`로 열고, 글자마다
+  범위 scope를 따로 둔다(표를 사이에 둔 범위 치환을 만들지 않는다). 문단 구조와 글자 모양은 `TABLE_PARAGRAPH`(표와 같은 run이라 코어도 `복합 run`으로
+  거부), 합성 caret은 문단 모양도 막는다. 표 셀은 전처럼 `tableContexts`가 다룬다.
+- 편집 화면은 표 문단에서 표를 셀 편집과 함께 그리고 글자만 입력 surface로 바꾼다. 아직 빈 caret은 문단 왼쪽 여백의 흐름 밖 좁은 칸
+  (`.viewer-table-caret`)으로 그려 편집 모드 쪽 배치가 보기 모드와 같다. pagination이 표를 쪽마다 나누면 표 앞 content는 첫 조각에만, 표 뒤
+  content는 마지막 조각에만 둔다(같은 anchor의 입력 칸이 두 번 나오지 않는다).
+
+각주·미주 본문(`hp:footNote`·`hp:endNote`의 `hp:subList`)은 decoder가 section 안 `hp:t` 순번 anchor를 붙여 구역 끝 `note-list` block에 두고,
+머리말·꼬리말은 전부터 anchor가 있었다. capability는 글자만 든 문단(빈 문단 합성 anchor 포함, 표·그림이 든 문단 제외)을 `NOTE_TEXT`·
+`HEADER_FOOTER_TEXT`로 열고 문단마다 범위 scope(`…:note:…`·`…:header-footer:…`)를 둔다. 글자 입력·삭제·치환은 기존 `replace-text` command가
+subList 안 `hp:t`만 고치므로 번호 `hp:autoNum`·본문 위치 control·머리말 정의 bytes는 그대로다. 문단 나눔·병합·글자/문단 모양은 `SUBLIST_TEXT`로
+막는다(코어의 문단 locator·style 위치 검사도 거부한다). 같은 문단 여러 run 범위(`planReplaceSelection`)는 문단 판정만 하고(`textParagraph`)
+그 문단에 직접 든 `hp:t`만 고친다. 전에는 문서 순서로 사이에 있는 각주 본문·표 셀 `hp:t`까지 지울 수 있었다. 머리말·꼬리말은 쪽마다 같은
+anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은 쪽(`activeDecorationPage`)의 칸에만 selection 복원을 넘기고, 범위 selection
+복원은 focus가 있는 쪽의 칸을 고른다. 편집은 그 section만 다시 해석하고, 쪽마다의 머리말 상속은 renderer가 매번 다시 정하므로 같은 머리말을 쓰는
+모든 쪽(다음 구역이 이어 쓰는 쪽 포함)에 반영된다.
+
 ## 프로세스 책임
 
 ### Electron main
@@ -316,7 +345,8 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   pagination이 각주 사이에서 쪽을 나눌 수 있다. 이어지는 block은 `continuesKind`(같은 종류 제목·구분선 생략)와
   `continuesNote`(같은 각주의 다음 문단, 번호 생략)를 가진다.
 - `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
-- 글상자·각주·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 자리 표시는
+- 글상자·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 각주·미주 본문은 2026-10-14부터 section 안
+  `hp:t` 순번 anchor를 받아 구역 끝 목록에서 글자를 고칠 수 있다(위 "표 앞·뒤 caret과 subList 글자"). 자리 표시는
   `isObjectPlaceholder`로 편집 capability(`editing_capability.ts`)와 renderer `isEditableTextParagraph`에서 건너뛰므로
   같은 문단 글자 run의 편집 가능 여부는 자리 표시를 넣기 전과 같다(편집 coverage 수치 불변).
 - 누름틀·하이퍼링크 등 본문 run에 글이 그대로 있는 필드는 자리 표시를 만들지 않는다.
@@ -406,7 +436,7 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 
 - 위치·권한: `app.getPath('userData')/recovery/<sessionId>/journal.hfj`. 폴더 0o700, 파일 0o600. session id는 소문자 UUID만
   받고 경로가 복구 폴더 바로 아래인지 확인한다(`recoveryJournalDirectory`). 폴더·파일이 링크이거나 일반 파일이 아니면 열지 않는다.
-- 형식(version 2): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
+- 형식(version 3): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
   첫 record는 header(형식·version, 앱 version, 원본 절대 경로, 원본 크기·수정 시각·SHA-256, session 시작 시각)다. 원본 지문은
   worker가 package를 읽으며 같은 파일에서 계산하고, 읽는 동안 크기·수정 시각이 바뀌면 편집을 시작하지 않는다. 그 뒤
   record는 history 순서대로 `commit`(history가 받아들인 forward `EditTransaction` 그대로: command·selection·inputType·
@@ -414,7 +444,10 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   문서 bytes는 쓰지 않는다(command 안의 입력 글자·XML 조각만). version 2는 표 구조 command를 변경 조각(`patch-table-fragment`)으로
   담는다. version 1(표 원문 두 벌 `replace-table-fragment`) 기록도 그대로 읽어 replay하고, 복구한 뒤 이어 쓰는 새 기록은 version 2
   header로 쓴다. version 1 기록에 version 2 command가 있으면 구조 오류다. version 1만 아는 앱은 version 2 기록을 다른 version으로
-  보고 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
+  보고 손대지 않는다. version 3(2026-10-14)은 글자 command·selection이 표 앞·뒤 합성 caret anchor(`#hp:p:N:table-before|after`)를
+  가리킬 수 있다. 각주·미주·머리말·꼬리말 글자는 일반 `#hp:t:N` anchor라 형식이 같지만, 같은 때 넓힌 편집 범위를 이전 앱이 replay하지
+  않도록 함께 올렸다. version 1·2 기록도 읽어 replay하되 그 기록에 표 앞·뒤 anchor가 있으면 구조 오류(격리)이고, 복구한 뒤 이어 쓰는
+  기록은 version 3이다. version 2까지만 아는 앱은 version 3 기록을 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
 - 쓰는 곳: main. worker의 `EditingEngine`이 commit·undo·redo·markSaved를 할 때 record를 쌓고 같은 응답 message에 실어 보내면
   (`EditingWorkerResponse.journal`, 실패 응답 포함) `EditingSessionManager`가 `RecoveryJournalWriter`에 넘긴다. main에 두는
   이유는 worker가 timeout·OOM으로 강제 종료돼도 이미 응답한 편집은 main에 있어 하나도 잃지 않기 때문이다(worker 안에서 쓰면 마지막
@@ -447,7 +480,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   기록 보관) `replay` 요청을 보낸다. worker는 live 편집과 같은 `commitSynchronized`·`undo`·`redo`·`markSaved` 경로로 record를
   차례로 적용하고 단계마다 기록된 revision과 비교한다. history grouping은 transaction timestamp로 정해지므로 같은 묶음이
   다시 만들어진다. replay는 planner를 거치지 않으므로 commit마다 먼저 `assertReplayableTransaction`(`replay_guard.ts`)으로
-  live 편집이 만들 수 있는 모양인지 본다. forward command 종류만 받고, 문단 fragment 교체는 교체 fragment가 `hp:p`만 이어 붙인
+  live 편집이 만들 수 있는 모양인지 본다. forward command 종류만 받고, 글자 command는 대상이 그 section의 `#hp:t:N`·빈 문단·표 앞뒤
+  합성 anchor이고 범위가 0 이상 정수(`from <= to`)이며 실행 취소 전용 option(`restoreSelfClosingTag`·`insertSource`·`removeCreatedText`)이
+  없어야 하고, 문단 fragment 교체는 교체 fragment가 `hp:p`만 이어 붙인
   것이고 각 문단이 문단 구조 command 공통 규칙(`paragraphStructureViolation`)을 통과해야 하며, 표 fragment 교체는 `hp:tbl`
   하나이고 바꾸기 전 표에 없던 element 이름을 들이거나 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
   개수를 늘리지 않아야 한다. 표 변경 조각은 기록에 표 원문이 없으므로 transaction의 유일한 command여야 하고, 필드 모양(길이 정수, SHA-256 hex 64자,
@@ -480,6 +515,8 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   이전 문서 단위 구현과 38종 fixture에서 비교). 쪽 번호·머리말·꼬리말 decoration은 쪽 목록에서 매번 다시 정하고, 가상화
   범위 계산도 전과 같다.
 - 편집 capability·문단 구조·자리 표시 개수는 section object별 `WeakMap` cache로 바뀐 section만 다시 센다.
+- 머리말·꼬리말 입력 칸은 쪽마다 같은 anchor로 되풀이된다. `HeaderFooterView`는 마지막으로 focus를 받은 쪽(`activeDecorationPage`)에만
+  `desiredSelection`을 넘겨 여러 쪽의 입력 칸이 focus를 다투지 않게 하고, 다른 쪽 칸은 projection으로 같은 글자를 함께 받는다.
 - 그림 data URL은 resource object마다 한 번만 만든다. 전에는 render마다 5 MiB base64를 이어 붙여 React가 이전 `src`와
   글자 단위로 비교했고, 그림이 든 꼬리말이 있는 쪽마다 수십 ms가 들었다.
 - 패키지 앱 측정(`xvfb-run -a npm run benchmark:edit-latency`, large-progressive 15,004쪽, Linux x64 xvfb):

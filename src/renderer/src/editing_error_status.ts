@@ -80,6 +80,10 @@ export function editingCapabilityStatus(
       return `빈 문단에는 글자를 먼저 입력한 뒤 ${action}을 적용할 수 있습니다.`
     case 'PARAGRAPH_HAS_OBJECT':
       return `수식·글상자·그림 같은 개체나 조판 부호가 든 문단에는 ${action}을 적용할 수 없습니다. 글자 입력·삭제는 그대로 할 수 있습니다.`
+    case 'TABLE_PARAGRAPH':
+      return `표가 든 문단에는 ${action}을 적용할 수 없습니다. 표 앞·뒤 글자 입력·삭제는 그대로 할 수 있습니다.`
+    case 'SUBLIST_TEXT':
+      return `머리말·꼬리말·각주·미주에는 아직 ${action}을 적용할 수 없습니다. 글자 입력·삭제는 그대로 할 수 있습니다.`
     case 'PARAGRAPH_COMPLEX_RUN':
       return `이 문단의 글자 구조에는 아직 ${action}을 적용할 수 없습니다. 글자 입력·삭제는 그대로 할 수 있습니다.`
     default:

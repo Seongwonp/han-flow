@@ -324,6 +324,17 @@ function captureVisualState(window: BrowserWindow): void {
   const editLatencyKeystrokes = Number(testValue('HAN_FLOW_VISUAL_EDIT_LATENCY') ?? 0)
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
+  // 문단 편집 E2E 대상: table-caret(표 앞·뒤 글자), note(각주·미주 본문), header·footer(머리말·꼬리말). 없으면 본문 문단·표 셀.
+  const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
+  const editTargetLabels: Record<string, string> = {
+    'table-caret': 'HWPX 표 앞뒤 글자 편집',
+    note: 'HWPX 각주·미주 편집',
+    header: 'HWPX 머리말 편집',
+    footer: 'HWPX 꼬리말 편집'
+  }
+  const editSurfaceLabel = (editTarget && editTargetLabels[editTarget]) ??
+    (editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')
+  const editSurfaceKind = editTarget && editTargetLabels[editTarget] ? editTarget : editCellEnabled ? 'table-cell' : 'paragraph'
   const styleProbeEnabled = testValue('HAN_FLOW_VISUAL_STYLE_PROBE') === '1'
   const tableStructureProbeEnabled = testValue('HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE') === '1'
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
@@ -712,7 +723,7 @@ function captureVisualState(window: BrowserWindow): void {
           throw new Error('편집 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
         }
         ${RIBBON_E2E_HELPERS}
-        const surfaceLabel = ${JSON.stringify(editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')}
+        const surfaceLabel = ${JSON.stringify(editSurfaceLabel)}
         const readySurface = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
           .find((element) => element.dataset.inputReady === 'true')
         let target = readySurface()
@@ -993,7 +1004,11 @@ function captureVisualState(window: BrowserWindow): void {
         }
         return {
           mode,
-          surface: ${JSON.stringify(editCellEnabled ? 'table-cell' : 'paragraph')},
+          surface: ${JSON.stringify(editSurfaceKind)},
+          // 머리말·꼬리말은 쪽마다 같은 anchor의 입력 칸이 있다. 다시 실행 뒤 모든 쪽의 칸이 같은 글자인지 본다.
+          decorationInstances: surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId).length,
+          decorationSynced: surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
+            .every((element) => element.textContent === expected),
           anchorTransition: anchorId === editedAnchorId ? undefined : { from: anchorId, to: editedAnchorId },
           activeTabAfterStart,
           originalLength: original.length,

@@ -5,11 +5,12 @@ import {
   EditorSelection,
   normalizeEditorSelection
 } from './selection'
-import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { isSyntheticCaretAnchorId } from './empty_paragraph_anchor'
 import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
 import {
   planReplaceParagraphSelection,
-  selectionSpansParagraphs
+  selectionSpansParagraphs,
+  textParagraph
 } from './paragraph_patch'
 
 export interface ReplaceSelectionPlan {
@@ -32,8 +33,8 @@ export function planReplaceSelection(
     }
   }
   const normalized = normalizeEditorSelection(sourcePackage, selection)
-  if (isEmptyParagraphAnchorId(normalized.start.textNodeId)) {
-    // 빈 문단 caret: 첫 입력이 `hp:t`를 만들고, transaction이 selectionAfter를 새 `hp:t` anchor로 옮긴다.
+  if (isSyntheticCaretAnchorId(normalized.start.textNodeId)) {
+    // 빈 문단·표 앞뒤 caret: 첫 입력이 `hp:t`를 만들고, transaction이 selectionAfter를 새 `hp:t` anchor로 옮긴다.
     const textNodeId = normalized.start.textNodeId
     return {
       commands: [{ type: 'replace-text', sectionPath: selection.sectionPath, textNodeId, from: 0, to: 0, insert }],
@@ -44,7 +45,12 @@ export function planReplaceSelection(
   const anchors = listHwpxTextAnchors(sourcePackage, selection.sectionPath)
   const startIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.start.textNodeId)
   const endIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.end.textNodeId)
-  const affected = anchors.slice(startIndex, endIndex + 1)
+  // 같은 문단 안 여러 run 범위. 문서 순서로 사이에 있는 `hp:t` 가운데 이 문단에 직접 든 것만 고친다. 문단 안 각주·미주
+  // 본문이나 표 셀처럼 다른 문단에 든 `hp:t`는 범위 사이에 있어도 지우지 않는다.
+  const paragraph = textParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
+  const affected = anchors.slice(startIndex, endIndex + 1).filter((anchor) =>
+    textParagraph(sourcePackage, selection.sectionPath, anchor.textNodeId) === paragraph
+  )
   if (affected.length === 0) throw new HwpxEditConflictError('selection에 포함된 text run이 없습니다.')
   if (affected.length > MAX_TRANSACTION_COMMANDS) {
     throw new HwpxEditConflictError(

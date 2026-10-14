@@ -30,7 +30,7 @@ import {
   ReplaceTableFragmentCommand
 } from './table_patch'
 import { buildLossReport } from './xml_scan'
-import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { isSyntheticCaretAnchorId } from './empty_paragraph_anchor'
 import { ViewerDocument } from '../document/viewer_document'
 import { HwpxSourcePackage } from '../parser/source_package'
 import { decodeViewerDocument } from '../parser/viewer_decoder'
@@ -228,8 +228,8 @@ export function shouldGroupTransactions(previous: EditTransaction, next: EditTra
     nextCommand.type === 'replace-text' &&
     previousCommand.sectionPath === nextCommand.sectionPath &&
     (previousCommand.textNodeId === nextCommand.textNodeId ||
-      // 빈 문단 첫 글자가 만든 `hp:t`에 이어 치는 입력도 한 번에 되돌린다(selectionAfter가 새 anchor로 옮겨져 있다).
-      (isEmptyParagraphAnchorId(previousCommand.textNodeId) &&
+      // 빈 문단·표 앞뒤 첫 글자가 만든 `hp:t`에 이어 치는 입력도 한 번에 되돌린다(selectionAfter가 새 anchor로 옮겨져 있다).
+      (isSyntheticCaretAnchorId(previousCommand.textNodeId) &&
         previous.selectionAfter.focusTextNodeId === nextCommand.textNodeId))
   )
 }

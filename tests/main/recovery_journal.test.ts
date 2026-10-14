@@ -105,21 +105,45 @@ describe('복구 기록 형식', () => {
       return { ...entry, transaction: { ...entry.transaction, commands: [command] } }
     }
     const v1 = { ...header(), version: 1 }
-    expect(header().version).toBe(2)
+    expect(header().version).toBe(3)
     const legacy = decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('replace-table-fragment'))]))
     expect(legacy.header.version).toBe(1)
     expect(legacy.entries).toHaveLength(1)
     expect(() => decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('patch-table-fragment'))])))
       .toThrow(expect.objectContaining({ reason: 'malformed' }))
-    // version 2는 두 형식을 모두 읽는다(version 1 기록을 복구해 이어 쓴 기록에는 이전 형식 command가 남는다).
-    for (const type of ['replace-table-fragment', 'patch-table-fragment'] as const) {
-      expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(header()), encodeRecoveryRecord(table(type))])).entries)
-        .toHaveLength(1)
+    // version 2·3은 두 형식을 모두 읽는다(version 1 기록을 복구해 이어 쓴 기록에는 이전 형식 command가 남는다).
+    for (const version of [2, 3]) {
+      for (const type of ['replace-table-fragment', 'patch-table-fragment'] as const) {
+        expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord({ ...header(), version }), encodeRecoveryRecord(table(type))])).entries)
+          .toHaveLength(1)
+      }
     }
   })
 
+  test('표 앞·뒤 합성 caret anchor는 version 3 기록에서만 받는다', () => {
+    const caretId = 'Contents/section0.xml#hp:p:3:table-after'
+    const entry = commit(1, '가') as Extract<RecoveryJournalEntry, { type: 'commit' }>
+    const caret = (target: 'command' | 'selection'): RecoveryJournalEntry => ({
+      ...entry,
+      transaction: target === 'command'
+        ? { ...entry.transaction, commands: entry.transaction.commands.map((command) => ({ ...command, textNodeId: caretId })) }
+        : { ...entry.transaction, selectionBefore: { ...entry.transaction.selectionBefore, anchorTextNodeId: caretId, focusTextNodeId: caretId } }
+    })
+    for (const target of ['command', 'selection'] as const) {
+      expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(header()), encodeRecoveryRecord(caret(target))])).entries)
+        .toHaveLength(1)
+      for (const version of [1, 2]) {
+        expect(() => decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord({ ...header(), version }), encodeRecoveryRecord(caret(target))])))
+          .toThrow(expect.objectContaining({ reason: 'malformed' }))
+      }
+    }
+    // 각주·머리말 글자 편집처럼 일반 `#hp:t:N` anchor만 쓰는 version 2 기록은 그대로 읽는다.
+    expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord({ ...header(), version: 2 }), encodeRecoveryRecord(entry)])).entries)
+      .toHaveLength(1)
+  })
+
   test('다른 형식 version은 거부한다', () => {
-    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 3 }), encodeRecoveryRecord(commit(1, '가'))])
+    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 4 }), encodeRecoveryRecord(commit(1, '가'))])
     expect(() => decodeRecoveryJournal(bytes)).toThrow(expect.objectContaining({ reason: 'unsupported-version' }))
   })
 

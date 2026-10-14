@@ -7,12 +7,19 @@ import {
   ViewerTableCell,
   ViewerText
 } from '../document/viewer_document'
-import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { isEmptyParagraphAnchorId, isTableCaretAnchorId } from './empty_paragraph_anchor'
 import type { ParagraphStructureBlock } from './paragraph_structure'
 import { EditorSelection } from './selection'
 import { isSurrogateBoundarySafe } from './xml_scan'
 
-export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT'
+/**
+ * - `TOP_LEVEL_TEXT`: 구역 본문 문단(표만 든 문단의 표 앞·뒤 글자 포함)
+ * - `TABLE_CELL_TEXT`: 최상위 표의 셀 문단
+ * - `NOTE_TEXT`: 구역 끝 목록에 보이는 각주·미주 본문 문단
+ * - `HEADER_FOOTER_TEXT`: 머리말·꼬리말 문단
+ * 각주·미주·머리말·꼬리말은 글자 입력·삭제·치환만 허용한다(문단 나눔·병합, 글자·문단 모양은 막는다).
+ */
+export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT' | 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT'
 export type EditingCapabilityReason =
   | 'NO_SELECTION'
   | 'STALE_SELECTION'
@@ -25,6 +32,10 @@ export type EditingCapabilityReason =
   | 'PARAGRAPH_HAS_OBJECT'
   /** 문단 run 구조(빈 run, run 하나에 글자 칸 여러 개 등)가 문단 나눔·병합·여러 문단 범위 규칙을 벗어난다. */
   | 'PARAGRAPH_COMPLEX_RUN'
+  /** 표가 든 본문 문단의 표 앞·뒤 글자. 글자 입력·삭제만 하고 글자 모양·문단 나눔은 막는다(표 앞·뒤 caret은 문단 모양도 막는다). */
+  | 'TABLE_PARAGRAPH'
+  /** 머리말·꼬리말·각주·미주 문단. 글자 입력·삭제·치환만 한다. */
+  | 'SUBLIST_TEXT'
 
 export interface EditingCapabilityState {
   available: boolean
@@ -51,6 +62,10 @@ export interface EditingAnchorContext {
    * `hp:t`를 만든 뒤에는 일반 anchor로 바뀐다.
    */
   emptyParagraph?: boolean
+  /** 표가 든 본문 문단(`table_caret.ts`)의 글자 anchor이면 true. */
+  tableParagraph?: boolean
+  /** 그 가운데 글자가 아직 없는 표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`)이면 true. */
+  tableCaret?: boolean
   /**
    * 이 anchor가 든 문단의 문단 구조 command 차단 이유. `split`은 Enter 분할·여러 문단 범위, `mergePrevious`·`mergeNext`는
    * 문단 맨 앞 Backspace·맨 끝 Delete 병합(인접 문단 포함)이다. 편집 코어와 같은 규칙(`paragraph_structure.ts`)을 쓴다.
@@ -93,6 +108,29 @@ function editableTexts(paragraph: ViewerParagraph): ViewerText[] | undefined {
     return undefined
   }
   return content as ViewerText[]
+}
+
+/**
+ * 표가 든 본문 문단의 글자 run. 자리 표시를 뺀 content가 표 하나와 source anchor가 있는 글자(표 앞·뒤 합성 caret 포함)뿐이어야
+ * 한다. 표 셀은 따로(`tableContexts`) 다룬다. 아니면 undefined.
+ */
+export function tableParagraphTexts(paragraph: ViewerParagraph): ViewerText[] | undefined {
+  const content = paragraph.content.filter((item) => !isObjectPlaceholder(item))
+  const tables = content.filter((item) => item.type === 'table')
+  if (tables.length !== 1) return undefined
+  const texts = content.filter((item) => item.type !== 'table')
+  if (!texts.length || !texts.every((item) => item.type === 'text' && Boolean(item.sourceAnchor))) return undefined
+  return texts as ViewerText[]
+}
+
+/** 표가 든 본문 문단의 글자 run마다 따로 쓰는 범위 scope. 표를 사이에 둔 앞·뒤 글자를 한 범위로 묶지 않는다. */
+export function tableParagraphRangeScope(sectionPath: string, paragraphId: string, index: number): string {
+  return `${sectionPath}:table-paragraph:${paragraphId}:${index}`
+}
+
+/** 머리말·꼬리말·각주·미주 문단의 범위 scope(문단 하나). */
+export function sublistParagraphRangeScope(sectionPath: string, structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT', paragraphId: string): string {
+  return `${sectionPath}:${structure === 'NOTE_TEXT' ? 'note' : 'header-footer'}:${paragraphId}`
 }
 
 function paragraphContexts(
@@ -203,6 +241,14 @@ function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorCo
 function paragraphSourcePath(paragraph: ViewerParagraph): string | undefined {
   for (const item of paragraph.content) {
     if (item.type === 'text' && item.sourceAnchor) return item.sourceAnchor.sectionPath
+    if (item.type === 'note-list') {
+      for (const note of item.notes) {
+        for (const nested of note.paragraphs) {
+          const path = paragraphSourcePath(nested)
+          if (path) return path
+        }
+      }
+    }
     if (item.type === 'table') {
       for (const row of item.rows) {
         for (const cell of row.cells) {
@@ -239,7 +285,24 @@ const sectionStructures = new WeakMap<ViewerSection, ReadonlyArray<readonly [str
 const sectionContexts = new WeakMap<ViewerSection, readonly EditingAnchorContext[]>()
 
 function sectionSourcePath(section: ViewerSection): string | undefined {
-  return section.blocks.map(paragraphSourcePath).find((path): path is string => Boolean(path))
+  return [
+    ...section.blocks,
+    ...section.headers.flatMap((control) => control.paragraphs),
+    ...section.footers.flatMap((control) => control.paragraphs)
+  ].map(paragraphSourcePath).find((path): path is string => Boolean(path))
+}
+
+/**
+ * 각주·미주 본문(구역 끝 목록 block)과 머리말·꼬리말 문단의 글자 anchor. 문단마다 범위 scope를 따로 두고 문단 구조 command는
+ * 막는다. 글상자·메모처럼 decoder가 anchor를 붙이지 않는 문단과 표·그림이 든 문단(셀 포함)은 읽기 전용으로 남는다.
+ */
+function sublistContexts(paragraphs: readonly ViewerParagraph[], sectionPath: string, structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT'): EditingAnchorContext[] {
+  return paragraphs.flatMap((paragraph) => {
+    const texts = editableTexts(paragraph)
+    if (!texts) return []
+    const gate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' } as const
+    return paragraphContexts(paragraph, texts, structure, sublistParagraphRangeScope(sectionPath, structure, paragraph.id), undefined, gate)
+  })
 }
 
 function sectionParagraphStructure(section: ViewerSection): ReadonlyArray<readonly [string, ParagraphStructureEntry]> {
@@ -288,14 +351,39 @@ function sectionAnchorContexts(section: ViewerSection): readonly EditingAnchorCo
     const structure = topLevelStructure(section.blocks, blockTexts, sectionPath)
     result = section.blocks.flatMap((paragraph, index) => {
       const texts = blockTexts[index]
+      const tableTexts = texts ? undefined : tableParagraphTexts(paragraph)
       const topLevel = texts
         ? paragraphContexts(paragraph, texts, 'TOP_LEVEL_TEXT', structure[index].rangeScope, undefined, structure[index].gate)
-        : []
+        : tableTexts
+          ? tableTexts.flatMap((text, textIndex) =>
+              paragraphContexts(
+                paragraph,
+                [text],
+                'TOP_LEVEL_TEXT',
+                tableParagraphRangeScope(sectionPath, paragraph.id, textIndex),
+                undefined,
+                { split: 'TABLE_PARAGRAPH', mergePrevious: 'TABLE_PARAGRAPH', mergeNext: 'TABLE_PARAGRAPH' }
+              ).map((context) => ({
+                ...context,
+                tableParagraph: true,
+                ...(isTableCaretAnchorId(context.textNodeId) ? { tableCaret: true } : {})
+              }))
+            )
+          : []
       const nested = paragraph.content.flatMap((item) =>
-        item.type === 'table' ? tableContexts(item, sectionPath) : []
+        item.type === 'table'
+          ? tableContexts(item, sectionPath)
+          : item.type === 'note-list'
+            ? item.notes.flatMap((note) => sublistContexts(note.paragraphs, sectionPath, 'NOTE_TEXT'))
+            : []
       )
       return [...topLevel, ...nested]
     })
+    result.push(
+      ...[...section.headers, ...section.footers].flatMap((control) =>
+        sublistContexts(control.paragraphs, sectionPath, 'HEADER_FOOTER_TEXT')
+      )
+    )
   }
   sectionContexts.set(section, result)
   return result
@@ -410,37 +498,44 @@ export function editingCapabilities(
   }
   const topLevel = anchor.structure === 'TOP_LEVEL_TEXT' && focus.structure === 'TOP_LEVEL_TEXT'
   const tableCell = anchor.structure === 'TABLE_CELL_TEXT' && focus.structure === 'TABLE_CELL_TEXT'
+  const sublist = anchor.structure === 'NOTE_TEXT' || anchor.structure === 'HEADER_FOOTER_TEXT'
+  const tableParagraph = anchor.tableParagraph === true || focus.tableParagraph === true
+  const tableCaret = anchor.tableCaret === true || focus.tableCaret === true
   const structuralCell = tableCell && anchor.cellStructureEditable === true && focus.cellStructureEditable === true
   const sameRun = anchor.textNodeId === focus.textNodeId
   const sameParagraph = anchor.paragraphId === focus.paragraphId
   const emptyParagraph = anchor.emptyParagraph === true || focus.emptyParagraph === true
+  // 글자·문단 모양은 본문과 표 셀(병합·머리글 셀 포함) 모두 같은 run·문단 조건만 본다.
+  // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
+  // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다. 각주·머리말 등 subList 문단은 글자만,
+  // 표가 든 본문 문단은 글자와(표 앞·뒤 caret이 아니면) 문단 모양만 연다.
+  const characterStyle = (): EditingCapabilityState => {
+    if (sublist) return unavailable('SUBLIST_TEXT')
+    if (!topLevel && !tableCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (tableParagraph) return unavailable('TABLE_PARAGRAPH')
+    if (emptyParagraph) return unavailable('EMPTY_PARAGRAPH')
+    return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
+  }
+  const paragraphStyle = (): EditingCapabilityState => {
+    if (sublist) return unavailable('SUBLIST_TEXT')
+    if (!topLevel && !tableCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (tableCaret) return unavailable('TABLE_PARAGRAPH')
+    return sameParagraph ? { available: true } : unavailable('MULTI_PARAGRAPH_SELECTION')
+  }
+  const paragraphStructure = (): EditingCapabilityState => {
+    if (sublist) return unavailable('SUBLIST_TEXT')
+    if (tableParagraph) return unavailable('TABLE_PARAGRAPH')
+    if (emptyParagraph) return unavailable('EMPTY_PARAGRAPH')
+    if (!topLevel && !structuralCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (focus.structureGate?.split) return unavailable(focus.structureGate.split)
+    return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
+  }
   return {
     selection: { available: true },
     text: { available: true },
-    // 글자·문단 모양은 본문과 표 셀(병합·머리글 셀 포함) 모두 같은 run·문단 조건만 본다.
-    // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
-    // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다.
-    characterStyle: !topLevel && !tableCell
-      ? unavailable('TABLE_CELL_STRUCTURE')
-      : emptyParagraph
-        ? unavailable('EMPTY_PARAGRAPH')
-        : !sameRun
-          ? unavailable('MULTI_RUN_SELECTION')
-          : { available: true },
-    paragraphStyle: !topLevel && !tableCell
-      ? unavailable('TABLE_CELL_STRUCTURE')
-      : !sameParagraph
-        ? unavailable('MULTI_PARAGRAPH_SELECTION')
-        : { available: true },
-    paragraphStructure: emptyParagraph
-      ? unavailable('EMPTY_PARAGRAPH')
-      : !topLevel && !structuralCell
-        ? unavailable('TABLE_CELL_STRUCTURE')
-        : focus.structureGate?.split
-          ? unavailable(focus.structureGate.split)
-          : !sameRun
-            ? unavailable('MULTI_RUN_SELECTION')
-            : { available: true },
+    characterStyle: characterStyle(),
+    paragraphStyle: paragraphStyle(),
+    paragraphStructure: paragraphStructure(),
     cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },

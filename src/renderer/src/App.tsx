@@ -12,6 +12,9 @@ import {
   EditingCapabilityReason,
   ParagraphStructureGate,
   reconcileEditingSelection,
+  sublistParagraphRangeScope,
+  tableParagraphRangeScope,
+  tableParagraphTexts,
   topLevelParagraphStructure
 } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
@@ -172,7 +175,7 @@ function Content({
     return <img className="viewer-image" src={resourceDataUrl(resource)} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
   }
   if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
-  if (item.type === 'note-list') return <NoteListView item={item} document={document} />
+  if (item.type === 'note-list') return <NoteListView item={item} document={document} editing={measurable ? undefined : editing} />
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
 }
 
@@ -268,8 +271,40 @@ export function ObjectPlaceholderView({ item, document }: { item: ViewerObjectPl
   </span>
 }
 
-/** 구역 끝에 모은 각주·미주 본문(읽기 전용). */
-export function NoteListView({ item, document }: { item: ViewerNoteList; document: ViewerRenderStyles }) {
+const TABLE_PARAGRAPH_SURFACE_LABEL = 'HWPX 표 앞뒤 글자 편집'
+const SUBLIST_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
+const TABLE_PARAGRAPH_GATE: ParagraphStructureGate = { split: 'TABLE_PARAGRAPH', mergePrevious: 'TABLE_PARAGRAPH', mergeNext: 'TABLE_PARAGRAPH' }
+
+/**
+ * 각주·미주·머리말·꼬리말 문단의 편집 props. 글자 입력·삭제·치환만 받고(문단 하나 범위, 여러 run 허용) 문단 나눔·병합은
+ * capability와 같은 이유(`SUBLIST_TEXT`)로 막는다. 표·그림이 든 문단은 `isEditableTextParagraph`가 걸러 읽기 전용이다.
+ */
+export function sublistParagraphEditing(
+  editing: ParagraphEditingProps | undefined,
+  structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT',
+  surfaceLabel: string,
+  desiredSelection: EditorSelection | undefined
+): ParagraphEditingProps | undefined {
+  return editing && {
+    ...editing,
+    surfaceLabel,
+    allowMultipleRuns: true,
+    allowParagraphRange: false,
+    allowParagraphStructure: false,
+    allowTableParagraph: false,
+    rangeScope: undefined,
+    rangeScopeOf: (sectionPath, paragraphId) => sublistParagraphRangeScope(sectionPath, structure, paragraphId),
+    structureOf: undefined,
+    structureGate: SUBLIST_STRUCTURE_GATE,
+    allowParagraphMergePrevious: true,
+    allowParagraphMergeNext: true,
+    desiredSelection
+  }
+}
+
+/** 구역 끝에 모은 각주·미주 본문. 편집 중에는 본문 문단의 글자를 고칠 수 있다(번호·본문 위치의 번호 표시는 그대로). */
+export function NoteListView({ item, document, editing }: { item: ViewerNoteList; document: ViewerRenderStyles; editing?: ParagraphEditingProps }) {
+  const noteEditing = sublistParagraphEditing(editing, 'NOTE_TEXT', 'HWPX 각주·미주 편집', editing?.desiredSelection)
   const groups = (['footnote', 'endnote'] as const)
     .map((kind) => ({ kind, notes: item.notes.filter((note) => note.kind === kind) }))
     .filter((group) => group.notes.length)
@@ -279,7 +314,7 @@ export function NoteListView({ item, document }: { item: ViewerNoteList; documen
       {item.continuesKind !== group.kind && <div className="viewer-note-heading">{group.kind === 'footnote' ? '각주' : '미주'}</div>}
       {group.notes.map((note) => <div key={note.sourcePath} className="viewer-note" data-source-path={note.sourcePath}>
         <span className="viewer-note-number">{item.continuesNote ? '' : note.marker}</span>
-        <div className="viewer-note-body">{note.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}</div>
+        <div className="viewer-note-body">{note.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={noteEditing} />)}</div>
       </div>)}
     </section>)}
   </div>
@@ -295,6 +330,10 @@ interface ParagraphEditingProps {
   rangeScope?: string
   allowParagraphMergePrevious?: boolean
   allowParagraphMergeNext?: boolean
+  /** 표만 든 본문 문단(`table_caret.ts`)의 표 앞·뒤 글자 편집을 연다. 쪽의 구역 본문 문단에만 준다. */
+  allowTableParagraph?: boolean
+  /** 문단 범위 scope를 정해 준다(각주·머리말 등 문단 하나 scope). 있으면 빈 문단에서도 이 값을 쓴다. */
+  rangeScopeOf?: (sectionPath: string, paragraphId: string) => string
   /**
    * 본문 문단 id → 문단 구조 gate와 여러 문단 범위 scope(`editing_capability.ts`의 `topLevelParagraphStructure`).
    * 표 셀은 대신 {@link structureGate}와 {@link rangeScope}를 문단마다 직접 넘긴다.
@@ -448,12 +487,14 @@ export function ParagraphView({
     textIndent: hwpUnitToCssPx(indentBox.textIndent),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
   }
+  // 표만 든 본문 문단: 표는 셀 편집과 함께 그대로 그리고, 표 앞·뒤 글자(합성 caret 포함)만 문단 입력 surface로 받는다.
+  const tableTexts = !measurable && editing?.allowTableParagraph ? tableParagraphTexts(paragraph) : undefined
   const activeEditing =
-    !measurable && editing && isEditableTextParagraph(paragraph, editing.allowMultipleRuns)
+    !measurable && editing && (tableTexts || isEditableTextParagraph(paragraph, editing.allowMultipleRuns))
       ? editing
       : undefined
   const editableTexts = activeEditing
-    ? paragraph.content.filter(
+    ? tableTexts ?? paragraph.content.filter(
         (item): item is Extract<ViewerContent, { type: 'text' }> =>
           item.type === 'text' && Boolean(item.sourceAnchor)
       )
@@ -464,25 +505,31 @@ export function ParagraphView({
   const emptyParagraph = Boolean(editableTexts?.some((text) => isEmptyParagraphText(text)))
   // 문단 구조 command(Enter·경계 병합·여러 문단 범위) gate는 capability와 같은 규칙(`paragraph_structure.ts`)을 쓴다.
   // 개체가 든 문단은 글자 입력은 그대로 받고 문단 나눔·병합·여러 문단 범위에서만 빠진다.
-  const structure = activeEditing?.structureOf?.(paragraph.id)
-  const structureGate: ParagraphStructureGate = activeEditing?.structureGate ?? structure?.gate ??
+  const structure = tableTexts ? undefined : activeEditing?.structureOf?.(paragraph.id)
+  const structureGate: ParagraphStructureGate = tableTexts ? TABLE_PARAGRAPH_GATE : activeEditing?.structureGate ?? structure?.gate ??
     (paragraph.structureBlock ? { split: paragraph.structureBlock, mergePrevious: paragraph.structureBlock, mergeNext: paragraph.structureBlock } : {})
   const structureBlocked = Boolean(structureGate.split)
-  const rangeScope = sectionPath && activeEditing
-    ? (emptyParagraph ? undefined : activeEditing.rangeScope ?? structure?.rangeScope) ??
+  // 표 문단은 글자 run마다 scope가 따로라(표를 사이에 둔 범위를 만들지 않는다) 문단 단위 scope가 없다.
+  const rangeScope = sectionPath && activeEditing && !tableTexts
+    ? activeEditing.rangeScopeOf?.(sectionPath, paragraph.id) ??
+      (emptyParagraph ? undefined : activeEditing.rangeScope ?? structure?.rangeScope) ??
       paragraphEditorRangeScope(sectionPath, paragraph.id, Boolean(activeEditing.allowParagraphRange) && !emptyParagraph && !structureBlocked)
     : undefined
+  const surfaceScope = (index: number) => tableTexts ? tableParagraphRangeScope(sectionPath!, paragraph.id, index) : rangeScope!
   const paragraphStructureUnavailable = (action: ParagraphStructureAction) => {
     activeEditing?.onParagraphStructureUnavailable(
-      emptyParagraph ? 'EMPTY_PARAGRAPH' : action === 'split' ? structureGate.split : structureGate[action] ?? structureGate.split
+      emptyParagraph && !tableTexts ? 'EMPTY_PARAGRAPH' : action === 'split' ? structureGate.split : structureGate[action] ?? structureGate.split
     )
   }
   const editorHost = () => activeEditing?.editorHostRef?.current ?? paragraphRef.current
   const readEditorSelection = () => {
     const host = editorHost()
-    return activeEditing && sectionPath && rangeScope && host
-      ? readParagraphEditorSelection(host, sectionPath, rangeScope)
-      : undefined
+    if (!activeEditing || !sectionPath || !host) return undefined
+    if (!tableTexts) return rangeScope ? readParagraphEditorSelection(host, sectionPath, rangeScope) : undefined
+    // 표 문단 안의 표 셀 surface에서 올라온 event는 셀 쪽이 처리한다. 이 문단 글자 surface의 선택만 읽는다.
+    const selection = readParagraphEditorSelection(host, sectionPath)
+    const own = new Set(tableTexts.map((text) => text.sourceAnchor!.textNodeId))
+    return selection && own.has(selection.anchorTextNodeId) && own.has(selection.focusTextNodeId) ? selection : undefined
   }
   const syncEditorSelection = (preserveModeledRange = false) => {
     if (!activeEditing) return
@@ -502,24 +549,27 @@ export function ParagraphView({
     className="viewer-paragraph"
     data-measure-block-id={measurable ? paragraph.id : undefined}
     data-paragraph-structure-block={activeEditing && structureBlocked ? structureGate.split : undefined}
-    style={css}
+    style={tableTexts ? { ...css, position: 'relative' } : css}
   >{paragraph.marker && <span className="viewer-paragraph-marker">{hancomPuaDisplayText(paragraph.marker)} </span>}{editableTexts && activeEditing
     ? paragraph.content.map((item, contentIndex) => {
       if (isObjectPlaceholder(item)) {
         return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} />
       }
+      if (tableTexts && item.type === 'table') {
+        return <TableView key={`${paragraph.id}:${item.id}`} table={item} document={document} editing={editing} />
+      }
       const index = editableTexts.indexOf(item as ViewerText)
       if (index < 0) return null
       const editableText = editableTexts[index]
-      return <ParagraphInputSurface
+      const surface = <ParagraphInputSurface
       key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
       text={editableText.text}
       sourceAnchor={editableText.sourceAnchor!}
       style={textCss(editableText, document)}
       pending={activeEditing.pending}
       restoreToken={activeEditing.restoreToken}
-      ariaLabel={activeEditing.surfaceLabel}
-      rangeScope={rangeScope!}
+      ariaLabel={tableTexts ? TABLE_PARAGRAPH_SURFACE_LABEL : activeEditing.surfaceLabel}
+      rangeScope={surfaceScope(index)}
       desiredSelection={
         activeEditing.desiredSelection?.anchorTextNodeId === activeEditing.desiredSelection?.focusTextNodeId &&
         activeEditing.desiredSelection?.focusTextNodeId === editableText.sourceAnchor!.textNodeId
@@ -546,11 +596,11 @@ export function ParagraphView({
       onRangeCommit={activeEditing.onRangeCommit}
       onSplitParagraph={activeEditing.onSplitParagraph}
       onMergeParagraph={activeEditing.onMergeParagraph}
-      allowMergePrevious={!emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
-      allowMergeNext={!emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
-      mergePreviousBlocked={!emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true) && Boolean(structureGate.mergePrevious)}
-      mergeNextBlocked={!emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true) && Boolean(structureGate.mergeNext)}
-      allowParagraphStructure={activeEditing.allowParagraphStructure && !emptyParagraph && !structureBlocked}
+      allowMergePrevious={!tableTexts && !emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true)}
+      allowMergeNext={!tableTexts && !emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true)}
+      mergePreviousBlocked={tableTexts ? true : !emptyParagraph && index === 0 && (activeEditing.allowParagraphMergePrevious ?? true) && Boolean(structureGate.mergePrevious)}
+      mergeNextBlocked={tableTexts ? true : !emptyParagraph && index === editableTexts.length - 1 && (activeEditing.allowParagraphMergeNext ?? true) && Boolean(structureGate.mergeNext)}
+      allowParagraphStructure={!tableTexts && activeEditing.allowParagraphStructure && !emptyParagraph && !structureBlocked}
       onParagraphStructureUnavailable={paragraphStructureUnavailable}
       onHistory={activeEditing.onHistory}
       onBoundaryNavigate={(direction, selection) => {
@@ -598,6 +648,17 @@ export function ParagraphView({
         if (moved) activeEditing.onEditorSelectionChange(moved)
       }}
     />
+      // 아직 글자가 없는 표 앞·뒤 caret은 흐름 밖의 좁은 입력 칸으로 두어 편집 모드에서도 쪽 배치가 보기 모드와 같게 한다.
+      // 글자를 넣으면 projection이 그 글자를 표 앞·뒤 흐름 안에 다시 그린다.
+      if (tableTexts && !editableText.text) {
+        const side = paragraph.content.indexOf(item) < paragraph.content.findIndex((content) => content.type === 'table') ? 'before' : 'after'
+        return <span
+          key={`${paragraph.id}:caret:${editableText.sourceAnchor!.textNodeId}`}
+          className={`viewer-table-caret viewer-table-caret-${side}`}
+          title={side === 'before' ? '표 앞에 글자 입력' : '표 뒤에 글자 입력'}
+        >{surface}</span>
+      }
+      return surface
     })
     : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
 }
@@ -653,10 +714,34 @@ export function measureDocumentLayout(
   }
 }
 
-function HeaderFooterView({ control, kind, document, offset }: { control?: ViewerHeaderFooter; kind: 'header' | 'footer'; document: ViewerRenderStyles; offset: number }) {
+/**
+ * 쪽 머리말·꼬리말. 편집 중에는 글자만 든 문단을 고칠 수 있고, 같은 머리말을 쓰는 모든 쪽이 projection 뒤 함께 바뀐다.
+ * 같은 source anchor의 입력 칸이 쪽마다 하나씩 있으므로 selection 복원(`desiredSelection`)은 마지막으로 focus를 받은 쪽(`active`)의
+ * 머리말·꼬리말에만 넘겨 여러 쪽의 입력 칸이 focus를 다투지 않게 한다.
+ */
+function HeaderFooterView({ control, kind, document, offset, editing, active = false, onActivate }: {
+  control?: ViewerHeaderFooter
+  kind: 'header' | 'footer'
+  document: ViewerRenderStyles
+  offset: number
+  editing?: ParagraphEditingProps
+  active?: boolean
+  onActivate?: () => void
+}) {
   if (!control) return null
-  return <div className={`viewer-${kind}`} style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}>
-    {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
+  const controlEditing = sublistParagraphEditing(
+    editing,
+    'HEADER_FOOTER_TEXT',
+    kind === 'header' ? 'HWPX 머리말 편집' : 'HWPX 꼬리말 편집',
+    active ? editing?.desiredSelection : undefined
+  )
+  return <div
+    className={`viewer-${kind}`}
+    data-header-footer-id={control.id}
+    onFocusCapture={controlEditing ? onActivate : undefined}
+    style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}
+  >
+    {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={controlEditing} />)}
   </div>
 }
 
@@ -742,6 +827,8 @@ export function TableView({
               allowParagraphRange: cell.paragraphs.length > 1,
               allowParagraphStructure: true,
               rangeScope: cellStructure?.[paragraphIndex].rangeScope ?? cellRangeScope,
+              rangeScopeOf: undefined,
+              allowTableParagraph: false,
               structureOf: undefined,
               structureGate: cellStructure?.[paragraphIndex].gate ?? {},
               allowParagraphMergePrevious: paragraphIndex > 0,
@@ -755,6 +842,8 @@ export function TableView({
                 allowParagraphRange: false,
                 allowParagraphStructure: false,
                 rangeScope: undefined,
+                rangeScopeOf: undefined,
+                allowTableParagraph: false,
                 structureOf: undefined,
                 structureGate: undefined,
                 allowParagraphMergePrevious: false,
@@ -1032,6 +1121,8 @@ export default function App() {
     return { pages: result?.pages ?? [], layoutMs: performance.now() - startedAt }
   }, [effectiveDocument, layoutMeasurements])
   const pages = pagination.pages
+  // 머리말·꼬리말 입력 칸은 쪽마다 같은 anchor로 되풀이된다. 마지막으로 focus를 받은 쪽의 것만 selection을 복원한다.
+  const [activeDecorationPage, setActiveDecorationPage] = useState<number>()
   const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
   const pageCount = fixedDocument?.pageCount ?? pages.length
   const hasDocument = Boolean(effectiveDocument || fixedDocument)
@@ -2333,11 +2424,12 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
+          const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
           const renderParagraphs = (paragraphs: typeof page.blocks) => paragraphs.map((paragraph) => <ParagraphView
             key={paragraph.id}
             paragraph={paragraph}
             document={renderStyles!}
-            editing={editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined}
+            editing={pageEditing}
           />)
           const body = page.columns && page.columnLayout
             ? <ViewerColumnFlow
@@ -2345,7 +2437,7 @@ export default function App() {
                 columns={page.columns.map(renderParagraphs)}
               />
             : renderParagraphs(page.blocks)
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} />{body}<HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{body}<HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

@@ -30,6 +30,7 @@ const COUNT_KEYS = [
   'textRuns', 'anchored', 'textEditable', 'charStyleEditable', 'paragraphs', 'paraStyleEditable',
   'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
+  'tableCaretAnchors', 'tableCaretEditable',
   'characters', 'editableCharacters'
 ]
 const pick = (metrics) => Object.fromEntries(COUNT_KEYS.map((key) => [key, metrics[key]]))
@@ -45,34 +46,38 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
     const list = await measureEditingCoverage(listPath)
 
     // 머리글 셀(4자)은 text·글자·문단 모양만 편집할 수 있다: 셀 style·표 구조 대상은 아니다.
-    // 표 셀 4개의 run·문단은 모두 글자·문단 모양 대상이다(본문 문단은 머리말·이미지 문단뿐이라 0).
+    // 표 셀 4개의 run·문단은 모두 글자·문단 모양 대상이다. 머리말·꼬리말 글자 문단 5개는 글자만 고칠 수 있어
+    // text에는 들고 글자·문단 모양에는 들지 않는다(그림이 든 꼬리말 첫 문단은 읽기 전용).
     assert.deepEqual(pick(baseline), {
       textRuns: 11,
       anchored: 11,
-      textEditable: 4,
+      textEditable: 9,
       charStyleEditable: 4,
       paragraphs: 12,
       paraStyleEditable: 4,
-      // 표만 든 첫 문단은 hp:t가 없지만 빈 문단(합성 anchor 대상)이 아니다.
+      // 표만 든 첫 문단은 hp:t가 없고, 표 앞·뒤 합성 caret이 첫 입력을 받는다(문단 모양은 글자를 넣은 뒤).
       noTextParagraphs: 1,
-      noTextParagraphsEditable: 0,
+      noTextParagraphsEditable: 1,
       tableCells: 4,
       tableCellsEditable: 4,
       tableCellStyleEditable: 3,
       tables: 1,
       tableStructureEditable: 1,
+      tableCaretAnchors: 2,
+      tableCaretEditable: 2,
       characters: 52,
-      editableCharacters: 15
+      editableCharacters: 40
     })
-    assert.deepEqual(baseline.byContainer.headerFooter, { textRuns: 6, textEditable: 0 })
+    assert.deepEqual(baseline.byContainer.headerFooter, { textRuns: 6, textEditable: 5 })
     assert.deepEqual(baseline.rejectionReasons.text, {
-      NOT_LISTED_HEADER_FOOTER: 6,
+      NOT_LISTED_HEADER_FOOTER_PARAGRAPH_HAS_IMAGE: 1,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 1
     })
-    assert.deepEqual(baseline.rejectionReasons.charStyle, {})
-    assert.equal(baseline.rejectionReasons.paraStyle.NO_TEXT_NODE, 1)
+    assert.deepEqual(baseline.rejectionReasons.charStyle, { 'capability: SUBLIST_TEXT': 5 })
+    assert.equal(baseline.rejectionReasons.paraStyle['capability: TABLE_PARAGRAPH'], 1)
+    assert.deepEqual(baseline.rejectionReasons.tableCaret, {})
     assert.deepEqual(baseline.nonEditableCharactersByReason, {
-      NOT_LISTED_HEADER_FOOTER: 30,
+      NOT_LISTED_HEADER_FOOTER_PARAGRAPH_HAS_IMAGE: 5,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 7
     })
 
@@ -90,6 +95,8 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       tableCellStyleEditable: 0,
       tables: 0,
       tableStructureEditable: 0,
+      tableCaretAnchors: 0,
+      tableCaretEditable: 0,
       characters: 32,
       editableCharacters: 32
     })
@@ -99,7 +106,7 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
 
     const total = aggregateCoverage([baseline, list])
     assert.equal(total.textRuns, 16)
-    assert.equal(total.ratios.characterWeighted, Math.round((47 / 84) * 10000) / 10000)
+    assert.equal(total.ratios.characterWeighted, Math.round((72 / 84) * 10000) / 10000)
 
     const serialized = JSON.stringify({ baseline, list, total })
     const texts = [...sectionTexts(baselinePath), ...sectionTexts(listPath)]
@@ -121,14 +128,15 @@ test('편집 coverage는 hp:t 없는 빈 문단·셀을 합성 anchor 첫 입력
       publicRoot: publicFixtureRoot
     })
     const metrics = await measureEditingCoverage(path)
-    // run 없는 자기 닫힘 `<hp:p/>` 7개(본문 1, 표 셀 6)가 모두 첫 입력·문단 모양을 받는다. 표 옆 `<hp:t/>` 문단은 범위 밖이다.
+    // run 없는 자기 닫힘 `<hp:p/>` 7개(본문 1, 표 셀 6)가 모두 첫 입력·문단 모양을 받는다. 표 옆 `<hp:t/>` 문단은 그 빈 칸이
+    // 일반 anchor로 입력·문단 모양을 받고(글자 모양은 표와 같은 run이라 막는다) 표 앞 합성 caret이 하나 더 열린다.
     assert.deepEqual(pick(metrics), {
       textRuns: 1,
       anchored: 1,
-      textEditable: 0,
+      textEditable: 1,
       charStyleEditable: 0,
       paragraphs: 8,
-      paraStyleEditable: 7,
+      paraStyleEditable: 8,
       noTextParagraphs: 7,
       noTextParagraphsEditable: 7,
       tableCells: 6,
@@ -136,11 +144,14 @@ test('편집 coverage는 hp:t 없는 빈 문단·셀을 합성 anchor 첫 입력
       tableCellStyleEditable: 0,
       tables: 1,
       tableStructureEditable: 0,
+      tableCaretAnchors: 1,
+      tableCaretEditable: 1,
       characters: 0,
       editableCharacters: 0
     })
     assert.deepEqual(metrics.rejectionReasons.tableCell, {})
-    assert.deepEqual(metrics.rejectionReasons.text, { NOT_LISTED_PARAGRAPH_HAS_TABLE: 1 })
+    assert.deepEqual(metrics.rejectionReasons.text, {})
+    assert.deepEqual(metrics.rejectionReasons.charStyle, { 'capability: TABLE_PARAGRAPH': 1 })
   } finally {
     await rm(directory, { recursive: true, force: true })
   }

@@ -163,8 +163,9 @@ describe('원본 개체 자리 표시 decoder', () => {
     const lists = noteBlocks.map((block) => block.content[0] as ViewerNoteList)
     expect(lists.map((list) => [list.continuesKind, list.continuesNote])).toEqual([[undefined, undefined], ['footnote', undefined]])
     expect(lists.flatMap((list) => list.notes).map((item) => [item.kind, item.marker, item.paragraphs[0].content.find((content) => content.type === 'text')])).toEqual([
-      ['footnote', '1)', { type: 'text', text: '각주 본문', charStyleId: '0', sourceAnchor: undefined }],
-      ['endnote', '1)', { type: 'text', text: '미주 본문', charStyleId: '0', sourceAnchor: undefined }]
+      // 각주·미주 본문은 section 안 `hp:t` 순번으로 편집 anchor를 받는다(구역 끝 목록에서 글자 편집).
+      ['footnote', '1)', { type: 'text', text: '각주 본문', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:1` } }],
+      ['endnote', '1)', { type: 'text', text: '미주 본문', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:2` } }]
     ])
     expect(countObjectPlaceholders(document)).toEqual({ footnote: 1, endnote: 1 })
   })

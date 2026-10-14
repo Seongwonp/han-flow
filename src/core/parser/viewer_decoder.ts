@@ -13,9 +13,11 @@ import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import {
   EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
   EMPTY_PARAGRAPH_RUN_CONTROLS,
-  emptyParagraphAnchorId
+  emptyParagraphAnchorId,
+  tableCaretAnchorId
 } from '../editing/empty_paragraph_anchor'
 import { ParagraphStructureAccess, paragraphStructureViolation } from '../editing/paragraph_structure'
+import { TableCaretAccess, tableCaretTarget } from '../editing/table_caret'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
 
@@ -102,7 +104,8 @@ export function emptyParagraphCaret(
 
 /**
  * 한 section을 해석하는 동안 공유하는 상태.
- * - `sectionPath`: 편집 anchor를 붙일 section. 글상자·각주·메모 본문처럼 읽기 전용으로 되살리는 문단은 undefined다.
+ * - `sectionPath`: 편집 anchor를 붙일 section. 글상자·메모 본문처럼 읽기 전용으로 되살리는 문단은 undefined다.
+ *   각주·미주 본문과 머리말·꼬리말 문단은 anchor를 붙인다(편집 노출 여부는 capability가 정한다).
  * - `sourceSection`: 자리 표시 `sourcePath`에 쓰는 section 경로(읽기 전용 문단에서도 유지한다).
  */
 interface DecodeContext {
@@ -185,9 +188,16 @@ function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
 
 const readOnly = (context: DecodeContext): DecodeContext => ({ ...context, sectionPath: undefined })
 
-function subListParagraphs(subList: OrderedXmlNode | undefined, id: string, context: DecodeContext): ViewerParagraph[] {
+/** subList 문단. `editable`이 아니면(글상자·메모 본문) source anchor 없이 읽기 전용으로 해석한다. */
+function subListParagraphs(
+  subList: OrderedXmlNode | undefined,
+  id: string,
+  context: DecodeContext,
+  editable = false
+): ViewerParagraph[] {
+  const paragraphContext = editable ? context : readOnly(context)
   return subList
-    ? children(subList, 'hp:p').map((paragraph, index) => decodeParagraph(paragraph, `${id}:p${index}`, readOnly(context)))
+    ? children(subList, 'hp:p').map((paragraph, index) => decodeParagraph(paragraph, `${id}:p${index}`, paragraphContext))
     : []
 }
 
@@ -295,7 +305,8 @@ function decodeControl(node: OrderedXmlNode, id: string, context: DecodeContext)
     const kind = node.name === 'hp:footNote' ? 'footnote' as const : 'endnote' as const
     const marker = noteMarker(node, context.notes.filter((note) => note.kind === kind).length + 1)
     const sourcePath = objectSourcePath(node, context)
-    context.notes.push({ kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context) })
+    // 각주·미주 본문은 section XML 안에 있어 같은 `hp:t` 순번으로 편집 anchor를 붙인다(구역 끝 목록에서 글자 편집).
+    context.notes.push({ kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context, true) })
     return { type: 'object-placeholder', kind, element: node.name, sourcePath, flow: 'marker', label: OBJECT_KIND_LABELS[kind], marker }
   }
   if (node.name === 'hp:fieldBegin') {
@@ -401,16 +412,42 @@ const orderedParagraphStructureAccess: ParagraphStructureAccess<OrderedXmlNode> 
   isBlank: (node) => node.name === '#text' && !(node.text ?? '').trim()
 }
 
+/** viewer ordered XML용 {@link TableCaretAccess}(편집 코어와 같은 표 앞·뒤 caret 규칙). */
+const orderedTableCaretAccess: TableCaretAccess<OrderedXmlNode> = orderedParagraphStructureAccess
+
+/**
+ * `topLevel`은 `hs:sec` 직속 문단이다. 표만 든 최상위 문단(`table_caret.ts`)이면 표 앞·뒤에 글자가 없는 쪽에 합성 caret
+ * text를 표 content 앞·뒤로 둔다. 표 id는 합성 text를 빼고 센 위치로 정해 편집 전후 표 id가 caret 때문에 바뀌지 않게 한다.
+ */
 function decodeParagraph(
   node: OrderedXmlNode,
   id: string,
-  context: DecodeContext
+  context: DecodeContext,
+  topLevel = false
 ): ViewerParagraph {
   const { sectionPath, styleCharacterIds } = context
   const content: ViewerContent[] = []
+  const tableCaret = topLevel && sectionPath !== undefined && node.sourceParagraphOrdinal !== undefined
+    ? tableCaretTarget(node, orderedTableCaretAccess)
+    : undefined
+  const caretText = (charStyleId: string, side: 'before' | 'after'): ViewerContent => ({
+    type: 'text',
+    text: '',
+    charStyleId,
+    sourceAnchor: { sectionPath: sectionPath!, textNodeId: tableCaretAnchorId(sectionPath!, node.sourceParagraphOrdinal!, side) }
+  })
   children(node, 'hp:run').forEach((run) => {
     const charStyleId = run.attributes.charPrIDRef ?? '0'
-    run.children.forEach((item) => decodeRunItem(item, charStyleId, content, id, context))
+    run.children.forEach((item) => {
+      if (tableCaret && item === tableCaret.table) {
+        const table = decodeTable(item, `${id}:tbl${content.length}`, context)
+        if (tableCaret.before) content.push(caretText(charStyleId, 'before'))
+        content.push(table)
+        if (tableCaret.after) content.push(caretText(charStyleId, 'after'))
+        return
+      }
+      decodeRunItem(item, charStyleId, content, id, context)
+    })
   })
   // 빈 문단에는 첫 입력을 받을 빈 text와 합성 anchor를 둔다(`empty_paragraph_anchor.ts`).
   const emptyCaret = sectionPath !== undefined && node.sourceParagraphOrdinal !== undefined
@@ -797,7 +834,7 @@ export function decodeViewerSection(
   const columns = decodeColumnLayout(nodes, path)
   const blocks = root
     ? applyParagraphMarkers(
-        children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, context)),
+        children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, context, true)),
         header.paraStyles
       )
     : []

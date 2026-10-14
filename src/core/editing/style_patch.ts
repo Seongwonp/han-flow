@@ -7,7 +7,7 @@ import {
   locateHwpxEmptyParagraph,
   locateHwpxTextElement
 } from './text_patch'
-import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { isEmptyParagraphAnchorId, isTableCaretAnchorId } from './empty_paragraph_anchor'
 import {
   hwpUnitToStoredScale,
   ParagraphMetricAncestor,
@@ -158,6 +158,9 @@ function locateTextStyleContext(
 ): TextStyleContext {
   // 목록 조회는 section 경로 검증과 오류 message를 전환 전과 같게 유지한다(cache된 tree를 쓰므로 다시 parse하지 않는다).
   listHwpxTextAnchors(sourcePackage, sectionPath)
+  if (isTableCaretAnchorId(textNodeId)) {
+    throw new HwpxEditConflictError('표 앞·뒤 caret에는 글자·문단 모양을 적용할 수 없습니다. 글자를 입력한 뒤 문단 모양을 바꿀 수 있습니다.')
+  }
   if (isEmptyParagraphAnchorId(textNodeId)) {
     // 빈 문단 합성 anchor: 문단 모양만 바꾼다. 글자 모양은 첫 글자를 입력해 `hp:t`가 생긴 뒤 바꾼다.
     if (target === 'character') {
@@ -652,6 +655,9 @@ export function applyCharacterStyleCommand(
   }
   if (isEmptyParagraphAnchorId(command.textNodeId)) {
     throw new HwpxEditConflictError('빈 문단은 글자를 입력한 뒤 글자 모양을 바꿀 수 있습니다.')
+  }
+  if (isTableCaretAnchorId(command.textNodeId)) {
+    throw new HwpxEditConflictError('표 앞·뒤 caret에는 글자 모양을 적용할 수 없습니다.')
   }
   const anchor = listHwpxTextAnchors(sourcePackage, command.sectionPath).find(
     (candidate) => candidate.textNodeId === command.textNodeId

@@ -25,8 +25,12 @@ import {
   EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
   EMPTY_PARAGRAPH_RUN_CONTROLS,
   emptyParagraphAnchorId,
-  parseEmptyParagraphAnchorId
+  parseEmptyParagraphAnchorId,
+  parseTableCaretAnchorId,
+  tableCaretAnchorId,
+  TableCaretSide
 } from './empty_paragraph_anchor'
+import { TableCaretAccess, tableCaretTarget, TableCaretTarget } from './table_caret'
 import { buildLossReport, HwpxEditConflictError, isSurrogateBoundarySafe } from './xml_scan'
 import {
   forgetPackageTrees,
@@ -46,8 +50,8 @@ export interface HwpxTextAnchor {
 }
 
 /**
- * `hp:t`가 없는 빈 문단의 합성 caret anchor(`empty_paragraph_anchor.ts`). text는 언제나 빈 문자열이고, 첫 입력이
- * `hp:t`를 만든다.
+ * `hp:t`가 없는 빈 문단, 또는 표만 든 문단의 표 앞·뒤 합성 caret anchor(`empty_paragraph_anchor.ts`). text는 언제나
+ * 빈 문자열이고, 첫 입력이 `hp:t`를 만든다.
  */
 export interface HwpxEmptyParagraphAnchor {
   sectionPath: string
@@ -57,6 +61,8 @@ export interface HwpxEmptyParagraphAnchor {
   /** 첫 입력 글자가 쓸 `charPrIDRef`: 글자를 넣을 run의 값, run이 없으면 문단 style(`hh:style`)의 값 */
   charStyleId: string
   text: ''
+  /** 표 앞·뒤 caret이면 그 쪽. 빈 문단 anchor면 없다. */
+  tableSide?: TableCaretSide
 }
 
 /** 편집 command가 caret으로 받는 anchor: 실제 `hp:t` 또는 빈 문단의 합성 anchor. */
@@ -384,6 +390,9 @@ interface EmptyParagraphState {
   paragraphs: SourceElement[]
   anchors: readonly HwpxEmptyParagraphAnchor[]
   targets: Map<number, EmptyParagraphTarget>
+  /** 표만 든 최상위 문단의 표 앞·뒤 caret(`table_caret.ts`). */
+  tableAnchors: readonly HwpxEmptyParagraphAnchor[]
+  tableTargets: Map<number, TableCaretTarget<SourceElement>>
 }
 
 /**
@@ -506,7 +515,29 @@ function emptyParagraphState(sourcePackage: HwpxSourcePackage, sectionPath: stri
     const styleCharacterIds = () => (styles ??= paragraphStyleCharacterIds(sourcePackage))
     const anchors: HwpxEmptyParagraphAnchor[] = []
     const targets = new Map<number, EmptyParagraphTarget>()
+    const tableAnchors: HwpxEmptyParagraphAnchor[] = []
+    const tableTargets = new Map<number, TableCaretTarget<SourceElement>>()
+    const access = sourceTableCaretAccess(state.tree)
     paragraphs.forEach((paragraph, paragraphOrdinal) => {
+      if (paragraph.parent?.name === 'hs:sec') {
+        const table = tableCaretTarget<SourceNode>(paragraph, access) as TableCaretTarget<SourceElement> | undefined
+        if (table) {
+          tableTargets.set(paragraphOrdinal, table)
+          const charStyleId = getSourceAttribute(state.tree, table.run, 'charPrIDRef') ?? '0'
+          for (const side of ['before', 'after'] as const) {
+            if (!table[side]) continue
+            tableAnchors.push(Object.freeze({
+              sectionPath,
+              textNodeId: tableCaretAnchorId(sectionPath, paragraphOrdinal, side),
+              paragraphOrdinal,
+              charStyleId,
+              text: '' as const,
+              tableSide: side
+            }))
+          }
+          return
+        }
+      }
       const target = emptyParagraphTarget(state.tree, paragraph, styleCharacterIds)
       if (!target) return
       targets.set(paragraphOrdinal, target)
@@ -518,9 +549,50 @@ function emptyParagraphState(sourcePackage: HwpxSourcePackage, sectionPath: stri
         text: '' as const
       }))
     })
-    state.empty = { paragraphs, anchors: Object.freeze(anchors), targets }
+    state.empty = {
+      paragraphs,
+      anchors: Object.freeze(anchors),
+      targets,
+      tableAnchors: Object.freeze(tableAnchors),
+      tableTargets
+    }
   }
   return { state, empty: state.empty }
+}
+
+/** 편집 source tree용 {@link TableCaretAccess}. */
+function sourceTableCaretAccess(tree: SourceTree): TableCaretAccess<SourceNode> {
+  return {
+    elementName: (node) => node.kind === 'element' ? node.name : undefined,
+    children: (node) => node.kind === 'element' ? node.children : [],
+    isBlank: (node) => isWhitespaceText(tree, node)
+  }
+}
+
+/** section의 표 앞·뒤 합성 caret anchor(`hs:sec` 직속 표 anchor 문단만, 문서 순서). */
+export function listHwpxTableCaretAnchors(
+  sourcePackage: HwpxSourcePackage,
+  sectionPath: string
+): readonly HwpxEmptyParagraphAnchor[] {
+  listHwpxTextAnchors(sourcePackage, sectionPath)
+  return emptyParagraphState(sourcePackage, sectionPath).empty.tableAnchors
+}
+
+/**
+ * @internal 표 앞·뒤 합성 anchor의 문단·표 run·표. 없으면 undefined.
+ */
+export function locateHwpxTableCaret(
+  sourcePackage: HwpxSourcePackage,
+  sectionPath: string,
+  textNodeId: string
+): { tree: SourceTree; paragraph: SourceElement; target: TableCaretTarget<SourceElement>; anchor: HwpxEmptyParagraphAnchor } | undefined {
+  const parsed = parseTableCaretAnchorId(textNodeId)
+  if (!parsed || parsed.sectionPath !== sectionPath) return undefined
+  const { state, empty } = emptyParagraphState(sourcePackage, sectionPath)
+  const target = empty.tableTargets.get(parsed.paragraphOrdinal)
+  if (!target || !target[parsed.side]) return undefined
+  const anchor = empty.tableAnchors.find((candidate) => candidate.textNodeId === textNodeId)!
+  return { tree: state.tree, paragraph: empty.paragraphs[parsed.paragraphOrdinal], target, anchor }
 }
 
 /** section의 빈 문단 합성 anchor. 표 셀·머리말·글상자 안 문단도 포함한다(편집 노출 여부는 capability가 정한다). */
@@ -550,7 +622,8 @@ export function locateHwpxEmptyParagraph(
 }
 
 /**
- * caret anchor 조회: `#hp:t:N`이면 편집 가능한 `hp:t` anchor, `#hp:p:N:empty`면 빈 문단 합성 anchor. 없으면 undefined.
+ * caret anchor 조회: `#hp:t:N`이면 편집 가능한 `hp:t` anchor, `#hp:p:N:empty`면 빈 문단 합성 anchor,
+ * `#hp:p:N:table-before|after`면 표 앞·뒤 합성 anchor. 없으면 undefined.
  */
 export function resolveHwpxCaretAnchor(
   sourcePackage: HwpxSourcePackage,
@@ -560,6 +633,10 @@ export function resolveHwpxCaretAnchor(
   const anchors = listHwpxTextAnchors(sourcePackage, sectionPath)
   if (parseEmptyParagraphAnchorId(textNodeId)) {
     const located = locateHwpxEmptyParagraph(sourcePackage, sectionPath, textNodeId)
+    return located ? { ...located.anchor, emptyParagraph: true } : undefined
+  }
+  if (parseTableCaretAnchorId(textNodeId)) {
+    const located = locateHwpxTableCaret(sourcePackage, sectionPath, textNodeId)
     return located ? { ...located.anchor, emptyParagraph: true } : undefined
   }
   const state = sectionTextState(sourcePackage, sectionPath)
@@ -668,6 +745,7 @@ export function applyReplaceTextCommand(
   }
 
   if (parseEmptyParagraphAnchorId(command.textNodeId)) return applyEmptyParagraphText(sourcePackage, command)
+  if (parseTableCaretAnchorId(command.textNodeId)) return applyTableCaretText(sourcePackage, command)
   const state = sectionTextState(sourcePackage, command.sectionPath)
   const index = findAnchorIndex(state, command.sectionPath, command.textNodeId)
   if (index < 0) throw new HwpxEditConflictError(`text anchor를 찾을 수 없습니다: ${command.textNodeId}`)
@@ -846,6 +924,77 @@ function applyEmptyParagraphText(sourcePackage: HwpxSourcePackage, command: Repl
 }
 
 /**
+ * 표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`)에 첫 글자를 넣는다. 표가 든 run 안에서 표 바로 앞(또는 바로 뒤)에
+ * `<hp:t>…</hp:t>`를 넣는다. 결과 anchor는 새 `hp:t`의 `#hp:t:N`이고, inverse는 빈 문단과 같은 `removeCreatedText`로 그
+ * `hp:t`를 떼어 원래 bytes와 같은 표 anchor 문단으로 되돌린다.
+ */
+function applyTableCaretText(sourcePackage: HwpxSourcePackage, command: ReplaceTextCommand): ReplaceTextResult {
+  listHwpxTextAnchors(sourcePackage, command.sectionPath)
+  const located = locateHwpxTableCaret(sourcePackage, command.sectionPath, command.textNodeId)
+  if (!located) throw new HwpxEditConflictError(`text anchor를 찾을 수 없습니다: ${command.textNodeId}`)
+  assertTextBoundary('', command.from)
+  assertTextBoundary('', command.to)
+  if (command.removeCreatedText || command.restoreSelfClosingTag !== undefined) {
+    throw new HwpxEditConflictError('표 앞·뒤 anchor에는 복원 전용 option을 쓸 수 없습니다.')
+  }
+  if (!command.insert) {
+    return {
+      package: sourcePackage,
+      inverse: { ...command, revision: sourcePackage.revision, insert: '' },
+      anchor: { sectionPath: command.sectionPath, textNodeId: command.textNodeId, ordinal: -1, text: '' },
+      lossReport: buildLossReport(sourcePackage, [])
+    }
+  }
+  const { tree, target, anchor } = located
+  const insertNodes =
+    command.insertSource !== undefined
+      ? insertSourceNodes(command.insertSource, command.insert)
+      : hwpxTextContentNodes(command.insert)
+  const textElement = createSourceElement('hp:t', '<hp:t>', false)
+  textElement.children = insertNodes
+  for (const node of insertNodes) node.parent = textElement
+  const tableIndex = target.run.children.indexOf(target.table)
+  if (tableIndex < 0) throw new Error('표 run에서 표를 찾을 수 없습니다.')
+  const position = anchor.tableSide === 'before' ? tableIndex : tableIndex + 1
+
+  const trees = takePackageTrees(sourcePackage)
+  spliceSourceChildren(tree, target.run, position, 0, [textElement])
+  invalidateHwpxTextIndex(tree)
+  const nextPackage = withSerializedTree(sourcePackage, command.sectionPath, tree)
+  putPackageTrees(nextPackage, trees)
+  const ordinal = hwpxTextOrdinal(nextPackage, command.sectionPath, textElement)
+  if (ordinal < 0) throw new Error('새 hp:t ordinal을 찾을 수 없습니다.')
+  const textNodeId = `${command.sectionPath}#hp:t:${ordinal}`
+  return {
+    package: nextPackage,
+    inverse: {
+      type: 'replace-text',
+      revision: nextPackage.revision,
+      sectionPath: command.sectionPath,
+      textNodeId,
+      from: 0,
+      to: command.insert.length,
+      insert: '',
+      removeCreatedText: {}
+    },
+    anchor: freezeAnchor({ sectionPath: command.sectionPath, textNodeId, ordinal, text: command.insert }),
+    lossReport: buildLossReport(sourcePackage, [command.sectionPath])
+  }
+}
+
+/** run 안 표(`hp:tbl`)보다 element가 앞에 있으면 true. 표 run 밖이면 run 순서로 정한다. */
+function precedesTable(paragraph: SourceElement, element: SourceElement, table: SourceElement): boolean {
+  for (const run of paragraph.children) {
+    if (run.kind !== 'element' || run.name !== 'hp:run') continue
+    for (const child of run.children) {
+      if (child === element) return true
+      if (child === table) return false
+    }
+  }
+  return false
+}
+
+/**
  * {@link applyEmptyParagraphText}의 inverse: 빈 문단에 만든 `hp:t`(와 새 run)를 떼어 원래 빈 문단 bytes로 되돌린다.
  * text 전체를 지우는 command만 받고, 지울 node가 만든 모양 그대로(`<hp:t>`, 새 run이면 그 여는 tag와 `hp:t` 하나)인지
  * 확인한다. 결과 anchor는 다시 생긴 빈 문단 합성 anchor이고, inverse는 같은 text를 그 anchor에 다시 넣는다.
@@ -898,6 +1047,12 @@ function applyRemoveCreatedText(
   const removedSource = element.children.map((child) => serializeSourceNode(tree, child)).join('')
   const insertSource = removedSource !== encodeHwpxTextContent(sourceAnchor.text) ? removedSource : undefined
 
+  // 표 anchor 문단에 만든 `hp:t`면 표 앞·뒤 어느 쪽인지 지우기 전에 정한다(지운 뒤 그 쪽 합성 caret이 다시 열린다).
+  const directTable = paragraph.parent?.name === 'hs:sec'
+    ? findDescendantSourceElements(paragraph, 'hp:tbl').find((candidate) => candidate.parent?.parent === paragraph)
+    : undefined
+  const tableBefore = directTable ? precedesTable(paragraph, removed, directTable) : undefined
+
   const trees = takePackageTrees(sourcePackage)
   if (restoreTag !== undefined) collapseElementToSelfClosing(container, restoreTag)
   else spliceSourceChildren(tree, container, container.children.indexOf(removed), 1, [])
@@ -906,10 +1061,15 @@ function applyRemoveCreatedText(
   putPackageTrees(nextPackage, trees)
   const { empty } = emptyParagraphState(nextPackage, command.sectionPath)
   const paragraphOrdinal = empty.paragraphs.indexOf(paragraph)
-  if (paragraphOrdinal < 0 || !empty.targets.has(paragraphOrdinal)) {
-    throw new Error('되돌린 문단이 빈 문단 anchor 규칙과 맞지 않습니다.')
+  const tableTarget = empty.tableTargets.get(paragraphOrdinal)
+  const tableSide: TableCaretSide | undefined =
+    tableTarget && tableBefore !== undefined ? (tableBefore ? 'before' : 'after') : undefined
+  if (paragraphOrdinal < 0 || (!empty.targets.has(paragraphOrdinal) && !(tableSide && tableTarget?.[tableSide]))) {
+    throw new Error('되돌린 문단이 빈 문단·표 앞뒤 anchor 규칙과 맞지 않습니다.')
   }
-  const textNodeId = emptyParagraphAnchorId(command.sectionPath, paragraphOrdinal)
+  const textNodeId = tableSide
+    ? tableCaretAnchorId(command.sectionPath, paragraphOrdinal, tableSide)
+    : emptyParagraphAnchorId(command.sectionPath, paragraphOrdinal)
   return {
     package: nextPackage,
     inverse: {

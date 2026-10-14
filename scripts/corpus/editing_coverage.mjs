@@ -40,9 +40,9 @@ function loadEditingCore() {
     decodeViewerDocument: loadTypeScriptModule('src/core/parser/viewer_decoder.ts').decodeViewerDocument,
     ...loadTypeScriptModule('src/core/editing/editing_capability.ts'),
     ...pick(loadTypeScriptModule('src/core/editing/text_patch.ts'), [
-      'listHwpxTextAnchors', 'listHwpxEmptyParagraphAnchors', 'applyReplaceTextCommand'
+      'listHwpxTextAnchors', 'listHwpxEmptyParagraphAnchors', 'listHwpxTableCaretAnchors', 'applyReplaceTextCommand'
     ]),
-    emptyParagraphAnchorId: loadTypeScriptModule('src/core/editing/empty_paragraph_anchor.ts').emptyParagraphAnchorId,
+    ...pick(loadTypeScriptModule('src/core/editing/empty_paragraph_anchor.ts'), ['emptyParagraphAnchorId', 'tableCaretAnchorId']),
     ...loadTypeScriptModule('src/core/editing/style_patch.ts'),
     applyCellStyleCommand: loadTypeScriptModule('src/core/editing/cell_style_patch.ts').applyCellStyleCommand,
     ...loadTypeScriptModule('src/core/editing/table_patch.ts'),
@@ -206,10 +206,18 @@ function listingExclusions(document) {
       mark(paragraph, excluded ?? 'UNKNOWN')
     }
     for (const control of [...section.headers, ...section.footers]) {
-      for (const paragraph of control.paragraphs) mark(paragraph, 'HEADER_FOOTER')
+      for (const paragraph of control.paragraphs) mark(paragraph, paragraphExclusion(paragraph, 'HEADER_FOOTER_') ?? 'HEADER_FOOTER')
     }
+    for (const paragraph of noteParagraphs(section)) mark(paragraph, paragraphExclusion(paragraph, 'NOTE_') ?? 'NOTE')
   }
   return reasons
+}
+
+/** 구역 끝 각주·미주 목록 block에 든 본문 문단. */
+function noteParagraphs(section) {
+  return section.blocks.flatMap((block) => block.content.flatMap((item) =>
+    item.type === 'note-list' ? item.notes.flatMap((note) => note.paragraphs) : []
+  ))
 }
 
 function anchoredIds(document) {
@@ -223,12 +231,13 @@ function anchoredIds(document) {
   for (const section of document.sections) {
     section.blocks.forEach(paragraph)
     for (const control of [...section.headers, ...section.footers]) control.paragraphs.forEach(paragraph)
+    noteParagraphs(section).forEach(paragraph)
   }
   return ids
 }
 
 function emptyRejections() {
-  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, paragraphStructure: {}, tableCell: {}, tableStructure: {} }
+  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, paragraphStructure: {}, tableCell: {}, tableStructure: {}, tableCaret: {} }
 }
 
 function count(histogram, key, amount = 1) {
@@ -305,8 +314,43 @@ export async function measureEditingCoverage(path) {
     tableCellStyleEditable: 0,
     tables: structure.tables.length,
     tableStructureEditable: 0,
+    tableCaretAnchors: 0,
+    tableCaretEditable: 0,
     characters: 0,
     editableCharacters: 0
+  }
+
+  // 0) 표만 든 본문 문단의 표 앞·뒤 합성 caret(2026-10-14): capability가 text를 열고 첫 입력 dry-run이 통과하면 편집 가능이다.
+  const tableCaretEditable = new Set()
+  for (const sectionPath of index.sectionPaths) {
+    let carets
+    try {
+      carets = core.listHwpxTableCaretAnchors(sourcePackage, sectionPath)
+    } catch {
+      carets = []
+    }
+    for (const caret of carets) {
+      metrics.tableCaretAnchors += 1
+      const capabilities = core.editingCapabilities(sectionViews.get(sectionPath), collapsed(sectionPath, caret.textNodeId))
+      const reason = !anchored.has(caret.textNodeId)
+        ? 'DECODER_NO_SOURCE_ANCHOR'
+        : !capabilities.text.available
+          ? (!listed.has(caret.textNodeId) ? 'NOT_LISTED' : `capability: ${capabilities.text.reason}`)
+          : attempt('text_patch', () => core.applyReplaceTextCommand(sourcePackage, {
+              type: 'replace-text',
+              revision: sourcePackage.revision,
+              sectionPath,
+              textNodeId: caret.textNodeId,
+              from: 0,
+              to: 0,
+              insert: '가'
+            }))
+      if (reason) count(rejections.tableCaret, reason)
+      else {
+        metrics.tableCaretEditable += 1
+        tableCaretEditable.add(caret.textNodeId)
+      }
+    }
   }
 
   // 1) text run: anchor → capability → text_patch dry-run → 글자 style
@@ -408,9 +452,17 @@ export async function measureEditingCoverage(path) {
     const ownRuns = paragraph.runs
     const target = ownRuns.find((run) => runState.get(run.textNodeId).textEditable)
     let reason
-    if (!ownRuns.length) {
+    const ordinal = paragraph.node.sourceParagraphOrdinal
+    const tableCaret = !ownRuns.length && ordinal !== undefined
+      ? ['before', 'after'].map((side) => core.tableCaretAnchorId(paragraph.sectionPath, ordinal, side)).find((id) => tableCaretEditable.has(id))
+      : undefined
+    if (tableCaret) {
+      // 표만 든 문단: 표 앞·뒤 caret이 첫 입력을 받는다. 문단 모양은 글자를 넣은 뒤에 연다.
       metrics.noTextParagraphs += 1
-      const ordinal = paragraph.node.sourceParagraphOrdinal
+      metrics.noTextParagraphsEditable += 1
+      reason = 'capability: TABLE_PARAGRAPH'
+    } else if (!ownRuns.length) {
+      metrics.noTextParagraphs += 1
       const id = ordinal === undefined ? undefined : core.emptyParagraphAnchorId(paragraph.sectionPath, ordinal)
       const empty = emptyParagraphReason(paragraph, id)
       reason = empty.reason
@@ -529,6 +581,7 @@ const SUM_KEYS = [
   'paragraphStructureEditable', 'paragraphStructureMismatch',
   'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
+  'tableCaretAnchors', 'tableCaretEditable',
   'characters', 'editableCharacters'
 ]
 
@@ -546,6 +599,7 @@ function withRatios(metrics) {
       noTextParagraphsEditable: ratio(metrics.noTextParagraphsEditable, metrics.noTextParagraphs),
       tableCellsEditable: ratio(metrics.tableCellsEditable, metrics.tableCells),
       tableStructureEditable: ratio(metrics.tableStructureEditable, metrics.tables),
+      tableCaretEditable: ratio(metrics.tableCaretEditable, metrics.tableCaretAnchors),
       characterWeighted: ratio(metrics.editableCharacters, metrics.characters)
     }
   }

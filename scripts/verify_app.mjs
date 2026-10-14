@@ -14,6 +14,8 @@ const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
+// 편집 대상: table-caret(표 앞·뒤 글자), note(각주·미주 본문), header·footer(머리말·꼬리말). 없으면 본문 문단(또는 표 셀).
+const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
@@ -38,6 +40,11 @@ const launchArguments = [
 
 if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
   console.error('HAN_FLOW_VERIFY_ARCH는 arm64 또는 x86_64여야 합니다.')
+  process.exit(1)
+}
+
+if (editTarget && !['table-caret', 'note', 'header', 'footer'].includes(editTarget)) {
+  console.error('HAN_FLOW_VERIFY_EDIT_TARGET는 table-caret·note·header·footer 가운데 하나여야 합니다.')
   process.exit(1)
 }
 
@@ -110,6 +117,7 @@ async function launch(output, userData, options = {}) {
         ...(interactive && editText ? { HAN_FLOW_VISUAL_EDIT_TEXT: editText } : {}),
         ...(interactive && editMode ? { HAN_FLOW_VISUAL_EDIT_MODE: editMode } : {}),
         ...(interactive && editCell ? { HAN_FLOW_VISUAL_EDIT_CELL: '1' } : {}),
+        ...(interactive && editTarget ? { HAN_FLOW_VISUAL_EDIT_TARGET: editTarget } : {}),
         ...(interactive && styleProbe ? { HAN_FLOW_VISUAL_STYLE_PROBE: '1' } : {}),
         ...(interactive && tableStructureProbe ? { HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
@@ -216,7 +224,8 @@ try {
         {
           fixture: saveDestination,
           interactive: false,
-          environment: crashRecovery ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText } : undefined
+          // 강제 종료 복구와 편집 대상(표 앞·뒤·각주·머리말) 저장은 저장본을 다시 열어 입력 글자가 화면에 있는지 본다.
+          environment: crashRecovery || (editTarget && editText) ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText } : undefined
         }
       )
     } catch {
@@ -289,6 +298,14 @@ try {
     editText && state.editingUi?.toolbarHeight < 150 ? '편집 리본 높이가 사용성 기준보다 작음' : undefined,
     editText && state.editingUi?.minimumButtonHeight < 40 ? '편집 리본 버튼 높이가 사용성 기준보다 작음' : undefined,
     editCell && state.editingProbe?.surface !== 'table-cell' ? '표 셀 편집 surface 검증 불일치' : undefined,
+    editTarget && state.editingProbe?.surface !== editTarget ? `편집 대상 surface 불일치: ${state.editingProbe?.surface}` : undefined,
+    (editTarget === 'header' || editTarget === 'footer') && !(state.editingProbe?.decorationInstances >= 1)
+      ? '머리말·꼬리말 입력 칸이 없음'
+      : undefined,
+    (editTarget === 'header' || editTarget === 'footer') && !state.editingProbe?.decorationSynced
+      ? '머리말·꼬리말 편집이 같은 머리말을 쓰는 모든 쪽에 반영되지 않음'
+      : undefined,
+    editTarget && editSave && savedState && !savedState.expectedTextPresent ? '저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,
     styleProbe && !state.editingProbe?.styleProbe ? 'style 편집 probe 결과가 없음' : undefined,
     styleProbe && !state.editingProbe?.styleProbe?.boldApplied ? '굵게 style 적용 불일치' : undefined,
@@ -380,7 +397,9 @@ try {
       reopenedPages: savedState?.totalPages,
       reopenedImages: savedState?.images?.length,
       reopenedOverflowPages: savedState?.overflowPages,
-      reopenedTableTopologies: savedState?.tableTopologies
+      reopenedTableTopologies: savedState?.tableTopologies,
+      reopenedTextPresent: editTarget ? savedState?.expectedTextPresent : undefined,
+      reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {
       journalsBeforeKill: state.crashReport?.journalsBeforeKill,

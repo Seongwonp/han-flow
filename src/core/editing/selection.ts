@@ -1,5 +1,5 @@
 import { HwpxSourcePackage } from '../parser/source_package'
-import { isEmptyParagraphAnchorId } from './empty_paragraph_anchor'
+import { isSyntheticCaretAnchorId } from './empty_paragraph_anchor'
 import { HwpxEditConflictError, listHwpxTextAnchors, resolveHwpxCaretAnchor } from './text_patch'
 
 export interface EditorSelection {
@@ -72,10 +72,10 @@ export function normalizeEditorSelection(
   selection: EditorSelection
 ): NormalizedEditorSelection {
   if (
-    isEmptyParagraphAnchorId(selection.anchorTextNodeId) ||
-    isEmptyParagraphAnchorId(selection.focusTextNodeId)
+    isSyntheticCaretAnchorId(selection.anchorTextNodeId) ||
+    isSyntheticCaretAnchorId(selection.focusTextNodeId)
   ) {
-    // 빈 문단 합성 anchor는 글자가 없으므로 같은 anchor의 0 위치 caret만 받는다.
+    // 빈 문단·표 앞뒤 합성 anchor는 글자가 없으므로 같은 anchor의 0 위치 caret만 받는다.
     if (
       selection.anchorTextNodeId !== selection.focusTextNodeId ||
       selection.anchorOffset !== 0 ||

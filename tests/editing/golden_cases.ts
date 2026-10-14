@@ -28,6 +28,7 @@ import {
 import {
   applyReplaceTextCommand,
   HwpxTextAnchor,
+  listHwpxTableCaretAnchors,
   listHwpxTextAnchors,
   locateHwpxTextElement
 } from '../../src/core/editing/text_patch'
@@ -240,8 +241,66 @@ export function tableCases(sourcePackage: HwpxSourcePackage, sectionPath: string
   return cases
 }
 
-export type Family = 'text' | 'style' | 'paragraph' | 'table'
-export const FAMILIES: Family[] = ['text', 'style', 'paragraph', 'table']
+/** fixture마다 표 앞·뒤 합성 caret에 쓰는 anchor 수(문서 순서로 고르게 뽑는다). */
+export const TABLE_CARET_SAMPLE = 4
+
+/**
+ * 표만 든 본문 문단의 표 앞·뒤 합성 caret 첫 입력(2026-10-14 추가 family). 특수 문자 escape와 줄바꿈(`hp:lineBreak`)을 함께 넣는다.
+ * 편집 코어가 표 run 안 표 앞·뒤에 `hp:t`를 만들고 inverse가 원래 bytes를 되살리는지 golden으로 고정한다.
+ */
+export function tableCaretCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
+  const anchors = sectionPaths.flatMap((sectionPath) => listHwpxTableCaretAnchors(sourcePackage, sectionPath))
+  return sample(anchors, TABLE_CARET_SAMPLE).map((anchor) => ({
+    label: `${anchor.sectionPath.replace(/^Contents\//, '')} ${anchor.paragraphOrdinal} ${anchor.tableSide} insert`,
+    build: () => ({
+      command: {
+        type: 'replace-text',
+        sectionPath: anchor.sectionPath,
+        textNodeId: anchor.textNodeId,
+        from: 0,
+        to: 0,
+        insert: anchor.tableSide === 'before' ? '표 앞&<' : '표 뒤\n둘째 줄'
+      }
+    })
+  }))
+}
+
+/** fixture마다 각주·미주·머리말·꼬리말 글자에 쓰는 anchor 수. */
+export const SUBLIST_SAMPLE = 4
+
+/** `hp:t`가 든 각주·미주(`note`)·머리말·꼬리말(`header-footer`) subList. 본문·표 셀·글상자면 undefined. */
+export function sublistKind(element: SourceElement): 'note' | 'header-footer' | undefined {
+  for (let node = element.parent; node; node = node.parent) {
+    if (node.name === 'hp:footNote' || node.name === 'hp:endNote') return 'note'
+    if (node.name === 'hp:header' || node.name === 'hp:footer') return 'header-footer'
+    if (node.name === 'hp:drawText' || node.name === 'hp:fieldBegin') return undefined
+  }
+  return undefined
+}
+
+/**
+ * 각주·미주 본문과 머리말·꼬리말 글자 편집(2026-10-14 추가 family). 같은 `replace-text` command가 subList 안 `hp:t`만 고치고
+ * 각주 번호(`hp:autoNum`)·본문 위치 control·머리말 정의를 byte 그대로 두는지 golden으로 고정한다.
+ */
+export function sublistCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
+  const located = sectionPaths.flatMap((sectionPath) => listHwpxTextAnchors(sourcePackage, sectionPath).flatMap((anchor) => {
+    const kind = sublistKind(locateHwpxTextElement(sourcePackage, sectionPath, anchor.textNodeId)!.element)
+    return kind ? [{ sectionPath, anchor, kind }] : []
+  }))
+  return sample(located, SUBLIST_SAMPLE).flatMap(({ sectionPath, anchor, kind }) => {
+    const middle = safeOffset(anchor.text, Math.floor(anchor.text.length / 2))
+    const text = (from: number, to: number, insert: string): Case['build'] => () => ({
+      command: { type: 'replace-text', sectionPath, textNodeId: anchor.textNodeId, from, to, insert }
+    })
+    return [
+      { label: `${kind} ${anchor.ordinal} insert`, build: text(middle, middle, '고침&<') },
+      { label: `${kind} ${anchor.ordinal} delete`, build: text(0, safeOffset(anchor.text, 1), '') }
+    ]
+  })
+}
+
+export type Family = 'text' | 'style' | 'paragraph' | 'table' | 'table-caret' | 'sublist'
+export const FAMILIES: Family[] = ['text', 'style', 'paragraph', 'table', 'table-caret', 'sublist']
 
 /** manifest fixture의 파일 경로. generator fixture는 `directory`에 만든다. */
 export function fixturePath(directory: string, fixture: ManifestFixture): string {
@@ -264,6 +323,8 @@ export async function casesByFamily(original: HwpxSourcePackage): Promise<Record
     text: picked.flatMap(textCases),
     style: picked.flatMap(styleCases),
     paragraph: picked.flatMap(paragraphCases),
-    table: index.sectionPaths.flatMap((sectionPath) => tableCases(original, sectionPath))
+    table: index.sectionPaths.flatMap((sectionPath) => tableCases(original, sectionPath)),
+    'table-caret': tableCaretCases(original, index.sectionPaths),
+    sublist: sublistCases(original, index.sectionPaths)
   }
 }

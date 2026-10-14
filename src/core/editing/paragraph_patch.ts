@@ -363,9 +363,19 @@ export function selectionSpansParagraphs(
 ): boolean {
   const normalized = normalizeEditorSelection(sourcePackage, selection)
   if (normalized.start.textNodeId === normalized.end.textNodeId) return false
-  const start = locateParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
-  const end = locateParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
-  return start.paragraph !== end.paragraph
+  // 문단 판정만 한다. 머리말·각주처럼 문단 구조를 편집하지 않는 문단 안 여러 run 선택도 같은 문단이면 text 범위 command로 간다.
+  // 다른 문단이면 범위 치환 계획(`planReplaceParagraphSelection`)이 위치를 검사하고 거부한다.
+  return textParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId) !==
+    textParagraph(sourcePackage, selection.sectionPath, normalized.end.textNodeId)
+}
+
+/** @internal anchor `hp:t`가 든 가장 가까운 `hp:p`. 문단 구조 위치 검사는 하지 않는다. */
+export function textParagraph(sourcePackage: HwpxSourcePackage, sectionPath: string, textNodeId: string): SourceElement {
+  listHwpxTextAnchors(sourcePackage, sectionPath)
+  const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
+  const paragraph = located && nearestSourceAncestor(located.element, 'hp:p')
+  if (!paragraph) throw new HwpxEditConflictError(`문단 anchor를 찾을 수 없습니다: ${textNodeId}`)
+  return paragraph
 }
 
 export function planReplaceParagraphSelection(

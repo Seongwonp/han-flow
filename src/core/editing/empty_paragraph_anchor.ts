@@ -40,3 +40,36 @@ export function parseEmptyParagraphAnchorId(
 export function isEmptyParagraphAnchorId(textNodeId: string | undefined): boolean {
   return textNodeId !== undefined && parseEmptyParagraphAnchorId(textNodeId) !== undefined
 }
+
+/**
+ * 표만 든 최상위 문단의 표 앞·뒤 합성 caret anchor `${sectionPath}#hp:p:${paragraphOrdinal}:table-before|table-after`
+ * (`table_caret.ts`). 빈 문단 anchor처럼 글자가 없는 caret 하나이고, 첫 입력이 표 run 안 표 앞(또는 뒤)에 `hp:t`를 만든다.
+ */
+const TABLE_CARET_ANCHOR = /^(.*)#hp:p:(0|[1-9]\d*):table-(before|after)$/
+
+export type TableCaretSide = 'before' | 'after'
+
+export function tableCaretAnchorId(sectionPath: string, paragraphOrdinal: number, side: TableCaretSide): string {
+  return `${sectionPath}#hp:p:${paragraphOrdinal}:table-${side}`
+}
+
+/** 표 앞·뒤 합성 anchor id를 읽는다. 형식이 다르면 undefined. */
+export function parseTableCaretAnchorId(
+  textNodeId: string
+): { sectionPath: string; paragraphOrdinal: number; side: TableCaretSide } | undefined {
+  const match = TABLE_CARET_ANCHOR.exec(textNodeId)
+  if (!match) return undefined
+  const paragraphOrdinal = Number(match[2])
+  return Number.isSafeInteger(paragraphOrdinal)
+    ? { sectionPath: match[1], paragraphOrdinal, side: match[3] as TableCaretSide }
+    : undefined
+}
+
+export function isTableCaretAnchorId(textNodeId: string | undefined): boolean {
+  return textNodeId !== undefined && parseTableCaretAnchorId(textNodeId) !== undefined
+}
+
+/** 글자 칸 없이 caret만 있는 합성 anchor(빈 문단·표 앞뒤)인지. 이런 anchor는 0 위치 caret과 첫 입력만 받는다. */
+export function isSyntheticCaretAnchorId(textNodeId: string | undefined): boolean {
+  return isEmptyParagraphAnchorId(textNodeId) || isTableCaretAnchorId(textNodeId)
+}

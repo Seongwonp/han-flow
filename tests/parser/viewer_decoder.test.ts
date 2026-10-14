@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { ViewerTable, ViewerText } from '../../src/core/document/viewer_document'
+import { isSyntheticCaretAnchorId } from '../../src/core/editing/empty_paragraph_anchor'
 import { listHwpxTextAnchors } from '../../src/core/editing/text_patch'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
@@ -91,6 +92,8 @@ describe('ViewerDocument source anchor', () => {
       section.footers.forEach((footer) => collect(footer.paragraphs))
     }
 
+    // 표 앞·뒤·빈 문단 합성 caret은 `hp:t`가 아니므로 비교에서 뺀다.
+    viewerTexts.splice(0, viewerTexts.length, ...viewerTexts.filter((item) => !isSyntheticCaretAnchorId(item.sourceAnchor?.textNodeId)))
     for (const text of viewerTexts.filter((item) => item.sourceAnchor)) {
       expect(
         anchors.find((anchor) => anchor.textNodeId === text.sourceAnchor!.textNodeId)

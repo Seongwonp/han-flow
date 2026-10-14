@@ -91,6 +91,11 @@ button { font: inherit; }
 .viewer-editable-text:hover { background: rgba(51,94,234,.06); }
 .viewer-editable-text:focus { background: rgba(51,94,234,.08); box-shadow: 0 0 0 1px rgba(51,94,234,.35); }
 .viewer-editing-host .viewer-editable-text::selection { color: inherit; background: rgba(51,94,234,.32); }
+.viewer-header .viewer-editable-text, .viewer-footer .viewer-editable-text { pointer-events: auto; }
+.viewer-table-caret { position: absolute; left: -16px; width: 12px; z-index: 2; }
+.viewer-table-caret-before { top: 0; }
+.viewer-table-caret-after { bottom: 0; }
+.viewer-table-caret .viewer-editable-text { display: block; min-height: 1.2em; white-space: nowrap; border-left: 2px solid rgba(51,94,234,.35); }
 .viewer-table { max-width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0; }
 .viewer-table td { vertical-align: middle; overflow-wrap: anywhere; }
 .viewer-selectable-table-cell { cursor: cell; outline: 1px dashed rgba(51,94,234,.38); outline-offset: -2px; }

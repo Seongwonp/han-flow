@@ -4,7 +4,8 @@
 원본 JSON은 [`editing_coverage_2026-09-29.json`](editing_coverage_2026-09-29.json)(기준선),
 [`editing_coverage_2026-09-29-after.json`](editing_coverage_2026-09-29-after.json)(아래 "개선 후")와
 [`editing_coverage_2026-10-06.json`](editing_coverage_2026-10-06.json)(아래 "2026-10-06 빈 문단")과
-[`editing_coverage_2026-10-07.json`](editing_coverage_2026-10-07.json)(아래 "2026-10-07 개체가 든 문단의 문단 구조", 가장 최근 측정)에 있습니다.
+[`editing_coverage_2026-10-07.json`](editing_coverage_2026-10-07.json)(아래 "2026-10-07 개체가 든 문단의 문단 구조")과
+[`editing_coverage_2026-10-14.json`](editing_coverage_2026-10-14.json)(아래 "2026-10-14 표 앞·뒤·각주·머리말 글자", 가장 최근 측정)에 있습니다.
 같은 날 앞선 "셀 모양" 측정은 그 변경을 담은 commit의 같은 파일에 있습니다.
 다시 재려면 `npm run corpus:editing-coverage -- --output <file>`를 실행합니다(약 6초).
 
@@ -23,6 +24,9 @@
   `planSplitParagraph`(Enter)도 plan을 만들면 편집 가능입니다. capability는 열었는데 코어가 거부하면
   `paragraphStructureMismatch`로 따로 셉니다(UI가 Enter를 받고 오류로 끝나는 경우).
 - **표 셀 편집 가능**: 셀에 직접 속한 `hp:t`가 하나 이상이고 모두 textEditable.
+- **표 앞·뒤 caret**(2026-10-14 추가): 표만 든 본문 문단의 합성 caret(`#hp:p:N:table-before|after`) 수(`tableCaretAnchors`)와,
+  그 caret에서 capability의 `text`가 열리고 첫 입력 dry-run이 통과한 수(`tableCaretEditable`). caret이 편집 가능한 표만 든 문단은
+  `noTextParagraphsEditable`에 들고 문단 모양 사유는 `capability: TABLE_PARAGRAPH`다(글자를 넣은 뒤 연다).
 - **글자 가중**: 편집 가능 run의 공백 아닌 글자 / 전체 공백 아닌 글자.
 - 보고서에는 개수와 고정 사유 code만 들어가고 본문·경로는 들어가지 않습니다(probe test가 확인).
 
@@ -38,6 +42,8 @@
 | 외부 한/글 26종 · 2026-10-06 셀 모양 | 371 | 95.7% | 89.8% (333) | 92.8% | 78.2% (290) | 79.1% (314/397) | 49/66 (74.2%) | 13/19 |
 | 합성 8종 · 2026-10-06 빈 문단 | 19,575 | 100% | 99.9% | 99.98% | 99.9% | 99.9% (19,556/19,583) | 29/29 | 5/7 |
 | 외부 한/글 26종 · 2026-10-06 빈 문단 | 371 | 95.7% | 89.8% (333) | 92.8% | 78.2% (290) | 90.2% (358/397) | 66/66 (100%) | 13/19 |
+| 합성 10종 · 2026-10-14 | 19,612 | 100% | 99.97% (19,607) | 99.99% | 99.9% (19,590) | 99.85% (19,596/19,626) | 47/47 | 7/10 |
+| 외부 한/글 28종 · 2026-10-14 | 373 | 96.3% | 96.0% (358) | 94.3% | 77.7% (290) | 95.0% (379/399) | 66/66 (100%) | 13/19 |
 
 합성 합계는 `large-progressive`(19,511 run)가 지배하므로 판단 근거로는 외부 묶음을 씁니다.
 외부 26종은 hwpxlib·python-hwpx의 기능별 소형 표본(총 1,147자)이라 실제 공문서 분포와는 다릅니다.
@@ -76,7 +82,7 @@
   기준이라 그대로입니다. 빈 문단에서는 글자 모양·문단 나눔/병합·셀 style·표 구조를 열지 않고(첫 입력 뒤 일반 anchor로 바뀝니다),
   빈 셀은 text 전용 셀로 둡니다.
 - **범위 밖**: 표만 든 문단(합성 8종의 `NO_TEXT_NODE` 8, 외부의 표 옆 `<hp:t/>` 문단 `NOT_LISTED_PARAGRAPH_HAS_TABLE` 19)은
-  표와 caret 위치를 함께 다뤄야 해서 이번에 열지 않았습니다.
+  표와 caret 위치를 함께 다뤄야 해서 이번에 열지 않았습니다(2026-10-14에 열었습니다. 아래 절 참고).
 
 ## 2026-10-07 — 원본 개체 자리 표시(편집 수치 불변)
 
@@ -101,6 +107,23 @@
 - **외부 28종**: 같은 날 OLE·양식 단추 표본(`ext-hwpxlib-ole`·`ext-hwpxlib-buttons`, hwpxlib Apache-2.0)을 개체 검증용으로
   반입한 뒤 다시 쟀습니다(JSON은 이 측정). 두 문서는 빈 `<hp:t/>` run 하나씩만 있어 runs 371 → 373, text 편집 333 → 335,
   문단 397 → 399, 문단 style 358 → 360이고 글자 style은 290 그대로(78.2% → 77.7%), 문단 구조 270/399·불일치 0입니다.
+
+## 2026-10-14 — 표 앞·뒤·각주·머리말 글자
+
+- **표만 든 문단**: 문단 자식이 `hp:run`·`hp:linesegarray`뿐이고 run 자식이 표 하나·`hp:t`·구역/쪽 정의(`hp:secPr`·`hp:ctrl`·run에 바로 둔
+  머리말·꼬리말 등)뿐인 `hs:sec` 직속 문단(`src/core/editing/table_caret.ts`, 각주·미주·필드가 든 `hp:ctrl`은 제외)은 표 앞·뒤에 글자가
+  없는 쪽마다 합성 caret을 받습니다. 첫 입력은 표 run 안 표 바로 앞·뒤에 `hp:t`를 넣습니다(한/글이 구역 첫 문단 글자를 구역 정의·단 정의
+  뒤에 두는 것과 같은 위치). 이미 있는 표 옆 `<hp:t/>`·글자는 일반 anchor로 엽니다. 외부 표 옆 `<hp:t/>` 19 run(`NOT_LISTED_PARAGRAPH_HAS_TABLE`)이
+  모두 입력을 받고, 표 앞·뒤 caret은 합성 20/20·외부 19/19입니다. 문단 나눔·병합·글자 모양은 `capability: TABLE_PARAGRAPH`로 막고(표와 같은
+  run이라 코어도 `복합 run`으로 거부합니다) 문단 모양은 글자가 있는 쪽에서 엽니다.
+- **각주·미주 본문**: decoder가 구역 끝 목록 문단에 section 안 `hp:t` 순번 anchor를 붙이고(글상자·메모 안 각주는 계속 읽기 전용) capability가
+  `NOTE_TEXT`로 엽니다. 외부 `footnotes-endnotes`·`memos`의 각주·미주 글자 2 run(`DECODER_SKIPS_FOOTNOTE_ENDNOTE`)이 편집 가능해졌습니다.
+- **머리말·꼬리말**: 글자만 든 문단을 `HEADER_FOOTER_TEXT`로 엽니다(그림·표가 든 문단은 `NOT_LISTED_HEADER_FOOTER_PARAGRAPH_HAS_*`).
+  외부 머리말·꼬리말 2 run과 빈 꼬리말 문단 1개(`EMPTY_PARAGRAPH: NOT_LISTED_HEADER_FOOTER`)가 열렸고, 합성은 17 run 가운데 14입니다.
+  각주·미주·머리말·꼬리말은 글자 입력·삭제·치환만 하고 글자·문단 모양·문단 구조는 `capability: SUBLIST_TEXT`로 막습니다.
+- **수치(외부 28종)**: text 편집 335 → 358(89.8% → 96.0%), 글자 가중 92.8% → 94.3%, anchor 95.7% → 96.3%, 문단 모양 360 → 379(90.2% → 95.0%),
+  글자 칸 없는 문단 44/46 → 45/46(남은 1개는 decoder가 읽지 않는 글상자 문단). 글자 모양 290·표 셀 66/66·표 구조 13/19·문단 구조 270/399(불일치 0)는
+  그대로입니다. 남은 text 거부는 decoder 범위 밖의 글상자 11 run·필드 2 run·혼합 inline 1 run과 그림이 든 문단 1 run입니다.
 
 ## 외부 fixture category별 (기준선)
 

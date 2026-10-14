@@ -112,12 +112,17 @@ export function restoreParagraphEditorSelection(
   selection: EditorSelection
 ): boolean {
   const surfaces = [...host.querySelectorAll<HTMLElement>(`[${SOURCE_NODE_ATTRIBUTE}]`)]
-  const anchorSurface = surfaces.find(
-    (surface) => surface.dataset.sourceTextNodeId === selection.anchorTextNodeId
-  )
-  const focusSurface = surfaces.find(
-    (surface) => surface.dataset.sourceTextNodeId === selection.focusTextNodeId
-  )
+  // 머리말·꼬리말은 쪽마다 같은 anchor의 입력 칸이 있다. 지금 focus가 있는 쪽(없으면 문서 순서 첫 칸)의 것을 쓴다.
+  const active = globalThis.document.activeElement
+  const activePage = active?.closest?.('[data-page-index]')
+  const surfaceFor = (textNodeId: string) => {
+    const matches = surfaces.filter((surface) => surface.dataset.sourceTextNodeId === textNodeId)
+    return matches.find((surface) => surface === active) ??
+      matches.find((surface) => Boolean(activePage?.contains(surface))) ??
+      matches[0]
+  }
+  const anchorSurface = surfaceFor(selection.anchorTextNodeId)
+  const focusSurface = surfaceFor(selection.focusTextNodeId)
   const nativeSelection = globalThis.getSelection()
   if (!anchorSurface || !focusSurface || !nativeSelection) return false
   if (

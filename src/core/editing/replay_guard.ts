@@ -1,4 +1,5 @@
 import type { HwpxSourcePackage } from '../parser/source_package'
+import { parseEmptyParagraphAnchorId, parseTableCaretAnchorId } from './empty_paragraph_anchor'
 import { paragraphStructureViolation } from './paragraph_structure'
 import { sourceParagraphStructureAccess } from './paragraph_patch'
 import { parseSourceTree, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
@@ -23,6 +24,11 @@ import type { EditCommand, EditTransaction } from './transaction'
  *   정수, SHA-256은 소문자 hex 64자, 조각은 `[offset, 지울 길이, 넣을 원문]` 배열, 교체 뒤 locator는 문자열)부터 본다. 그래서 이 command는 transaction의
  *   유일한 command여야 한다(planner의 표 transaction은 command 하나다). 이전 형식 `replace-table-fragment`는 복구 기록
  *   version 1과, version 1 기록을 복구해 이어 쓴 기록에서 읽는다.
+ * - 글자 command(`replace-text`): 대상은 그 command section의 `hp:t` anchor(`#hp:t:N`), 빈 문단 합성 anchor(`#hp:p:N:empty`),
+ *   표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`) 가운데 하나여야 하고, 범위는 0 이상 정수(`from <= to`), 입력은 문자열이다.
+ *   inverse 전용 option(`restoreSelfClosingTag`·`insertSource`·`removeCreatedText`)은 live 편집의 forward command에 없으므로
+ *   받지 않는다. 각주·미주·머리말·꼬리말 글자도 같은 `#hp:t:N` anchor라 같은 규칙을 탄다. 대상 anchor가 실제로 있는지는 적용할 때
+ *   편집 코어가 다시 본다.
  */
 
 /** 편집 엔진이 forward transaction에 넣는 command 종류. */
@@ -130,6 +136,38 @@ function assertTableFragmentPatchShape(command: Extract<EditCommand, { type: 'pa
   }
 }
 
+const INVERSE_ONLY_TEXT_OPTIONS = ['restoreSelfClosingTag', 'insertSource', 'removeCreatedText'] as const
+
+function isTextAnchorOf(sectionPath: string, textNodeId: string): boolean {
+  const prefix = `${sectionPath}#hp:t:`
+  if (textNodeId.startsWith(prefix)) {
+    const ordinal = Number(textNodeId.slice(prefix.length))
+    return Number.isSafeInteger(ordinal) && ordinal >= 0 && `${prefix}${ordinal}` === textNodeId
+  }
+  const synthetic = parseEmptyParagraphAnchorId(textNodeId) ?? parseTableCaretAnchorId(textNodeId)
+  return synthetic?.sectionPath === sectionPath
+}
+
+function assertTextCommandShape(command: Extract<EditCommand, { type: 'replace-text' }>): void {
+  const value = command as unknown as Record<string, unknown>
+  if (
+    typeof value['sectionPath'] !== 'string' ||
+    !/^Contents\/section\d+\.xml$/.test(value['sectionPath']) ||
+    typeof value['textNodeId'] !== 'string' ||
+    !isTextAnchorOf(value['sectionPath'], value['textNodeId']) ||
+    !Number.isSafeInteger(value['from']) ||
+    !Number.isSafeInteger(value['to']) ||
+    (value['from'] as number) < 0 ||
+    (value['to'] as number) < (value['from'] as number) ||
+    typeof value['insert'] !== 'string'
+  ) {
+    throw new HwpxEditConflictError('복구 기록의 글자 command 형식이 올바르지 않습니다.')
+  }
+  if (INVERSE_ONLY_TEXT_OPTIONS.some((key) => value[key] !== undefined)) {
+    throw new HwpxEditConflictError('복구 기록의 글자 command에 실행 취소 전용 option이 있습니다.')
+  }
+}
+
 /**
  * 복구 기록의 transaction 하나를 replay해도 되는지 확인한다. 통과하지 못하면 HwpxEditConflictError를 던지고,
  * replay는 그 기록 전체를 실패(격리)로 처리한다. 적용 때 하는 검사(expected fragment 일치, selection, revision)는 그대로 돈다.
@@ -140,7 +178,9 @@ export function assertReplayableTransaction(transaction: EditTransaction, source
     if (!FORWARD_EDIT_COMMAND_TYPES.has(command.type)) {
       throw new HwpxEditConflictError(`복구 기록에 편집이 만들지 않는 command(${String(command.type)})가 있습니다.`)
     }
-    if (command.type === 'replace-paragraph-fragment') {
+    if (command.type === 'replace-text') {
+      assertTextCommandShape(command)
+    } else if (command.type === 'replace-paragraph-fragment') {
       assertParagraphReplacement(command.replacementFragment)
     } else if (command.type === 'replace-table-fragment') {
       assertTableReplacement(command.expectedFragment, command.replacementFragment)

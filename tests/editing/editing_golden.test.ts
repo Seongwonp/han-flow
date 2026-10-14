@@ -114,7 +114,7 @@ describe('편집 command golden 회귀', () => {
     return { record: `${modified.join(',')} ${sha256(...parts)}${selection}`, next: back.package }
   }
 
-  test('golden 기록이 38종 fixture와 4개 family를 덮는다', () => {
+  test('golden 기록이 38종 fixture와 모든 family(text·style·paragraph·table·표 앞뒤 caret·각주/머리말 글자)를 덮는다', () => {
     expect(openedFixtures.length).toBe(38)
     if (!UPDATE) for (const family of FAMILIES) expect(Object.keys(stored[family]).length).toBe(openedFixtures.length)
   })

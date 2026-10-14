@@ -1,0 +1,94 @@
+{
+ "baseline": {
+  "section0.xml 0 before insert": "Contents/section0.xml 70cf388c1342081cfcaaaa970db3663b69d52f61af0c106ed0afb51dcccd7103",
+  "section0.xml 0 after insert": "Contents/section0.xml 93cfc70ec6dccebabf098cd58949e6d0ce57d0d24ab6737ae89731da67a94813"
+ },
+ "cell-continuation": {
+  "section0.xml 0 before insert": "Contents/section0.xml 9cff54d2607583aa3638920297bf3db602fee5c2783b33233ca123865acbca48",
+  "section0.xml 0 after insert": "Contents/section0.xml 204103079e9e274f833cb827fc3b93a59226129534db6c2123556110be92c2c9",
+  "section0.xml 17 before insert": "Contents/section0.xml f2405efc362036fd582ff1a287c2577a5272f3e89466def3994634badf9ebf72",
+  "section0.xml 17 after insert": "Contents/section0.xml 83b39416471be5e7e8ede46dbfe372c10e6a05dcb785661fbcb5db4038075de1"
+ },
+ "images-rowspan": {
+  "section0.xml 1 before insert": "Contents/section0.xml 3c8e03b21cae1c379bebc83ee2df65229eeb2e3b23d4e70ab9ca99acfc3b80e1",
+  "section0.xml 1 after insert": "Contents/section0.xml be19c3946c2e29845344f698fdd77602623af27ecaa2eab69945a5ae99793cb8"
+ },
+ "table-columns": {
+  "section0.xml 0 before insert": "Contents/section0.xml 0fa627058213eb479e7c8b0989392abdaac811e54475de8a366113d8163293e4",
+  "section0.xml 0 after insert": "Contents/section0.xml 6a5b6fa410cdd0036b1146a5452868197b9a33290d0dc1abc52cc1b8fe821185"
+ },
+ "list-markers": {},
+ "multi-column-layout": {},
+ "round-trip-sentinels": {
+  "section0.xml 0 before insert": "Contents/section0.xml 8ea32826169aaf8670dbc3f53138470cc418a7db5cfc91b36aa0353aaae7d14c",
+  "section0.xml 0 after insert": "Contents/section0.xml 12c94ca7f620ce25a2671f9bb0db204f2e9dee8bcb3f27b0445948ffe3cba8c4"
+ },
+ "report-toc": {
+  "section0.xml 3 before insert": "Contents/section0.xml d9590e8d887725270a1eea43a7df4d58d381bef8be4e7d020bf437842d174c9e",
+  "section0.xml 3 after insert": "Contents/section0.xml 41bd01aa3f0d68962389492944e3e84faf76a1b5939836d0d2339685b6c406fa",
+  "section0.xml 7 before insert": "Contents/section0.xml 1ee93e44e6be61c85f86b31c599b2c057e11b1345ac2a8f6621848f90a623f3a",
+  "section0.xml 7 after insert": "Contents/section0.xml 3fabb9a220aa8d6f318e7ba3e36ad7b0ed701bcc0e1dbbb63893f6569bb8196d"
+ },
+ "hanging-indent": {
+  "section0.xml 2 before insert": "Contents/section0.xml c0b9636418677bbfdd11a5881207cff81f5242938d4cec28e41bcf00e9845f61",
+  "section0.xml 2 after insert": "Contents/section0.xml 4c03eefac5248455bd8b28082cb267a6a2bf658698a9c139229597e0b8616608"
+ },
+ "large-progressive": {
+  "section0.xml 0 before insert": "Contents/section0.xml 70cf388c1342081cfcaaaa970db3663b69d52f61af0c106ed0afb51dcccd7103",
+  "section0.xml 0 after insert": "Contents/section0.xml 93cfc70ec6dccebabf098cd58949e6d0ce57d0d24ab6737ae89731da67a94813"
+ },
+ "ext-hwpxlib-table-scores": {
+  "section0.xml 6 before insert": "Contents/section0.xml 12deed9520d770cd31fcfbcacae990d8f90a41029261ffc7f300fa0594523bd6"
+ },
+ "ext-hwpxlib-para-heads": {},
+ "ext-hwpxlib-rect-in-para": {},
+ "ext-hwpxlib-multi-column": {},
+ "ext-hwpxlib-header-footer": {},
+ "ext-hwpxlib-page-functions": {},
+ "ext-hwpxlib-sample1": {},
+ "ext-hwpxlib-simple-table": {
+  "section0.xml 0 before insert": "Contents/section0.xml 47d581abe3d620300fe6d2382220fa0312539793dbeb747364a032381c5a7840"
+ },
+ "ext-hwpxlib-equation": {},
+ "ext-hwpxlib-picture": {},
+ "ext-hwpxlib-change-track": {},
+ "ext-hwpxlib-dutmal": {},
+ "ext-hwpxlib-page-size": {},
+ "ext-pyhwpx-table-page-break-cell": {
+  "section0.xml 2 before insert": "Contents/section0.xml 47636be78dfdd75deadac89fe73e7f1322c0010902b105c38943df648d16c19e"
+ },
+ "ext-pyhwpx-merge-3x3": {
+  "section0.xml 0 before insert": "Contents/section0.xml 292fb87c33f01e85f7b745ff6f4c31d0c823c6739c53c5a2aadca6bde582148d"
+ },
+ "ext-pyhwpx-merge-2x2": {
+  "section0.xml 0 before insert": "Contents/section0.xml 02bf8e1714a2febf8e9c79d8bbe50c71c018020d790762924f91ab850a40ff2b"
+ },
+ "ext-pyhwpx-list-bullet-l2": {},
+ "ext-pyhwpx-list-number-l3": {},
+ "ext-pyhwpx-memos": {},
+ "ext-pyhwpx-foot-endnotes": {},
+ "ext-pyhwpx-text-box-fields": {
+  "section0.xml 3 before insert": "Contents/section0.xml eeec75c77e38362b3827867038da5843fdba83e0b6b2a65177302dae722638dc"
+ },
+ "ext-pyhwpx-cell-border-vmerge": {
+  "section0.xml 0 before insert": "Contents/section0.xml 2733110c4228a2d91683c1342e834fababfa040d4d7d27711bff307876ed99bc"
+ },
+ "ext-pyhwpx-fill-image": {
+  "section0.xml 0 before insert": "Contents/section0.xml 60a192a7fa755ab1c93330f59baa7f17d2502c777b4a7f1da9204a87de3ab066"
+ },
+ "ext-pyhwpx-form-fields-spanning": {
+  "section0.xml 4 before insert": "Contents/section0.xml c94873572517fa381f0269c13cbe3a7b76ebcb354fc210f3c6adcf9ae862c442",
+  "section0.xml 7 before insert": "Contents/section0.xml c3dc8ea58a34746ffccfb7e243b056c6ee11561234ee80eba5675067d64b9c1d"
+ },
+ "ext-pyhwpx-auto-grow-cell": {
+  "section0.xml 2 before insert": "Contents/section0.xml cdef499162a43e9b19e00a8dde65b8ae19ba904be94866624962ade49b79acda"
+ },
+ "ext-pyhwpx-paragraph-margins": {
+  "section0.xml 2 before insert": "Contents/section0.xml 52f6bce898d0619b09ef772e4a063408ba8b18a0ad682c4c5740eafa2f319287",
+  "section0.xml 8 before insert": "Contents/section0.xml 4172bba040578e4f6659dfe09f6676fdfdb4750a23626b5ca9e0d6f4d732c3db",
+  "section0.xml 14 before insert": "Contents/section0.xml ced376a0cc58eaf270eb0b160a2b456a31063bb121b379b23e6eeb305bd2546c",
+  "section0.xml 20 before insert": "Contents/section0.xml 8503d3310b582d731ba280745d7271f69b995910399a5464523e0e0c28de28ec"
+ },
+ "ext-hwpxlib-ole": {},
+ "ext-hwpxlib-buttons": {}
+}

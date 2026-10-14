@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### HWPX 편집 범위 확장
+
+- 표만 든 본문 문단(`hp:run > hp:tbl`)에 표 앞·뒤 합성 caret(`#hp:p:N:table-before|after`)을 열어, 첫 입력이 표 run 안 표 바로 앞·뒤에 `hp:t`를 만들고(실행 취소는 원래 bytes 복원) 표 뒤 빈 `<hp:t/>`·표와 같은 문단의 기존 글자도 입력·삭제할 수 있게 함. Enter·경계 병합·글자 모양은 `TABLE_PARAGRAPH` 이유로 막고(문단 모양은 글자를 넣은 뒤 허용), 표 앞·뒤 글자는 서로 다른 범위로 둠. 편집 화면은 빈 caret을 표 왼쪽의 흐름 밖 입력 칸으로 그려 쪽 배치를 바꾸지 않고, 쪽을 넘는 표 조각에는 표 앞 글자를 첫 조각에만·표 뒤 글자를 마지막 조각에만 둠
+- 구역 끝 각주·미주 목록의 본문 문단과 머리말·꼬리말의 글자만 든 문단에 편집 anchor·입력 칸을 열어 글자 입력·삭제·치환을 지원(번호 `hp:autoNum`·본문 위치 control·머리말 정의는 byte 그대로, 문단 나눔·병합·글자/문단 모양은 `SUBLIST_TEXT`로 막음). 머리말·꼬리말은 같은 것을 쓰는 모든 쪽에 projection 뒤 함께 반영하고, selection 복원은 마지막으로 focus를 받은 쪽의 입력 칸에만 넘김. 표·그림이 든 머리말 문단과 글상자·메모 안 글은 계속 읽기 전용
+- 같은 문단 여러 run 범위 치환이 문서 순서로 사이에 있는 각주 본문·표 셀 `hp:t`를 함께 지우던 잠재 결함을 같은 문단 글자만 고치도록 수정하고, 머리말 문단 안 여러 run 범위를 문단 범위로 오인해 거부하던 판정을 바로잡음
+- 복구 기록 형식을 version 3으로 올림(표 앞·뒤 합성 anchor). version 1·2 기록도 읽어 replay하되 그 기록에 표 앞·뒤 anchor가 있으면 격리하고, version 2까지만 아는 앱은 version 3 기록을 손대지 않음. replay 검사가 글자 command의 대상 anchor 형식·범위와 실행 취소 전용 option을 확인
+- 편집 golden에 표 앞·뒤 caret(`table-caret.json`)·각주/머리말 글자(`sublist.json`) family를 더하고(기존 4개 family 기록 불변), 편집 범위 합성 fixture(`createEditScopeHwpx`)로 표 앞 글자·각주 본문·머리말 입력→실행 취소·다시 실행→Save As→재열기 E2E를 verify:matrix에 추가. `corpus:editing-coverage`에 표 앞·뒤 caret 지표를 더해 외부 28종 text 편집 89.8%→96.0%, 문단 모양 90.2%→95.0%
+
 ### Sprint 0 재현성과 P0 방어
 
 - ZIP entry 압축 해제를 선언 크기 기준으로 스트리밍 중 차단하고, 크기와 무관하게 모든 HWPX 디코딩을 decoder worker로 옮겨 요청(첫 section·background 전체)마다 heap 한도·wall-clock timeout·구조화된 오류 code 적용

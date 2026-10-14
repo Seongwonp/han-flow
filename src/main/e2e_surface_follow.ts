@@ -8,8 +8,8 @@ export interface ProbeSurface {
 /**
  * 편집 E2E probe가 입력한 surface를 projection 뒤에 다시 찾는다.
  *
- * 글자 칸 없는 빈 문단의 합성 anchor(`#hp:p:N:empty`)는 첫 입력이 `hp:t`를 만들면 사라지고, 편집 코어가
- * selection을 새 `#hp:t:M` anchor로 옮긴다(`src/core/editing/empty_paragraph_anchor.ts`). 이때 같은 id로만
+ * 글자 칸 없는 빈 문단의 합성 anchor(`#hp:p:N:empty`)와 표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`)는
+ * 첫 입력이 `hp:t`를 만들면 사라지고, 편집 코어가 selection을 새 `#hp:t:M` anchor로 옮긴다(`src/core/editing/empty_paragraph_anchor.ts`). 이때 같은 id로만
  * 찾으면 영원히 찾지 못하므로, 같은 section의 `hp:t` surface 가운데 기대한 글자를 담고 현재 selection(caret)을
  * 가진 surface를 고른다. caret이 새 anchor에 없으면 renderer의 selection 복원이 틀린 것이므로 찾지 않는다.
  *
@@ -23,7 +23,8 @@ export function findProjectedSurface<T extends ProbeSurface>(
 ): T | undefined {
   const exact = surfaces.find((surface) => surface.dataset.sourceTextNodeId === anchorId)
   if (exact) return exact.textContent === expectedText ? exact : undefined
-  const emptyAnchor = /^(.*)#hp:p:(0|[1-9]\d*):empty$/.exec(anchorId)
+  // 빈 문단(`:empty`)·표 앞뒤(`:table-before`·`:table-after`) 합성 anchor 모두 첫 입력 뒤 새 `#hp:t:M`이 된다.
+  const emptyAnchor = /^(.*)#hp:p:(0|[1-9]\d*):(?:empty|table-before|table-after)$/.exec(anchorId)
   if (!emptyAnchor || selectionNode === null || selectionNode === undefined) return undefined
   const textPrefix = emptyAnchor[1] + '#hp:t:'
   return surfaces.find((surface) =>

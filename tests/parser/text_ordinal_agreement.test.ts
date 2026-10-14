@@ -3,10 +3,11 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   listHwpxEmptyParagraphAnchors,
+  listHwpxTableCaretAnchors,
   listHwpxTextAnchors,
   listHwpxTextOrdinals
 } from '../../src/core/editing/text_patch'
-import { emptyParagraphAnchorId } from '../../src/core/editing/empty_paragraph_anchor'
+import { emptyParagraphAnchorId, isTableCaretAnchorId } from '../../src/core/editing/empty_paragraph_anchor'
 import { findSourceElements, parseSourceTree } from '../../src/core/editing/source_tree'
 import { decodeViewerDocument, emptyParagraphCaret } from '../../src/core/parser/viewer_decoder'
 import { ViewerParagraph } from '../../src/core/document/viewer_document'
@@ -176,6 +177,44 @@ describe('hp:t ordinal 교차 parser 일치', () => {
     },
     60_000
   )
+
+  let tableCaretAnchors = 0
+  test.each(openedFixtures.map((fixture) => [fixture.id, fixture] as const))(
+    '%s: 표 앞·뒤 합성 anchor 목록·글자 모양이 decoder와 편집 코어에서 같다',
+    async (_id, fixture) => {
+      const sourcePackage = await HwpxSourcePackage.open(fixturePath(fixture))
+      const index = await sourcePackage.index()
+      const document = await decodeViewerDocument(sourcePackage)
+      const decoded = new Map<string, string>()
+      const visit = (paragraph: ViewerParagraph): void => {
+        for (const item of paragraph.content) {
+          if (item.type === 'text' && isTableCaretAnchorId(item.sourceAnchor?.textNodeId)) {
+            decoded.set(item.sourceAnchor!.textNodeId, item.charStyleId)
+          }
+          if (item.type === 'table') item.rows.forEach((row) => row.cells.forEach((cell) => cell.paragraphs.forEach(visit)))
+        }
+      }
+      document.sections.forEach((section) => {
+        section.blocks.forEach(visit)
+        ;[...section.headers, ...section.footers].forEach((control) => control.paragraphs.forEach(visit))
+      })
+      const core = new Map<string, string>()
+      for (const sectionPath of index.sectionPaths) {
+        const anchors = listHwpxTableCaretAnchors(sourcePackage, sectionPath)
+        anchors.forEach((anchor) => core.set(anchor.textNodeId, anchor.charStyleId))
+        const textIds = new Set(listHwpxTextAnchors(sourcePackage, sectionPath).map((anchor) => anchor.textNodeId))
+        expect(anchors.some((anchor) => textIds.has(anchor.textNodeId))).toBe(false)
+      }
+      // 표 앞·뒤 caret은 구역 본문 문단에만 있고(표 셀·머리말 안 표 문단에는 없다) 두 쪽 목록이 정확히 같다.
+      expect(decoded).toEqual(core)
+      tableCaretAnchors += decoded.size
+    },
+    60_000
+  )
+
+  test('공개 corpus에 표 앞·뒤 합성 anchor가 있다', () => {
+    expect(tableCaretAnchors).toBeGreaterThan(10)
+  })
 
   test('공개 corpus에 decoder가 내놓는 빈 문단 합성 anchor가 있다', () => {
     expect(emptyParagraphAnchors).toBeGreaterThan(40)

@@ -536,3 +536,46 @@ export function createFootnoteFlowHwpx(directory: string, fileName = 'han-flow-f
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 편집 범위 확장 검증용 합성 문서(직접 작성, 개인정보 없음). A4 쪽 2쪽.
+ * - 구역 첫 문단: 구역 정의와 머리말·꼬리말(양쪽 쪽에 같은 것이 나온다)
+ * - 각주가 붙는 문단(각주 본문 앞에 자동 번호 control), 표만 든 문단(표 앞·뒤 글자 없음), 표 뒤 빈 `<hp:t/>` 문단
+ * - 둘째 쪽(pageBreak) 문단에 미주
+ * verify:matrix가 표 앞 글자·각주 본문·머리말에 입력하고 저장한 뒤 다시 열어 글자를 확인한다.
+ */
+export const EDIT_SCOPE_TEXTS = {
+  header: '편집 범위 머리말',
+  footer: '편집 범위 꼬리말',
+  title: '편집 범위 시험 문서',
+  footnoteLead: '각주가 붙는 문장',
+  footnoteBody: '각주 본문',
+  tableCell: (row: number, column: number) => `표 ${row + 1}-${column + 1}`,
+  afterTable: '표 뒤 문단',
+  secondPage: '둘째 쪽 문단',
+  endnoteBody: '미주 본문'
+} as const
+
+const scopeNote = (name: 'hp:footNote' | 'hp:endNote', number: number, text: string) =>
+  `<hp:ctrl><${name} number="${number}" suffixChar="41" instId="${name === 'hp:footNote' ? 9100 : 9200}"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="${number}" numType="${name === 'hp:footNote' ? 'FOOTNOTE' : 'ENDNOTE'}"><hp:autoNumFormat type="DIGIT" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>${text}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></${name}></hp:ctrl>`
+const scopeTable = (id: string) => `<hp:tbl id="${id}" rowCnt="1" colCnt="2" pageBreak="CELL" repeatHeader="0"><hp:sz width="40000" height="2000"/><hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:tr>${[0, 1].map((column) => `<hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="20000" height="2000"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.tableCell(0, column)}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:tc>`).join('')}</hp:tr></hp:tbl>`
+const scopeLine = (top: number, height = 1000) => `<hp:linesegarray><hp:lineseg vertpos="${top}" vertsize="${height}"/></hp:linesegarray>`
+const editScopeSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}<hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.header}</hp:t></hp:run></hp:p></hp:subList></hp:header></hp:ctrl><hp:ctrl><hp:footer id="2" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="BOTTOM"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.footer}</hp:t></hp:run></hp:p></hp:subList></hp:footer></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.title}</hp:t></hp:run>${scopeLine(0)}</hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.footnoteLead}</hp:t>${scopeNote('hp:footNote', 1, EDIT_SCOPE_TEXTS.footnoteBody)}<hp:t/></hp:run>${scopeLine(1600)}</hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${scopeTable('scope-table')}</hp:run>${scopeLine(3200, 2000)}</hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${scopeTable('scope-table-trailing')}<hp:t/></hp:run>${scopeLine(5400, 2000)}</hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.afterTable}</hp:t></hp:run>${scopeLine(7600)}</hp:p>
+  <hp:p paraPrIDRef="0" pageBreak="1"><hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.secondPage}</hp:t>${scopeNote('hp:endNote', 1, EDIT_SCOPE_TEXTS.endnoteBody)}<hp:t/></hp:run>${scopeLine(0)}</hp:p>
+</hs:sec>`
+
+export function createEditScopeHwpx(directory: string, fileName = 'han-flow-edit-scope.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(editScopeSection))
+  zip.writeZip(path)
+  return path
+}

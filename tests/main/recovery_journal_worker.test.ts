@@ -24,6 +24,7 @@ import {
   fingerprintFile,
   readRecoveryJournal,
   RECOVERY_JOURNAL_FILE,
+  RECOVERY_JOURNAL_VERSION,
   scanRecoveryJournals,
   verifyRecoverySource
 } from '../../src/main/recovery_journal'
@@ -332,7 +333,7 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     expect(editing.currentSessionId(41)).toBeUndefined()
   }, 90_000)
 
-  test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 version 2 header로 쓴다', async () => {
+  test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 지금 형식(version 3) header로 쓴다', async () => {
     const source = join(directory, 'legacy-table.hwpx')
     copyFileSync(createLargeTableHwpx(directory, { rows: 5, columns: 2, fileName: 'legacy-table-generated.hwpx' }), source)
     const original = await HwpxSourcePackage.open(source)
@@ -363,7 +364,7 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     await editing.redo(51, recovered.sessionId)
     await raw.flushJournal(51)
     const rewritten = decodeRecoveryJournal(readFileSync(join(recoveryDirectory, recovered.sessionId, RECOVERY_JOURNAL_FILE)))
-    expect(rewritten.header).toMatchObject({ version: 2, appVersion: 'test', sourcePath: header.sourcePath, sourceSha256: header.sourceSha256 })
+    expect(rewritten.header).toMatchObject({ version: RECOVERY_JOURNAL_VERSION, appVersion: 'test', sourcePath: header.sourcePath, sourceSha256: header.sourceSha256 })
     expect(rewritten.entries.map((item) => item.type)).toEqual(['commit', 'undo', 'redo'])
     expect(rewritten.entries[0]).toMatchObject({ transaction: { commands: [{ type: 'replace-table-fragment' }] } })
     raw.stop(51)

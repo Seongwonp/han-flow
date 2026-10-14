@@ -25,6 +25,18 @@ describe('편집 E2E probe의 projection 뒤 surface 추적', () => {
     expect(findProjectedSurface(after, `${section}#hp:t:3`, '보도자료시험', caretNode)?.name).toBe('a')
   })
 
+  test('표 앞·뒤 합성 anchor도 첫 입력 뒤 caret을 가진 새 hp:t anchor로 따라간다', () => {
+    for (const side of ['before', 'after']) {
+      const anchorId = `${section}#hp:p:2:table-${side}`
+      expect(findProjectedSurface([surface('caret', anchorId, '')], anchorId, '표 설명', caretNode)).toBeUndefined()
+      const projected = [
+        surface('cell', `${section}#hp:t:4`, '표 설명'),
+        surface('edited', `${section}#hp:t:5`, '표 설명', true)
+      ]
+      expect(findProjectedSurface(projected, anchorId, '표 설명', caretNode)?.name).toBe('edited')
+    }
+  })
+
   test('빈 문단 합성 anchor는 첫 입력 뒤 caret을 가진 새 hp:t anchor로 따라간다(D04 모양)', () => {
     const anchorId = `${section}#hp:p:13:empty`
     // projection 전: 합성 anchor가 아직 비어 있다.

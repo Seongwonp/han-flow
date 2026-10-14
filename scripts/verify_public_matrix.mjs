@@ -107,6 +107,14 @@ const LAYOUT_STRESS_FIXTURES = [
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
 ]
 
+// 편집 범위 확장 E2E(createEditScopeHwpx, 2쪽): 표만 든 문단의 표 앞 caret, 구역 끝 목록의 각주 본문, 두 쪽에 같은 머리말에
+// 입력·실행 취소·다시 실행한 뒤 Save As하고 저장본을 다시 열어 글자를 확인한다. 머리말은 두 쪽의 입력 칸이 함께 바뀌어야 한다.
+const EDIT_SCOPE_CASES = [
+  { target: 'table-caret', text: '표앞글' },
+  { target: 'note', text: '각주고침' },
+  { target: 'header', text: '머리말고침' }
+]
+
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
@@ -201,6 +209,20 @@ try {
   }
   const stress = (id) => stressResults.find(({ fixtureId }) => fixtureId === id)
 
+  const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
+  const editScopeResults = []
+  for (const scope of EDIT_SCOPE_CASES) {
+    editScopeResults.push({
+      target: scope.target,
+      ...await verify(editScopePath, 500, false, {
+        HAN_FLOW_VERIFY_EDIT_TEXT: scope.text,
+        HAN_FLOW_VERIFY_EDIT_TARGET: scope.target,
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+      })
+    })
+  }
+  const editScope = (target) => editScopeResults.find((result) => result.target === target)
+
   const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
   const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
   const multiColumn = results.find(({ fixtureId }) => fixtureId === 'multi-column-layout')
@@ -225,6 +247,17 @@ try {
     stress('footnote-flow')?.totalPages === 3 && stress('footnote-flow')?.placeholderCounts?.footnote === 40
       ? undefined
       : `footnote-flow: 각주 40개 목록이 3쪽으로 나뉘지 않음(${stress('footnote-flow')?.totalPages}쪽)`,
+    ...editScopeResults.filter(({ passed }) => !passed).map(({ target, failures: scopeFailures }) => `edit-scope ${target}: ${scopeFailures.join(', ')}`),
+    ...editScopeResults.filter(({ saveAs }) => !saveAs?.reopenedTextPresent).map(({ target }) => `edit-scope ${target}: 저장본에 입력 글자가 없음`),
+    editScope('table-caret')?.editingProbe?.anchorTransition?.from?.endsWith(':table-before')
+      ? undefined
+      : 'edit-scope table-caret: 표 앞 합성 caret에서 새 hp:t로 옮겨 가는 편집이 검증되지 않음',
+    editScope('header')?.editingProbe?.decorationInstances >= 2
+      ? undefined
+      : `edit-scope header: 두 쪽의 머리말 입력 칸이 함께 바뀌지 않음(${editScope('header')?.editingProbe?.decorationInstances})`,
+    editScope('note')?.saveAs?.reopenedPlaceholderCounts?.footnote === 1 && editScope('note')?.saveAs?.reopenedPlaceholderCounts?.endnote === 1
+      ? undefined
+      : 'edit-scope note: 저장본의 각주·미주 번호 표시가 1개씩이 아님',
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -261,6 +294,15 @@ try {
     })),
     layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts }) => ({
       fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts
+    })),
+    editScope: editScopeResults.map(({ target, passed, totalPages, editingProbe, saveAs }) => ({
+      target,
+      passed,
+      totalPages,
+      anchorTransition: editingProbe?.anchorTransition,
+      decorationInstances: editingProbe?.decorationInstances,
+      reopenedTextPresent: saveAs?.reopenedTextPresent,
+      reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
     })),
     crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },
     dirtyDiscard: { passed: dirtyDiscardResult.passed, journalsAfterQuit: dirtyDiscardResult.journalsAfterQuit, ...dirtyDiscardResult.dirtyClose },

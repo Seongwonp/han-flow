@@ -13,6 +13,7 @@ import {
   decodeRecoveryJournal,
   encodeRecoveryRecord,
   RECOVERY_JOURNAL_LIMITS,
+  RECOVERY_JOURNAL_VERSION,
   RecoveryJournalWriter,
   type RecoveryJournalEntry
 } from '../../src/main/recovery_journal'
@@ -123,7 +124,7 @@ describe('큰 표 편집의 복구 기록', () => {
     // 기록 파일 bytes로 되읽어 새 엔진에서 replay하면 live 편집과 같은 section bytes·revision이다.
     const bytes = Buffer.concat([encodeRecoveryRecord(header), ...entries.map(encodeRecoveryRecord)])
     const decoded = decodeRecoveryJournal(bytes)
-    expect(decoded.header.version).toBe(2)
+    expect(decoded.header.version).toBe(RECOVERY_JOURNAL_VERSION)
     const replayed = (await EditingEngine.open(source)).engine
     await replayed.replay(decoded.entries)
     expect(replayed.status()).toMatchObject({ revision: engine.status().revision, isDirty: true })
