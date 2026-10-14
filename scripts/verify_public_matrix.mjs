@@ -107,13 +107,18 @@ const LAYOUT_STRESS_FIXTURES = [
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
 ]
 
-// 편집 범위 확장 E2E(createEditScopeHwpx, 2쪽): 표만 든 문단의 표 앞 caret, 구역 끝 목록의 각주 본문, 두 쪽에 같은 머리말에
-// 입력·실행 취소·다시 실행한 뒤 Save As하고 저장본을 다시 열어 글자를 확인한다. 머리말은 두 쪽의 입력 칸이 함께 바뀌어야 한다.
+// 편집 범위 확장 E2E(createEditScopeHwpx, 2쪽): 표만 든 문단의 표 앞·뒤 caret, 구역 끝 목록의 각주·미주 본문, 두 쪽에 같은
+// 머리말·꼬리말에 입력·실행 취소·다시 실행한 뒤 Save As하고 저장본을 다시 열어 글자를 확인한다. 머리말·꼬리말은 두 쪽의 입력 칸이
+// 함께 바뀌고 저장본의 두 쪽 모두에 글자가 있어야 하며, 칸 끝·처음의 방향 키가 다른 쪽의 같은 칸으로 caret을 옮기면 안 된다.
 const EDIT_SCOPE_CASES = [
   { target: 'table-caret', text: '표앞글' },
+  { target: 'table-caret-after', text: '표뒤글' },
   { target: 'note', text: '각주고침' },
-  { target: 'header', text: '머리말고침' }
+  { target: 'endnote', text: '미주고침' },
+  { target: 'header', text: '머리말고침' },
+  { target: 'footer', text: '꼬리말고침' }
 ]
+const DECORATION_TARGETS = ['header', 'footer']
 
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
@@ -252,12 +257,24 @@ try {
     editScope('table-caret')?.editingProbe?.anchorTransition?.from?.endsWith(':table-before')
       ? undefined
       : 'edit-scope table-caret: 표 앞 합성 caret에서 새 hp:t로 옮겨 가는 편집이 검증되지 않음',
-    editScope('header')?.editingProbe?.decorationInstances >= 2
+    editScope('table-caret-after')?.editingProbe?.anchorTransition?.from?.endsWith(':table-after')
       ? undefined
-      : `edit-scope header: 두 쪽의 머리말 입력 칸이 함께 바뀌지 않음(${editScope('header')?.editingProbe?.decorationInstances})`,
-    editScope('note')?.saveAs?.reopenedPlaceholderCounts?.footnote === 1 && editScope('note')?.saveAs?.reopenedPlaceholderCounts?.endnote === 1
-      ? undefined
-      : 'edit-scope note: 저장본의 각주·미주 번호 표시가 1개씩이 아님',
+      : 'edit-scope table-caret-after: 표 뒤 합성 caret에서 새 hp:t로 옮겨 가는 편집이 검증되지 않음',
+    ...DECORATION_TARGETS.flatMap((target) => [
+      editScope(target)?.editingProbe?.decorationInstances >= 2
+        ? undefined
+        : `edit-scope ${target}: 두 쪽의 입력 칸이 함께 바뀌지 않음(${editScope(target)?.editingProbe?.decorationInstances})`,
+      editScope(target)?.saveAs?.reopenedTextPageCount === 2
+        ? undefined
+        : `edit-scope ${target}: 저장본의 두 쪽 모두에 입력 글자가 있지 않음(${editScope(target)?.saveAs?.reopenedTextPageCount}쪽)`,
+      editScope(target)?.editingProbe?.navigationProbe?.passed
+        ? undefined
+        : `edit-scope ${target}: 칸 끝·처음의 방향 키 검증 실패`
+    ]),
+    ...['note', 'endnote'].map((target) =>
+      editScope(target)?.saveAs?.reopenedPlaceholderCounts?.footnote === 1 && editScope(target)?.saveAs?.reopenedPlaceholderCounts?.endnote === 1
+        ? undefined
+        : `edit-scope ${target}: 저장본의 각주·미주 번호 표시가 1개씩이 아님`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -301,7 +318,10 @@ try {
       totalPages,
       anchorTransition: editingProbe?.anchorTransition,
       decorationInstances: editingProbe?.decorationInstances,
+      navigation: editingProbe?.navigationProbe,
+      noteKind: editingProbe?.noteKind,
       reopenedTextPresent: saveAs?.reopenedTextPresent,
+      reopenedTextPageCount: saveAs?.reopenedTextPageCount,
       reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
     })),
     crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },

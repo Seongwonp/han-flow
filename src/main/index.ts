@@ -324,14 +324,26 @@ function captureVisualState(window: BrowserWindow): void {
   const editLatencyKeystrokes = Number(testValue('HAN_FLOW_VISUAL_EDIT_LATENCY') ?? 0)
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
-  // 문단 편집 E2E 대상: table-caret(표 앞·뒤 글자), note(각주·미주 본문), header·footer(머리말·꼬리말). 없으면 본문 문단·표 셀.
+  // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말).
+  // 없으면 본문 문단·표 셀.
   const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
   const editTargetLabels: Record<string, string> = {
     'table-caret': 'HWPX 표 앞뒤 글자 편집',
+    'table-caret-after': 'HWPX 표 앞뒤 글자 편집',
     note: 'HWPX 각주·미주 편집',
+    endnote: 'HWPX 각주·미주 편집',
     header: 'HWPX 머리말 편집',
     footer: 'HWPX 꼬리말 편집'
   }
+  // 같은 입력 칸 이름을 쓰는 대상 가운데 고를 칸(표 앞·뒤 caret, 각주·미주 목록)의 조상 selector.
+  const editTargetScopes: Record<string, string> = {
+    'table-caret': '.viewer-table-caret-before',
+    'table-caret-after': '.viewer-table-caret-after',
+    note: '[data-note-kind="footnote"]',
+    endnote: '[data-note-kind="endnote"]'
+  }
+  const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
+  const decorationTarget = editTarget === 'header' || editTarget === 'footer'
   const editSurfaceLabel = (editTarget && editTargetLabels[editTarget]) ??
     (editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')
   const editSurfaceKind = editTarget && editTargetLabels[editTarget] ? editTarget : editCellEnabled ? 'table-cell' : 'paragraph'
@@ -724,8 +736,9 @@ function captureVisualState(window: BrowserWindow): void {
         }
         ${RIBBON_E2E_HELPERS}
         const surfaceLabel = ${JSON.stringify(editSurfaceLabel)}
+        const targetScope = ${JSON.stringify(editTargetScope ?? null)}
         const readySurface = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
-          .find((element) => element.dataset.inputReady === 'true')
+          .find((element) => element.dataset.inputReady === 'true' && (!targetScope || element.closest(targetScope)))
         let target = readySurface()
         if (!target) {
           const existingSurface = document.querySelector('[aria-label="' + surfaceLabel + '"]')
@@ -850,6 +863,55 @@ function captureVisualState(window: BrowserWindow): void {
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
         })
         const redoSelection = getSelection(redoneTarget)
+        // 머리말·꼬리말 끝·처음에서 방향 키: 쪽마다 되풀이된 같은 칸으로 건너가지 않고 그 쪽 칸 안에 caret이 남아야 한다.
+        // 다른 쪽 칸으로 옮겨 가면 caret이 같은 글자의 처음(또는 끝)으로 튄다. 마지막 쪽(둘째 쪽) 칸에서 누른다.
+        let navigationProbe
+        if (${decorationTarget}) {
+          setPhase('decoration-navigation')
+          const settle = async () => {
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+            await new Promise((resolve) => setTimeout(resolve, 200))
+          }
+          const instances = () => surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
+          const press = async (index, key, offset, shiftKey) => {
+            // 그 쪽 칸을 눌러 caret을 둔 것처럼 focus·selection 뒤 mouseup으로 selection을 알리고, 반영된 뒤 키를 누른다.
+            instances()[index].focus()
+            await settle()
+            const element = instances()[index]
+            setSelection(element, offset, offset)
+            element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+            await settle()
+            const before = getSelection(element)
+            element.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true }))
+            // 실제 키보드처럼 keydown이 바꾼 selection이 화면에 반영된 뒤 keyup을 보낸다(keyup은 화면 selection을 다시 읽는다).
+            await settle()
+            ;(instances()[index] ?? element).dispatchEvent(new KeyboardEvent('keyup', { key, shiftKey, bubbles: true, cancelable: true }))
+            await settle()
+            const surface = instances()[index]
+            const after = surface && surface.contains(window.getSelection()?.focusNode) ? getSelection(surface) : undefined
+            const at = (value) => value?.anchorOffset === offset && value?.focusOffset === offset
+            return {
+              key: (shiftKey ? 'Shift+' : '') + key,
+              instance: index,
+              before,
+              after,
+              stayed: at(before) && at(after) && document.activeElement === surface
+            }
+          }
+          const last = instances().length - 1
+          const checks = [
+            await press(last, 'ArrowRight', expected.length, false),
+            await press(last, 'ArrowLeft', 0, false),
+            await press(last, 'ArrowRight', expected.length, true),
+            await press(0, 'ArrowRight', expected.length, false)
+          ]
+          navigationProbe = {
+            instances: last + 1,
+            checks,
+            passed: last >= 1 && checks.every((check) => check.stayed) &&
+              instances().every((element) => element.textContent === expected)
+          }
+        }
         let styleProbe
         if (${styleProbeEnabled}) {
           setPhase('style-buttons')
@@ -1010,6 +1072,8 @@ function captureVisualState(window: BrowserWindow): void {
           decorationSynced: surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
             .every((element) => element.textContent === expected),
           anchorTransition: anchorId === editedAnchorId ? undefined : { from: anchorId, to: editedAnchorId },
+          noteKind: editedTarget.closest('[data-note-kind]')?.dataset.noteKind,
+          navigationProbe,
           activeTabAfterStart,
           originalLength: original.length,
           editedMatches: edited === expected,
@@ -1241,6 +1305,10 @@ function captureVisualState(window: BrowserWindow): void {
     if (expectedText) {
       visualState.expectedTextPresent = await window.webContents.executeJavaScript(
         `(document.querySelector('.viewer-pages')?.innerText ?? '').includes(${JSON.stringify(expectedText)})`
+      )
+      // 글자가 든 쪽 수(머리말·꼬리말 편집은 그 머리말을 쓰는 모든 쪽에 있어야 한다).
+      visualState.expectedTextPageCount = await window.webContents.executeJavaScript(
+        `Array.from(document.querySelectorAll('.viewer-page')).filter((page) => (page.innerText ?? '').includes(${JSON.stringify(expectedText)})).length`
       )
     }
     visualState.windowTitle = window.getTitle()

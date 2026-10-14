@@ -542,7 +542,7 @@ export function createFootnoteFlowHwpx(directory: string, fileName = 'han-flow-f
  * - 구역 첫 문단: 구역 정의와 머리말·꼬리말(양쪽 쪽에 같은 것이 나온다)
  * - 각주가 붙는 문단(각주 본문 앞에 자동 번호 control), 표만 든 문단(표 앞·뒤 글자 없음), 표 뒤 빈 `<hp:t/>` 문단
  * - 둘째 쪽(pageBreak) 문단에 미주
- * verify:matrix가 표 앞 글자·각주 본문·머리말에 입력하고 저장한 뒤 다시 열어 글자를 확인한다.
+ * verify:matrix가 표 앞·뒤 글자·각주·미주 본문·머리말·꼬리말에 입력하고 저장한 뒤 다시 열어 글자를 확인한다.
  */
 export const EDIT_SCOPE_TEXTS = {
   header: '편집 범위 머리말',

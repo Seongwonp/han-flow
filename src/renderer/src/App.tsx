@@ -46,6 +46,7 @@ import {
 } from './editing_error_status'
 import {
   moveParagraphEditorSelection,
+  paragraphEditorInstance,
   paragraphEditorRangeScope,
   paragraphEditorSurfaces,
   readParagraphEditorSelection,
@@ -619,7 +620,8 @@ export function ParagraphView({
           currentAnchor.textNodeId,
           direction,
           modeled,
-          false
+          false,
+          paragraphEditorInstance(paragraphRef.current)
         )
         if (moved) activeEditing.onEditorSelectionChange(moved)
       }}
@@ -643,7 +645,8 @@ export function ParagraphView({
           currentAnchor.textNodeId,
           direction,
           modeled,
-          true
+          true,
+          paragraphEditorInstance(paragraphRef.current)
         )
         if (moved) activeEditing.onEditorSelectionChange(moved)
       }}

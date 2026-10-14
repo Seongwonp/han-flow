@@ -9,6 +9,7 @@
 - 같은 문단 여러 run 범위 치환이 문서 순서로 사이에 있는 각주 본문·표 셀 `hp:t`를 함께 지우던 잠재 결함을 같은 문단 글자만 고치도록 수정하고, 머리말 문단 안 여러 run 범위를 문단 범위로 오인해 거부하던 판정을 바로잡음
 - 복구 기록 형식을 version 3으로 올림(표 앞·뒤 합성 anchor). version 1·2 기록도 읽어 replay하되 그 기록에 표 앞·뒤 anchor가 있으면 격리하고, version 2까지만 아는 앱은 version 3 기록을 손대지 않음. replay 검사가 글자 command의 대상 anchor 형식·범위와 실행 취소 전용 option을 확인
 - 편집 golden에 표 앞·뒤 caret(`table-caret.json`)·각주/머리말 글자(`sublist.json`) family를 더하고(기존 4개 family 기록 불변), 편집 범위 합성 fixture(`createEditScopeHwpx`)로 표 앞 글자·각주 본문·머리말 입력→실행 취소·다시 실행→Save As→재열기 E2E를 verify:matrix에 추가. `corpus:editing-coverage`에 표 앞·뒤 caret 지표를 더해 외부 28종 text 편집 89.8%→96.0%, 문단 모양 90.2%→95.0%
+- 쪽마다 되풀이되는 머리말·꼬리말 칸 끝에서 방향 키·Shift+방향 키가 다음 쪽의 같은 칸으로 넘어가 caret이 같은 글자 처음으로 튀던 결함을 수정(이동 후보에서 되풀이된 anchor를 지금 쪽 것 하나로 줄이고 칸 밖으로는 멈춤). verify:matrix에 표 뒤 caret·미주 본문·꼬리말 입력→Save As→재열기(꼬리말은 두 쪽 모두)와 머리말·꼬리말 방향 키 검사를 더하고, 심볼릭 링크 권한이 없는 Windows에서 복구 기록 링크 격리 test가 junction으로 같은 성질을 확인하게 함. 문서에 96.0%는 글자 run 편집 coverage이며 외부 머리말·꼬리말·각주·미주 표본이 각 2 run뿐임을 밝힘
 
 ### Sprint 0 재현성과 P0 방어
 

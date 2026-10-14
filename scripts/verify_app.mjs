@@ -14,7 +14,9 @@ const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
-// 편집 대상: table-caret(표 앞·뒤 글자), note(각주·미주 본문), header·footer(머리말·꼬리말). 없으면 본문 문단(또는 표 셀).
+// 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말).
+// 없으면 본문 문단(또는 표 셀).
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer']
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
@@ -43,8 +45,8 @@ if (forcedArchitecture && !['arm64', 'x86_64'].includes(forcedArchitecture)) {
   process.exit(1)
 }
 
-if (editTarget && !['table-caret', 'note', 'header', 'footer'].includes(editTarget)) {
-  console.error('HAN_FLOW_VERIFY_EDIT_TARGET는 table-caret·note·header·footer 가운데 하나여야 합니다.')
+if (editTarget && !EDIT_TARGETS.includes(editTarget)) {
+  console.error(`HAN_FLOW_VERIFY_EDIT_TARGET는 ${EDIT_TARGETS.join('·')} 가운데 하나여야 합니다.`)
   process.exit(1)
 }
 
@@ -305,6 +307,12 @@ try {
     (editTarget === 'header' || editTarget === 'footer') && !state.editingProbe?.decorationSynced
       ? '머리말·꼬리말 편집이 같은 머리말을 쓰는 모든 쪽에 반영되지 않음'
       : undefined,
+    (editTarget === 'header' || editTarget === 'footer') && !state.editingProbe?.navigationProbe?.passed
+      ? `머리말·꼬리말 끝·처음의 방향 키가 그 쪽 칸 밖으로 caret을 옮김(${JSON.stringify(state.editingProbe?.navigationProbe)})`
+      : undefined,
+    (editTarget === 'note' || editTarget === 'endnote') && state.editingProbe?.noteKind !== (editTarget === 'note' ? 'footnote' : 'endnote')
+      ? `각주·미주 종류 불일치: ${state.editingProbe?.noteKind}`
+      : undefined,
     editTarget && editSave && savedState && !savedState.expectedTextPresent ? '저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,
     styleProbe && !state.editingProbe?.styleProbe ? 'style 편집 probe 결과가 없음' : undefined,
@@ -399,6 +407,7 @@ try {
       reopenedOverflowPages: savedState?.overflowPages,
       reopenedTableTopologies: savedState?.tableTopologies,
       reopenedTextPresent: editTarget ? savedState?.expectedTextPresent : undefined,
+      reopenedTextPageCount: editTarget ? savedState?.expectedTextPageCount : undefined,
       reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {

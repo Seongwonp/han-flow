@@ -2,11 +2,39 @@ import { EditorSelection } from '../../core/editing/selection'
 
 const SOURCE_NODE_ATTRIBUTE = 'data-source-text-node-id'
 const RANGE_SCOPE_ATTRIBUTE = 'data-editor-range-scope'
+const PAGE_INSTANCE_ATTRIBUTE = 'data-page-index'
 
 export interface ParagraphEditorSurface {
   textNodeId: string
   textLength: number
   rangeScope: string
+  /** surface가 그려진 쪽(`data-page-index`). 머리말·꼬리말은 같은 anchor의 surface가 쪽마다 하나씩 있다. */
+  instance?: string
+}
+
+/**
+ * 이동 후보에서 쪽마다 되풀이되는 같은 anchor를 하나로 줄인다. 되풀이된 anchor는 지금 쪽(`currentInstance`)의 것을,
+ * 그 쪽에 없으면 문서 순서 첫 것을 남긴다. 한 번만 그려지는 본문 surface는 쪽이 달라도 그대로 둔다.
+ */
+function activeInstanceSurfaces(
+  surfaces: readonly ParagraphEditorSurface[],
+  currentInstance: string | undefined
+): ParagraphEditorSurface[] {
+  const counts = new Map<string, number>()
+  surfaces.forEach((surface) => counts.set(surface.textNodeId, (counts.get(surface.textNodeId) ?? 0) + 1))
+  const kept = new Set<string>()
+  const preferred = new Set(
+    currentInstance === undefined
+      ? []
+      : surfaces.filter((surface) => surface.instance === currentInstance).map((surface) => surface.textNodeId)
+  )
+  return surfaces.filter((surface) => {
+    if (counts.get(surface.textNodeId) === 1) return true
+    if (kept.has(surface.textNodeId)) return false
+    if (preferred.has(surface.textNodeId) && surface.instance !== currentInstance) return false
+    kept.add(surface.textNodeId)
+    return true
+  })
 }
 
 export function paragraphEditorRangeScope(
@@ -24,11 +52,14 @@ export function moveParagraphEditorSelection(
   currentTextNodeId: string,
   direction: 'previous' | 'next',
   selection: EditorSelection,
-  extend: boolean
+  extend: boolean,
+  currentInstance?: string
 ): EditorSelection | undefined {
-  const current = surfaces.find((surface) => surface.textNodeId === currentTextNodeId)
+  // 머리말·꼬리말 끝에서 다음 쪽에 되풀이된 같은 머리말로 넘어가지 않게, 지금 쪽 머리말 하나만 이동 후보로 둔다.
+  const candidates = activeInstanceSurfaces(surfaces, currentInstance)
+  const current = candidates.find((surface) => surface.textNodeId === currentTextNodeId)
   if (!current) return undefined
-  const scoped = surfaces.filter((surface) => surface.rangeScope === current.rangeScope)
+  const scoped = candidates.filter((surface) => surface.rangeScope === current.rangeScope)
   const currentIndex = scoped.findIndex((surface) => surface.textNodeId === currentTextNodeId)
   const target = scoped[currentIndex + (direction === 'previous' ? -1 : 1)]
   if (!target) return undefined
@@ -141,8 +172,14 @@ export function paragraphEditorSurfaces(host: HTMLElement): ParagraphEditorSurfa
     .flatMap((surface) => {
       const textNodeId = surface.dataset.sourceTextNodeId
       const rangeScope = surface.dataset.editorRangeScope
+      const instance = paragraphEditorInstance(surface)
       return textNodeId && rangeScope
-        ? [{ textNodeId, rangeScope, textLength: surface.textContent?.length ?? 0 }]
+        ? [{ textNodeId, rangeScope, textLength: surface.textContent?.length ?? 0, ...(instance === undefined ? {} : { instance }) }]
         : []
     })
+}
+
+/** surface(또는 그 문단)가 그려진 쪽 번호. 쪽 밖(측정 DOM 등)이면 없다. */
+export function paragraphEditorInstance(element: Element | null | undefined): string | undefined {
+  return element?.closest<HTMLElement>(`[${PAGE_INSTANCE_ATTRIBUTE}]`)?.dataset.pageIndex
 }

@@ -123,7 +123,7 @@ Mac·로컬 기기 측정은 별도 절로 분리합니다. 날짜별 상세는 
 | Jest (`npm test -- --runInBand`) | 43 suites passed·2 skipped, 292 passed·12 skipped |
 | parser probe (`npm run test:probe`) | 18 passed |
 | 공개 HWPX corpus (`npm run verify:corpus`) | 39/39 (synthetic 11종 + 한/글 저장본 external 28종, invalid-package 1종 의도적 거부 포함) |
-| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 28종 373 run: anchor 96.3%·text 편집 96.0%·글자 가중 94.3%·표 셀 66/66·글자 모양 77.7%·문단 모양 95.0%·문단 나눔 270/399(capability·코어 불일치 0)·글자 칸 없는 문단 45/46·표 앞·뒤 caret 19/19 (2026-10-07 89.8%·92.8%·90.2%·44/46, 2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
+| 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 28종 373 run: anchor 96.3%·text 편집 96.0%(글자 run 입력·삭제 coverage이지 일반 편집 완성도가 아님. 머리말·꼬리말과 각주·미주 표본은 각 2 run뿐)·글자 가중 94.3%·표 셀 66/66·글자 모양 77.7%·문단 모양 95.0%·문단 나눔 270/399(capability·코어 불일치 0)·글자 칸 없는 문단 45/46·표 앞·뒤 caret 19/19 (2026-10-07 89.8%·92.8%·90.2%·44/46, 2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
 | 공개 fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
 | Windows CI (`windows-latest`) | test·typecheck·probe·corpus·build·package, 패키지 앱 HWPX·HWP matrix·PDF E2E, 비서명 NSIS artifact 통과 |
 | Linux CI (`ubuntu-latest`, xvfb) | 같은 자동 관문과 `package:linux`, 패키지 앱 HWPX·HWP matrix·PDF E2E, unpacked artifact 통과 |
@@ -230,7 +230,7 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   표 뒤 글자를 한 범위로 선택하지 않습니다. 표가 둘 이상이거나 그림·각주·필드가 함께 든 문단, 표 셀·머리말 안 표 문단은 대상이 아닙니다.
 - 구역 끝에 모아 보여 주는 각주·미주 본문과 머리말·꼬리말의 글자만 든 문단은 글자 입력·삭제·치환(문단 하나 안 여러 run 포함)을
   지원합니다. 각주 번호(`hp:autoNum`)와 본문 위치·머리말 정의는 저장할 때 byte 그대로이고, 머리말·꼬리말은 같은 머리말을 쓰는 모든 쪽에
-  함께 반영됩니다. 문단 나눔·병합과 글자·문단 모양은 막고, 표·그림이 든 머리말 문단과 글상자·메모 안 글은 읽기 전용입니다. 각주를 새로
+  함께 반영되고, 칸 끝·처음의 방향 키(Shift 선택 포함)는 다른 쪽에 되풀이된 같은 칸으로 넘어가지 않고 지금 쪽 칸 안에서 멈춥니다. 문단 나눔·병합과 글자·문단 모양은 막고, 표·그림이 든 머리말 문단과 글상자·메모 안 글은 읽기 전용입니다. 각주를 새로
   만들거나 지우는 기능은 없습니다.
 - HWPX 동일 너비 `NEWSPAPER/LEFT` 다단은 공통 간격을 제외한 단 폭으로 다시 실측하고,
   `columnBreak`와 높이에 따라 왼쪽 단→오른쪽 단→다음 페이지 순서로 표시합니다. `PARALLEL`,

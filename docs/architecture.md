@@ -651,6 +651,9 @@ fixture를 각각 격리 실행한다. 대형 문서는 전체 page count보다 
 작아야 통과하므로 50페이지 초과 virtualization 회귀도 함께 잡는다.
 matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 package도 포함한다.
 손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
+편집 범위 합성 fixture(`createEditScopeHwpx`, 2쪽)로는 표 앞·뒤 caret, 각주·미주 본문, 머리말·꼬리말에 각각 입력→실행 취소·다시 실행→
+Save As→재열기를 따로 실행한다. 머리말·꼬리말은 저장본의 두 쪽 모두에 글자가 있어야 하고, 칸 끝·처음의 방향 키(Shift 포함)가 다른 쪽의
+같은 칸으로 caret을 옮기지 않아야 한다.
 HWPX core와 production matrix, 고정 HWP matrix의 실행 대상은 상위 `fixture_catalog.json`에서
 동일한 fixture ID로 선택한다. 각 형식 manifest가 catalog와 어긋나면 GUI 실행 전에 실패한다.
 Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked/han-flow`, macOS는 `.app` 내부 실행 파일을

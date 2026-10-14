@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -20,6 +20,28 @@ import {
 
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e'
 const OTHER = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
+
+/**
+ * 폴더 링크를 만든다. 관리자 권한·개발자 모드가 없는 Windows는 심볼릭 링크를 만들 권한이 없어(EPERM·EACCES) 권한이 필요 없는
+ * junction으로 만든다. junction도 lstat에서 일반 폴더가 아닌 링크로 보이므로 같은 보안 성질(링크를 따라가지 않고 링크 자체를 격리)을
+ * 확인할 수 있다. junction마저 만들 수 없는 Windows 파일 시스템이면 false를 돌려준다. 다른 OS는 실패를 그대로 올린다.
+ */
+function linkDirectory(target: string, path: string): boolean {
+  try {
+    symlinkSync(target, path, 'dir')
+    return true
+  } catch (reason) {
+    const code = (reason as NodeJS.ErrnoException).code
+    if (process.platform !== 'win32' || (code !== 'EPERM' && code !== 'EACCES')) throw reason
+  }
+  try {
+    symlinkSync(target, path, 'junction')
+    return true
+  } catch (reason) {
+    console.warn(`이 Windows 환경은 심볼릭 링크와 junction을 모두 만들 수 없어 링크 폴더 격리 확인을 건너뜁니다: ${(reason as Error).message}`)
+    return false
+  }
+}
 
 function commit(revision: number, insert: string): RecoveryJournalEntry {
   const selection = {
@@ -217,18 +239,20 @@ describe('복구 기록 형식', () => {
     mkdirSync(join(root, future))
     writeFileSync(join(root, future, RECOVERY_JOURNAL_FILE), encodeRecoveryRecord({ ...header(), version: 9 }))
     mkdirSync(join(root, 'not-a-session'))
-    symlinkSync(join(root, SESSION), join(root, OTHER))
+    const linked = linkDirectory(join(root, SESSION), join(root, OTHER))
+    // 링크(Windows junction 포함)는 일반 폴더로 보이면 안 된다. 이 전제가 깨지면 아래 격리 확인이 의미를 잃는다.
+    if (linked) expect(lstatSync(join(root, OTHER)).isDirectory()).toBe(false)
 
     const scan = await scanRecoveryJournals(root)
     expect(scan.candidates.map((candidate) => candidate.sessionId)).toEqual([SESSION])
     expect(scan.candidates[0]).toMatchObject({ editCount: 1, lastChangeAt: commit(1, '가').at, tornTail: false })
     expect(scan.unsupported).toEqual([future])
     // 심볼릭 링크 session 폴더와 손상 기록은 실행하지 않고 격리한다.
-    expect(scan.quarantined).toHaveLength(2)
+    expect(scan.quarantined).toHaveLength(linked ? 2 : 1)
     const quarantined = readdirSync(root).filter((name) => name.startsWith('quarantine-'))
-    expect(quarantined).toHaveLength(2)
+    expect(quarantined).toHaveLength(linked ? 2 : 1)
     expect(quarantined.some((name) => name.includes(broken))).toBe(true)
-    expect(quarantined.some((name) => name.includes(OTHER))).toBe(true)
+    if (linked) expect(quarantined.some((name) => name.includes(OTHER))).toBe(true)
     // 링크를 따라가지 않고 링크 자체를 옮겼으므로 원래 기록은 그대로다.
     expect(readdirSync(join(root, SESSION))).toEqual([RECOVERY_JOURNAL_FILE])
     expect((await scanRecoveryJournals(root, new Set([SESSION]))).candidates).toEqual([])
