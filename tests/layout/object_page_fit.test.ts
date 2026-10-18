@@ -9,12 +9,16 @@ import { footnoteAreaHeight, sectionFootnoteSettings } from '../../src/core/layo
 import { paginateViewerDocument } from '../../src/core/layout/pagination'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { ObjectPlaceholderView } from '../../src/renderer/src/App'
+import { Content, ObjectPlaceholderView } from '../../src/renderer/src/App'
+import type { ViewerImage } from '../../src/core/document/viewer_document'
 import {
   createFootnoteFlowHwpx,
   createLongObjectHwpx,
+  createFloatingObjectHwpx,
+  createLongPictureHwpx,
   FOOTNOTE_FLOW_COUNT,
-  LONG_OBJECT_TEXTS
+  LONG_OBJECT_TEXTS,
+  LONG_PICTURE_SIZES
 } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('쪽보다 큰 자리 표시와 많은 각주', () => {
@@ -46,6 +50,44 @@ describe('쪽보다 큰 자리 표시와 많은 각주', () => {
     expect(markup).toContain(`data-object-fitted="${equation.fitted!.scale.toFixed(3)}"`)
     expect(markup).toContain('수식 (축소)')
     expect(markup).toContain('원본 높이가 쪽보다 커서 줄여 표시합니다.')
+  })
+
+  test('쪽 본문보다 높은 그림도 자리 표시와 같은 한도로 너비·높이를 같은 비율로 줄이고, 원본 위치 그림은 배치 상자도 줄인다', async () => {
+    const document = await decodeViewerDocument(await HwpxSourcePackage.open(createLongPictureHwpx(directory)))
+    const bodyHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
+    const limit = Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO)
+    const blocks = document.sections[0].blocks
+    const images = blocks.flatMap((block) => block.content).filter((item): item is ViewerImage => item.type === 'image')
+    expect(images).toHaveLength(2)
+    const [inline, positioned] = images
+    const inlineScale = limit / LONG_PICTURE_SIZES.inline.height
+    expect(inline.position).toBeUndefined()
+    expect(inline).toMatchObject({
+      width: Math.round(LONG_PICTURE_SIZES.inline.width * inlineScale),
+      height: limit,
+      fitted: { declared: LONG_PICTURE_SIZES.inline, scale: inlineScale }
+    })
+    // 가로세로 비율을 지킨다.
+    expect(inline.width! / inline.height!).toBeCloseTo(LONG_PICTURE_SIZES.inline.width / LONG_PICTURE_SIZES.inline.height, 3)
+    const positionedScale = limit / LONG_PICTURE_SIZES.positioned.height
+    expect(positioned).toMatchObject({
+      width: Math.round(LONG_PICTURE_SIZES.positioned.width * positionedScale),
+      height: limit,
+      fitted: { declared: LONG_PICTURE_SIZES.positioned, scale: positionedScale },
+      position: { width: Math.round(LONG_PICTURE_SIZES.positioned.width * positionedScale), height: limit }
+    })
+    // 줄 배치(lineseg)에 남은 원래 높이 대신 줄인 높이로 측정 전 쪽 나눔을 한다.
+    expect(Math.max(...blocks.map((block) => block.layoutHeight))).toBeLessThanOrEqual(bodyHeight)
+    expect(blocks[1].layoutHeight).toBe(limit)
+
+    const markup = renderToStaticMarkup(createElement(Content, { item: inline, document }))
+    expect(markup).toContain(`data-object-fitted="${inlineScale.toFixed(3)}"`)
+
+    // 한도 안의 그림·한도가 없는 문맥(머리말 등)은 그대로다.
+    const small = (await decodeViewerDocument(await HwpxSourcePackage.open(createFloatingObjectHwpx(directory))))
+      .sections[0].blocks.flatMap((block) => block.content).filter((item): item is ViewerImage => item.type === 'image')
+    expect(small.length).toBeGreaterThan(0)
+    expect(small.every((image) => image.fitted === undefined)).toBe(true)
   })
 
   test('각주 40개는 번호 표시가 놓인 쪽 아래에 놓이고 본문은 각주 영역만큼 줄어든다', async () => {

@@ -20,21 +20,21 @@ const candidate: RecoveryJournalCandidate = {
     sourceSha256: 'a'.repeat(64),
     startedAt: 1
   },
-  entries: [],
-  tornTail: false,
-  editCount: 7,
+  journalBytes: 3 * 1024 * 1024 + 512 * 1024,
   lastChangeAt: Date.UTC(2026, 9, 9, 3, 4, 5)
 }
 
 describe('복구 대화상자 문구', () => {
-  test('원본이 그대로면 [복구][버리기][나중에]와 마지막 변경 시각·편집 수를 보여 준다', () => {
+  test('원본이 그대로면 [복구][버리기][나중에]와 마지막 변경 시각·기록 크기를 보여 준다', () => {
     const dialog = recoveryOfferDialog(candidate, 'startup')
     expect(dialog.message).toBe('저장하지 않은 편집 내용이 있습니다. 복구하시겠습니까?')
     expect(dialog.buttons).toEqual(['복구', '버리기', '나중에'])
     expect(dialog.choices).toEqual(['recover', 'discard', 'later'])
     expect(dialog.choices[dialog.cancelId]).toBe('later')
     expect(dialog.detail).toContain('보고서.hwpx')
-    expect(dialog.detail).toContain('편집 7개')
+    // 편집 수는 전체 기록을 해석해야 알 수 있어 제안 단계에서는 기록 크기만 보여 준다(편집 수는 [복구] 뒤 상태 막대).
+    expect(dialog.detail).toContain('편집 기록 3.5 MiB')
+    expect(recoveryOfferDialog({ ...candidate, journalBytes: 300 }, 'startup').detail).toContain('편집 기록 1 KiB')
     expect(dialog.detail).toContain('마지막 변경: 2026')
     expect(recoveryOfferDialog(candidate, 'crash').message).toContain('편집 엔진이 예기치 않게 종료되었습니다.')
   })

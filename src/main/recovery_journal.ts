@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
-import { createReadStream } from 'fs'
-import { lstat, mkdir, open, readFile, readdir, rename, rm, stat, type FileHandle } from 'fs/promises'
-import { basename, dirname, join, resolve } from 'path'
+import { constants, createReadStream } from 'fs'
+import { lstat, mkdir, open, readdir, rename, rm, stat, type FileHandle } from 'fs/promises'
+import { basename, dirname, join, resolve, win32 } from 'path'
 import { isTableCaretAnchorId } from '../core/editing/empty_paragraph_anchor'
 import { FORWARD_EDIT_COMMAND_TYPES } from '../core/editing/replay_guard'
 import { MAX_TRANSACTION_COMMANDS, type EditTransaction } from '../core/editing/transaction'
@@ -26,6 +26,15 @@ import { crc32 } from '../core/parser/source_package'
  *     (각주·미주·머리말·꼬리말 글자 편집은 일반 `#hp:t:N` anchor라 형식이 같지만, 같은 때 바뀐 편집 범위를 이전 앱이 replay하지
  *     않도록 함께 올렸다.) version 1·2 기록도 그대로 읽어 replay하며, 그 기록에 표 앞·뒤 anchor가 있으면 구조 오류(격리)다.
  *     version 2까지만 아는 앱은 version 3 기록을 `unsupported-version`으로 보고 손대지 않는다.
+ *
+ * 읽는 곳
+ *   - main process(앱 시작·문서 열기·편집 엔진 종료 뒤 제안)는 첫 record(header)만 읽는다(`readRecoveryJournalHeader`).
+ *     header가 깨졌거나 크기 한도를 넘거나 링크면 그 자리에서 격리한다.
+ *   - 사용자가 [복구]를 고르면 main이 파일 bytes를 그대로 편집 worker에 넘기고, worker가 전체 record 길이·CRC·구조를 확인한 뒤
+ *     replay한다(`decodeRecoveryJournalFor`). 중간 record 손상은 그때 드러나며 replay 실패와 같이 격리한다.
+ *
+ * 보관 기한: 격리한 기록(`quarantine-*`), [나중에]로 남겨 둔 기록, 다른 형식 version 기록은 마지막으로 바뀐 뒤
+ * `RECOVERY_RETENTION_MS`(30일)가 지나면 앱 시작 뒤(창을 띄운 다음) 지운다(`pruneRecoveryJournals`).
  */
 
 export const RECOVERY_JOURNAL_FORMAT = 'han-flow-recovery-journal'
@@ -34,6 +43,13 @@ export const RECOVERY_JOURNAL_FILE = 'journal.hfj'
 export const RECOVERY_DIRECTORY_NAME = 'recovery'
 /** 빠르게 입력하는 동안 디스크에 내리는 최소 간격. 최악의 손실 구간은 이 간격 + fdatasync 시간이다. */
 export const RECOVERY_FLUSH_INTERVAL_MS = 500
+/**
+ * 남은 기록·격리 기록 보관 기한(30일). 마지막으로 바뀐 뒤 이 기간이 지난 기록은 앱 시작 뒤 지운다. 그동안 원본을 다시 열면
+ * 복구를 다시 묻고, 앱 시작 때마다도 묻는다. 기한은 기록 파일(격리 폴더는 격리한 시각)의 수정 시각으로 센다.
+ */
+export const RECOVERY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+/** header record를 찾으려고 기록 앞에서 읽는 최대 byte. header는 원본 경로 하나와 숫자 몇 개라 이 안에 든다. */
+export const RECOVERY_HEADER_READ_BYTES = 256 * 1024
 
 export interface RecoveryJournalLimits {
   /** 기록 파일 전체 byte 상한. 넘는 기록은 열지 않고 격리한다. 쓰는 쪽은 넘기 전에 기록을 멈춘다. */
@@ -329,6 +345,47 @@ export function decodeRecoveryJournal(
   return { header, entries, tornTail }
 }
 
+/**
+ * 기록 앞부분(첫 record를 담은 bytes)에서 header만 해석한다. 뒤 record는 읽지 않으므로 기록 크기와 무관하게 빠르다.
+ * header가 이 bytes 안에서 끝나지 않거나 깨졌으면 malformed, 다른 형식 version이면 unsupported-version.
+ */
+export function decodeRecoveryJournalHeader(
+  bytes: Buffer,
+  limits: RecoveryJournalLimits = RECOVERY_JOURNAL_LIMITS
+): RecoveryJournalHeader {
+  const first = readRecord(bytes, 0, limits)
+  if (!first) throw new RecoveryJournalError('malformed', '복구 기록 header를 읽을 수 없습니다.')
+  return validateHeader(first.value)
+}
+
+function sameHeader(left: RecoveryJournalHeader, right: RecoveryJournalHeader): boolean {
+  return (
+    left.format === right.format &&
+    left.version === right.version &&
+    left.appVersion === right.appVersion &&
+    left.sourcePath === right.sourcePath &&
+    left.sourceSize === right.sourceSize &&
+    left.sourceMtimeMs === right.sourceMtimeMs &&
+    left.sourceSha256 === right.sourceSha256 &&
+    left.startedAt === right.startedAt
+  )
+}
+
+/**
+ * 편집 worker에서 [복구]할 기록 전체를 해석한다. main이 제안할 때 읽은 header와 다르면(그 사이 파일이 바뀌었다) 손상으로 본다.
+ */
+export function decodeRecoveryJournalFor(
+  expected: RecoveryJournalHeader,
+  bytes: Buffer,
+  limits: RecoveryJournalLimits = RECOVERY_JOURNAL_LIMITS
+): DecodedRecoveryJournal {
+  const decoded = decodeRecoveryJournal(bytes, limits)
+  if (!sameHeader(decoded.header, expected)) {
+    throw new RecoveryJournalError('malformed', '복구 기록 header가 복구를 제안할 때와 다릅니다.')
+  }
+  return decoded
+}
+
 /** 파일의 크기·수정 시각·SHA-256. */
 export async function fingerprintFile(filePath: string): Promise<RecoverySourceFingerprint> {
   const before = await stat(filePath)
@@ -356,8 +413,34 @@ export function sameFingerprint(header: RecoveryJournalHeader, source: RecoveryS
 
 export type RecoverySourceState = 'match' | 'changed' | 'missing'
 
-/** 기록을 만든 원본이 그대로 있는지(크기·수정 시각·SHA-256). 일반 파일이 아니면 missing으로 본다. */
-export async function verifyRecoverySource(header: RecoveryJournalHeader): Promise<RecoverySourceState> {
+/**
+ * 원본 경로가 이 컴퓨터의 local 경로로 보이는지(파일 시스템에 손대지 않고 문자열만 본다). Windows에서는 드라이브 문자 경로
+ * (`C:\...`)만 받고 UNC(`\\server\share`)·장치 경로(`\\?\`, `\\.\`)·드라이브 상대 경로·대체 데이터 stream(`a.hwpx:x`)은
+ * 거부한다. 기록 파일은 앱 밖에서 바뀔 수 있으므로, 앱 시작 때 기록 header의 경로를 lstat·hash하기 전에 이것으로 걸러 원격
+ * 공유에 접속(자격 증명 전송)하지 않게 한다. 연결된 network drive 문자는 문자열로 구분할 수 없어 local로 본다.
+ * 다른 OS는 절대 경로면 받는다.
+ */
+export function isLocalRecoverySourcePath(sourcePath: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (typeof sourcePath !== 'string' || !sourcePath || sourcePath.includes('\0')) return false
+  if (platform !== 'win32') return sourcePath.startsWith('/')
+  if (!/^[A-Za-z]:\\/.test(sourcePath)) return false
+  if (sourcePath.indexOf(':', 2) >= 0) return false
+  return win32.normalize(sourcePath) === sourcePath
+}
+
+export interface VerifyRecoverySourceOptions {
+  /**
+   * 내용(SHA-256)까지 비교할지. 기본은 크기·수정 시각만 본다: 복구를 제안할 때는 hash하지 않고, 사용자가 [복구]를 고르면
+   * 편집 worker가 원본을 읽은 bytes 그대로 SHA-256을 계산해 header와 비교한다(`EditingEngine.open`).
+   */
+  hash?: boolean
+}
+
+/** 기록을 만든 원본이 그대로 있는지(크기·수정 시각, 옵션으로 SHA-256). 일반 파일이 아니면 missing으로 본다. */
+export async function verifyRecoverySource(
+  header: RecoveryJournalHeader,
+  options: VerifyRecoverySourceOptions = {}
+): Promise<RecoverySourceState> {
   let stats: Awaited<ReturnType<typeof lstat>>
   try {
     stats = await lstat(header.sourcePath)
@@ -366,6 +449,7 @@ export async function verifyRecoverySource(header: RecoveryJournalHeader): Promi
   }
   if (!stats.isFile()) return 'missing'
   if (stats.size !== header.sourceSize || stats.mtimeMs !== header.sourceMtimeMs) return 'changed'
+  if (!options.hash) return 'match'
   try {
     return sameFingerprint(header, await fingerprintFile(header.sourcePath)) ? 'match' : 'changed'
   } catch {
@@ -376,34 +460,21 @@ export async function verifyRecoverySource(header: RecoveryJournalHeader): Promi
 export interface RecoveryJournalCandidate {
   sessionId: string
   header: RecoveryJournalHeader
-  entries: RecoveryJournalEntry[]
-  tornTail: boolean
-  /** 편집(commit) 수 */
-  editCount: number
-  /** 마지막 record 시각(없으면 session 시작 시각) */
+  /** 기록 파일 byte 수 */
+  journalBytes: number
+  /**
+   * 기록 파일을 마지막으로 디스크에 내린 시각(수정 시각). writer가 record를 모아 내리므로 마지막 편집과는 최대 한 flush 간격
+   * 차이다. 편집 수·끊긴 꼬리 여부는 전체 기록을 해석해야 알 수 있어 [복구] 뒤 편집 worker가 알려 준다.
+   */
   lastChangeAt: number
 }
 
-function candidateOf(sessionId: string, decoded: DecodedRecoveryJournal): RecoveryJournalCandidate {
-  return {
-    sessionId,
-    header: decoded.header,
-    entries: decoded.entries,
-    tornTail: decoded.tornTail,
-    editCount: decoded.entries.filter((entry) => entry.type === 'commit').length,
-    lastChangeAt: decoded.entries.at(-1)?.at ?? decoded.header.startedAt
-  }
-}
-
-/**
- * session 하나의 기록을 읽는다. 폴더·파일이 링크이거나 일반 파일이 아니거나 한도를 넘거나 손상됐으면 RecoveryJournalError.
- * 기록이 없으면 undefined.
- */
-export async function readRecoveryJournal(
+/** 링크를 따라가지 않고 기록 파일을 연다. 폴더·파일이 링크이거나 일반 파일이 아니거나 한도를 넘으면 RecoveryJournalError. */
+async function openRecoveryJournalFile(
   root: string,
   sessionId: string,
-  limits: RecoveryJournalLimits = RECOVERY_JOURNAL_LIMITS
-): Promise<RecoveryJournalCandidate | undefined> {
+  limits: RecoveryJournalLimits
+): Promise<{ handle: FileHandle; size: number; mtimeMs: number } | undefined> {
   const directory = recoveryJournalDirectory(root, sessionId)
   const directoryStats = await lstat(directory).catch(() => undefined)
   if (!directoryStats) return undefined
@@ -414,11 +485,66 @@ export async function readRecoveryJournal(
   const fileStats = await lstat(filePath).catch(() => undefined)
   if (!fileStats) return undefined
   if (!fileStats.isFile()) throw new RecoveryJournalError('invalid-path', '복구 기록이 일반 파일이 아닙니다.')
-  if (fileStats.size > limits.maxBytes) {
-    throw new RecoveryJournalError('oversized', '복구 기록이 크기 한도를 넘습니다.')
+  // lstat과 open 사이에 링크로 바뀌어도 따라가지 않는다(O_NOFOLLOW가 없는 Windows는 열린 handle의 fstat으로 다시 본다).
+  const handle = await open(filePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)).catch((reason: NodeJS.ErrnoException) => {
+    if (reason.code === 'ENOENT') return undefined
+    throw new RecoveryJournalError('invalid-path', `복구 기록을 열 수 없습니다(${reason.code ?? reason.message}).`)
+  })
+  if (!handle) return undefined
+  try {
+    const stats = await handle.stat()
+    if (!stats.isFile()) throw new RecoveryJournalError('invalid-path', '복구 기록이 일반 파일이 아닙니다.')
+    if (stats.size > limits.maxBytes) {
+      throw new RecoveryJournalError('oversized', '복구 기록이 크기 한도를 넘습니다.')
+    }
+    return { handle, size: stats.size, mtimeMs: stats.mtimeMs }
+  } catch (reason) {
+    await handle.close().catch(() => undefined)
+    throw reason
   }
-  const bytes = await readFile(filePath)
-  return candidateOf(sessionId, decodeRecoveryJournal(bytes, limits))
+}
+
+/**
+ * session 하나의 기록 header를 읽는다(파일 앞 `RECOVERY_HEADER_READ_BYTES`까지만). 폴더·파일이 링크이거나 일반 파일이 아니거나
+ * 한도를 넘거나 header가 깨졌으면 RecoveryJournalError. 기록이 없으면 undefined. 뒤 record는 [복구] 때 편집 worker가 확인한다.
+ */
+export async function readRecoveryJournalHeader(
+  root: string,
+  sessionId: string,
+  limits: RecoveryJournalLimits = RECOVERY_JOURNAL_LIMITS
+): Promise<RecoveryJournalCandidate | undefined> {
+  const opened = await openRecoveryJournalFile(root, sessionId, limits)
+  if (!opened) return undefined
+  try {
+    const length = Math.min(opened.size, RECOVERY_HEADER_READ_BYTES)
+    const bytes = Buffer.alloc(length)
+    const { bytesRead } = await opened.handle.read(bytes, 0, length, 0)
+    const header = decodeRecoveryJournalHeader(bytes.subarray(0, bytesRead), limits)
+    return { sessionId, header, journalBytes: opened.size, lastChangeAt: opened.mtimeMs }
+  } finally {
+    await opened.handle.close().catch(() => undefined)
+  }
+}
+
+/**
+ * [복구]할 기록 파일 전체 bytes와 header. main은 header만 해석하고, bytes는 편집 worker에 넘겨 `decodeRecoveryJournalFor`로
+ * 확인·replay한다(큰 기록의 CRC·JSON 해석이 main event loop를 막지 않게).
+ */
+export async function readRecoveryJournalBytes(
+  root: string,
+  sessionId: string,
+  limits: RecoveryJournalLimits = RECOVERY_JOURNAL_LIMITS
+): Promise<{ candidate: RecoveryJournalCandidate; bytes: Buffer } | undefined> {
+  const opened = await openRecoveryJournalFile(root, sessionId, limits)
+  if (!opened) return undefined
+  try {
+    const bytes = await opened.handle.readFile()
+    if (bytes.length > limits.maxBytes) throw new RecoveryJournalError('oversized', '복구 기록이 크기 한도를 넘습니다.')
+    const header = decodeRecoveryJournalHeader(bytes.subarray(0, RECOVERY_HEADER_READ_BYTES), limits)
+    return { candidate: { sessionId, header, journalBytes: bytes.length, lastChangeAt: opened.mtimeMs }, bytes }
+  } finally {
+    await opened.handle.close().catch(() => undefined)
+  }
 }
 
 /** 실행하지 않고 옮겨 두는 격리 폴더 이름. session id 형식이 아니므로 다시 목록에 오르지 않는다. */
@@ -452,8 +578,8 @@ export interface RecoveryJournalScan {
 }
 
 /**
- * 복구 폴더의 남은 기록을 모은다. `exclude`의 session(지금 열려 있는 편집 session)은 건너뛴다.
- * 손상·한도 초과 기록은 실행하지 않고 격리한다. 다른 version 기록은 그대로 둔다(그 version 앱이 열 수 있다).
+ * 복구 폴더의 남은 기록을 모은다(header만 읽는다). `exclude`의 session(지금 열려 있는 편집 session)은 건너뛴다.
+ * header 손상·한도 초과·링크 기록은 실행하지 않고 격리한다. 다른 version 기록은 그대로 둔다(그 version 앱이 열 수 있다).
  */
 export async function scanRecoveryJournals(
   root: string,
@@ -470,7 +596,7 @@ export async function scanRecoveryJournals(
   for (const name of names.sort()) {
     if (!isRecoverySessionId(name) || exclude.has(name)) continue
     try {
-      const candidate = await readRecoveryJournal(root, name, limits)
+      const candidate = await readRecoveryJournalHeader(root, name, limits)
       if (candidate) scan.candidates.push(candidate)
     } catch (reason) {
       if (reason instanceof RecoveryJournalError && reason.reason === 'unsupported-version') {
@@ -486,6 +612,54 @@ export async function scanRecoveryJournals(
   }
   scan.candidates.sort((left, right) => right.lastChangeAt - left.lastChangeAt)
   return scan
+}
+
+const QUARANTINE_NAME_PATTERN = /^quarantine-([0-9a-f-]{36})-([0-9]{1,16})$/
+
+/**
+ * 보관 기한(`RECOVERY_RETENTION_MS`)이 지난 기록을 지운다. 대상은 root 바로 아래의
+ *   - session 폴더(편집 중이 아닌 것: [나중에]로 남긴 기록·다른 형식 version 기록·묻기 전 기록): 기록 파일(없으면 폴더)의 수정 시각,
+ *   - 격리 폴더(`quarantine-<id>-<격리 시각>`): 이름의 격리 시각과 폴더 수정 시각 중 늦은 쪽
+ * 이 `now - maxAgeMs`보다 오래된 것이다. 다른 이름은 건드리지 않고, 링크는 따라가지 않고 링크만 지운다. `exclude`(열려 있거나
+ * 복구 중인 session)는 건너뛴다. 실패한 항목은 다음 실행에서 다시 시도한다. 지운 이름을 돌려준다.
+ */
+export async function pruneRecoveryJournals(
+  root: string,
+  options: { now?: number; maxAgeMs?: number; exclude?: ReadonlySet<string> } = {}
+): Promise<string[]> {
+  const now = options.now ?? Date.now()
+  const cutoff = now - (options.maxAgeMs ?? RECOVERY_RETENTION_MS)
+  const exclude = options.exclude ?? new Set<string>()
+  const resolvedRoot = resolve(root)
+  let names: string[]
+  try {
+    names = await readdir(resolvedRoot)
+  } catch {
+    return []
+  }
+  const removed: string[] = []
+  for (const name of names.sort()) {
+    const quarantine = QUARANTINE_NAME_PATTERN.exec(name)
+    if (!quarantine && (!isRecoverySessionId(name) || exclude.has(name))) continue
+    const target = join(resolvedRoot, name)
+    try {
+      const stats = await lstat(target)
+      let changedAt = stats.mtimeMs
+      if (quarantine) {
+        changedAt = Math.max(changedAt, Number(quarantine[2]))
+      } else if (stats.isDirectory()) {
+        const journal = await lstat(join(target, RECOVERY_JOURNAL_FILE)).catch(() => undefined)
+        if (journal) changedAt = Math.max(changedAt, journal.mtimeMs)
+      }
+      if (!(changedAt < cutoff)) continue
+      // fs.rm은 링크를 따라가지 않고 링크 자체를 지운다.
+      await rm(target, { recursive: true, force: true })
+      removed.push(name)
+    } catch {
+      // 다음 실행에서 다시 시도한다.
+    }
+  }
+  return removed
 }
 
 export interface RecoveryJournalWriterOptions {

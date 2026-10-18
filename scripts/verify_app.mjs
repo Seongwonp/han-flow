@@ -4,7 +4,7 @@ import { basename, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
-import { hwpxSourceObjectCensus, placeholderShortfalls } from './source_object_census.mjs'
+import { hwpxSourceObjectCensus, objectCensusComparison } from './source_object_census.mjs'
 
 const fixture = process.argv[2]
 const RIBBON_TABS = ['파일', '편집', '서식', '표', '보기']
@@ -78,6 +78,14 @@ function overlappingObjects(state) {
   return (state.positionedObjects ?? []).filter((item) => item.textOverlap).map((item) => `${item.page}쪽 ${item.placement}/${item.wrap}/${item.kind}`)
 }
 
+/** 쪽 넘김 개체 census 시간 한도. 넘기면 확인한 쪽 수와 함께 실패로 알린다(합성 15,003쪽 문서는 이 안에 끝난다). */
+const OBJECT_CENSUS_TIMEOUT_MS = Number(process.env.HAN_FLOW_VERIFY_OBJECT_CENSUS_TIMEOUT_MS ?? 180_000)
+
+/** 원문 개체 비교가 필요한 실행(HWPX, 열기 오류를 기대하지 않음)인지. 쪽 virtualization 문서면 앱이 쪽을 넘기며 센다. */
+function objectCensusRequested(path) {
+  return /\.hwpx$/iu.test(path) && !expectedError
+}
+
 function placeholderKey(counts = {}) {
   return Object.keys(counts).sort().map((kind) => `${kind}=${counts[kind]}`).join(',') || '없음'
 }
@@ -116,6 +124,10 @@ async function launch(output, userData, options = {}) {
         HAN_FLOW_E2E: '1',
         HAN_FLOW_VISUAL_TEST_FILE: resolve(launchedFixture),
         HAN_FLOW_VISUAL_STATE_OUTPUT: output,
+        // 쪽 virtualization 문서는 쪽을 끝까지 넘기며 원문 개체 비교용 자리 표시를 센다(`objectCensus`).
+        ...(objectCensusRequested(launchedFixture)
+          ? { HAN_FLOW_VISUAL_OBJECT_CENSUS: '1', HAN_FLOW_VISUAL_OBJECT_CENSUS_TIMEOUT_MS: String(OBJECT_CENSUS_TIMEOUT_MS) }
+          : {}),
         ...(crash ? {} : { HAN_FLOW_VISUAL_EXIT: '1' }),
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: process.env.HAN_FLOW_VERIFY_DELAY_MS ?? '3000',
         HAN_FLOW_E2E_USER_DATA: userData,
@@ -159,7 +171,7 @@ async function launch(output, userData, options = {}) {
     const timeout = setTimeout(() => {
       child.kill('SIGTERM')
       finish(new Error(`패키지 앱 검증 시간이 초과되었습니다. ${standardError.trim()}`))
-    }, 120_000)
+    }, 120_000 + (objectCensusRequested(launchedFixture) ? OBJECT_CENSUS_TIMEOUT_MS : 0))
     child.once('error', (error) => finish(error))
     child.once('exit', (code, signal) => {
       if (crash && killing && signal === 'SIGKILL') {
@@ -241,11 +253,11 @@ try {
   }
   const incompleteImages = state.images.filter((image) => !image.complete || image.naturalWidth <= 0).length
   const source = expectedError ? { counts: undefined } : sourceObjects(resolvedFixture)
-  // 큰 문서는 보이는 페이지만 DOM에 있으므로 개체가 화면 밖 페이지에만 있을 수 있다. 모든 페이지가 mount됐을 때만 판정한다.
-  const allPagesMounted = state.mountedPages >= state.totalPages
-  const shortfalls = source.counts && allPagesMounted ? placeholderShortfalls(source.counts, state.placeholderCounts) : []
-  const objectComparison = !source.counts ? (source.error ? 'scan-failed' : 'not-applicable')
-    : allPagesMounted ? 'compared' : 'skipped-not-all-pages-mounted'
+  // 큰 문서는 보이는 페이지만 DOM에 있다. 그때는 visual state가 쪽을 끝까지 넘기며 센 자리 표시로 비교하고, 모든 쪽을
+  // 확인하지 못했으면 건너뛰지 않고 실패로 알린다.
+  const objectCensus = objectCensusComparison({ sourceCounts: source.counts, sourceError: source.error, state })
+  const shortfalls = objectCensus.shortfalls
+  const objectComparison = objectCensus.status
   const failures = (expectedError ? [
     state.errorVisible ? undefined : '예상한 사용자 오류가 표시되지 않음',
     state.errorMessageLength > 0 ? undefined : '오류 안내가 비어 있음',
@@ -272,6 +284,7 @@ try {
     overlappingObjects(state).length ? `본문 글과 겹치는 자리 차지 개체: ${overlappingObjects(state).join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
     source.error ? `원본 개체 검사 실패: ${source.error}` : undefined,
+    objectCensus.failure,
     // 회귀 방지: 원본 종류별 개체 수보다 화면 자리 표시가 적으면 개체가 조용히 사라진 것이다.
     shortfalls.length
       ? `원본 개체가 화면에서 사라짐: ${shortfalls.map(({ kind, source: count, screen }) => `${kind} 원본 ${count} / 화면 ${screen}`).join(', ')}`
@@ -403,6 +416,7 @@ try {
     pageTextCounts: state.pageTextCounts,
     sourceObjects: source.counts ? Object.fromEntries(Object.entries(source.counts).filter(([, count]) => count > 0)) : undefined,
     sourceObjectComparison: objectComparison,
+    objectCensusPages: objectCensus.pages,
     objectShortfalls: shortfalls,
     placeholderCounts: state.placeholderCounts,
     recoveredObjectCharacters: state.recoveredObjectCharacters,

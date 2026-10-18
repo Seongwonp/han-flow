@@ -95,6 +95,10 @@ source package identity와 기존 Han-Flow decoder, semantic verifier를 다시 
 - POSIX에서는 게시 뒤 디렉터리를 `fsync`한다. 게시 파일 권한은 umask를 적용한 기본값이다.
 - 목적지 판정은 `lstat`을 사용해 심볼릭 링크·폴더를 대화상자 단계에서 거부한다.
 - PDF 내보내기도 같은 원자적 쓰기 도우미와 원본 보호를 사용한다.
+- 저장 중 앱 process가 강제 종료되면 목적지 폴더에 `.<이름>.han-flow-<UUID>.tmp`가 남을 수 있다. 같은 폴더에 다시
+  저장(HWPX·PDF)할 때 이름이 정확히 그 모양이고, 링크가 아닌 일반 파일이며, 1시간(`STALE_SAVE_TEMPORARY_AGE_MS`)보다
+  오래됐고, POSIX에서는 지금 사용자 소유인 것만 지운다(`removeStaleSaveTemporaries`). Windows `fs.Stats`는 소유자를 주지 않아
+  이름·종류·나이로만 고른다. 정리 실패는 저장에 영향을 주지 않는다.
 
 V3-3의 `EditTransaction`은 base revision, command 배열, 전후 selection, `inputType`과
 composition ID를 가진다. command는 순서대로 immutable package에 적용하며 중간 command가
@@ -367,6 +371,11 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   한도를 넘으면 layout effect에서 본문에 CSS `zoom`(`data-fit-scale`)을 걸어 글을 줄인다. `zoom`은 layout 크기도 줄이므로
   측정·pagination·PDF가 같은 높이를 보고 글자는 PDF에서도 추출된다. 한 문단이 쪽을 넘어 잘리거나 PDF에서 글이 빠지지 않게 하는
   표시상 조정이며 원본 크기는 저장할 때 그대로다.
+- 그림(`hp:pic`, 2026-10-18)도 같은 한도·같은 함수(`fitObjectSize`)로 `hp:curSz`(없으면 `hp:sz`)를 가로세로 비율대로 줄이고
+  `ViewerImage.fitted`를 남긴다. 원본 위치 그림은 배치 상자(`position`, `hp:sz` 기준)도 같은 한도로 줄여 `object_position.ts`가
+  줄인 크기로 띠·글 옆 배치를 정한다. 줄 흐름 그림은 문단 `layoutHeight`에 inline 높이로 들어가고, 원본 줄 배치(`hp:lineseg`)에
+  남은 줄이기 전 높이는 줄인 만큼 빼서 무측정 pagination도 줄인 크기를 쓴다. 그림에는 이름표가 없으므로 `data-object-fitted`만
+  붙인다(verify_app `fittedObjects.declared`에 들어감). 너비는 줄이지 않고 CSS `max-width: 100%`·`object-fit: contain`에 맡긴다.
 - 구역 끝 미주 목록은 미주 문단마다 `note-list` block 하나(`s<N>:notes`, `s<N>:notes:<순번>`)로 만들어
   pagination이 미주 사이에서 쪽을 나눌 수 있다. 이어지는 block은 `continuesKind`(같은 종류 제목·구분선 생략)와
   `continuesNote`(같은 미주의 다음 문단, 번호 생략)를 가진다. `hp:endNotePr` 위치(`END_OF_DOCUMENT`·`END_OF_SECTION`)와
@@ -529,7 +538,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   받고 경로가 복구 폴더 바로 아래인지 확인한다(`recoveryJournalDirectory`). 폴더·파일이 링크이거나 일반 파일이 아니면 열지 않는다.
 - 형식(version 3): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
   첫 record는 header(형식·version, 앱 version, 원본 절대 경로, 원본 크기·수정 시각·SHA-256, session 시작 시각)다. 원본 지문은
-  worker가 package를 읽으며 같은 파일에서 계산하고, 읽는 동안 크기·수정 시각이 바뀌면 편집을 시작하지 않는다. 그 뒤
+  worker가 원본을 한 번 읽은 bytes로 계산하고 package도 그 bytes에서 연다(`readFileWithFingerprint`, 2026-10-18). 열린 handle의
+  크기·수정 시각이 읽기 전후로 다르면 편집을 시작하지 않는다. 예전에는 package와 SHA-256이 파일을 따로 읽어 그 사이 바뀐 파일이면
+  지문과 편집하는 내용이 어긋날 수 있었다. 그 뒤
   record는 history 순서대로 `commit`(history가 받아들인 forward `EditTransaction` 그대로: command·selection·inputType·
   compositionId·timestamp), `undo`, `redo`, `saved`(Save As 성공 지점)이며 모두 적용 뒤 package revision과 시각을 담는다.
   문서 bytes는 쓰지 않는다(command 안의 입력 글자·XML 조각만). version 2는 표 구조 command를 변경 조각(`patch-table-fragment`)으로
@@ -559,16 +570,21 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   (`verify_app.mjs`가 편집 E2E마다 정상 종료 뒤 남은 기록 0개를 확인한다).
 - 저장 지점: Save As 뒤에도 session은 원본 package 위에서 계속 편집하므로 새 기준 파일로 기록을 다시 시작하지 않고 `saved`
   record를 남긴다. replay가 같은 지점에서 `markSaved`를 불러 savepoint·dirty·저장 이전으로의 실행 취소까지 그대로 되살린다.
-- 읽기: 마지막 줄이 길이·CRC·줄바꿈 중 하나라도 맞지 않으면 쓰다 끊긴 꼬리로 보고 버린다. 깨진 record 뒤에 줄이 더 있으면
-  손상이다. header 손상·중간 손상·구조 오류·크기(64 MiB)·record 수(100,000)·record 하나(16 MiB) 한도 초과는 실행하지 않고
-  `quarantine-<id>-<시각>` 폴더로 옮긴다. 다른 형식 version은 손대지 않는다(그 version 앱이 열 수 있다). `commit` record의
+- 읽기: main은 기록 목록·제안에 첫 record(header)만 읽는다(`readRecoveryJournalHeader`, 파일 앞 최대 256 KiB). 63 MiB 기록
+  하나를 목록에 올리는 데 전체를 해석하던 때는 약 0.8초 main을 막았고, header만 읽으면 수 ms다(합성 기록, Linux 컨테이너).
+  전체 record의 길이·CRC·구조는 [복구]를 고른 뒤 편집 worker가 확인한다(`decodeRecoveryJournalFor`: main이 제안 때 본 header와
+  같아야 한다). 마지막 줄이 길이·CRC·줄바꿈 중 하나라도 맞지 않으면 쓰다 끊긴 꼬리로 보고 버린다. 깨진 record 뒤에 줄이 더 있으면
+  손상이다. header 손상·링크·크기(64 MiB) 초과는 목록을 읽을 때, 중간 손상·구조 오류·record 수(100,000)·record 하나(16 MiB) 한도
+  초과는 [복구] 때 worker가 찾아내며, 어느 쪽이든 실행하지 않고 `quarantine-<id>-<시각>` 폴더로 옮긴다. 파일은 `O_NOFOLLOW`로
+  열고(Windows는 연 handle의 fstat으로 다시 확인) 일반 파일인지 본다. 다른 형식 version은 손대지 않는다(그 version 앱이 열 수 있다). `commit` record의
   command는 편집 엔진이 forward transaction에 넣는 종류(`FORWARD_EDIT_COMMAND_TYPES`)만 받는다. inverse 전용 `restore-*`는
   구조 오류다. 쓰는 쪽도 한도에 닿거나 디스크 쓰기에 실패하면 기록을 멈춘다. 한도 초과는 최신 상태를 담지 못하는 파일을 지우고
   (앞부분만 복구하면 사용자가 모르는 옛 상태가 되므로), 쓰기 실패는 이미 내린 앞부분을 남긴다. 어느 쪽이든 조용히 멈추지 않고
   `onJournalStopped` → `editing:recoveryJournalStopped`로 그 창의 renderer에 알려, 그 session 동안 상태 막대에
   "복구 기록 중단 · 저장 필요"(자세한 이유는 tooltip)를 계속 표시한다.
-- 복구(`EditingSessionManager.recover`): 새 worker로 원본을 열어 그 지문이 header와 같을 때만(다르면 `RecoverySourceChangedError`,
-  기록 보관) `replay` 요청을 보낸다. worker는 live 편집과 같은 `commitSynchronized`·`undo`·`redo`·`markSaved` 경로로 record를
+- 복구(`EditingSessionManager.recover`): main이 기록 파일 bytes를 읽고(header만 해석) 새 worker로 원본을 열어 그 지문(SHA-256
+  포함)이 header와 같을 때만(다르면 `RecoverySourceChangedError`, 기록 보관) 기록 bytes를 담은 `replay` 요청을 보낸다. worker가
+  전체 기록을 해석·검증하고 편집 수와 끊긴 꼬리 여부를 결과에 담는다. worker는 live 편집과 같은 `commitSynchronized`·`undo`·`redo`·`markSaved` 경로로 record를
   차례로 적용하고 단계마다 기록된 revision과 비교한다. history grouping은 transaction timestamp로 정해지므로 같은 묶음이
   다시 만들어진다. replay는 planner를 거치지 않으므로 commit마다 먼저 `assertReplayableTransaction`(`replay_guard.ts`)으로
   live 편집이 만들 수 있는 모양인지 본다. forward command 종류만 받고, 글자 command는 대상이 그 section의 `#hp:t:N`·빈 문단·표 앞뒤
@@ -582,13 +598,22 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   격리한다. 성공하면 새 session 기록을 디스크에 내린 뒤 옛 기록을 지운다.
 - 묻는 때(`index.ts`): 앱 시작(첫 창 load 뒤 남은 기록 목록, 시작하며 여는 문서의 기록은 제외), HWPX 문서를 열었을 때 같은 원본
   경로의 기록(가장 최근 하나), 편집 엔진이 중단된 직후(renderer가 "편집 세션 종료"로 보기 모드로 돌아간 뒤). 창을 부모로 한 대화상자가
-  "저장하지 않은 편집 내용이 있습니다. 복구하시겠습니까?"와 마지막 변경 시각·편집 수를 보여 주고 [복구][버리기][나중에]를 받는다.
-  원본이 바뀌었거나 없으면 복구할 수 없다고 알리고 [나중에][버리기]만 준다. [복구]는 main이 `recovery:start`로 원본 경로와 기록
+  "저장하지 않은 편집 내용이 있습니다. 복구하시겠습니까?"와 마지막 변경 시각(기록 파일 수정 시각)·기록 크기를 보여 주고
+  [복구][버리기][나중에]를 받는다. 편집 수와 끊긴 꼬리 여부는 전체 기록을 해석해야 알 수 있어 [복구] 뒤 상태 막대에 알린다.
+  제안 전에는 원본을 `lstat`으로 크기·수정 시각만 비교하고 hash하지 않는다(내용 비교는 [복구] 때 worker가 위 지문으로 한다).
+  원본이 바뀌었거나 없으면 복구할 수 없다고 알리고 [나중에][버리기]만 준다. 기록 header의 원본 경로는 앱 밖에서 바뀔 수 있으므로,
+  앱 시작 목록에서는 local 경로가 아닌 기록(Windows의 UNC `\\server\share`·장치 경로 `\\?\`·`\\.\`·드라이브 상대 경로·대체
+  데이터 stream, 다른 OS의 상대 경로)을 `lstat` 전에 건너뛰어 원격 공유에 접속하지 않는다(`isLocalRecoverySourcePath`). 그 문서를
+  사용자가 직접 열면 문서 열기 쪽에서 묻는다. 연결된 network drive 문자는 문자열로 구분할 수 없어 local로 본다. [복구]는 main이 `recovery:start`로 원본 경로와 기록
   ID를 보내고, renderer가 원본을 열고(배경 로딩까지 끝난 뒤) `editing:recover`를 부른다. main은 자기가 보낸 기록만 받는다.
   사용 중인 기록(열린 session·복구 중인 기록 `activeJournalIds`, 대화상자를 띄운 기록, 창에 복구를 보낸 기록 `journalsInUse`)은
   목록·제안에서 빼고, `recover`도 복구 중인 기록을 다른 창이 다시 집으면 거부하므로 두 창이 같은 기록을 동시에 복구하지 않는다.
   결과는 편집 모드·dirty 상태이고 사용자가 확인한 뒤 다른 이름으로 저장한다. replay 실패는 격리 위치를 알리고 [보관][버리기]를 준다.
   E2E는 `HAN_FLOW_E2E_RECOVERY_ACTION`(recover·discard·later)으로 답한다.
+- 보관 기한: 격리한 기록, [나중에]로 남긴 기록, 다른 형식 version 기록, 묻기 전 기록은 마지막으로 바뀐 뒤(기록 파일 수정 시각,
+  격리 폴더는 이름의 격리 시각과 폴더 수정 시각 중 늦은 쪽) 30일(`RECOVERY_RETENTION_MS`)이 지나면 지운다(`pruneRecoveryJournals`).
+  첫 창 load 뒤 시작 복구 제안 앞에서 비동기로 돌아 시작을 막지 않고, 열린 session·복구 중인 기록과 다른 이름은 건드리지 않으며,
+  링크는 따라가지 않고 링크만 지운다. 그 전까지는 앱 시작 때마다·문서를 열 때 계속 묻는다.
 - 한계: 창마다 session·기록이 따로라 여러 창이 같은 원본을 편집하다 함께 중단되면 기록이 여러 개 남고, 문서를 열 때는 가장
   최근 기록 하나만 묻는다(나머지는 앱 시작 때 묻는다). 복구는 같은 원본 bytes에만 하므로 원본을 다른 프로그램이 고친 뒤에는 복구할
   수 없다. 다른 앱 version이 만든 같은 형식 version 기록은 replay의 revision 검사로만 일치를 확인한다.
@@ -740,6 +765,10 @@ JSON 상태를 읽은 뒤 임시 파일과 user-data를 제거한다.
 `verify:matrix`는 공개 생성기를 재사용해 기본, cell continuation, 80-section progressive
 fixture를 각각 격리 실행한다. 대형 문서는 전체 page count보다 mount된 `.viewer-page` 수가
 작아야 통과하므로 50페이지 초과 virtualization 회귀도 함께 잡는다.
+verify_app은 HWPX 원문 개체 census(`source_object_census.mjs`)를 화면 자리 표시 수와 비교한다. 모든 쪽이 mount되지 않은
+virtualization 문서는 예전에 비교를 건너뛰었지만(2026-10-18 전), 지금은 visual state가 화면을 화면 높이 + 3쪽씩 끝까지 넘기며 쪽마다
+자리 표시를 한 번씩 세고(`objectCensus`, 빠진 쪽은 그 위치로 다시 감, 기본 180초 한도) 그 수로 비교한다(`compared-by-scrolling`).
+모든 쪽을 확인하지 못하면 확인한 쪽 수와 함께 실패다(`incomplete-pages`). 합성 15,003쪽 문서는 Linux 컨테이너에서 약 1분 걸린다.
 matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 package도 포함한다.
 손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
 편집 범위 합성 fixture(`createEditScopeHwpx`, 2쪽)로는 표 앞·뒤 caret, 각주·미주 본문, 머리말·꼬리말에 각각 입력→실행 취소·다시 실행→
@@ -755,7 +784,11 @@ Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked
 `verify:pdf`는 production 앱의 고정 PDF 출력과 visual state를 같은 격리 실행에서 수집한다.
 Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 각 page MediaBox에 대응하는 용지
 크기, 페이지별 비공백 글자 수와 대표 PNG 재렌더를 검사한다. HWPX는 화면과 PDF의 페이지별
-글자 수가 같아야 한다. HWP는 화면의 별도 text layer와 인쇄 SVG의 추출 경로가 다르므로 전체
+글자 수가 같아야 한다. 사설 영역(PUA) 글자는 비교 글자 수에서 빼되 code point별로 화면(mount된 쪽)과 PDF 같은 쪽을 비교해,
+PDF에서 빠진 글자는 한컴 PUA 표시 대체 표(`hancom_pua_display.ts`, script가 TS 원본에서 표를 그대로 읽음)에 있고 PDF 같은 쪽에
+대체 문자열이 있거나, 이유와 함께 허용 목록(fixture manifest `expected.allowedPrivateUseLoss`·`HAN_FLOW_PDF_ALLOWED_PUA`)에 있을
+때만 통과한다(`privateUseLosses`). 모든 문서 공통 허용 목록은 비어 있다. U+F028B(원 숫자 ③ 자리)는 rhwp 상류 표가 근거 문서에
+리터럴 ③이 쓰여 의미를 확인하지 못했다며 일부러 빼 두어 Han-Flow 표에도 없다. HWP는 화면의 별도 text layer와 인쇄 SVG의 추출 경로가 다르므로 전체
 98%, 각 page 96% 이상을 요구한다. 첫·중간·끝 page와 모든 가로 page를 PNG로 다시 만든다.
 
 HWP 페이지 SVG는 `<img>`로 그리므로 Chromium PDF는 그 안의 글자를 원문 cluster(ActualText) 없이

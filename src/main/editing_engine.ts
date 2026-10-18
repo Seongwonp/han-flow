@@ -1,4 +1,5 @@
-import { stat } from 'fs/promises'
+import { createHash } from 'crypto'
+import { open } from 'fs/promises'
 import {
   EditingActionResult,
   EditingCharacterStyleRequest,
@@ -38,10 +39,17 @@ import { reconcileTableCellSelection } from '../core/editing/table_cell_selectio
 import type { EditTransaction } from '../core/editing/transaction'
 import { HwpxEditConflictError, listHwpxTextAnchors } from '../core/editing/text_patch'
 import type { ViewerDocument } from '../core/document/viewer_document'
-import { HwpxSourcePackage } from '../core/parser/source_package'
+import { HwpxSourcePackage, MAX_HWPX_TOTAL_BYTES } from '../core/parser/source_package'
 import { ViewerProjectionCache } from '../core/parser/viewer_projection'
 import { saveAsFailureMessage } from './editing_save_messages'
-import { fingerprintFile, type RecoveryJournalEntry, type RecoverySourceFingerprint } from './recovery_journal'
+import {
+  decodeRecoveryJournalFor,
+  RecoveryJournalError,
+  type RecoveryJournalEntry,
+  type RecoveryJournalHeader,
+  type RecoveryJournalLimits,
+  type RecoverySourceFingerprint
+} from './recovery_journal'
 
 export interface EditingEngineSaveRequest {
   destinationPath: string
@@ -54,6 +62,50 @@ export interface EditingEngineSaveRequest {
 }
 
 export type EditingEngineSaveResult = EditingSavedResult
+
+/** 편집할 수 있는 HWPX 파일 크기 상한. 압축 해제 전체 한도에 ZIP header·central directory 여유를 더한 값이다. */
+export const MAX_EDITING_SOURCE_BYTES = MAX_HWPX_TOTAL_BYTES + 64 * 1024 * 1024
+
+/**
+ * 원본 파일을 한 번 읽어 bytes와 지문(크기·수정 시각·SHA-256)을 돌려준다. 연 handle의 fstat을 읽기 전후로 비교해 읽는 사이
+ * 바뀐 파일은 거부한다(경로를 두 번 열지 않으므로 지문과 bytes가 다른 파일에서 나오지 않는다).
+ */
+export async function readFileWithFingerprint(
+  filePath: string
+): Promise<{ bytes: Buffer; fingerprint: RecoverySourceFingerprint }> {
+  const handle = await open(filePath, 'r')
+  try {
+    const before = await handle.stat()
+    if (!before.isFile()) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', '문서 경로가 일반 파일이 아닙니다.')
+    }
+    if (before.size > MAX_EDITING_SOURCE_BYTES) {
+      throw new EditingOperationError(
+        'EDITING_UNSUPPORTED',
+        `문서 파일이 편집 한도(${Math.round(MAX_EDITING_SOURCE_BYTES / 1024 / 1024)} MiB)보다 큽니다.`
+      )
+    }
+    const bytes = await handle.readFile()
+    const after = await handle.stat()
+    if (bytes.length !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
+      throw new EditingOperationError(
+        'EDITING_INVALID_REQUEST',
+        '편집을 준비하는 동안 문서 파일이 바뀌었습니다. 다시 열어 주세요.'
+      )
+    }
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    return { bytes, fingerprint: { size: after.size, mtimeMs: after.mtimeMs, sha256 } }
+  } finally {
+    await handle.close().catch(() => undefined)
+  }
+}
+
+/** 기록 replay 결과. 전체 기록은 worker가 해석하므로 편집 수·끊긴 꼬리 여부도 여기서 main에 알린다. */
+export type EditingReplayResult = EditingActionResult & {
+  replayedEntries: number
+  replayedEdits: number
+  tornTail: boolean
+}
 
 /**
  * 편집 session 하나의 엔진. `HwpxSourcePackage`·source tree cache·`HwpxEditHistory`·transaction·projection
@@ -77,15 +129,10 @@ export class EditingEngine {
     projectionId: number
     source: RecoverySourceFingerprint
   }> {
-    // 복구 기록 header에 넣을 원본 지문. 읽는 동안 파일이 바뀌면(크기·수정 시각) 편집을 시작하지 않는다.
-    const [sourcePackage, source] = await Promise.all([HwpxSourcePackage.open(filePath), fingerprintFile(filePath)])
-    const after = await stat(filePath)
-    if (after.size !== source.size || after.mtimeMs !== source.mtimeMs) {
-      throw new EditingOperationError(
-        'EDITING_INVALID_REQUEST',
-        '편집을 준비하는 동안 문서 파일이 바뀌었습니다. 다시 열어 주세요.'
-      )
-    }
+    // 원본을 한 번만 읽어 그 bytes로 package를 열고 복구 기록 header에 넣을 SHA-256도 계산한다. 지문과 편집하는 package가
+    // 언제나 같은 bytes에서 나온다. 읽는 동안 파일이 바뀌면(크기·수정 시각) 편집을 시작하지 않는다.
+    const { bytes, fingerprint: source } = await readFileWithFingerprint(filePath)
+    const sourcePackage = await HwpxSourcePackage.open(filePath, bytes)
     const { cache, result } = await ViewerProjectionCache.open(sourcePackage)
     const engine = new EditingEngine(new HwpxEditHistory(sourcePackage), cache)
     return { engine, document: result.document, projectionId: result.projectionId, source }
@@ -119,6 +166,32 @@ export class EditingEngine {
   private markSaved(at = Date.now()): void {
     this.history.markSaved()
     this.journal.push({ type: 'saved', revision: this.history.package.revision, at })
+  }
+
+  /**
+   * main이 header만 확인하고 넘긴 기록 bytes를 여기(편집 worker)서 끝까지 해석·검증한 뒤 replay한다. 기록이 손상됐거나
+   * 제안할 때 본 header와 다르면 EDITING_RECOVERY_FAILED(main이 기록을 격리한다).
+   */
+  async replayJournal(
+    expectedHeader: RecoveryJournalHeader,
+    journal: Uint8Array,
+    limits?: RecoveryJournalLimits
+  ): Promise<EditingReplayResult> {
+    let decoded: ReturnType<typeof decodeRecoveryJournalFor>
+    try {
+      const bytes = Buffer.from(journal.buffer, journal.byteOffset, journal.byteLength)
+      decoded = decodeRecoveryJournalFor(expectedHeader, bytes, limits)
+    } catch (reason) {
+      if (!(reason instanceof RecoveryJournalError)) throw reason
+      throw new EditingOperationError('EDITING_RECOVERY_FAILED', `복구 기록이 손상되어 되살릴 수 없습니다: ${reason.message}`, 'none')
+    }
+    const result = await this.replay(decoded.entries)
+    return {
+      ...result,
+      replayedEntries: decoded.entries.length,
+      replayedEdits: decoded.entries.filter((entry) => entry.type === 'commit').length,
+      tornTail: decoded.tornTail
+    }
   }
 
   /**

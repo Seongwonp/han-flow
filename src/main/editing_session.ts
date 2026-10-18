@@ -24,7 +24,7 @@ import {
 import { EditingOperationError } from '../core/editing/editing_error'
 import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { saveTemporaryPath } from '../core/editing/save_as'
-import type { EditingEngineSaveRequest } from './editing_engine'
+import type { EditingEngineSaveRequest, EditingReplayResult } from './editing_engine'
 import {
   deserializeEditingWorkerError,
   type EditingWorkerMethod,
@@ -39,7 +39,8 @@ import {
   discardRecoveryJournal,
   isRecoverySessionId,
   quarantineRecoveryJournal,
-  readRecoveryJournal,
+  readRecoveryJournalBytes,
+  RecoveryJournalError,
   recoveryJournalDirectory,
   recoveryJournalIdFor,
   RECOVERY_JOURNAL_VERSION,
@@ -129,6 +130,8 @@ export interface EditingRecoverResult extends EditingStartResult {
   recoveredEntries: number
   /** 그중 편집(commit) 수 */
   recoveredEdits: number
+  /** 기록 마지막 record가 쓰다 끊겨 제외했는지 */
+  recoveredTornTail: boolean
 }
 
 /** 원본이 기록을 만든 때와 달라 복구를 거절했다. 기록은 그대로 두고 다른 파일에 적용하지 않는다. */
@@ -487,21 +490,39 @@ export class EditingSessionManager {
     recovery: EditingRecoveryOptions,
     generation: number
   ): Promise<EditingRecoverResult> {
-    const candidate = await readRecoveryJournal(recovery.directory, journalId)
-    if (!candidate) {
+    // main은 header만 해석한다. 전체 record의 길이·CRC·구조 확인과 replay는 편집 worker가 맡는다(큰 기록도 main을 막지 않는다).
+    let read: Awaited<ReturnType<typeof readRecoveryJournalBytes>>
+    try {
+      read = await readRecoveryJournalBytes(recovery.directory, journalId, recovery.limits)
+    } catch (reason) {
+      // header 손상·한도 초과·링크: 실행하지 않고 격리한다.
+      const failure = new EditingOperationError(
+        'EDITING_RECOVERY_FAILED',
+        `복구 기록을 읽을 수 없습니다: ${reason instanceof Error ? reason.message : String(reason)}`,
+        'none'
+      )
+      if (reason instanceof RecoveryJournalError && reason.reason !== 'unsupported-version') {
+        const quarantinePath = await quarantineRecoveryJournal(recovery.directory, journalId).catch(() => undefined)
+        if (quarantinePath) (failure as { quarantinePath?: string }).quarantinePath = quarantinePath
+      }
+      throw failure
+    }
+    if (!read) {
       throw new EditingOperationError('EDITING_RECOVERY_FAILED', '복구 기록을 찾을 수 없습니다.', 'none')
     }
+    const { candidate, bytes } = read
     assertHwpxPath(candidate.header.sourcePath)
     const engine = this.createEngine()
     let session: EditingSession
-    let replayed: { value: EditingActionResult; status?: EditingHistoryStatus; journal?: RecoveryJournalEntry[] }
+    let replayed: { value: EditingReplayResult; status?: EditingHistoryStatus; journal?: RecoveryJournalEntry[] }
     let replaying = false
     try {
+      // 원본 SHA-256은 worker가 편집할 package를 연 바로 그 bytes로 계산한다(제안할 때는 크기·수정 시각만 봤다).
       const started = await engine.request<EditingWorkerStartResult>('start', { filePath: candidate.header.sourcePath })
       if (!sameFingerprint(candidate.header, started.value.source)) throw new RecoverySourceChangedError()
-      const request: EditingWorkerReplayRequest = { entries: candidate.entries }
+      const request: EditingWorkerReplayRequest = { header: candidate.header, journal: bytes, limits: recovery.limits }
       replaying = true
-      replayed = await engine.request<EditingActionResult>('replay', request)
+      replayed = await engine.request<EditingReplayResult>('replay', request)
       replaying = false
       if (!replayed.status || !replayed.value.document || replayed.value.projectionId === undefined) {
         throw new Error('편집 worker가 복구 결과를 보내지 않았습니다.')
@@ -546,8 +567,9 @@ export class EditingSessionManager {
       sessionId: session.id,
       document: replayed.value.document,
       projectionId: replayed.value.projectionId,
-      recoveredEntries: candidate.entries.length,
-      recoveredEdits: candidate.editCount,
+      recoveredEntries: replayed.value.replayedEntries,
+      recoveredEdits: replayed.value.replayedEdits,
+      recoveredTornTail: replayed.value.tornTail,
       ...session.status
     }
   }

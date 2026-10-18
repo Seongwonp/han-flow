@@ -1,15 +1,21 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs'
+import { existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   createRecoveryJournalHeader,
   decodeRecoveryJournal,
+  decodeRecoveryJournalFor,
+  decodeRecoveryJournalHeader,
   encodeRecoveryRecord,
   fingerprintFile,
+  isLocalRecoverySourcePath,
   isRecoverySessionId,
-  readRecoveryJournal,
+  pruneRecoveryJournals,
+  readRecoveryJournalBytes,
+  readRecoveryJournalHeader,
   RECOVERY_JOURNAL_FILE,
   RECOVERY_JOURNAL_LIMITS,
+  RECOVERY_RETENTION_MS,
   RecoveryJournalEntry,
   RecoveryJournalError,
   recoveryJournalDirectory,
@@ -223,7 +229,10 @@ describe('복구 기록 형식', () => {
     const fingerprint = await fingerprintFile(source)
     const matching = createRecoveryJournalHeader(source, fingerprint, '1.0.0')
     expect(await verifyRecoverySource(matching)).toBe('match')
-    expect(await verifyRecoverySource({ ...matching, sourceSha256: 'b'.repeat(64) })).toBe('changed')
+    expect(await verifyRecoverySource(matching, { hash: true })).toBe('match')
+    // 제안 단계(기본)는 hash하지 않는다. 내용 비교는 [복구] 때 편집 worker가 원본을 읽은 bytes로 한다.
+    expect(await verifyRecoverySource({ ...matching, sourceSha256: 'b'.repeat(64) })).toBe('match')
+    expect(await verifyRecoverySource({ ...matching, sourceSha256: 'b'.repeat(64) }, { hash: true })).toBe('changed')
     expect(await verifyRecoverySource({ ...matching, sourceMtimeMs: matching.sourceMtimeMs + 1 })).toBe('changed')
     expect(await verifyRecoverySource({ ...matching, sourcePath: join(directory, 'moved.hwpx') })).toBe('missing')
   })
@@ -245,7 +254,8 @@ describe('복구 기록 형식', () => {
 
     const scan = await scanRecoveryJournals(root)
     expect(scan.candidates.map((candidate) => candidate.sessionId)).toEqual([SESSION])
-    expect(scan.candidates[0]).toMatchObject({ editCount: 1, lastChangeAt: commit(1, '가').at, tornTail: false })
+    const journalStats = statSync(join(root, SESSION, RECOVERY_JOURNAL_FILE))
+    expect(scan.candidates[0]).toMatchObject({ journalBytes: journalStats.size, lastChangeAt: journalStats.mtimeMs })
     expect(scan.unsupported).toEqual([future])
     // 심볼릭 링크 session 폴더와 손상 기록은 실행하지 않고 격리한다.
     expect(scan.quarantined).toHaveLength(linked ? 2 : 1)
@@ -256,7 +266,121 @@ describe('복구 기록 형식', () => {
     // 링크를 따라가지 않고 링크 자체를 옮겼으므로 원래 기록은 그대로다.
     expect(readdirSync(join(root, SESSION))).toEqual([RECOVERY_JOURNAL_FILE])
     expect((await scanRecoveryJournals(root, new Set([SESSION]))).candidates).toEqual([])
-    await expect(readRecoveryJournal(root, OTHER)).resolves.toBeUndefined()
+    await expect(readRecoveryJournalHeader(root, OTHER)).resolves.toBeUndefined()
+  })
+
+  test('제안 단계는 header만 읽는다: 큰 기록의 뒤쪽 손상은 목록에서 드러나지 않고 [복구] 때 전체 해석이 찾아낸다', async () => {
+    const root = join(directory, 'header-only')
+    mkdirSync(join(root, SESSION), { recursive: true })
+    const journalPath = join(root, SESSION, RECOVERY_JOURNAL_FILE)
+    // header 뒤에 8 MiB짜리 깨진 record와 정상 record를 둔다. 전체를 해석하면 중간 손상이다.
+    const garbage = Buffer.alloc(8 * 1024 * 1024, 0x61)
+    const body = Buffer.concat([
+      encodeRecoveryRecord(header()),
+      Buffer.from(`${garbage.length}:00000000:`), garbage, Buffer.from('\n'),
+      encodeRecoveryRecord(commit(1, '가'))
+    ])
+    writeFileSync(journalPath, body)
+    const scan = await scanRecoveryJournals(root)
+    expect(scan.quarantined).toEqual([])
+    expect(scan.candidates).toEqual([
+      { sessionId: SESSION, header: header(), journalBytes: body.length, lastChangeAt: statSync(journalPath).mtimeMs }
+    ])
+    const read = (await readRecoveryJournalBytes(root, SESSION))!
+    expect(read.bytes.equals(body)).toBe(true)
+    expect(() => decodeRecoveryJournalFor(read.candidate.header, read.bytes)).toThrow(RecoveryJournalError)
+  })
+
+  test('header는 앞부분 bytes만으로 해석하고, 전체 해석은 제안 때 본 header와 같아야 한다', () => {
+    const bytes = journal([commit(1, '가'), commit(2, '나')])
+    const headerEnd = bytes.indexOf(0x0a) + 1
+    expect(decodeRecoveryJournalHeader(bytes.subarray(0, headerEnd))).toEqual(header())
+    // header 줄이 끝나지 않은 앞부분은 깨진 header다.
+    expect(() => decodeRecoveryJournalHeader(bytes.subarray(0, headerEnd - 1))).toThrow(RecoveryJournalError)
+    expect(decodeRecoveryJournalFor(header(), bytes).entries).toHaveLength(2)
+    expect(() => decodeRecoveryJournalFor({ ...header(), sourceSha256: 'c'.repeat(64) }, bytes)).toThrow('제안할 때와 다릅니다')
+  })
+
+  test('header가 깨졌거나 한도를 넘는 기록은 header만 읽어도 격리한다', async () => {
+    const root = join(directory, 'header-broken')
+    mkdirSync(join(root, SESSION), { recursive: true })
+    const bytes = journal([commit(1, '가')])
+    bytes[15] = bytes[15] === 0x41 ? 0x42 : 0x41
+    writeFileSync(join(root, SESSION, RECOVERY_JOURNAL_FILE), bytes)
+    mkdirSync(join(root, OTHER))
+    writeFileSync(join(root, OTHER, RECOVERY_JOURNAL_FILE), journal([commit(1, '가'), commit(2, '나')]))
+    const limits = { ...RECOVERY_JOURNAL_LIMITS, maxBytes: journal([commit(1, '가')]).length + 1 }
+    const scan = await scanRecoveryJournals(root, new Set(), limits)
+    expect(scan.candidates).toEqual([])
+    expect(scan.quarantined).toHaveLength(2)
+  })
+
+  test('복구 원본 경로: Windows는 local 드라이브 경로만, 다른 OS는 절대 경로만 받는다', () => {
+    for (const path of ['C:\\문서\\보고서.hwpx', 'd:\\a.hwpx']) expect(isLocalRecoverySourcePath(path, 'win32')).toBe(true)
+    for (const path of [
+      '\\\\server\\share\\a.hwpx',
+      '\\\\?\\C:\\a.hwpx',
+      '\\\\.\\C:\\a.hwpx',
+      '\\\\?\\UNC\\server\\share\\a.hwpx',
+      '//server/share/a.hwpx',
+      'C:a.hwpx',
+      'C:/a.hwpx',
+      'C:\\a.hwpx:stream',
+      'C:\\a\\..\\b.hwpx',
+      '\\a.hwpx',
+      ''
+    ]) {
+      expect([path, isLocalRecoverySourcePath(path, 'win32')]).toEqual([path, false])
+    }
+    expect(isLocalRecoverySourcePath('/home/user/a.hwpx', 'linux')).toBe(true)
+    expect(isLocalRecoverySourcePath('/Users/a/b.hwpx', 'darwin')).toBe(true)
+    expect(isLocalRecoverySourcePath('relative.hwpx', 'linux')).toBe(false)
+    expect(isLocalRecoverySourcePath('/a\0b.hwpx', 'linux')).toBe(false)
+  })
+
+  test('보관 기한이 지난 격리·[나중에]·다른 version 기록만 지우고 새 기록·사용 중 기록·다른 이름은 남긴다', async () => {
+    const root = join(directory, 'retention')
+    mkdirSync(root, { recursive: true })
+    const now = Date.UTC(2026, 9, 18)
+    const old = new Date(now - RECOVERY_RETENTION_MS - 60_000)
+    const fresh = new Date(now - 60_000)
+    const make = (name: string, when: Date, contents = journal([commit(1, '가')])) => {
+      mkdirSync(join(root, name))
+      writeFileSync(join(root, name, RECOVERY_JOURNAL_FILE), contents)
+      utimesSync(join(root, name, RECOVERY_JOURNAL_FILE), when, when)
+      utimesSync(join(root, name), when, when)
+    }
+    const later = '1b4e28ba-2fa1-41d2-883f-0016d3cca427'
+    const unsupported = 'e4d1c0b2-8f7a-4c3b-9d2e-1a0b9c8d7e6f'
+    const recent = '6fa459ea-ee8a-4ca4-894e-db77e160355e'
+    const inUse = '16fd2706-8baf-433b-82eb-8c7fada847da'
+    make(later, old)
+    make(unsupported, old, encodeRecoveryRecord({ ...header(), version: 9 }))
+    make(recent, fresh)
+    make(inUse, old)
+    // 격리 폴더: 이름의 격리 시각으로 센다(폴더 수정 시각이 새로워도 늦은 쪽).
+    const oldQuarantine = `quarantine-${SESSION}-${old.getTime()}`
+    const freshQuarantine = `quarantine-${OTHER}-${fresh.getTime()}`
+    make(oldQuarantine, old)
+    make(freshQuarantine, old)
+    mkdirSync(join(root, 'not-a-session'))
+    utimesSync(join(root, 'not-a-session'), old, old)
+    // 기한이 지난 링크 격리 폴더는 링크만 지우고 대상은 남긴다.
+    const linkTarget = join(directory, 'retention-link-target')
+    mkdirSync(linkTarget, { recursive: true })
+    writeFileSync(join(linkTarget, 'keep.txt'), 'keep')
+    const linkName = `quarantine-${OTHER}-${old.getTime()}`
+    const linked = linkDirectory(linkTarget, join(root, linkName))
+    if (linked) lutimesSync(join(root, linkName), old, old)
+
+    const removed = await pruneRecoveryJournals(root, { now, exclude: new Set([inUse]) })
+    expect(removed.sort()).toEqual([later, unsupported, oldQuarantine, ...(linked ? [linkName] : [])].sort())
+    expect(readdirSync(root).sort()).toEqual([freshQuarantine, inUse, 'not-a-session', recent].sort())
+    expect(readFileSync(join(linkTarget, 'keep.txt'), 'utf8')).toBe('keep')
+    // 다시 돌려도 남은 것은 그대로다.
+    expect(await pruneRecoveryJournals(root, { now, exclude: new Set([inUse]) })).toEqual([])
+    expect(await pruneRecoveryJournals(join(directory, 'missing-root'), { now })).toEqual([])
+    expect(existsSync(join(root, recent, RECOVERY_JOURNAL_FILE))).toBe(true)
   })
 })
 

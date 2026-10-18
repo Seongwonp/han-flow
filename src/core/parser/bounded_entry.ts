@@ -1,5 +1,5 @@
 import { createReadStream, stat } from 'fs'
-import { Transform, Writable, type Readable } from 'stream'
+import { Readable, Transform, Writable } from 'stream'
 import { pipeline } from 'stream/promises'
 import * as unzipper from 'unzipper'
 import { MAX_HWPX_ENTRY_BYTES } from './package_preflight'
@@ -79,21 +79,34 @@ export async function readEntryBounded(
  * unzipper.Open.file과 같은 source를 쓰되, entry stream이 닫힐 때(정상 종료·abort 모두)
  * 해당 entry를 위해 연 파일 read stream을 함께 destroy한다.
  */
-export async function openHwpxZipDirectory(filePath: string): Promise<unzipper.CentralDirectory> {
+export async function openHwpxZipDirectory(filePath: string, bytes?: Buffer): Promise<unzipper.CentralDirectory> {
   const opened: { last?: Readable } = {}
-  const source = {
-    stream(start: number, length?: number): Readable {
-      const end = length ? start + length : undefined
-      const stream = createReadStream(filePath, { start, end })
-      opened.last = stream
-      return stream
-    },
-    size(): Promise<number> {
-      return new Promise((resolve, reject) => {
-        stat(filePath, (error, stats) => (error ? reject(error) : resolve(stats.size)))
-      })
-    }
-  }
+  // bytes를 주면 파일을 다시 읽지 않고 그 bytes에서 entry를 읽는다(원본 지문을 같은 bytes로 계산할 때).
+  const source = bytes
+    ? {
+        stream(start: number, length?: number): Readable {
+          const end = length ? start + length : bytes.length
+          const stream = Readable.from([bytes.subarray(start, Math.min(end, bytes.length))], { objectMode: false })
+          opened.last = stream
+          return stream
+        },
+        size(): Promise<number> {
+          return Promise.resolve(bytes.length)
+        }
+      }
+    : {
+        stream(start: number, length?: number): Readable {
+          const end = length ? start + length : undefined
+          const stream = createReadStream(filePath, { start, end })
+          opened.last = stream
+          return stream
+        },
+        size(): Promise<number> {
+          return new Promise((resolve, reject) => {
+            stat(filePath, (error, stats) => (error ? reject(error) : resolve(stats.size)))
+          })
+        }
+      }
   const directory = await unzipper.Open.custom(source)
   for (const file of directory.files) {
     const openEntry = file.stream.bind(file)

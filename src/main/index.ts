@@ -18,8 +18,10 @@ import {
 import {
   discardQuarantinedJournal,
   discardRecoveryJournal,
+  isLocalRecoverySourcePath,
   isRecoverySessionId,
-  readRecoveryJournal,
+  pruneRecoveryJournals,
+  readRecoveryJournalHeader,
   RECOVERY_DIRECTORY_NAME,
   scanRecoveryJournals,
   verifyRecoverySource,
@@ -1120,13 +1122,23 @@ function captureVisualState(window: BrowserWindow): void {
       // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
       // PDF 비교 census(scripts/pdf_text_count.mjs textCensus와 같은 규칙): 비교 글자·공백 외 전체·사설 영역·ASCII 숫자.
+      // privateUseCodePoints는 사설 영역 글자별 수({ 'U+F028B': 2 }). verify_pdf가 PDF에서 빠진 글자를 code point별로 판정한다.
       pageTextCensus: Array.from(document.querySelectorAll('.viewer-page')).map((page) => {
         const number = Number(page.dataset.pageIndex) + 1
+        const codePointCounts = (characters) => characters.reduce((counts, character) => {
+          const key = 'U+' + character.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')
+          counts[key] = (counts[key] || 0) + 1
+          return counts
+        }, {})
         if (page.dataset.textRaw !== undefined) {
-          return { page: number, comparable: Number(page.dataset.textCharacters || 0), raw: Number(page.dataset.textRaw), privateUse: Number(page.dataset.textPrivateUse || 0), digits: Number(page.dataset.textDigits || 0) }
+          const privateUseCodePoints = Object.fromEntries((page.dataset.textPrivateUseCodePoints || '').split(' ').filter(Boolean).map((entry) => {
+            const [key, count] = entry.split(':')
+            return [key, Number(count)]
+          }))
+          return { page: number, comparable: Number(page.dataset.textCharacters || 0), raw: Number(page.dataset.textRaw), privateUse: Number(page.dataset.textPrivateUse || 0), digits: Number(page.dataset.textDigits || 0), privateUseCodePoints }
         }
         const text = page.innerText
-        return { page: number, comparable: (text.match(/[^\\s\\p{Co}]/gu) || []).length, raw: (text.match(/\\S/gu) || []).length, privateUse: (text.match(/\\p{Co}/gu) || []).length, digits: (text.match(/[0-9]/g) || []).length }
+        return { page: number, comparable: (text.match(/[^\\s\\p{Co}]/gu) || []).length, raw: (text.match(/\\S/gu) || []).length, privateUse: (text.match(/\\p{Co}/gu) || []).length, digits: (text.match(/[0-9]/g) || []).length, privateUseCodePoints: codePointCounts(text.match(/\\p{Co}/gu) || []) }
       }),
       overflowPages: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.scrollHeight > page.clientHeight + 1 || page.scrollWidth > page.clientWidth + 1 ? Number(page.dataset.pageIndex) + 1 : 0).filter(Boolean),
       // 원본처럼 그리지 못한 개체 자리 표시(종류별)와, 그 안에서 되살린 글(글상자 글·수식 script·각주 본문 등) 글자 수.
@@ -1397,6 +1409,72 @@ function captureVisualState(window: BrowserWindow): void {
         `Array.from(document.querySelectorAll('.viewer-page')).filter((page) => (page.innerText ?? '').includes(${JSON.stringify(expectedText)})).length`
       )
     }
+    // 쪽 virtualization(50쪽 초과) 문서는 보이는 쪽만 DOM에 있다. verify_app이 원문 개체 수와 비교하도록 쪽을 끝까지 넘기며 쪽마다
+    // 자리 표시를 한 번씩 세고 처음 scroll 위치로 돌아온다. 위 값(mountedPages 등)은 넘기기 전 상태다.
+    if (
+      testValue('HAN_FLOW_VISUAL_OBJECT_CENSUS') === '1' &&
+      Number(visualState.mountedPages) < Number(visualState.totalPages)
+    ) {
+      const censusTimeoutMs = Number(testValue('HAN_FLOW_VISUAL_OBJECT_CENSUS_TIMEOUT_MS') ?? 180_000)
+      visualState.objectCensus = await window.webContents.executeJavaScript(`(async () => {
+        const stage = document.querySelector('.viewer-stage')
+        const totalPages = Number(document.querySelector('.viewer-pages')?.dataset.totalPages || 0)
+        const deadline = Date.now() + ${Number.isFinite(censusTimeoutMs) ? censusTimeoutMs : 180_000}
+        const visited = new Set()
+        const placeholderCounts = {}
+        const collect = () => {
+          for (const page of document.querySelectorAll('.viewer-page')) {
+            const index = Number(page.dataset.pageIndex)
+            if (!Number.isInteger(index) || visited.has(index)) continue
+            visited.add(index)
+            for (const element of page.querySelectorAll('[data-object-kind]')) {
+              const kind = element.dataset.objectKind
+              if (kind && kind !== 'note-list') placeholderCounts[kind] = (placeholderCounts[kind] || 0) + 1
+            }
+          }
+        }
+        const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()))
+        // scroll 뒤 React가 보이는 쪽 범위를 바꿀 때까지(첫 쪽 번호가 바뀌거나 몇 frame) 기다린다.
+        const settle = async (before) => {
+          for (let attempt = 0; attempt < 30; attempt += 1) {
+            await frame()
+            if (document.querySelector('.viewer-page')?.dataset.pageIndex !== before && attempt >= 1) return
+          }
+        }
+        // 화면 기준 쪽 간격(배율 포함). 보이는 범위는 화면 높이 앞뒤로 2쪽씩 더 mount하므로 한 번에 화면 높이 + 3쪽씩 넘긴다.
+        const stride = () => {
+          const mounted = document.querySelectorAll('.viewer-page')
+          return mounted.length > 1 ? Math.max(mounted[1].getBoundingClientRect().top - mounted[0].getBoundingClientRect().top, 1) : 0
+        }
+        const scrollTo = async (top) => {
+          const before = document.querySelector('.viewer-page')?.dataset.pageIndex
+          stage.scrollTop = top
+          await settle(before)
+          collect()
+        }
+        const start = stage ? stage.scrollTop : 0
+        collect()
+        let timedOut = false
+        if (stage) {
+          await scrollTo(0)
+          while (visited.size < totalPages) {
+            if (Date.now() > deadline) { timedOut = true; break }
+            const top = stage.scrollTop
+            await scrollTo(top + Math.max(stage.clientHeight, 200) + 3 * stride())
+            if (stage.scrollTop <= top) break
+          }
+          // 넘기다 빠진 쪽이 있으면 그 쪽 위치로 다시 간다.
+          for (let index = 0; index < totalPages && visited.size < totalPages && !timedOut; index += 1) {
+            if (visited.has(index)) continue
+            if (Date.now() > deadline) { timedOut = true; break }
+            await scrollTo(index * stride())
+          }
+          stage.scrollTop = start
+          await settle(document.querySelector('.viewer-page')?.dataset.pageIndex)
+        }
+        return { totalPages, visitedPages: visited.size, placeholderCounts, timedOut }
+      })()`)
+    }
     visualState.windowTitle = window.getTitle()
     visualState.suggestedPdfPath = suggestedPdfExportPath(currentDocumentPaths.get(window.webContents.id), lastDialogDirectory)
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
@@ -1505,12 +1583,18 @@ async function emptyOrNewWindow(window: BrowserWindow): Promise<BrowserWindow | 
 async function offerStartupRecoveries(window: BrowserWindow): Promise<void> {
   // 목록을 읽는 동안 시작 문서 열기가 끝나도 그 문서는 문서 열기 쪽이 묻도록 먼저 기억한다.
   const initialPaths = [...initialOpenWindows.values()]
+  // 보관 기한(30일)이 지난 격리·[나중에]·다른 version 기록을 지운다. 첫 창을 띄운 뒤 비동기로 돌아 시작을 막지 않는다.
+  const pruned = await pruneRecoveryJournals(recoveryDirectory, { exclude: journalsInUse() })
+  if (pruned.length) console.warn('보관 기한이 지난 편집 복구 기록을 지웠습니다:', pruned)
   const scan = await scanRecoveryJournals(recoveryDirectory, journalsInUse())
   if (scan.quarantined.length) console.warn('손상된 편집 복구 기록을 격리했습니다:', scan.quarantined)
   for (const candidate of scan.candidates) {
     if (answeredJournals.has(candidate.sessionId)) continue
     // 시작하며 여는 문서의 기록은 그 문서가 열린 뒤 문서 열기 쪽에서 묻는다.
     if (initialPaths.some((path) => samePath(path, candidate.header.sourcePath))) continue
+    // 기록 header의 경로는 앱 밖에서 바뀔 수 있다. local 경로가 아니면(UNC·장치 경로 등) 앱 시작 때는 lstat도 하지 않고
+    // 남겨 둔다. 사용자가 그 문서를 직접 열면 문서 열기 쪽에서 묻는다.
+    if (!isLocalRecoverySourcePath(candidate.header.sourcePath)) continue
     const parent = BrowserWindow.getAllWindows().find((candidateWindow) => !candidateWindow.isDestroyed()) ?? window
     await offerRecovery(parent, candidate, 'startup', () => emptyOrNewWindow(parent))
   }
@@ -1532,7 +1616,7 @@ function offerRecoveryAfterEngineFailure(event: EditingSessionLostEvent): void {
   if (!window || window.isDestroyed()) return
   setTimeout(() => {
     void (async () => {
-      const candidate = await readRecoveryJournal(recoveryDirectory, event.journalId).catch(() => undefined)
+      const candidate = await readRecoveryJournalHeader(recoveryDirectory, event.journalId).catch(() => undefined)
       if (candidate && !window.isDestroyed()) await offerRecovery(window, candidate, 'crash', async () => window)
     })()
   }, 100)
@@ -1540,7 +1624,7 @@ function offerRecoveryAfterEngineFailure(event: EditingSessionLostEvent): void {
 
 async function reportRecoveryFailure(window: BrowserWindow | null, journalId: string, reason: unknown): Promise<void> {
   if (reason instanceof RecoverySourceChangedError) {
-    const candidate = await readRecoveryJournal(recoveryDirectory, journalId).catch(() => undefined)
+    const candidate = await readRecoveryJournalHeader(recoveryDirectory, journalId).catch(() => undefined)
     if (!candidate) return
     const state = await verifyRecoverySource(candidate.header)
     const choice = await askRecovery(window, recoveryUnavailableDialog(candidate, state === 'missing' ? 'missing' : 'changed'))

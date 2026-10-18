@@ -691,6 +691,33 @@ export function createFloatingObjectHwpx(directory: string, fileName = 'han-flow
 }
 
 /**
+ * 쪽 본문보다 높은 그림 두 개가 든 A4 합성 문서(직접 작성, 개인정보 없음): 글자처럼 놓인 그림(30000×150000, 줄 배치도 그 높이)과
+ * 문단 기준 자리 차지 그림(20000×140000). 자리 표시와 같은 규칙으로 너비·높이를 같은 비율로 줄여 한 쪽 안에 그려야 한다.
+ */
+export const LONG_PICTURE_TEXTS = { before: '긴 그림 앞 문단', middle: '긴 그림 사이 문단', after: '긴 그림 뒤 문단' } as const
+export const LONG_PICTURE_SIZES = { inline: { width: 30000, height: 150000 }, positioned: { width: 20000, height: 140000 } } as const
+const longPicture = (id: number, size: { width: number; height: number }, inline: boolean) =>
+  `<hp:pic id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="${size.width}" height="${size.height}"/><hp:curSz width="${size.width}" height="${size.height}"/><hc:img binaryItemIDRef="image1"/><hp:sz width="${size.width}" widthRelTo="ABSOLUTE" height="${size.height}" heightRelTo="ABSOLUTE" protect="0"/>${objectPos(inline)}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`
+const longPictureSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>${LONG_PICTURE_TEXTS.before}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${longPicture(9701, LONG_PICTURE_SIZES.inline, true)}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="${LONG_PICTURE_SIZES.inline.height}"/></hp:linesegarray></hp:p>
+  ${plainParagraph(LONG_PICTURE_TEXTS.middle)}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${longPicture(9702, LONG_PICTURE_SIZES.positioned, false)}<hp:t>${LONG_PICTURE_TEXTS.after}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+</hs:sec>`
+
+export function createLongPictureHwpx(directory: string, fileName = 'han-flow-long-pictures.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(longPictureSection))
+  zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}
+
+/**
  * 다단 배치 E2E용 합성 문서(직접 작성, 개인정보 없음). 쪽 30000×20000, 왼쪽·오른쪽·위·아래 여백 1500(본문 폭 27000). 구역마다:
  * - 구역 0(1쪽): 한 단 제목 → 문단 안 새 다단 정의(2단, 서로 다른 너비 9000·16500, 간격 1500, 실선 구분선) 6문단 → 다시 한 단.
  *   가운데 2단 영역은 같은 쪽 아래 한 단 영역이 이어지므로 단 높이를 맞춰 3문단씩 놓인다.

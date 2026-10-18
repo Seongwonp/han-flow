@@ -4,7 +4,7 @@ import { basename, extname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { defaultAppBinary, electronLaunchArguments } from './app_binary.mjs'
 import { existsSync } from 'node:fs'
-import { pdfTextReport, textCensus } from './pdf_text_count.mjs'
+import { hancomPuaDisplayMap, pdfTextReport, privateUseAllowlist, textCensus } from './pdf_text_count.mjs'
 
 const fixture = process.argv[2]
 const appBinary = process.argv[3] ? resolve(process.argv[3]) : defaultAppBinary()
@@ -28,6 +28,24 @@ async function requiredPdfTexts() {
     required.push(...(JSON.parse(await readFile(manifestPath, 'utf8')).expected?.requiredPdfText ?? []))
   }
   return [...new Set(required)]
+}
+
+/**
+ * PDF에서 빠져도 되는 사설 영역 글자(이유 필수): 환경 변수 `HAN_FLOW_PDF_ALLOWED_PUA`(JSON `[{ codePoint, reason }]`)와
+ * fixture manifest의 `expected.allowedPrivateUseLoss`. 모든 문서 공통 목록(`PRIVATE_USE_LOSS_ALLOWLIST`)에 더한다.
+ */
+async function allowedPrivateUseLoss() {
+  const entries = []
+  if (process.env.HAN_FLOW_PDF_ALLOWED_PUA) {
+    const parsed = JSON.parse(process.env.HAN_FLOW_PDF_ALLOWED_PUA)
+    if (!Array.isArray(parsed)) throw new Error('HAN_FLOW_PDF_ALLOWED_PUA는 { codePoint, reason } JSON 배열이어야 합니다.')
+    entries.push(...parsed)
+  }
+  const manifestPath = `${resolve(fixture)}.json`
+  if (existsSync(manifestPath)) {
+    entries.push(...(JSON.parse(await readFile(manifestPath, 'utf8')).expected?.allowedPrivateUseLoss ?? []))
+  }
+  return privateUseAllowlist(entries)
 }
 
 if (!/\.(?:hwp|hwpx)$/iu.test(fixture ?? '')) {
@@ -83,6 +101,7 @@ try {
   const suggestedPdfName = state.suggestedPdfPath ? basename(state.suggestedPdfPath) : undefined
   const pdfTextCounts = []
   const pdfCensus = []
+  const pdfPageTexts = []
   const pdfPageSizes = []
   for (let page = 1; page <= pdfPages; page += 1) {
     const { standardOutput: pageInfo } = await run('pdfinfo', ['-f', String(page), '-l', String(page), pdfPath])
@@ -92,6 +111,7 @@ try {
     const { standardOutput } = await run('pdftotext', ['-f', String(page), '-l', String(page), '-layout', pdfPath, '-'])
     const census = textCensus(standardOutput)
     pdfCensus.push(census)
+    pdfPageTexts.push(standardOutput)
     pdfTextCounts.push(census.comparable)
   }
   const { standardOutput: pdfText } = await run('pdftotext', [pdfPath, '-'])
@@ -100,7 +120,10 @@ try {
     screenCensus: state.pageTextCensus ?? [],
     pdfCensus,
     pdfText,
-    requiredText: await requiredPdfTexts()
+    pdfPageTexts,
+    requiredText: await requiredPdfTexts(),
+    displayMap: hancomPuaDisplayMap(),
+    allowlist: await allowedPrivateUseLoss()
   })
 
   const landscapePages = (state.pageSizes ?? [])
@@ -156,7 +179,8 @@ try {
     compareAllPages && state.documentFormat === 'hwp' && hwpLowTextPages.length
       ? `HWP PDF 페이지별 텍스트 보존율 부족: ${hwpLowTextPages.join(', ')}페이지`
       : undefined,
-    // 사설 영역 글자는 비교 글자 수에서 빼지만 숫자는 그렇지 않다. 비교 글자 수가 같아도 숫자·필수 문자열이 빠지면 실패다.
+    // 사설 영역 글자는 비교 글자 수에서 빼지만 숫자는 그렇지 않다. 비교 글자 수가 같아도 숫자·필수 문자열, 표시 대체 표·허용
+    // 목록 밖의 사설 영역 글자가 빠지면 실패다.
     ...census.failures
   ].filter(Boolean)
   const result = {

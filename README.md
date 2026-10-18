@@ -36,7 +36,7 @@ macOS 관문(물리 IME, 서명·공증, macOS 13+ 실행)은 기존 개발 Mac�
 - 실제 DOM 높이를 사용하는 2-pass pagination
 - 그대로 그리지 못하는 개체(수식·차트·OLE·글상자·도형·양식 컨트롤·동영상·각주/미주·메모·덧말)를 읽기 전용 자리 표시로
   표시하고, 수식 script·글상자 글·각주/미주 본문·메모 내용은 글자로 되살림. 상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄여
-  "(축소)"로 표시하며, 회전과 개체 자체의 그림(수식 조판, 차트·OLE 그리기)은 재현하지 않음. 문서 안내 배너·상태 막대와 PDF
+  "(축소)"로 표시하며(쪽보다 높은 그림도 같은 한도로 가로세로 비율을 지켜 줄임), 회전과 개체 자체의 그림(수식 조판, 차트·OLE 그리기)은 재현하지 않음. 문서 안내 배너·상태 막대와 PDF
   내보내기 전 확인 대화상자로 개체 종류별 개수를 알림
 - 본문 문단의 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`: 그림·표·글상자·사각형·타원·선·다각형 등)를 원본
   기준(용지·쪽·단·문단)·맞춤·offset 위치에 그림(화면·PDF 같음). 글 뒤·글 앞 개체는 글 흐름에 영향 없이 글 아래·위에, 자리 차지
@@ -122,15 +122,18 @@ oracle로 사용합니다. 자동 fallback은 두지 않습니다.
 Mac·로컬 기기 측정은 별도 절로 분리합니다. 날짜별 상세는 [개발·검증 이력](docs/verification_history.md)에
 기록합니다.
 
-### 현재 재현 가능한 결과 (2026-09-28)
+### 현재 재현 가능한 결과
+
+Jest·probe·`verify:matrix`는 2026-10-18 Linux 컨테이너에서 다시 실행한 값이고, 날짜를 적은 행은 그때 측정한 값입니다.
 
 | 관문 | 결과 |
 | --- | --- |
-| Jest (`npm test -- --runInBand`) | 43 suites passed·2 skipped, 292 passed·12 skipped |
-| parser probe (`npm run test:probe`) | 18 passed |
-| 공개 HWPX corpus (`npm run verify:corpus`) | 39/39 (synthetic 11종 + 한/글 저장본 external 28종, invalid-package 1종 의도적 거부 포함) |
+| Jest (`npm test`) | 87 suites passed·7 skipped, 1,110 passed·18 skipped (두 번 연속 실행 같음) |
+| parser·검증 script probe (`npm run test:probe`) | 36 passed |
+| `verify:matrix` (Linux 패키지 앱, xvfb) | 통과 |
+| 공개 HWPX corpus (`npm run verify:corpus`, 2026-09-28) | 39/39 (synthetic 11종 + 한/글 저장본 external 28종, invalid-package 1종 의도적 거부 포함) |
 | 편집 가능 비율 (`npm run corpus:editing-coverage`, 정보용) | 외부 한/글 28종 373 run: anchor 96.3%·text 편집 96.0%(글자 run 입력·삭제 coverage이지 일반 편집 완성도가 아님. 머리말·꼬리말과 각주·미주 표본은 각 2 run뿐)·글자 가중 94.3%·표 셀 66/66·글자 모양 77.7%·문단 모양 95.0%·문단 나눔 270/399(capability·코어 불일치 0)·글자 칸 없는 문단 45/46·표 앞·뒤 caret 19/19 (2026-10-07 89.8%·92.8%·90.2%·44/46, 2026-09-29 79.5%·89.3%·45/66·45.0%·44.8%, [측정](docs/editing_coverage.md)) |
-| 공개 fixture catalog | HWPX 9종·HWP 1종, core/production/HWP pipeline ID 연결 |
+| 공개 fixture catalog | HWPX 39종(synthetic 11·외부 공개 28)·HWP 1종, core/production/HWP pipeline ID 연결 |
 | Windows CI (`windows-latest`) | test·typecheck·probe·corpus·build·package, 패키지 앱 HWPX·HWP matrix·PDF E2E, 비서명 NSIS artifact 통과 |
 | Linux CI (`ubuntu-latest`, xvfb) | 같은 자동 관문과 `package:linux`, 패키지 앱 HWPX·HWP matrix·PDF E2E, unpacked artifact 통과 |
 | macOS | CI 없음, 하드웨어 대기 |
@@ -144,7 +147,7 @@ CI 패키지 앱 E2E의 공개 fixture 결과(Linux 기준):
 | 15문단 표 cell | 2쪽, continuation과 반복 머리글, overflow 0 |
 | 이미지·`rowSpan` | 1쪽, 이미지 12개, overflow 0 |
 | 동일 너비 2단 | DOM 1쪽·단 2개, 양쪽 본문 17·43자 |
-| large progressive | 15,003쪽 중 DOM 12개 mount |
+| large progressive | 15,003쪽 중 DOM 12개 mount, 원문 개체 비교는 15,003쪽을 넘기며 확인 |
 | invalid package | crash 없는 사용자 오류 |
 | HWP `synthetic-layout` | 5.0.3.2, 2쪽, 표 1·셀 9·이미지 1, 반복 머리말 2회, 결정적 생성 |
 | HWP PDF | 2쪽 A4, 텍스트 보존율 98.6% |
@@ -193,7 +196,7 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용합니�
 | V2 — HWP 5.0 읽기 | 완료 | fixed-page 화면·검색·PDF, 안전한 열기 |
 | V3 — 제한적 HWPX 편집 | 자동 관문 완료·외부 승인 대기 | Windows 한/글 왕복·macOS 물리 IME 대기 |
 | Sprint 0 — 기준선과 P0 방어 | 완료 | CI·resource budget·legacy 제거 |
-| Sprint 4 — 호환성 corpus | 진행 중 | HWPX 9종·HWP 1종, intake 계약 완료·실제 파일 0종, 30–50종 목표 |
+| Sprint 4 — 호환성 corpus | 진행 중 | HWPX synthetic 11종·외부 공개 28종·HWP 1종, intake 계약 완료, 렌더링 품질 지표 확장 중 |
 | Sprint 5 — Windows 배포 후보 | 진행 중 | 비서명 NSIS artifact, 실기·code signing 대기 |
 | Sprint 6 — macOS 공개 배포 | macOS 하드웨어 대기 | macOS 13+ 실행, arm64 서명·공증·설치 |
 | V4 — 사용자 배포 | 준비 중 | Sprint 5·6·7 |
@@ -294,7 +297,7 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   같은 모양의 빈 문단을 만듭니다. 너비 근거가 없거나 기존 span·복합 콘텐츠가 있으면 거부합니다.
 - HWPX Preview 미리보기는 현재 재생성하지 않습니다. 구조 편집이 남아 있으면 `stale`, 원문 상태로
   undo했으면 `current`, 원래 없으면 `omitted`로 저장 확인창과 완료 상태에 표시합니다.
-- 현재 저장은 다른 이름으로 저장만 지원하며, 저장 대화상자에서 교체를 확인한 다른 기존 파일은 원자적으로 교체하지만 열려 있는 원본 문서 덮어쓰기는 항상 거부합니다. hard link를 지원하지 않는 파일 시스템(exFAT·FAT32·일부 SMB)에서는 새 파일 게시가 확인 후 rename으로 대체되어, 확인 직후 다른 프로그램이 같은 이름의 파일을 만드는 짧은 경쟁 구간이 남습니다.
+- 현재 저장은 다른 이름으로 저장만 지원하며, 저장 대화상자에서 교체를 확인한 다른 기존 파일은 원자적으로 교체하지만 열려 있는 원본 문서 덮어쓰기는 항상 거부합니다. hard link를 지원하지 않는 파일 시스템(exFAT·FAT32·일부 SMB)에서는 새 파일 게시가 확인 후 rename으로 대체되어, 확인 직후 다른 프로그램이 같은 이름의 파일을 만드는 짧은 경쟁 구간이 남습니다. 저장 도중 앱이 강제 종료돼 저장 폴더에 남은 Han-Flow 임시 파일(`.<이름>.han-flow-<UUID>.tmp`)은 같은 폴더에 다시 저장할 때 1시간이 지난 것만 지웁니다.
 - HWPX 편집 엔진은 창마다 별도 worker thread에서 실행되어 큰 문서를 편집·저장하는 동안에도 다른 창·메뉴·대화상자가 멈추지
   않습니다. 편집 처리 하나가 60초(편집 시작 120초, 저장 검증 180초)를 넘거나 메모리 한도(1.5 GiB)를 넘으면 편집 세션을
   끝내고 보기 모드로 돌아갑니다. 메모리 한도는 worker의 JavaScript heap에만 걸리며, 압축을 푼 ZIP entry `Buffer`는 heap 밖
@@ -305,8 +308,12 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   글자·XML 조각 포함)만 담고, 빠르게 입력하는 동안 0.5초마다 디스크에 내립니다. 기록은 편집 엔진이 응답한 편집만 담으므로,
   앱 process가 강제 종료되거나 OS가 꺼지면 마지막 약 0.5초의 입력과 그때 아직 편집 엔진이 처리 중이던(응답 전) 요청은 잃을 수
   있습니다(창 전환·저장·닫기 확인 직전에는 바로 내립니다). 복구는 편집을 시작할
-  때의 원본 파일이 크기·수정 시각·SHA-256까지 그대로일 때만 하며, 원본을 고치거나 옮겼으면 복구하지 않고 기록을 보관하거나
-  버리게 합니다. 표 구조 편집(행·열 추가·삭제, 셀 병합·분할)은 표 전체가 아니라 바뀐 부분만 기록하므로 큰 표에서도 기록이 빨리
+  때의 원본 파일이 크기·수정 시각·SHA-256까지 그대로일 때만 하며(복구를 물을 때는 크기·수정 시각만 보고, SHA-256은 [복구]를
+  고른 뒤 편집 엔진이 원본을 읽은 bytes로 비교합니다), 원본을 고치거나 옮겼으면 복구하지 않고 기록을 보관하거나
+  버리게 합니다. 앱 시작·문서 열기 때는 기록의 첫 줄(header)만 읽으므로 큰 기록도 화면을 멈추지 않고, 복구 대화상자는 편집 수
+  대신 기록 크기를 보여 줍니다(편집 수는 복구 뒤 상태 막대). 기록 뒷부분의 손상은 [복구]를 고른 뒤 드러나며 그때 격리합니다.
+  Windows에서 기록의 원본 경로가 네트워크 공유(UNC)·장치 경로이면 앱 시작 때는 묻지 않고(원격 접속 방지) 그 문서를 직접 열 때
+  묻습니다. 표 구조 편집(행·열 추가·삭제, 셀 병합·분할)은 표 전체가 아니라 바뀐 부분만 기록하므로 큰 표에서도 기록이 빨리
   커지지 않습니다(약 200 KiB 표의 행 추가·실행 취소 반복: 약 146회 → 약 1.1만 회까지 한도 안). 이전 형식(version 1·2) 기록도 복구하며,
   복구한 뒤 이어 쓰는 기록은 지금 형식(version 3, 표 앞·뒤 caret 입력을 담을 수 있음)입니다. 이전 앱은 자기가 모르는 새 version 기록을
   열지 않고 그대로 둡니다.
@@ -314,10 +321,11 @@ session의 원본은 덮어쓰지 않으며, 다른 기존 파일은 저장 대�
   지웁니다. 이때부터 그 문서는 비정상 종료 때 되살릴 수 없으므로 상태 막대에 "복구 기록 중단 · 저장 필요"를 계속 표시합니다
   (디스크 쓰기 실패도 같습니다). 손상되었거나 편집이 만들 수 없는 command·문단·표 조각이 든 기록, 다시 적용하지 못한 기록은
   실행하지 않고 격리합니다. [저장하지 않음]으로 닫거나 앱을 끝내면 기록을 다 지운 뒤에 창을 닫고 앱을 끝냅니다. 한 기록은 한
-  창에서만 복구합니다. HWP(읽기 전용) 문서에는 해당하지 않습니다.
+  창에서만 복구합니다. 격리한 기록, [나중에]로 남긴 기록, 다른 version 기록은 마지막으로 바뀐 뒤 30일이 지나면 앱 시작 뒤
+  지웁니다. HWP(읽기 전용) 문서에는 해당하지 않습니다.
 - 수식·차트·OLE·호·곡선·연결선·묶음 도형·글맵시·양식 컨트롤·동영상은 그림으로 그리지 않고(수식 조판·차트 그리기 없음) 선언
   크기를 참고한 테두리 상자(자리 표시)로 보여 줍니다. 선언 높이가 쪽 본문의 85%를 넘으면 같은 비율로 줄여 "(축소)"로 표시하고,
-  글상자 글도 그 높이에 맞춰 줄입니다. 수식은 원문 script를 글자로 보여 줍니다. 각주·미주 번호는 본문에 위 첨자로 두고 각주 본문은 쪽 아래에(위 각주 항목), 미주 본문은 구역 끝에 모아
+  글상자 글도 그 높이에 맞춰 줄입니다. 그림도 높이가 같은 한도를 넘으면 가로세로 비율을 지켜 줄여 그립니다. 수식은 원문 script를 글자로 보여 줍니다. 각주·미주 번호는 본문에 위 첨자로 두고 각주 본문은 쪽 아래에(위 각주 항목), 미주 본문은 구역 끝에 모아
   표시하며 미주 목록이 길면 미주 사이에서 다음 쪽으로 이어집니다. 메모는 본문 안
   작은 상자, 덧말은 ruby로 비슷하게 보여 줍니다. 자리 표시와 그 안 글은 읽기 전용(각주·미주 본문은 글자 편집 가능)이고
   같은 문단의 일반 글자 편집 가능 여부는 바꾸지 않으며, 원본 개체 bytes는 HWPX 저장 때 그대로 보존합니다. PDF에는 화면과 같은 자리 표시가 나옵니다.
@@ -400,13 +408,16 @@ npm run release:audit
 통과 여부와 관계없이 페이지별 공백 외 전체 글자 수(`screenPageRawCounts`·`pdfPageRawCounts`), 제외한 사설 영역 글자 수
 (`screenPagePrivateUseCounts`·`pdfPagePrivateUseCounts`·`excludedPrivateUse`), ASCII 숫자 수(`screenPageDigitCounts`·
 `pdfPageDigitCounts`·`digits`)를 함께 남기고, 화면보다 PDF에서 숫자가 적은 페이지가 있거나 필수 문자열(fixture 옆
-manifest의 `requiredPdfText` 또는 `HAN_FLOW_PDF_REQUIRED_TEXT` JSON 배열)이 PDF 텍스트에 없으면 실패합니다. PDF 제목과
+manifest의 `requiredPdfText` 또는 `HAN_FLOW_PDF_REQUIRED_TEXT` JSON 배열)이 PDF 텍스트에 없으면 실패합니다. 사설 영역
+글자도 code point별로 비교해(`privateUseLosses`), PDF에서 빠진 글자가 한컴 PUA 표시 대체 표에 있고 PDF에 대체 문자가 있거나
+이유와 함께 허용 목록(manifest `allowedPrivateUseLoss` 또는 `HAN_FLOW_PDF_ALLOWED_PUA`)에 있을 때만 통과합니다. PDF 제목과
 기본 파일 이름이 문서 이름인지도 확인하며, `verify:matrix`는 표지·목차·본문 서식 fixture(`report-toc`)에 이 PDF 검증을
 함께 실행합니다.
 
 HWPX 화면은 rhwp가 한/글 PDF와 대조해 의미를 확인한 한컴 PUA 기호 표(MIT, `THIRD_PARTY_NOTICES.md`)에 있는 글자만
 표준 Unicode로 바꿔 그립니다(예: U+F03DA → □). 바꾼 글자는 PDF에서도 추출됩니다. 원문·편집 입력 칸·저장 bytes는 원래
-글자를 유지하고, 표에 없는 PUA와 HWP(rhwp `@rhwp/core` 0.7.19 SVG) 화면은 그대로입니다.
+글자를 유지하고, 표에 없는 PUA와 HWP(rhwp `@rhwp/core` 0.7.19 SVG) 화면은 그대로입니다. 원 숫자 ③ 자리(U+F028B)는 rhwp 표가
+근거 문서를 찾지 못해 일부러 빼 두었으므로 Han-Flow 표에도 없습니다.
 
 `fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
 편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### 복구 기록 마무리
+
+- 앱 시작·문서 열기 때 남은 복구 기록을 header(첫 record)만 읽어 목록·제안을 만들고, 전체 record의 길이·CRC·구조 확인은 [복구]를 고른 뒤 편집 worker가 함(main은 기록 bytes만 넘김, 제안 때 본 header와 달라도 손상). 63 MiB 합성 기록 하나의 목록 시간 약 0.84초 → 3–4ms(첫 호출 31ms, 같은 컨테이너). 뒷부분 손상은 그때 격리해 격리 동작은 같음. 대화상자는 편집 수 대신 기록 크기를 보이고, 편집 수와 끊긴 꼬리 여부는 복구 뒤 상태 막대에 알림
+- 격리한 기록·[나중에] 기록·다른 version 기록에 보관 기한 30일(`RECOVERY_RETENTION_MS`)을 두고 첫 창 load 뒤 비동기로 지움(열린 session·다른 이름은 그대로, 링크는 링크만)
+- 기록 header의 원본 경로가 Windows UNC·장치 경로·드라이브 상대 경로·대체 데이터 stream이면 앱 시작 때 `lstat`·hash 전에 건너뜀(문서를 직접 열면 물음). 제안 전에는 크기·수정 시각만 보고 SHA-256은 [복구] 때 비교
+- 편집 시작 때 원본을 한 번 읽어 그 bytes로 package를 열고 SHA-256도 계산(예전에는 package와 지문이 파일을 따로 읽음)
+- 저장 중 강제 종료로 저장 폴더에 남은 `.<이름>.han-flow-<UUID>.tmp`를 같은 폴더에 다시 저장(HWPX·PDF)할 때 지움(정확한 이름·일반 파일·1시간 이상·POSIX는 같은 사용자 소유만)
+
+### 검증 강화
+
+- `verify:pdf`가 사설 영역 글자를 code point별로 화면·PDF에서 비교해, 한컴 PUA 표시 대체 표(PDF에 대체 문자가 있을 때)나 이유가 있는 허용 목록 밖의 손실을 실패로 봄. U+F028B(③ 자리)는 rhwp 상류 표가 근거 부족으로 빼 두어 넣지 않음
+- 쪽보다 높은 그림(`hp:pic`)도 자리 표시와 같은 한도로 가로세로 비율을 지켜 줄이고 원본 위치 그림의 배치 상자도 줄임. 합성 fixture(`createLongPictureHwpx`)가 예전 4쪽·overflow 2쪽에서 2쪽·overflow 0이 되고 verify:matrix `long-pictures`가 확인
+- verify_app이 쪽 virtualization 문서의 원문 개체 비교를 건너뛰지 않고 쪽을 끝까지 넘기며 센 자리 표시로 비교(`compared-by-scrolling`), 덜 확인하면 확인한 쪽 수와 함께 실패. large-progressive 15,003쪽을 약 1분에 모두 확인
+- 전체 suite에서 가끔 실패하던 `text_patch.test.ts` hard link 미지원 test 수정: jest worker process가 공유하는 `fs/promises.link` spy가 앞 test 파일에서 끝나지 않은 저장의 link 호출까지 세던 문제(재현: 끝나지 않는 저장을 남기는 test 다음에 `--runInBand`로 실행하면 호출 3회). 이 test 폴더 목적지만 흉내 내고 그 목적지 호출만 세도록 바꾸고, 부하에서 timeout으로 끝난 저장이 남지 않게 jest 기본 timeout을 30초로 올림
+
 ### HWPX 다단 조판 완성
 
 - `hp:colPr`의 모든 유형·배치를 단별로 조판: 일반 다단(`NEWSPAPER`), 배분 다단(`BALANCED_NEWSPAPER`, 구역 끝 쪽 단 높이 맞춤), 평행 다단(`PARALLEL`, 단 나눔마다 다음 단·마지막 단의 단 나눔은 같은 쪽 아래 새 줄로 가는 근사, `HWPX_PARALLEL_COLUMN_APPROXIMATED` 진단)과 `LEFT`·`RIGHT`(첫 단이 오른쪽)·`MIRROR`(짝수 쪽 오른쪽부터). 예전 단일 흐름 fallback(`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`)은 없앰

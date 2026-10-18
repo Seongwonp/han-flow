@@ -58,8 +58,10 @@ async function dispatch(request: EditingWorkerRequest): Promise<unknown> {
       }
       return result
     }
-    case 'replay':
-      return requireEngine().replay((payload as EditingWorkerReplayRequest).entries)
+    case 'replay': {
+      const request = payload as EditingWorkerReplayRequest
+      return requireEngine().replayJournal(request.header, request.journal, request.limits)
+    }
     case 'commit':
       return requireEngine().commit(payload as EditingCommitRequest)
     case 'commitRange':

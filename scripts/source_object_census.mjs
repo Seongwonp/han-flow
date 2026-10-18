@@ -85,3 +85,38 @@ export function placeholderShortfalls(source, screen = {}) {
     return actual < expected ? [{ kind, source: expected, screen: actual }] : []
   })
 }
+
+/**
+ * verify_app의 원문 개체 비교. 쪽 virtualization(50쪽 초과)으로 처음에는 보이는 쪽만 DOM에 있으면, E2E visual state가 쪽을
+ * 끝까지 넘기며 쪽마다 센 자리 표시(`state.objectCensus`)로 비교한다. 모든 쪽을 확인하지 못했으면 조용히 건너뛰지 않고
+ * `incomplete-pages`와 실패 문구를 돌려준다.
+ * @returns `{ status, pages: { visited, total }, screenCounts, shortfalls, failure }`
+ *   status: compared(모든 쪽이 처음부터 mount)·compared-by-scrolling(쪽을 넘기며 모두 확인)·incomplete-pages·scan-failed·not-applicable
+ */
+export function objectCensusComparison({ sourceCounts, sourceError, state }) {
+  const total = state.totalPages ?? 0
+  if (!sourceCounts) {
+    return { status: sourceError ? 'scan-failed' : 'not-applicable', pages: undefined, screenCounts: undefined, shortfalls: [], failure: undefined }
+  }
+  const allMounted = (state.mountedPages ?? 0) >= total
+  const census = state.objectCensus
+  const scrolledAll = !allMounted && census && census.totalPages === total && census.visitedPages >= total
+  const screenCounts = allMounted ? state.placeholderCounts ?? {} : scrolledAll ? census.placeholderCounts ?? {} : undefined
+  const visited = allMounted ? state.mountedPages : census?.visitedPages ?? state.mountedPages ?? 0
+  if (!screenCounts) {
+    return {
+      status: 'incomplete-pages',
+      pages: { visited, total },
+      screenCounts: undefined,
+      shortfalls: [],
+      failure: `원본 개체 비교 불가: 전체 ${total}쪽 중 ${visited}쪽만 확인${census?.timedOut ? '(시간 한도)' : census ? '' : '(쪽 넘김 census 없음)'}`
+    }
+  }
+  return {
+    status: allMounted ? 'compared' : 'compared-by-scrolling',
+    pages: { visited, total },
+    screenCounts,
+    shortfalls: placeholderShortfalls(sourceCounts, screenCounts),
+    failure: undefined
+  }
+}

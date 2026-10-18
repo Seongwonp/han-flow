@@ -1,6 +1,6 @@
-import { link, lstat, open, rename, stat, unlink } from 'fs/promises'
+import { link, lstat, open, readdir, rename, stat, unlink } from 'fs/promises'
 import type { Stats } from 'fs'
-import { basename, dirname, extname, resolve } from 'path'
+import { basename, dirname, extname, join, resolve } from 'path'
 import { randomUUID } from 'crypto'
 import { HwpxPackageReader } from '../parser/package_reader'
 import { HwpxSourcePackage } from '../parser/source_package'
@@ -89,6 +89,50 @@ export function saveTemporaryPath(destinationPath: string, token: string): strin
 
 function temporaryPathFor(destinationPath: string, token: string = randomUUID()): string {
   return saveTemporaryPath(destinationPath, token)
+}
+
+/** `saveTemporaryPath`가 만드는 이름(`.<목적지 이름>.han-flow-<UUID>.tmp`). 이 모양만 정리 대상이다. */
+const SAVE_TEMPORARY_NAME_PATTERN = /^\..+\.han-flow-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/
+
+/**
+ * 남은 저장 임시 파일로 보고 지우는 최소 나이(1시간). 저장은 편집 엔진 저장 timeout 안에 끝나므로, 이보다 오래된 임시 파일은
+ * 저장 도중 앱 process가 강제 종료돼 남은 것이다. 다른 Han-Flow 창·process가 지금 쓰는 임시 파일은 이보다 새롭다.
+ */
+export const STALE_SAVE_TEMPORARY_AGE_MS = 60 * 60 * 1000
+
+/**
+ * 저장 폴더에 남은 이 앱의 저장 임시 파일을 지운다. 이름이 정확히 `saveTemporaryPath` 모양이고, 링크가 아닌 일반 파일이며,
+ * 수정 시각이 `maxAgeMs`보다 오래됐고, (uid가 있는 OS에서) 지금 사용자 소유인 것만 지운다. Windows의 fs.Stats는 소유자를
+ * 주지 않으므로 이름·종류·나이로만 고른다. 실패는 무시한다(저장 자체와 무관하다). 지운 이름을 돌려준다.
+ */
+export async function removeStaleSaveTemporaries(
+  directoryPath: string,
+  options: { now?: number; maxAgeMs?: number } = {}
+): Promise<string[]> {
+  const cutoff = (options.now ?? Date.now()) - (options.maxAgeMs ?? STALE_SAVE_TEMPORARY_AGE_MS)
+  const uid = process.platform === 'win32' ? undefined : process.getuid?.()
+  let names: string[]
+  try {
+    names = await readdir(directoryPath)
+  } catch {
+    return []
+  }
+  const removed: string[] = []
+  for (const name of names) {
+    if (!SAVE_TEMPORARY_NAME_PATTERN.test(name)) continue
+    const filePath = join(directoryPath, name)
+    try {
+      const stats = await lstat(filePath)
+      if (!stats.isFile() || !(stats.mtimeMs < cutoff)) continue
+      if (uid !== undefined && stats.uid !== uid) continue
+      // lstat 뒤 링크로 바뀌어도 unlink는 링크 이름만 지운다.
+      await unlink(filePath)
+      removed.push(name)
+    } catch {
+      // 다른 process가 먼저 지웠거나 권한이 없다.
+    }
+  }
+  return removed
 }
 
 const caseInsensitivePaths = process.platform === 'win32' || process.platform === 'darwin'
@@ -264,6 +308,8 @@ export async function writeFileAtomically(
   const overwrite = options.overwrite === true
   const protectedPaths = options.protectedPaths ?? []
   await assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
+  // 같은 폴더에 저장하다 앱이 강제 종료돼 남은 오래된 임시 파일을 치운다.
+  await removeStaleSaveTemporaries(dirname(resolvedDestination))
   const temporaryPath = temporaryPathFor(resolvedDestination)
   let temporaryExists = false
   try {
@@ -331,6 +377,8 @@ export async function saveHwpxAs(
   const protectedPaths = [sourcePackage.sourcePath, ...(options.protectedPaths ?? [])]
   // 검증 비용을 쓰기 전에 원본 보호와 기존 파일 정책을 먼저 확인한다.
   await assertDestinationPublishable(resolvedDestination, protectedPaths, overwrite)
+  // 같은 폴더에 저장하다 앱이 강제 종료돼 남은 오래된 임시 파일을 치운다.
+  await removeStaleSaveTemporaries(dirname(resolvedDestination))
 
   const temporaryPath = temporaryPathFor(resolvedDestination, options.temporaryToken)
   let temporaryExists = false

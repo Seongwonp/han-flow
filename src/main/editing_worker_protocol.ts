@@ -1,7 +1,12 @@
 import type { ViewerDocument } from '../core/document/viewer_document'
 import type { EditingHistoryStatus } from '../core/editing/editing_contract'
 import { EditingOperationError, type EditingRecovery } from '../core/editing/editing_error'
-import type { RecoveryJournalEntry, RecoverySourceFingerprint } from './recovery_journal'
+import type {
+  RecoveryJournalEntry,
+  RecoveryJournalHeader,
+  RecoveryJournalLimits,
+  RecoverySourceFingerprint
+} from './recovery_journal'
 
 /*
  * main process ↔ 편집 worker 메시지. 모두 structured clone으로 건너가는 평범한 data다.
@@ -83,8 +88,14 @@ export interface EditingWorkerStartResult {
   source: RecoverySourceFingerprint
 }
 
+/**
+ * [복구] 요청. main은 기록 header만 해석하고 파일 bytes를 그대로 넘긴다. worker가 길이·CRC·구조를 끝까지 확인하고(header가
+ * 제안할 때 본 것과 같아야 한다) replay한다.
+ */
 export interface EditingWorkerReplayRequest {
-  entries: RecoveryJournalEntry[]
+  header: RecoveryJournalHeader
+  journal: Uint8Array
+  limits?: RecoveryJournalLimits
 }
 
 export function serializeEditingWorkerError(reason: unknown): EditingWorkerErrorPayload {

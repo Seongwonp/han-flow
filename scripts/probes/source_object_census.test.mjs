@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import test from 'node:test'
-import { hwpxSourceObjectCensus, placeholderShortfalls, sourceObjectCensus } from '../source_object_census.mjs'
+import { hwpxSourceObjectCensus, objectCensusComparison, placeholderShortfalls, sourceObjectCensus } from '../source_object_census.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const section = (body) => `<?xml version="1.0"?><hs:sec xmlns:hs="s" xmlns:hp="p"><hp:p><hp:run>${body}</hp:run></hp:p></hs:sec>`
@@ -62,6 +62,46 @@ test('verify_app은 원문 검사 실패와 종류별 부족을 실패로 만든
   const { readFileSync } = await import('node:fs')
   const verify = readFileSync(resolve(root, 'scripts/verify_app.mjs'), 'utf8')
   assert.ok(verify.includes('원본 개체 검사 실패'))
-  assert.ok(verify.includes('placeholderShortfalls(source.counts, state.placeholderCounts)'))
+  assert.ok(verify.includes('objectCensusComparison({ sourceCounts: source.counts, sourceError: source.error, state })'))
+  assert.ok(verify.includes('shortfalls.length'))
   assert.ok(!verify.includes('catch {\n    return undefined'))
+})
+
+test('쪽 virtualization 문서도 원문 개체를 비교한다: 쪽을 넘기며 모두 센 census를 쓰고, 덜 확인했으면 실패로 알린다', () => {
+  const sourceCounts = { equation: 2, footnote: 1 }
+  // 모든 쪽이 처음부터 mount됐다.
+  assert.deepEqual(objectCensusComparison({ sourceCounts, state: { totalPages: 3, mountedPages: 3, placeholderCounts: { equation: 2, footnote: 1 } } }), {
+    status: 'compared', pages: { visited: 3, total: 3 }, screenCounts: { equation: 2, footnote: 1 }, shortfalls: [], failure: undefined
+  })
+  // 보이는 쪽만 mount됐고 쪽을 넘기며 모두 셌다. 처음 보이는 쪽의 수가 아니라 넘기며 센 수로 비교한다.
+  const scrolled = objectCensusComparison({
+    sourceCounts,
+    state: { totalPages: 80, mountedPages: 6, placeholderCounts: {}, objectCensus: { totalPages: 80, visitedPages: 80, placeholderCounts: { equation: 1, footnote: 1 }, timedOut: false } }
+  })
+  assert.equal(scrolled.status, 'compared-by-scrolling')
+  assert.deepEqual(scrolled.pages, { visited: 80, total: 80 })
+  assert.deepEqual(scrolled.shortfalls, [{ kind: 'equation', source: 2, screen: 1 }])
+  // 일부 쪽만 확인했거나 census가 없으면 건너뛰지 않고 실패 문구를 낸다.
+  const partial = objectCensusComparison({
+    sourceCounts,
+    state: { totalPages: 80, mountedPages: 6, objectCensus: { totalPages: 80, visitedPages: 41, placeholderCounts: {}, timedOut: true } }
+  })
+  assert.equal(partial.status, 'incomplete-pages')
+  assert.match(partial.failure, /전체 80쪽 중 41쪽만 확인\(시간 한도\)/)
+  assert.match(objectCensusComparison({ sourceCounts, state: { totalPages: 80, mountedPages: 6 } }).failure, /6쪽만 확인\(쪽 넘김 census 없음\)/)
+  // HWP·원문 검사 실패는 따로 다룬다.
+  assert.equal(objectCensusComparison({ sourceCounts: undefined, state: { totalPages: 80, mountedPages: 6 } }).status, 'not-applicable')
+  assert.equal(objectCensusComparison({ sourceCounts: undefined, sourceError: 'zip', state: {} }).status, 'scan-failed')
+})
+
+test('verify_app은 virtualization 문서에 쪽 넘김 census를 요청하고 비교 결과·확인한 쪽 수를 남긴다', async () => {
+  const { readFileSync } = await import('node:fs')
+  const verify = readFileSync(resolve(root, 'scripts/verify_app.mjs'), 'utf8')
+  for (const token of ['objectCensusComparison(', "HAN_FLOW_VISUAL_OBJECT_CENSUS: '1'", 'objectCensus.failure', 'objectCensusPages']) {
+    assert.ok(verify.includes(token), token)
+  }
+  assert.ok(!verify.includes('skipped-not-all-pages-mounted'))
+  const main = readFileSync(resolve(root, 'src/main/index.ts'), 'utf8')
+  assert.ok(main.includes("testValue('HAN_FLOW_VISUAL_OBJECT_CENSUS') === '1'"))
+  assert.ok(main.includes('visualState.objectCensus'))
 })

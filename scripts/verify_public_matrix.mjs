@@ -102,8 +102,10 @@ const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'm
 // - footnote-flow: 각주 40개 → 각주마다 번호 표시가 놓인 쪽 아래에 놓이고(verify_app이 쪽 불일치를 실패로 본다) 본문이 그만큼 줄어 여러 쪽
 // - footnote-long: 한 쪽보다 긴 각주 → 줄 단위로 나뉘어 다음 쪽 아래에 이어지고 overflow 없음
 // - inline-objects: 글자+수식·글자+글상자 문단과 셀 안 글자+수식
+// - long-pictures: 쪽보다 높은 줄 안 그림·문단 기준 자리 차지 그림 → 자리 표시와 같은 규칙으로 줄여 그린 그림 2개
 const LAYOUT_STRESS_FIXTURES = [
   { id: 'long-objects', create: 'createLongObjectHwpx' },
+  { id: 'long-pictures', create: 'createLongPictureHwpx' },
   { id: 'footnote-flow', create: 'createFootnoteFlowHwpx' },
   { id: 'footnote-long', create: 'createLongFootnoteHwpx' },
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
@@ -353,6 +355,9 @@ try {
     stress('long-objects')?.fittedObjects?.declared >= 2 && stress('long-objects')?.fittedObjects?.body >= 1
       ? undefined
       : `long-objects: 쪽보다 큰 수식·글상자를 줄여 그리지 않음(${JSON.stringify(stress('long-objects')?.fittedObjects)})`,
+    stress('long-pictures')?.fittedObjects?.declared === 2 && stress('long-pictures')?.imageCount === 2
+      ? undefined
+      : `long-pictures: 쪽보다 큰 그림을 줄여 그리지 않음(${JSON.stringify(stress('long-pictures')?.fittedObjects)}, 그림 ${stress('long-pictures')?.imageCount})`,
     stress('footnote-flow')?.totalPages >= 2 && stress('footnote-flow')?.placeholderCounts?.footnote === 40 &&
       stress('footnote-flow')?.footnotePlacement?.anchors === 40 && stress('footnote-flow')?.footnotePlacement?.notes === 40
       ? undefined
@@ -434,6 +439,10 @@ try {
       : 'multi-column-layout: 첫 페이지 양쪽 단의 본문이 비어 있음',
     large && large.totalPages > 50 ? undefined : 'large-progressive: 50페이지를 넘지 않음',
     large && large.mountedPages < large.totalPages ? undefined : 'large-progressive: page virtualization이 적용되지 않음',
+    // virtualization 문서도 쪽을 끝까지 넘기며 원문 개체 수와 비교한다(건너뛰지 않는다).
+    large?.sourceObjectComparison === 'compared-by-scrolling' && large.objectCensusPages?.visited === large.totalPages
+      ? undefined
+      : `large-progressive: 쪽을 넘기며 원문 개체를 비교하지 않음(${large?.sourceObjectComparison}, ${JSON.stringify(large?.objectCensusPages)})`,
     invalid?.expectedError && invalid.passed ? undefined : 'invalid-package: 오류 안내 검증 실패'
   ].filter(Boolean)
   const summary = {

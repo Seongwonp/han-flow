@@ -120,6 +120,8 @@ export interface ViewerImage {
   resourceId?: string
   width?: HwpUnit
   height?: HwpUnit
+  /** 높이가 쪽 본문 한도를 넘어 너비·높이를 같은 비율로 줄였을 때 원래 크기와 비율(자리 표시의 `fitted`와 같은 규칙). */
+  fitted?: { declared: { width: HwpUnit; height: HwpUnit }; scale: number }
   /** 글자처럼 취급하지 않는 그림(`hp:pos treatAsChar="0"`)의 원본 위치. 없으면 줄 안에 놓는다. */
   position?: ViewerObjectPosition
 }

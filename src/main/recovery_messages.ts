@@ -30,6 +30,13 @@ function documentLines(candidate: RecoveryJournalCandidate): string {
   return `문서: ${basename(path)}\n위치: ${dirname(path)}`
 }
 
+/** 기록 크기(KiB·MiB). 편집 수는 전체 기록을 해석해야 알 수 있어 [복구] 뒤 상태 막대에 알린다. */
+function formatJournalSize(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toLocaleString('ko-KR', { maximumFractionDigits: 1 })} MiB`
+    : `${Math.max(1, Math.ceil(bytes / 1024)).toLocaleString('ko-KR')} KiB`
+}
+
 /** 원본이 그대로일 때: [복구] [버리기] [나중에] */
 export function recoveryOfferDialog(candidate: RecoveryJournalCandidate, reason: RecoveryPromptReason): RecoveryDialog {
   const lead = reason === 'crash'
@@ -41,8 +48,7 @@ export function recoveryOfferDialog(candidate: RecoveryJournalCandidate, reason:
     message: `${lead}저장하지 않은 편집 내용이 있습니다. 복구하시겠습니까?`,
     detail: [
       documentLines(candidate),
-      `마지막 변경: ${formatTime(candidate.lastChangeAt)}`,
-      `편집 ${candidate.editCount}개${candidate.tornTail ? ' (마지막 순간의 기록 일부는 끝까지 저장되지 않아 제외)' : ''}`,
+      `마지막 변경: ${formatTime(candidate.lastChangeAt)} · 편집 기록 ${formatJournalSize(candidate.journalBytes)}`,
       '',
       '복구하면 원본은 그대로 두고 편집 모드에서 변경 내용을 되살립니다. 확인한 뒤 다른 이름으로 저장하세요.',
       '[나중에]를 고르면 기록을 보관했다가 이 문서를 다시 열거나 앱을 다시 시작할 때 묻습니다.'
@@ -68,7 +74,7 @@ export function recoveryUnavailableDialog(
       : '원본 문서를 찾을 수 없어 저장하지 않은 편집 내용을 복구할 수 없습니다.',
     detail: [
       documentLines(candidate),
-      `마지막 변경: ${formatTime(candidate.lastChangeAt)} · 편집 ${candidate.editCount}개`,
+      `마지막 변경: ${formatTime(candidate.lastChangeAt)} · 편집 기록 ${formatJournalSize(candidate.journalBytes)}`,
       '',
       changed
         ? '편집을 시작한 뒤 원본 파일의 크기·수정 시각·내용이 달라졌습니다. 다른 내용의 문서에는 편집 기록을 적용하지 않습니다.'

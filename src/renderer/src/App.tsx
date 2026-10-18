@@ -172,7 +172,7 @@ function fromEditorSurface(target: EventTarget | null): boolean {
     Boolean((target as Element).closest('[data-editor-range-scope]'))
 }
 
-function Content({
+export function Content({
   item,
   document,
   measurable = false,
@@ -193,7 +193,13 @@ function Content({
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
-    return <img className="viewer-image" src={resourceDataUrl(resource)} style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }} />
+    // 쪽보다 높은 그림은 decoder가 같은 비율로 줄였다(`fitted`). E2E census가 줄여 그린 개체로 센다.
+    return <img
+      className="viewer-image"
+      src={resourceDataUrl(resource)}
+      data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
+      style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }}
+    />
   }
   if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
   if (item.type === 'note-list') return <NoteListView item={item} document={document} editing={measurable ? undefined : editing} />
@@ -422,7 +428,12 @@ function PositionedObjectBody({ item, document, measurable, editing }: {
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
-    return <img className="viewer-image viewer-image-positioned" src={resourceDataUrl(resource)} style={{ width: '100%', height: '100%' }} />
+    return <img
+      className="viewer-image viewer-image-positioned"
+      src={resourceDataUrl(resource)}
+      data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
+      style={{ width: '100%', height: '100%' }}
+    />
   }
   if (item.type === 'table') return <TableView table={item} document={document} measurable={measurable} editing={editing} />
   if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} />
@@ -1419,13 +1430,25 @@ function FixedPageView({
  * PDF 비교용 페이지 글자 census(`scripts/pdf_text_count.mjs`의 `textCensus`와 같은 규칙, code point 단위):
  * 공백 외 전체 글자·사설 영역 글자·ASCII 숫자. E2E visual state가 화면 쪽 값으로 읽는다.
  */
-function fixedPageTextCensus(text: string | undefined): Record<string, number> {
+function fixedPageTextCensus(text: string | undefined): Record<string, number | string> {
   const normalized = (text ?? '').normalize('NFC')
+  const privateUse = normalized.match(/\p{Co}/gu) ?? []
   return {
     'data-text-raw': (normalized.match(/\S/gu) ?? []).length,
-    'data-text-private-use': (normalized.match(/\p{Co}/gu) ?? []).length,
+    'data-text-private-use': privateUse.length,
+    // 사설 영역 글자별 수(`U+F028B:2 U+F03DA:1`). PDF에서 빠진 사설 영역 글자를 code point별로 판정한다.
+    'data-text-private-use-code-points': privateUseCodePointList(privateUse),
     'data-text-digits': (normalized.match(/[0-9]/g) ?? []).length
   }
+}
+
+function privateUseCodePointList(characters: readonly string[]): string {
+  const counts = new Map<string, number>()
+  for (const character of characters) {
+    const key = `U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return [...counts].sort(([left], [right]) => left.localeCompare(right)).map(([key, count]) => `${key}:${count}`).join(' ')
 }
 
 function highlightedText(text: string, query: string): Array<{ text: string; hit: boolean }> {
@@ -2576,7 +2599,10 @@ export default function App() {
     void (async () => {
       setEditingStatus('편집 내용 복구 중…')
       try {
-        const result = await api().recoverEditing({ journalId }) as EditingStartResult & { recoveredEdits: number }
+        const result = await api().recoverEditing({ journalId }) as EditingStartResult & {
+          recoveredEdits: number
+          recoveredTornTail?: boolean
+        }
         showDocument(result.document, result.projectionId)
         setEditingSelectionNotice(null)
         setEditing({
@@ -2587,7 +2613,9 @@ export default function App() {
           canRedo: result.canRedo,
           isDirty: result.isDirty
         })
-        setEditingStatus(`편집 내용 복구 · 편집 ${result.recoveredEdits}개 · 확인한 뒤 다른 이름으로 저장하세요`)
+        // 마지막 순간 쓰다 끊긴 기록은 [복구] 뒤 편집 worker가 전체 기록을 해석해야 알 수 있어 여기서 알린다.
+        const tornNote = result.recoveredTornTail ? ' (마지막 순간의 기록 일부는 끝까지 저장되지 않아 제외)' : ''
+        setEditingStatus(`편집 내용 복구 · 편집 ${result.recoveredEdits}개${tornNote} · 확인한 뒤 다른 이름으로 저장하세요`)
       } catch (reason) {
         setEditingStatus(editingErrorStatus('편집 복구', reason) ?? '편집 복구 취소')
       }

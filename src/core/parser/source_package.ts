@@ -88,8 +88,12 @@ export class HwpxSourcePackage implements HwpxReadablePackage {
     readonly revision: number
   ) {}
 
-  static async open(filePath: string): Promise<HwpxSourcePackage> {
-    const directory = await openHwpxZipDirectory(filePath)
+  /**
+   * @param bytes 이미 읽은 파일 bytes. 주면 파일을 다시 읽지 않고 이 bytes에서 package를 연다(편집 엔진이 원본 지문을
+   *   같은 bytes로 계산해, 읽는 사이 파일이 바뀌어도 지문과 package가 어긋나지 않게).
+   */
+  static async open(filePath: string, bytes?: Buffer): Promise<HwpxSourcePackage> {
+    const directory = await openHwpxZipDirectory(filePath, bytes)
     const metadata = directory.files.map((entry) => {
       const type: HwpxSourceEntryType = entry.type === 'Directory' ? 'directory' : 'file'
       return {

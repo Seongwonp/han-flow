@@ -462,7 +462,7 @@ function decodeRunItem(
     return
   }
   if (item.name === 'hp:tbl') return void content.push(decodeTable(item, `${id}:tbl${content.length}`, context))
-  if (item.name === 'hp:pic') return void content.push(decodeImage(item))
+  if (item.name === 'hp:pic') return void content.push(decodeImage(item, context))
   if (item.name === 'hp:tab') return void content.push({ type: 'text', text: '\t', charStyleId })
   if (item.name === 'hp:lineBreak') return void content.push({ type: 'text', text: '\n', charStyleId })
   if (item.name === 'hp:ctrl') {
@@ -502,16 +502,32 @@ function decodeRunItem(
   }
 }
 
-/** 자리 표시가 본문 흐름에서 차지하는 높이(HWPUNIT). 글자처럼 놓인 개체는 가장 높은 것, 자리 차지 개체는 합. */
-function placeholderLayoutHeight(content: readonly ViewerContent[]): number {
+/**
+ * 자리 표시·그림이 본문 흐름에서 차지하는 높이(HWPUNIT). 글자처럼 놓인 개체(줄 안 그림 포함)는 가장 높은 것, 자리 차지 개체는 합.
+ * 원본 위치 그림(`position`)은 배치(`object_position.ts`)가 높이를 정하므로 넣지 않는다.
+ */
+function objectLayoutHeight(content: readonly ViewerContent[]): number {
   let inline = 0
   let block = 0
   for (const item of content) {
+    if (item.type === 'image' && !item.position && item.height) inline = Math.max(inline, item.height)
     if (item.type !== 'object-placeholder' || !item.size) continue
     if (item.flow === 'inline') inline = Math.max(inline, item.size.height)
     if (item.flow === 'block') block += item.size.height
   }
   return inline + block
+}
+
+/**
+ * 쪽에 맞게 줄인 줄 흐름 개체(그림·자리 표시)가 줄인 높이의 합. 원본 줄 배치(`hp:lineseg`)에는 줄이기 전 높이가 남아 있으므로
+ * 측정 전 쪽 나눔이 줄인 크기를 쓰도록 이만큼 뺀다.
+ */
+function fittedHeightReduction(content: readonly ViewerContent[]): number {
+  return content.reduce((sum, item) => {
+    if (item.type === 'image' && item.fitted && !item.position) return sum + item.fitted.declared.height - (item.height ?? 0)
+    if (item.type === 'object-placeholder' && item.fitted && !item.position) return sum + item.fitted.declared.height - (item.size?.height ?? 0)
+    return sum
+  }, 0)
 }
 
 /** viewer ordered XML용 {@link ParagraphStructureAccess}(편집 코어와 같은 문단 구조 규칙). */
@@ -580,7 +596,11 @@ function decodeParagraph(
     (maximum, item) => item.type === 'table' ? Math.max(maximum, item.height ?? 0) : maximum,
     0
   )
-  const layoutHeight = Math.max(measuredLayoutHeight, tableLayoutHeight, placeholderLayoutHeight(flowContent))
+  const layoutHeight = Math.max(
+    measuredLayoutHeight - fittedHeightReduction(flowContent),
+    tableLayoutHeight,
+    objectLayoutHeight(flowContent)
+  )
   const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
   const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess)?.block
   return {
@@ -595,13 +615,26 @@ function decodeParagraph(
   }
 }
 
-function decodeImage(node: OrderedXmlNode): ViewerImage {
+/**
+ * 그림(`hp:pic`). 그리는 크기는 `hp:curSz`(없으면 `hp:sz`)다. 자리 표시와 같이 높이가 쪽 본문 한도(`objectHeightLimit`)를
+ * 넘으면 너비·높이를 같은 비율로 줄이고(`fitted`), 원본 위치 그림의 배치 상자(`position`)도 같은 한도로 줄인다.
+ */
+function decodeImage(node: OrderedXmlNode, context: Pick<DecodeContext, 'objectHeightLimit'>): ViewerImage {
   const resource = descendants(node, 'hc:img')[0]
   const size = descendants(node, 'hp:curSz')[0] ?? child(node, 'hp:sz')
-  const width = size ? num(size.attributes.width) : undefined
-  const height = size ? num(size.attributes.height) : undefined
-  const position = objectPosition(node, width !== undefined && height !== undefined ? { width, height } : declaredSize(node))
-  return { type: 'image', resourceId: resource?.attributes.binaryItemIDRef, width, height, ...(position ? { position } : {}) }
+  const declared = size ? { width: num(size.attributes.width), height: num(size.attributes.height) } : undefined
+  const { size: fittedSize, fitted } = fitObjectSize(declared, context.objectHeightLimit)
+  const width = fittedSize?.width
+  const height = fittedSize?.height
+  const position = objectPosition(node, fittedSize ?? declaredSize(node), context.objectHeightLimit)
+  return {
+    type: 'image',
+    resourceId: resource?.attributes.binaryItemIDRef,
+    width,
+    height,
+    ...(fitted ? { fitted } : {}),
+    ...(position ? { position } : {})
+  }
 }
 
 function decodeTable(

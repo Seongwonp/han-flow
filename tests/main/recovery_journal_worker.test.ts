@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, truncateSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -11,7 +12,7 @@ import { createEditorSelection } from '../../src/core/editing/selection'
 import { resolveTableFragmentCommand } from '../../src/core/editing/table_patch'
 import { listHwpxTextAnchors, type HwpxTextAnchor } from '../../src/core/editing/text_patch'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
-import { EditingEngine } from '../../src/main/editing_engine'
+import { EditingEngine, readFileWithFingerprint } from '../../src/main/editing_engine'
 import {
   EditingSessionLostEvent,
   EditingSessionManager,
@@ -22,7 +23,7 @@ import {
   decodeRecoveryJournal,
   encodeRecoveryRecord,
   fingerprintFile,
-  readRecoveryJournal,
+  readRecoveryJournalHeader,
   RECOVERY_JOURNAL_FILE,
   RECOVERY_JOURNAL_VERSION,
   scanRecoveryJournals,
@@ -228,8 +229,9 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     // 앱을 다시 띄운 것처럼 새 manager가 남은 기록을 찾아 복구한다.
     const scan = await scanRecoveryJournals(recoveryDirectory)
     expect(scan.candidates.map((candidate) => candidate.sessionId)).toEqual([journalId])
-    expect(scan.candidates[0].editCount).toBe(6)
+    expect(scan.candidates[0].journalBytes).toBe(statSync(journalPath).size)
     expect(await verifyRecoverySource(scan.candidates[0].header)).toBe('match')
+    expect(await verifyRecoverySource(scan.candidates[0].header, { hash: true })).toBe('match')
     const { raw, editing } = manager(recoveryDirectory)
     const recovered = await editing.recover(11, journalId)
     expect(recovered).toMatchObject({
@@ -239,7 +241,8 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
       canRedo: last.canRedo,
       isDirty: true,
       recoveredEntries: 11,
-      recoveredEdits: 6
+      recoveredEdits: 6,
+      recoveredTornTail: false
     })
     expect(recovered.document).toEqual(last.document)
     // 옛 기록은 지우고 새 session 기록으로 옮겼다.
@@ -271,7 +274,7 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     const { source, recoveryDirectory, journalId } = await editThenKill('changed', 2)
     const later = new Date(Date.now() + 60_000)
     utimesSync(source, later, later)
-    const candidate = (await readRecoveryJournal(recoveryDirectory, journalId))!
+    const candidate = (await readRecoveryJournalHeader(recoveryDirectory, journalId))!
     expect(await verifyRecoverySource(candidate.header)).toBe('changed')
     const { editing } = manager(recoveryDirectory)
     await expect(editing.recover(21, journalId)).rejects.toBeInstanceOf(RecoverySourceChangedError)
@@ -287,9 +290,10 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     const journalPath = join(recoveryDirectory, journalId, RECOVERY_JOURNAL_FILE)
     const complete = decodeRecoveryJournal(readFileSync(journalPath)).entries
     truncateSync(journalPath, statSync(journalPath).size - 5)
-    const candidate = (await readRecoveryJournal(recoveryDirectory, journalId))!
-    expect(candidate.tornTail).toBe(true)
-    expect(candidate.entries).toEqual(complete.slice(0, -1))
+    // 끊긴 꼬리는 header만 읽는 제안 단계가 아니라 [복구] 때 편집 worker가 전체 기록을 해석하며 알린다.
+    expect(decodeRecoveryJournal(readFileSync(journalPath)).tornTail).toBe(true)
+    expect(decodeRecoveryJournal(readFileSync(journalPath)).entries).toEqual(complete.slice(0, -1))
+    expect(await readRecoveryJournalHeader(recoveryDirectory, journalId)).toMatchObject({ sessionId: journalId })
     const { editing } = manager(recoveryDirectory)
     const recovered = await editing.recover(31, journalId)
     // 마지막 실행 취소 record가 잘렸으므로 그 직전(k4 입력 뒤) 상태다.
@@ -297,7 +301,8 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
       revision: complete.at(-2)!.revision,
       isDirty: true,
       canRedo: false,
-      recoveredEntries: complete.length - 1
+      recoveredEntries: complete.length - 1,
+      recoveredTornTail: true
     })
     expect(JSON.stringify(recovered.document)).toContain('앞')
   }, 90_000)
@@ -331,6 +336,41 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     expect(existsSync((failure as { quarantinePath: string }).quarantinePath)).toBe(true)
     expect((await scanRecoveryJournals(recoveryDirectory)).candidates).toEqual([])
     expect(editing.currentSessionId(41)).toBeUndefined()
+  }, 90_000)
+
+  test('중간 record가 깨진 기록은 header만 읽는 제안 단계에서는 남고, [복구] 때 편집 worker가 찾아내 격리한다', async () => {
+    const { recoveryDirectory, journalId } = await editThenKill('corrupt-middle', 5)
+    const journalPath = join(recoveryDirectory, journalId, RECOVERY_JOURNAL_FILE)
+    const bytes = readFileSync(journalPath)
+    const secondLine = bytes.indexOf(0x0a) + 1
+    // 두 번째 record(첫 commit) JSON 안의 한 byte를 바꿔 CRC가 맞지 않게 한다. 뒤 record는 그대로라 끊긴 꼬리가 아니라 손상이다.
+    bytes[secondLine + 40] = bytes[secondLine + 40] === 0x41 ? 0x42 : 0x41
+    writeFileSync(journalPath, bytes)
+    // 제안 단계는 header만 본다.
+    const scan = await scanRecoveryJournals(recoveryDirectory)
+    expect(scan.candidates.map((candidate) => candidate.sessionId)).toEqual([journalId])
+    expect(scan.quarantined).toEqual([])
+    const { editing } = manager(recoveryDirectory)
+    const failure = await editing.recover(71, journalId).catch((reason: unknown) => reason)
+    expect(failure).toMatchObject({
+      code: 'EDITING_RECOVERY_FAILED',
+      message: expect.stringContaining('손상'),
+      quarantinePath: expect.stringContaining('quarantine-')
+    })
+    expect(existsSync(join(recoveryDirectory, journalId))).toBe(false)
+    expect(editing.currentSessionId(71)).toBeUndefined()
+  }, 90_000)
+
+  test('header가 깨진 기록을 [복구]하면 worker를 띄우지 않고 격리한다', async () => {
+    const { recoveryDirectory, journalId } = await editThenKill('corrupt-header', 6)
+    const journalPath = join(recoveryDirectory, journalId, RECOVERY_JOURNAL_FILE)
+    const bytes = readFileSync(journalPath)
+    bytes[20] = bytes[20] === 0x41 ? 0x42 : 0x41
+    writeFileSync(journalPath, bytes)
+    const { editing } = manager(recoveryDirectory)
+    const failure = await editing.recover(81, journalId).catch((reason: unknown) => reason)
+    expect(failure).toMatchObject({ code: 'EDITING_RECOVERY_FAILED', quarantinePath: expect.stringContaining('quarantine-') })
+    expect(existsSync(join(recoveryDirectory, journalId))).toBe(false)
   }, 90_000)
 
   test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 지금 형식(version 3) header로 쓴다', async () => {
@@ -369,4 +409,40 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     expect(rewritten.entries[0]).toMatchObject({ transaction: { commands: [{ type: 'replace-table-fragment' }] } })
     raw.stop(51)
   }, 90_000)
+})
+
+describe('편집 원본 지문', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-source-fingerprint-'))
+  afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  test('편집 엔진은 원본을 한 번 읽어 그 bytes로 package를 열고 SHA-256도 같은 bytes로 계산한다', async () => {
+    const source = createListMarkerHwpx(directory, 'fingerprint.hwpx')
+    const original = readFileSync(source)
+    const { bytes, fingerprint } = await readFileWithFingerprint(source)
+    expect(bytes.equals(original)).toBe(true)
+    expect(fingerprint).toEqual({
+      size: original.length,
+      mtimeMs: statSync(source).mtimeMs,
+      sha256: createHash('sha256').update(original).digest('hex')
+    })
+    const opened = await EditingEngine.open(source)
+    expect(opened.source).toEqual(fingerprint)
+    expect(opened.source).toEqual(await fingerprintFile(source))
+  })
+
+  test('package는 넘긴 bytes에서 열려, 그 뒤 경로의 파일이 바뀌어도 지문을 계산한 내용과 같다', async () => {
+    const source = createListMarkerHwpx(directory, 'swap.hwpx')
+    const { bytes } = await readFileWithFingerprint(source)
+    const expected = (await HwpxSourcePackage.open(source)).toBuffer()
+    // 읽은 뒤 같은 경로를 다른 HWPX로 바꾼다(다시 읽으면 다른 내용).
+    copyFileSync(createLargeTableHwpx(directory, { rows: 2, columns: 2, fileName: 'other.hwpx' }), source)
+    const fromBytes = await HwpxSourcePackage.open(source, bytes)
+    expect(fromBytes.toBuffer().equals(expected)).toBe(true)
+    expect(fromBytes.sourcePath).toBe(source)
+    expect((await HwpxSourcePackage.open(source)).toBuffer().equals(expected)).toBe(false)
+  })
+
+  test('일반 파일이 아니면 편집을 시작하지 않는다', async () => {
+    await expect(readFileWithFingerprint(directory)).rejects.toThrow()
+  })
 })

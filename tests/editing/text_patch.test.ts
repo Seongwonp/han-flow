@@ -2,12 +2,15 @@ import { createHash } from 'crypto'
 import {
   existsSync,
   linkSync,
+  lutimesSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync
 } from 'fs'
 import { tmpdir } from 'os'
@@ -20,7 +23,13 @@ import {
   listHwpxTextOrdinals,
   ReplaceTextCommand
 } from '../../src/core/editing/text_patch'
-import { saveHwpxAs, writeFileAtomically } from '../../src/core/editing/save_as'
+import {
+  removeStaleSaveTemporaries,
+  saveHwpxAs,
+  saveTemporaryPath,
+  STALE_SAVE_TEMPORARY_AGE_MS,
+  writeFileAtomically
+} from '../../src/core/editing/save_as'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { createRoundTripHwpx, roundTripSentinels } from '../fixtures/public/create_synthetic_hwpx'
 
@@ -408,10 +417,17 @@ describe('HWPX text patch와 Save As', () => {
     const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', 'link 미지원')).package
     const destination = join(directory, 'no-hard-link.hwpx')
     const unsupported = Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
-    const linkSpy = jest.spyOn(fsPromises, 'link').mockRejectedValue(unsupported)
+    // `fs/promises`는 jest worker process 전체가 같이 쓰는 core module이다. 앞선 test 파일에서 timeout 등으로 끝나지 않은
+    // 저장이 같은 process에서 계속 돌면 그 link 호출도 spy를 지난다. 이 test 폴더의 목적지만 미지원으로 흉내 내고 나머지는
+    // 실제 link로 넘기며, 호출 수도 이 test 목적지 것만 센다.
+    const realLink = fsPromises.link
+    const linkSpy = jest.spyOn(fsPromises, 'link').mockImplementation((existingPath, newPath) =>
+      String(newPath).startsWith(directory) ? Promise.reject(unsupported) : realLink(existingPath, newPath)
+    )
+    const linkCallsTo = (target: string) => linkSpy.mock.calls.filter(([, newPath]) => String(newPath) === target).length
     try {
       await expect(saveHwpxAs(edited, destination)).resolves.toMatchObject({ replacedExisting: false })
-      expect(linkSpy).toHaveBeenCalledTimes(1)
+      expect(linkCallsTo(destination)).toBe(1)
 
       // 대체 경로도 rename 직전에 다시 확인해 그 사이 생긴 파일을 거부한다.
       const raced = join(directory, 'no-hard-link-raced.hwpx')
@@ -457,6 +473,66 @@ describe('HWPX text patch와 Save As', () => {
       rmSync(linkPath)
     }
     rmSync(protectedPath)
+  })
+
+  test('저장 중 앱이 강제 종료돼 남은 오래된 임시 파일은 같은 폴더에 다시 저장할 때 지운다(정확한 이름·일반 파일·1시간 이상만)', async () => {
+    const folder = mkdtempSync(join(directory, 'stale-'))
+    const old = new Date(Date.now() - STALE_SAVE_TEMPORARY_AGE_MS - 60_000)
+    const stale = saveTemporaryPath(join(folder, '보고서.hwpx'), '3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a')
+    const stalePdf = saveTemporaryPath(join(folder, '보고서.pdf'), '7c9e6679-7425-40de-944b-e07fc1f90ae7')
+    const fresh = saveTemporaryPath(join(folder, '다른 창.hwpx'), '16fd2706-8baf-433b-82eb-8c7fada847da')
+    const lookalikes = [
+      '.보고서.hwpx.han-flow-not-a-uuid.tmp',
+      '보고서.hwpx.han-flow-3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a.tmp',
+      '.보고서.hwpx.han-flow-3F1F2E9C-0A11-4B9A-8C55-9B2F5D0E1C1A.tmp',
+      '.보고서.hwpx.han-flow-3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a.tmp.bak'
+    ].map((name) => join(folder, name))
+    for (const path of [stale, stalePdf, fresh, ...lookalikes]) writeFileSync(path, 'x')
+    const staleDirectory = saveTemporaryPath(join(folder, '폴더.hwpx'), '6fa459ea-ee8a-4ca4-894e-db77e160355e')
+    mkdirSync(staleDirectory)
+    for (const path of [stale, stalePdf, ...lookalikes, staleDirectory]) utimesSync(path, old, old)
+    // 링크는 이름이 맞고 오래됐어도 지우지 않는다(링크 대상도 그대로).
+    const linkTarget = join(directory, 'stale-link-target.txt')
+    writeFileSync(linkTarget, '대상')
+    const staleLink = saveTemporaryPath(join(folder, '링크.hwpx'), '1b4e28ba-2fa1-41d2-883f-0016d3cca427')
+    const linked = process.platform !== 'win32'
+    if (linked) {
+      symlinkSync(linkTarget, staleLink)
+      lutimesSync(staleLink, old, old)
+    }
+
+    const source = await HwpxSourcePackage.open(fixture)
+    const edited = applyReplaceTextCommand(source, replaceWholeText(source, '공개 헤더', '임시 정리')).package
+    await saveHwpxAs(edited, join(folder, '새 저장.hwpx'))
+    const names = readdirSync(folder)
+    expect(names).not.toContain(basename(stale))
+    expect(names).toContain(basename(fresh))
+    for (const path of [...lookalikes, staleDirectory]) expect(names).toContain(basename(path))
+    if (linked) expect(names).toContain(basename(staleLink))
+    expect(readFileSync(linkTarget, 'utf8')).toBe('대상')
+    // PDF 내보내기(writeFileAtomically)도 같은 폴더의 남은 임시 파일을 치운다.
+    await writeFileAtomically(join(folder, '내보내기.pdf'), Buffer.from('%PDF'))
+    expect(readdirSync(folder)).not.toContain(basename(stalePdf))
+    // 기한을 지나면 새 임시 파일도 지우고, 없는 폴더는 조용히 넘어간다.
+    expect(await removeStaleSaveTemporaries(folder, { now: Date.now() + STALE_SAVE_TEMPORARY_AGE_MS + 60_000 }))
+      .toEqual([basename(fresh)])
+    expect(await removeStaleSaveTemporaries(join(folder, 'missing'))).toEqual([])
+  })
+
+  ;(process.platform === 'win32' ? test.skip : test)('남은 임시 파일 정리는 다른 사용자 소유 파일을 지우지 않는다', async () => {
+    const folder = mkdtempSync(join(directory, 'stale-owner-'))
+    const stale = saveTemporaryPath(join(folder, 'a.hwpx'), '3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a')
+    writeFileSync(stale, 'x')
+    const old = new Date(Date.now() - STALE_SAVE_TEMPORARY_AGE_MS - 60_000)
+    utimesSync(stale, old, old)
+    const getuid = jest.spyOn(process, 'getuid').mockReturnValue((process.getuid?.() ?? 0) + 1)
+    try {
+      expect(await removeStaleSaveTemporaries(folder)).toEqual([])
+    } finally {
+      getuid.mockRestore()
+    }
+    expect(existsSync(stale)).toBe(true)
+    expect(await removeStaleSaveTemporaries(folder)).toEqual([basename(stale)])
   })
 
   test('overwrite 교체 중 검증이 실패하면 기존 파일을 보존하고 임시 파일을 지운다', async () => {
