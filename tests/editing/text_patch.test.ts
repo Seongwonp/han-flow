@@ -481,10 +481,16 @@ describe('HWPX text patch와 Save As', () => {
     const stale = saveTemporaryPath(join(folder, '보고서.hwpx'), '3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a')
     const stalePdf = saveTemporaryPath(join(folder, '보고서.pdf'), '7c9e6679-7425-40de-944b-e07fc1f90ae7')
     const fresh = saveTemporaryPath(join(folder, '다른 창.hwpx'), '16fd2706-8baf-433b-82eb-8c7fada847da')
+    // 대문자 UUID 이름은 대소문자를 가리는 파일 시스템에서만 별개 파일이다. Windows·macOS 기본 볼륨에서는
+    // 위 stale과 같은 파일이 되므로 넣지 않는다.
+    const caseProbe = join(folder, 'case-probe')
+    writeFileSync(caseProbe, 'x')
+    const caseSensitive = !existsSync(join(folder, 'CASE-PROBE'))
+    rmSync(caseProbe)
     const lookalikes = [
       '.보고서.hwpx.han-flow-not-a-uuid.tmp',
       '보고서.hwpx.han-flow-3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a.tmp',
-      '.보고서.hwpx.han-flow-3F1F2E9C-0A11-4B9A-8C55-9B2F5D0E1C1A.tmp',
+      ...(caseSensitive ? ['.보고서.hwpx.han-flow-3F1F2E9C-0A11-4B9A-8C55-9B2F5D0E1C1A.tmp'] : []),
       '.보고서.hwpx.han-flow-3f1f2e9c-0a11-4b9a-8c55-9b2f5d0e1c1a.tmp.bak'
     ].map((name) => join(folder, name))
     for (const path of [stale, stalePdf, fresh, ...lookalikes]) writeFileSync(path, 'x')
