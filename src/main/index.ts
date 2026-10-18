@@ -1133,6 +1133,40 @@ function captureVisualState(window: BrowserWindow): void {
         if (kind && kind !== 'note-list') counts[kind] = (counts[kind] || 0) + 1
         return counts
       }, {}),
+      // 원본 위치로 그린 개체(hp:pos treatAsChar="0"): 쪽 번호, 배치(band·wrap·overlay·page), 배치 방식, 개체 상자의 용지 기준 위치·크기(CSS px, 배율 제외).
+      positionedObjects: Array.from(document.querySelectorAll('.viewer-page [data-object-placement]')).map((element) => {
+        const page = element.closest('.viewer-page')
+        const pageBox = page.getBoundingClientRect()
+        const scale = pageBox.width / (page.offsetWidth || pageBox.width || 1) || 1
+        const target = element.firstElementChild ?? element
+        const box = target.getBoundingClientRect()
+        const round = (value) => Math.round(value * 10) / 10
+        // 자리 차지·글 옆 배치 개체가 비운 자리(감싼 상자)에 개체 밖 본문 글이 들어왔는지. 글 앞·뒤 개체는 겹쳐도 된다.
+        const overlay = element.dataset.objectWrap === 'BEHIND_TEXT' || element.dataset.objectWrap === 'IN_FRONT_OF_TEXT'
+        const reserved = element.getBoundingClientRect()
+        let textOverlap = false
+        if (!overlay) {
+          const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT)
+          const range = document.createRange()
+          for (let node = walker.nextNode(); node && !textOverlap; node = walker.nextNode()) {
+            if (!node.textContent?.trim() || element.contains(node) || node.parentElement?.closest('.viewer-header, .viewer-footer, .viewer-page-number, .viewer-footnotes')) continue
+            range.selectNodeContents(node)
+            textOverlap = Array.from(range.getClientRects()).some((rect) => rect.width > 0 &&
+              rect.left < reserved.right - 1 && rect.right > reserved.left + 1 && rect.top < reserved.bottom - 1 && rect.bottom > reserved.top + 1)
+          }
+        }
+        return {
+          page: Number(page.dataset.pageIndex) + 1,
+          placement: element.dataset.objectPlacement,
+          wrap: element.dataset.objectWrap,
+          textOverlap,
+          kind: target.dataset?.objectKind ?? (target.tagName === 'IMG' ? 'image' : target.tagName === 'TABLE' ? 'table' : target.tagName.toLowerCase()),
+          x: round((box.left - pageBox.left) / scale),
+          y: round((box.top - pageBox.top) / scale),
+          width: round(box.width / scale),
+          height: round(box.height / scale)
+        }
+      }),
       recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby'))
         .filter((element) => !element.parentElement?.closest('.viewer-object-body, .viewer-note-body'))
         .reduce((sum, element) => sum + (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length, 0),

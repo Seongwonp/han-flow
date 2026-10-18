@@ -628,3 +628,64 @@ export function createEditScopeHwpx(directory: string, fileName = 'han-flow-edit
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`) 합성 문서(직접 작성, 개인정보 없음). A4, 머리말·꼬리말 여백 2835.
+ * - 1쪽: 용지 기준 글 앞 글상자(`textBox`), 쪽 아래·오른쪽 기준 자리 차지 그림(`picture`, 본문 아래 띠), 문단 기준 글 옆 그림,
+ *   문단 기준 자리 차지 글상자(단 가운데), 쪽 가운데 글 뒤 사각형
+ * - 쪽 나눔 문단(마지막 쪽): 쪽 위 가운데 기준 자리 차지 표(`table`, 셀 글 편집 가능, 본문 위 띠)
+ * verify:matrix가 화면 개체 상자 위치를 아래 기대값(HWPUNIT, 용지 왼쪽 위 기준)과 비교하고 자리 차지 개체와 본문 글이 겹치지 않는지 본다.
+ */
+export const FLOATING_OBJECT_TEXTS = {
+  title: '떠 있는 개체 시험 문서',
+  textBoxInner: '용지 기준 글상자 글',
+  bandBoxInner: '문단 기준 글상자 글',
+  tableCell: '쪽 위 표 셀 글',
+  body: (index: number) => `본문 ${index + 1}번 문단입니다. 원본 위치에 놓인 개체를 피해 흘러야 하는 글을 두 줄 넘게 이어 쓰려고 일부러 길게 적었습니다. 화면과 PDF의 글자 수가 같아야 합니다.`
+} as const
+export const FLOATING_OBJECT_PAGE = { width: 59528, height: 84188, left: 5669, right: 5669, top: 5669, bottom: 4252, header: 2835, footer: 2835 } as const
+/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준, Han-Flow 쪽 본문은 위쪽 여백에서 시작). */
+export const FLOATING_OBJECT_EXPECTED = {
+  // 용지 기준(왼쪽 30000, 위 40000)은 한/글 본문(위쪽 여백 + 머리말 여백) 아래라 머리말 여백만큼 위로 옮긴다.
+  textBox: { page: 1, x: 30000, y: 40000 - 2835, width: 20000, height: 6000 },
+  // 쪽 본문 오른쪽 아래에서 안쪽으로 가로 1000·세로 2000.
+  picture: { page: 1, x: 59528 - 5669 - 14000 - 1000, y: 84188 - 4252 - 9000 - 2000, width: 14000, height: 9000 },
+  // 쪽 본문 위 가운데.
+  table: { x: 5669 + (59528 - 5669 * 2 - 30000) / 2, y: 5669, width: 30000 }
+} as const
+
+const floatingPos = (vertRelTo: string, horzRelTo: string, vertAlign: string, horzAlign: string, vertOffset: number, horzOffset: number) =>
+  `<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="0" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="${vertRelTo}" horzRelTo="${horzRelTo}" vertAlign="${vertAlign}" horzAlign="${horzAlign}" vertOffset="${vertOffset}" horzOffset="${horzOffset}"/>`
+const floatingTextBox = (id: number, wrap: string, width: number, height: number, pos: string, text: string) =>
+  `<hp:rect id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="${wrap}" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hp:lineShape color="#1F4E79" width="57" style="SOLID"/><hc:fillBrush><hc:winBrush faceColor="#EAF1FB" hatchColor="#000000" alpha="0"/></hc:fillBrush><hp:drawText lastWidth="${width}" name="" editable="0"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run></hp:p></hp:subList><hp:textMargin left="283" right="283" top="283" bottom="283"/></hp:drawText><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${pos}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:rect>`
+const floatingPicture = (id: number, wrap: string, width: number, height: number, pos: string, outMargin = 0) =>
+  `<hp:pic id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="${wrap}" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hc:img binaryItemIDRef="image1"/><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${pos}<hp:outMargin left="${outMargin}" right="${outMargin}" top="${outMargin}" bottom="${outMargin}"/></hp:pic>`
+const floatingParagraph = (runs: string, pageBreak = false) =>
+  `<hp:p paraPrIDRef="0"${pageBreak ? ' pageBreak="1"' : ''}><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+const floatingBody = (from: number, count: number) =>
+  Array.from({ length: count }, (_, index) => floatingParagraph(`<hp:t>${FLOATING_OBJECT_TEXTS.body(from + index)}</hp:t>`)).join('\n  ')
+const floatingSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="${FLOATING_OBJECT_PAGE.width}" height="${FLOATING_OBJECT_PAGE.height}"><hp:margin left="${FLOATING_OBJECT_PAGE.left}" right="${FLOATING_OBJECT_PAGE.right}" top="${FLOATING_OBJECT_PAGE.top}" bottom="${FLOATING_OBJECT_PAGE.bottom}" header="${FLOATING_OBJECT_PAGE.header}" footer="${FLOATING_OBJECT_PAGE.footer}"/></hp:pagePr></hp:secPr></hp:run><hp:run charPrIDRef="0"><hp:t>${FLOATING_OBJECT_TEXTS.title}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${floatingParagraph(`<hp:t>${FLOATING_OBJECT_TEXTS.body(0)}</hp:t>${floatingTextBox(9501, 'IN_FRONT_OF_TEXT', 20000, 6000, floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', 40000, 30000), FLOATING_OBJECT_TEXTS.textBoxInner)}`)}
+  ${floatingParagraph(`<hp:t>${FLOATING_OBJECT_TEXTS.body(1)}</hp:t>${floatingPicture(9502, 'TOP_AND_BOTTOM', 14000, 9000, floatingPos('PAGE', 'PAGE', 'BOTTOM', 'RIGHT', 2000, 1000), 283)}`)}
+  ${floatingParagraph(`${floatingPicture(9503, 'SQUARE', 8000, 5000, floatingPos('PARA', 'COLUMN', 'TOP', 'RIGHT', 0, 0), 283)}<hp:t>${FLOATING_OBJECT_TEXTS.body(2)} ${FLOATING_OBJECT_TEXTS.body(3)}</hp:t>`)}
+  ${floatingParagraph(`${floatingTextBox(9504, 'TOP_AND_BOTTOM', 24000, 3000, floatingPos('PARA', 'COLUMN', 'TOP', 'CENTER', 300, 0), FLOATING_OBJECT_TEXTS.bandBoxInner)}<hp:t>${FLOATING_OBJECT_TEXTS.body(4)}</hp:t>`)}
+  ${floatingParagraph(`<hp:rect id="9505" zOrder="0" numberingType="PICTURE" textWrap="BEHIND_TEXT" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="30000" height="8000"/><hp:curSz width="30000" height="8000"/><hp:lineShape color="#999999" width="33" style="SOLID"/><hc:fillBrush><hc:winBrush faceColor="#F2F2F2" hatchColor="#000000" alpha="0"/></hc:fillBrush><hp:sz width="30000" widthRelTo="ABSOLUTE" height="8000" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAGE', 'PAGE', 'CENTER', 'CENTER', 0, 0)}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:rect><hp:t>${FLOATING_OBJECT_TEXTS.body(5)}</hp:t>`)}
+  ${floatingBody(6, 12)}
+  ${floatingParagraph(`<hp:tbl id="floating-table" zOrder="9506" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" rowCnt="1" colCnt="1" pageBreak="NONE" repeatHeader="0"><hp:sz width="30000" widthRelTo="ABSOLUTE" height="3000" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAGE', 'PAGE', 'TOP', 'CENTER', 0, 0)}<hp:outMargin left="0" right="0" top="0" bottom="567"/><hp:tr><hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="30000" height="3000"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${FLOATING_OBJECT_TEXTS.tableCell}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl><hp:t>${FLOATING_OBJECT_TEXTS.body(18)}</hp:t>`, true)}
+  ${floatingBody(19, 4)}
+</hs:sec>`
+// 2×2 파란 그림(위치 확인용).
+const solidPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGPwqj3iVXuEAUIBAClaBi1M089YAAAAAElFTkSuQmCC', 'base64')
+
+export function createFloatingObjectHwpx(directory: string, fileName = 'han-flow-floating-objects.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(floatingSection))
+  zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}

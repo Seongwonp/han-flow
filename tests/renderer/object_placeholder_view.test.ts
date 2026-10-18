@@ -141,7 +141,7 @@ describe('자리 표시 문서 안내', () => {
     expect(collapsed).not.toContain('viewer-object-banner-details')
     const expanded = renderToStaticMarkup(createElement(ObjectPlaceholderBanner, { counts, expanded: true, onToggleDetails: noop, onDismiss: noop }))
     expect(expanded).toContain('<li>수식 2개 — 수식 원문(script)을 상자 안에 글자로 보여 줍니다.</li>')
-    expect(expanded).toContain('<li>글상자 1개 — 글상자 안 글은 보여 주지만 위치·모양은 원본과 다릅니다.</li>')
+    expect(expanded).toContain('<li>글상자 1개 — 본문의 글상자는 원본 위치·선·면 색으로 그리고 글은 읽기 전용으로 보여 줍니다. 표 셀·머리말 안 글상자는 줄 안 상자로 보여 줍니다.</li>')
     expect(renderToStaticMarkup(createElement(ObjectPlaceholderBanner, { counts: {}, expanded: false, onToggleDetails: noop, onDismiss: noop }))).toBe('')
   })
 

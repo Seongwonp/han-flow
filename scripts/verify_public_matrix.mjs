@@ -124,6 +124,53 @@ const EDIT_SCOPE_CASES = [
 ]
 const DECORATION_TARGETS = ['header', 'footer']
 
+// 원본 위치 개체 E2E(createFloatingObjectHwpx): 화면 개체 상자(용지 기준 CSS px)가 generator의 기대값(FLOATING_OBJECT_EXPECTED,
+// HWPUNIT)과 이 오차 안에서 같아야 하고, 자리 차지·글 옆 배치 개체와 본문 글이 겹치지 않아야 한다(verify_app이 실패로 본다).
+// 문단 편집·쪽 위 표 셀 편집 뒤 저장본을 다시 열어도 개체가 같은 자리에 있어야 한다.
+const FLOATING_TOLERANCE_PX = 1.5
+const hwpToPx = (value) => (value * 96) / 7200
+const FLOATING_EDIT_CASES = [
+  { id: 'paragraph', environment: { HAN_FLOW_VERIFY_EDIT_TEXT: '개체문단', HAN_FLOW_VERIFY_EDIT_SAVE: '1' } },
+  { id: 'table-cell', environment: { HAN_FLOW_VERIFY_EDIT_TEXT: '쪽위표', HAN_FLOW_VERIFY_EDIT_CELL: '1', HAN_FLOW_VERIFY_EDIT_SAVE: '1' } }
+]
+
+/** 기대 상자(HWPUNIT)와 화면 개체(CSS px)의 위치·크기 차이. 기대값에 없는 축은 비교하지 않는다. */
+function floatingBoxFailures(label, actual, expected) {
+  if (!actual) return [`${label}: 화면에 원본 위치 개체가 없음`]
+  const failures = []
+  if (expected.page !== undefined && actual.page !== expected.page) failures.push(`${label}: ${actual.page}쪽(기대 ${expected.page}쪽)`)
+  for (const axis of ['x', 'y', 'width', 'height']) {
+    if (expected[axis] === undefined) continue
+    const difference = Math.abs(actual[axis] - hwpToPx(expected[axis]))
+    if (difference > FLOATING_TOLERANCE_PX) failures.push(`${label}: ${axis} ${actual[axis]}px(기대 ${hwpToPx(expected[axis]).toFixed(1)}px)`)
+  }
+  return failures
+}
+
+/** 원본 위치 개체 목록(쪽·배치·종류별 첫 개체). */
+function floatingObject(objects, kind, placement, wrap) {
+  return (objects ?? []).find((item) => item.kind === kind && item.placement === placement && (!wrap || item.wrap === wrap))
+}
+
+function floatingFailures(result, expected, label = 'floating-objects') {
+  const objects = result.positionedObjects
+  return [
+    ...floatingBoxFailures(`${label} 글상자`, floatingObject(objects, 'text-box', 'page', 'IN_FRONT_OF_TEXT'), expected.textBox),
+    ...floatingBoxFailures(`${label} 그림`, floatingObject(objects, 'image', 'page', 'TOP_AND_BOTTOM'), expected.picture),
+    ...floatingBoxFailures(`${label} 표`, floatingObject(objects, 'table', 'page', 'TOP_AND_BOTTOM'), expected.table),
+    floatingObject(objects, 'image', 'wrap', 'SQUARE') ? undefined : `${label}: 글 옆 배치 그림이 문단 float로 그려지지 않음`,
+    floatingObject(objects, 'text-box', 'band', 'TOP_AND_BOTTOM') ? undefined : `${label}: 문단 기준 자리 차지 글상자가 흐름 안 블록으로 그려지지 않음`,
+    floatingObject(objects, 'shape', 'page', 'BEHIND_TEXT') ? undefined : `${label}: 글 뒤 도형이 쪽 layer에 그려지지 않음`
+  ].filter(Boolean)
+}
+
+/** 저장본을 다시 연 화면의 개체가 편집 전 화면과 같은 자리에 있는지. */
+function sameFloatingObjects(before = [], after = []) {
+  return before.length === after.length && before.every((item, index) =>
+    item.page === after[index].page && item.placement === after[index].placement && item.kind === after[index].kind &&
+    ['x', 'y', 'width'].every((axis) => Math.abs(item[axis] - after[index][axis]) <= FLOATING_TOLERANCE_PX))
+}
+
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
@@ -218,6 +265,12 @@ try {
   }
   const stress = (id) => stressResults.find(({ fixtureId }) => fixtureId === id)
 
+  const floatingPath = generator.createFloatingObjectHwpx(directory, 'han-flow-floating-objects.hwpx')
+  const floatingView = await verify(floatingPath, 500)
+  pdfResults.push({ fixtureId: 'floating-objects', ...await verifyPdf(floatingPath) })
+  const floatingEdits = []
+  for (const edit of FLOATING_EDIT_CASES) floatingEdits.push({ id: edit.id, ...await verify(floatingPath, 500, false, edit.environment) })
+
   const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
   const editScopeResults = []
   for (const scope of EDIT_SCOPE_CASES) {
@@ -265,6 +318,16 @@ try {
     stress('footnote-long')?.footnotePlacement?.notes === 5 && stress('footnote-long')?.footnotePlacement?.continuations >= 1
       ? undefined
       : `footnote-long: 한 쪽보다 긴 각주가 다음 쪽으로 이어지지 않음(${JSON.stringify(stress('footnote-long')?.footnotePlacement)})`,
+    floatingView.passed ? undefined : `floating-objects: ${floatingView.failures.join(', ')}`,
+    ...floatingFailures(floatingView, generator.FLOATING_OBJECT_EXPECTED),
+    ...floatingEdits.filter(({ passed }) => !passed).map(({ id, failures: editFailures }) => `floating-objects ${id} 편집: ${editFailures.join(', ')}`),
+    ...floatingEdits.flatMap(({ id, positionedObjects }) => floatingFailures({ positionedObjects }, generator.FLOATING_OBJECT_EXPECTED, `floating-objects ${id} 편집`)),
+    ...floatingEdits
+      .filter(({ positionedObjects, saveAs }) => !sameFloatingObjects(positionedObjects, saveAs?.reopenedPositionedObjects))
+      .map(({ id }) => `floating-objects ${id} 편집: 저장본을 다시 열었을 때 개체 자리가 다름`),
+    floatingEdits.find(({ id }) => id === 'table-cell')?.editingProbe?.surface === 'table-cell'
+      ? undefined
+      : 'floating-objects 쪽 위 표 셀 편집 surface가 검증되지 않음',
     longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
     longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
     longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
@@ -334,6 +397,12 @@ try {
     layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement }) => ({
       fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement
     })),
+    floatingObjects: {
+      passed: floatingView.passed,
+      totalPages: floatingView.totalPages,
+      positionedObjects: floatingView.positionedObjects,
+      edits: floatingEdits.map(({ id, passed, totalPages, saveAs }) => ({ id, passed, totalPages, reopenedPages: saveAs?.reopenedPages }))
+    },
     longFootnoteEdit: {
       passed: longFootnoteEdit.passed,
       totalPages: longFootnoteEdit.totalPages,

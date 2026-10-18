@@ -100,7 +100,44 @@ export interface ViewerText {
   charStyleId: string
   sourceAnchor?: ViewerSourceAnchor
 }
-export interface ViewerImage { type: 'image'; resourceId?: string; width?: HwpUnit; height?: HwpUnit }
+export interface ViewerImage {
+  type: 'image'
+  resourceId?: string
+  width?: HwpUnit
+  height?: HwpUnit
+  /** 글자처럼 취급하지 않는 그림(`hp:pos treatAsChar="0"`)의 원본 위치. 없으면 줄 안에 놓는다. */
+  position?: ViewerObjectPosition
+}
+
+/** 개체와 본문 글의 배치 관계(OWPML `textWrap`). */
+export type ViewerTextWrap = 'SQUARE' | 'TIGHT' | 'THROUGH' | 'TOP_AND_BOTTOM' | 'BEHIND_TEXT' | 'IN_FRONT_OF_TEXT'
+
+/**
+ * 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`)의 원본 위치(OWPML `hp:pos`·`hp:sz`·`hp:outMargin`, 길이는 HWPUNIT).
+ * - `vertRelTo`: `PAPER`(용지)·`PAGE`(쪽 본문)·`PARA`(개체를 둔 문단), `horzRelTo`: `PAPER`·`PAGE`·`COLUMN`(단)·`PARA`.
+ * - `vertAlign`·`horzAlign`: 기준 영역 안에서 맞출 쪽. `vertOffset`·`horzOffset`은 맞춘 쪽 가장자리에서 안쪽으로 잰 거리다
+ *   (아래·오른쪽 맞춤이면 위·왼쪽으로, 가운데면 아래·오른쪽으로). 원본의 32비트 부호 없는 음수 표현은 부호 있는 값으로 바꾼다.
+ * - `flowWithText`: 세로 위치를 쪽 본문 안으로 제한한다.
+ * - `width`·`height`: 화면에 그리는 개체 크기(선언 크기, 쪽보다 크면 줄인 크기).
+ * - `outMargin`: 글이 개체에 붙지 않게 비우는 바깥 여백.
+ * 본문 최상위 문단의 개체만 이 위치로 그리고, 표 셀·글상자·머리말·꼬리말·각주 안 개체는 줄 흐름 안에 둔다.
+ */
+export interface ViewerObjectPosition {
+  wrap: ViewerTextWrap
+  textFlow: string
+  vertRelTo: 'PAPER' | 'PAGE' | 'PARA'
+  horzRelTo: 'PAPER' | 'PAGE' | 'COLUMN' | 'PARA'
+  vertAlign: 'TOP' | 'CENTER' | 'BOTTOM' | 'INSIDE' | 'OUTSIDE'
+  horzAlign: 'LEFT' | 'CENTER' | 'RIGHT' | 'INSIDE' | 'OUTSIDE'
+  vertOffset: HwpUnit
+  horzOffset: HwpUnit
+  flowWithText: boolean
+  allowOverlap: boolean
+  zOrder: number
+  width: HwpUnit
+  height: HwpUnit
+  outMargin: BoxSpacing
+}
 
 /** viewer가 원본처럼 그리지 못하는 run 안 개체의 종류. */
 export type ViewerObjectKind =
@@ -160,6 +197,22 @@ export interface ViewerObjectPlaceholder {
    * 되살린 글이 줄인 높이를 넘으면 글도 같은 한도에 맞춰 줄인다.
    */
   fitted?: { declared: { width: HwpUnit; height: HwpUnit }; scale: number }
+  /** 글자처럼 취급하지 않는 개체의 원본 위치(`ViewerObjectPosition`). 본문 최상위 문단에서만 쓴다. */
+  position?: ViewerObjectPosition
+  /** 도형(사각형·타원·선·다각형)과 글상자 테두리를 그릴 선·채우기와 꼭짓점(개체 왼쪽 위 기준 HWPUNIT). */
+  shape?: ViewerShapeStyle
+}
+
+export interface ViewerShapeStyle {
+  /** 선 색(`#RRGGBB`), 굵기(HWPUNIT), 모양(`SOLID`·`DASH`…). 선이 없으면(`NONE`) undefined. */
+  stroke?: { color: string; width: HwpUnit; style: string }
+  /** 면 색(`#RRGGBB`). 채우기가 없거나 투명하면 undefined. */
+  fill?: string
+  /** 선(`hp:line`)의 두 끝점이나 다각형(`hp:polygon`)의 꼭짓점. */
+  points?: Array<{ x: HwpUnit; y: HwpUnit }>
+  /** 글상자 안쪽 여백(`hp:drawText/hp:textMargin`)과 글의 세로 맞춤(`hp:subList vertAlign`). */
+  textMargin?: BoxSpacing
+  textVerticalAlign?: string
 }
 
 /** 구역 끝에 모아 보여 주는 미주 본문 목록. 각주는 번호 표시가 놓인 쪽 아래에 그린다. */
@@ -180,7 +233,19 @@ export interface ViewerNote {
   sourcePath: string
   paragraphs: ViewerParagraph[]
 }
-export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; pageBreak?: string; repeatHeader: boolean; rows: ViewerTableRow[] }
+export interface ViewerTable {
+  type: 'table'
+  id: string
+  rowCount: number
+  columnCount: number
+  width?: HwpUnit
+  height?: HwpUnit
+  pageBreak?: string
+  repeatHeader: boolean
+  rows: ViewerTableRow[]
+  /** 글자처럼 취급하지 않는 표(`hp:pos treatAsChar="0"`)의 원본 위치. 없으면 문단 흐름 안에 놓는다. */
+  position?: ViewerObjectPosition
+}
 export interface ViewerTableRow { cells: ViewerTableCell[]; fragmentHeight?: HwpUnit }
 export interface ViewerTableCell {
   row: number

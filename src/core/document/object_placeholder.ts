@@ -134,8 +134,8 @@ export function objectPlaceholderNotice(counts: ObjectPlaceholderCounts): string
 export function objectPlaceholderDetailLines(counts: ObjectPlaceholderCounts): string[] {
   const notes: Partial<Record<ViewerObjectKind, string>> = {
     equation: '수식 원문(script)을 상자 안에 글자로 보여 줍니다.',
-    'text-box': '글상자 안 글은 보여 주지만 위치·모양은 원본과 다릅니다.',
-    shape: '도형은 크기만 맞춘 상자로 보여 줍니다.',
+    'text-box': '본문의 글상자는 원본 위치·선·면 색으로 그리고 글은 읽기 전용으로 보여 줍니다. 표 셀·머리말 안 글상자는 줄 안 상자로 보여 줍니다.',
+    shape: '본문의 사각형·타원·선·다각형은 원본 위치에 선·면 색으로 그리고, 그 밖의 도형과 표 셀 안 도형은 크기만 맞춘 상자로 보여 줍니다.',
     footnote: '각주 내용은 번호가 놓인 쪽 아래에 보여 줍니다. 각주 모양(번호 모양·구분선·간격)은 구역 설정을 따르고 위치는 원본과 조금 다를 수 있습니다.',
     endnote: '미주 번호는 본문에, 미주 내용은 구역 끝에 모아 보여 줍니다.',
     memo: '메모 내용은 본문 안 작은 상자로 보여 줍니다.',

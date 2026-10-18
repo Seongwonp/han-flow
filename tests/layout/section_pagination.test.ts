@@ -9,6 +9,7 @@ import {
   ViewerParagraph,
   ViewerSection
 } from '../../src/core/document/viewer_document'
+import { blockObjectBands } from '../../src/core/layout/object_position'
 import {
   fragmentTableBlock,
   LayoutMeasurements,
@@ -126,11 +127,13 @@ describe('section별 pagination', () => {
     async (_id, fixture) => {
       const document = await decodeViewerDocument(await HwpxSourcePackage.open(fixturePath(directory, fixture)))
       const { flat, sections } = syntheticMeasurements(document)
-      // 각주가 있는 문서는 쪽 아래 각주 영역만큼 본문이 줄어 이전 구현과 쪽 배치가 다르다. 그런 문서는 문서 단위 결과를 기준으로 한다.
+      // 각주가 있는 문서는 쪽 아래 각주 영역만큼, 용지·쪽 기준 자리 차지 개체가 있는 문서는 개체 띠만큼 본문이 줄어 이전 구현과
+      // 쪽 배치가 다르다. 그런 문서는 문서 단위 결과를 기준으로 한다.
       const hasFootnotes = document.sections.some((section) => section.blocks.some((block) => paragraphFootnotes(block).length > 0))
+      const hasPageBands = document.sections.some((section) => section.blocks.some((block) => blockObjectBands(block, document.page).length > 0))
       const legacyPaginate = (target: ViewerDocument, measurements?: LayoutMeasurements) =>
-        hasFootnotes ? paginateViewerDocument(target, measurements) : previousPaginate(target, measurements)
-      if (!hasFootnotes) {
+        hasFootnotes || hasPageBands ? paginateViewerDocument(target, measurements) : previousPaginate(target, measurements)
+      if (!hasFootnotes && !hasPageBands) {
         expect(paginateViewerDocument(document)).toEqual(legacyPaginate(document))
         expect(paginateViewerDocument(document, flat)).toEqual(legacyPaginate(document, flat))
       }

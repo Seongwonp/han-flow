@@ -11,6 +11,7 @@ import {
   ViewerNoteMetrics,
   ViewerPageFootnote
 } from './footnote_layout'
+import { blockObjectBands, mergePageBands, PageBand, pageBandsHeight, PageFrame, tableInFlow } from './object_position'
 
 export interface ViewerPage {
   blocks: ViewerParagraph[]
@@ -20,6 +21,11 @@ export interface ViewerPage {
    * 쪽 아래 각주 조각. 단마다 하나씩(단이 하나면 `[0]`만) 있고, 각주가 없는 쪽은 undefined다. 본문은 이 높이만큼 줄어든다.
    */
   footnotes?: ViewerPageFootnote[][]
+  /**
+   * 이 쪽에 놓인 용지·쪽 기준 개체(자리 차지·글 옆 배치)가 쪽 본문에서 비우는 세로 띠(쪽 본문 기준, 합친 뒤 위에서부터).
+   * 본문은 띠 높이만큼 줄어들고 renderer는 같은 띠를 본문 DOM에서 비운다(`pageBandLayout`). 띠가 없으면 undefined다.
+   */
+  bands?: PageBand[]
   sectionIndex: number
   sectionPageIndex: number
 }
@@ -44,8 +50,9 @@ function rowHeight(table: ViewerTable, row: ViewerTableRow, rowIndex: number, me
   return measurements?.tableRowHeights[`${table.id}:r${sourceRow}`] ?? declaredRowHeight(row)
 }
 
+/** 쪽 사이에서 나눌 수 있는 문단 흐름 안 표. 원본 위치로 그리는 흐름 밖·글 옆 표는 나누지 않는다(`object_position.ts`). */
 function tableOf(block: ViewerParagraph): ViewerTable | undefined {
-  return block.content.find((content): content is ViewerTable => content.type === 'table')
+  return block.content.find((content): content is ViewerTable => tableInFlow(content))
 }
 
 function splitRow(row: ViewerTableRow, cellIndex: number, headParagraphs: ViewerParagraph[], tailParagraphs: ViewerParagraph[], heights: ParagraphHeights): [ViewerTableRow, ViewerTableRow] {
@@ -153,7 +160,7 @@ export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] 
 export function paginateViewerDocument(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
   const availableHeight = pageBodyHeight(document)
   return document.sections.flatMap((section, sectionIndex) =>
-    paginateViewerSection(section, sectionIndex, availableHeight, measurements)
+    paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page)
   )
 }
 
@@ -184,7 +191,8 @@ export function paginateViewerSection(
   section: ViewerSection,
   sectionIndex: number,
   availableHeight: number,
-  measurements?: LayoutMeasurements
+  measurements?: LayoutMeasurements,
+  page?: PageFrame
 ): ViewerPage[] {
   const pages: ViewerPage[] = []
   const activeColumnLayout = supportsViewerColumnFlow(section.columnLayout) ? section.columnLayout : undefined
@@ -195,6 +203,9 @@ export function paginateViewerSection(
   let columnIndex = 0
   let usedHeight = 0
   let notesHeight = 0
+  // 이 쪽에 놓인 용지·쪽 기준 개체의 띠와 그 높이(겹친 부분은 한 번). 단마다 본문이 이만큼 줄어든다.
+  let pageBands: PageBand[] = []
+  let bandsHeight = 0
   let sectionPageIndex = 0
   let previousLayoutTop: number | undefined
   let previousBlockFragmented = false
@@ -241,6 +252,8 @@ export function paginateViewerSection(
     columnIndex = 0
     usedHeight = 0
     notesHeight = 0
+    pageBands = []
+    bandsHeight = 0
   }
   const flush = () => {
     const blocks = currentColumns.flat()
@@ -253,6 +266,7 @@ export function paginateViewerSection(
           columnLayout: activeColumnLayout
         } : {}),
         ...(hasNotes ? { footnotes: currentNotes.map((notes) => [...notes]) } : {}),
+        ...(pageBands.length ? { bands: mergePageBands(pageBands) } : {}),
         sectionIndex,
         sectionPageIndex
       })
@@ -264,7 +278,7 @@ export function paginateViewerSection(
   const advanceFlow = () => {
     if (columnIndex + 1 < columnCount) {
       columnIndex += 1
-      usedHeight = 0
+      usedHeight = bandsHeight
       notesHeight = 0
       fillNotes()
     } else {
@@ -291,20 +305,28 @@ export function paginateViewerSection(
       const notes = paragraphFootnotes(block).filter((note) => !placedNotes.has(note.sourcePath))
       const metrics = notes.map(metricsOf)
       const notesTotal = metrics.reduce((sum, item) => sum + item.height, 0)
+      // 용지·쪽 기준 개체(자리 차지·글 옆 배치)는 그 block이 놓이는 쪽 본문에서 개체 띠만큼 자리를 더 쓴다.
+      const blockBands = page ? blockObjectBands(block, page) : []
+      const bandsExtra = () => blockBands.length ? pageBandsHeight([...pageBands, ...blockBands]) - bandsHeight : 0
       if (fragmentIndex > 0) advanceFlow()
       else if (currentColumn().length || columnNotes().length) {
-        const fits = usedHeight + height + noteArea(notes.length, notesTotal) <= availableHeight
+        const fits = usedHeight + height + bandsExtra() + noteArea(notes.length, notesTotal) <= availableHeight
         if (!fits && (currentColumn().length || height > 0)) {
           // 빈 단에 block과 각주가 다 들어가면 block을 넘긴다. 각주가 빈 단보다도 길면 각주 첫 조각이 여기에 들어갈 때만 둔다.
-          const fitsFresh = height + footnoteAreaHeight(settings, notes.length, notesTotal) <= availableHeight
+          const fitsFresh = height + pageBandsHeight(blockBands) + footnoteAreaHeight(settings, notes.length, notesTotal) <= availableHeight
           const firstPiece = metrics[0] ? noteCursorY(metrics[0], 0) : 0
-          const fitsPartially = notes.length > 0 && usedHeight + height + noteArea(1, firstPiece) <= availableHeight
+          const fitsPartially = notes.length > 0 && usedHeight + height + bandsExtra() + noteArea(1, firstPiece) <= availableHeight
           if (fitsFresh || !fitsPartially) advanceFlow()
         }
       }
       advanceWhileNotesPending()
+      const extra = bandsExtra()
       currentColumn().push(block)
-      usedHeight += height
+      if (blockBands.length) {
+        pageBands.push(...blockBands)
+        bandsHeight += extra
+      }
+      usedHeight += height + extra
       notes.forEach((note, index) => {
         placedNotes.add(note.sourcePath)
         pending.push({ note, metrics: metrics[index], cursor: -1 })
@@ -384,11 +406,17 @@ export interface SectionPagination {
   sectionIndex: number
   availableHeight: number
   measurements?: LayoutMeasurements
+  /** 용지·쪽 기준 개체 위치를 정한 쪽 크기·여백(값으로 비교한다). */
+  pageKey: string
   pages: ViewerPage[]
 }
 
+function pageFrameKey(page: PageFrame): string {
+  return [page.width, page.height, page.margin.top, page.margin.right, page.margin.bottom, page.margin.left, page.headerOffset ?? 0].join(',')
+}
+
 /**
- * section별 측정값으로 문서를 나누되, 앞 결과(`previous`)에서 section·위치·쪽 높이·측정 object가 모두 같은 section은 다시
+ * section별 측정값으로 문서를 나누되, 앞 결과(`previous`)에서 section·위치·쪽 크기·측정 object가 모두 같은 section은 다시
  * 나누지 않고 쪽 object를 그대로 쓴다. 결과는 같은 입력의 `paginateViewerSection`을 이어 붙인 것과 같다.
  */
 export function paginateViewerSectionsIncremental(
@@ -397,6 +425,7 @@ export function paginateViewerSectionsIncremental(
   previous: readonly SectionPagination[] = []
 ): { pages: ViewerPage[]; sections: SectionPagination[]; reused: number } {
   const availableHeight = pageBodyHeight(document)
+  const pageKey = pageFrameKey(document.page)
   let reused = 0
   const sections = document.sections.map((section, sectionIndex): SectionPagination => {
     const measurements = measurementsOf(sectionIndex)
@@ -406,6 +435,7 @@ export function paginateViewerSectionsIncremental(
       cached.section === section &&
       cached.sectionIndex === sectionIndex &&
       cached.availableHeight === availableHeight &&
+      cached.pageKey === pageKey &&
       cached.measurements === measurements
     ) {
       reused += 1
@@ -416,7 +446,8 @@ export function paginateViewerSectionsIncremental(
       sectionIndex,
       availableHeight,
       measurements,
-      pages: paginateViewerSection(section, sectionIndex, availableHeight, measurements)
+      pageKey,
+      pages: paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page)
     }
   })
   return { pages: sections.flatMap((section) => section.pages), sections, reused }

@@ -73,6 +73,11 @@ function sourceObjects(path) {
   }
 }
 
+/** 본문 글이 들어온 자리 차지·글 옆 배치 개체(`쪽:배치/배치 방식/종류`). */
+function overlappingObjects(state) {
+  return (state.positionedObjects ?? []).filter((item) => item.textOverlap).map((item) => `${item.page}쪽 ${item.placement}/${item.wrap}/${item.kind}`)
+}
+
 function placeholderKey(counts = {}) {
   return Object.keys(counts).sort().map((kind) => `${kind}=${counts[kind]}`).join(',') || '없음'
 }
@@ -263,6 +268,8 @@ try {
     state.cellOverflowTexts?.length ? `표 셀 밖으로 나간 글자: ${state.cellOverflowTexts.join(', ')}` : undefined,
     // 각주는 본문 번호 표시가 놓인 쪽 아래에서 시작해야 한다(이어지는 조각은 다음 쪽).
     state.footnotePlacement?.mismatched?.length ? `각주가 번호 표시와 다른 쪽에 있음: ${state.footnotePlacement.mismatched.join(', ')}` : undefined,
+    // 원본 위치 개체(자리 차지·글 옆 배치)가 비운 자리에 본문 글이 들어오면 개체와 글이 겹쳐 보인다.
+    overlappingObjects(state).length ? `본문 글과 겹치는 자리 차지 개체: ${overlappingObjects(state).join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
     source.error ? `원본 개체 검사 실패: ${source.error}` : undefined,
     // 회귀 방지: 원본 종류별 개체 수보다 화면 자리 표시가 적으면 개체가 조용히 사라진 것이다.
@@ -367,6 +374,7 @@ try {
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
     verifiesSavedFile && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined,
+    verifiesSavedFile && savedState && overlappingObjects(savedState).length ? `Save As 결과 본문 글과 겹치는 자리 차지 개체: ${overlappingObjects(savedState).join(', ')}` : undefined,
     verifiesSavedFile && savedState?.footnotePlacement?.mismatched?.length ? `Save As 결과 각주가 번호 표시와 다른 쪽에 있음: ${savedState.footnotePlacement.mismatched.join(', ')}` : undefined,
     verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.rows !== 3 ? '표 구조 저장본 행 수 불일치' : undefined,
     verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.columns !== 3 ? '표 구조 저장본 열 수 불일치' : undefined,
@@ -386,6 +394,7 @@ try {
     columnCounts: state.columnCounts,
     columnTextCounts: state.columnTextCounts,
     footnotePlacement: state.footnotePlacement,
+    positionedObjects: state.positionedObjects,
     errorCode: expectedError ? state.errorCode : undefined,
     windowTitle: state.windowTitle,
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
@@ -413,7 +422,8 @@ try {
       reopenedTextPresent: editTarget ? savedState?.expectedTextPresent : undefined,
       reopenedTextPageCount: editTarget ? savedState?.expectedTextPageCount : undefined,
       reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined,
-      reopenedFootnotePlacement: editTarget ? savedState?.footnotePlacement : undefined
+      reopenedFootnotePlacement: editTarget ? savedState?.footnotePlacement : undefined,
+      reopenedPositionedObjects: savedState?.positionedObjects
     } : undefined,
     crashRecovery: crashRecovery ? {
       journalsBeforeKill: state.crashReport?.journalsBeforeKill,

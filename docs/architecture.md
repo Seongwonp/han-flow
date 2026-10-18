@@ -315,17 +315,17 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 ### 원본 개체 자리 표시
 
 viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
-그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 흐름 위치에 남긴다.
-원본 좌표·회전·쪽 배치(글 앞·뒤, 쪽 기준 위치)와 개체 자체의 그림(수식 조판, 차트·OLE·도형 그리기)은 재현하지 않으며,
-상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
+그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 content 위치에 남긴다.
+글자처럼 취급하지 않는 본문 개체는 원본 위치에 그린다(아래 "원본 위치 개체"). 회전과 개체 자체의 그림(수식 조판, 차트·OLE 그리기)은
+재현하지 않으며, 상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
 
 | 원본 element | kind | 화면 |
 | --- | --- | --- |
 | `hp:equation` | `equation` | "수식" 상자 + `hp:script` 원문(고정폭) |
 | `hp:chart`(`hp:switch` 안 차트, OLE 대체본 크기 사용) | `chart` | "차트" 상자 |
 | `hp:ole` | `ole` | "OLE 개체" 상자 + `hp:shapeComment` |
-| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 읽기 전용 문단 |
-| 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자 |
+| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 읽기 전용 문단(본문 원본 위치 개체는 원본 선·면 색 상자) |
+| 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자(본문 원본 위치의 사각형·타원·선·다각형은 SVG) |
 | `hp:btn`·`hp:radioBtn`·`hp:checkBtn`·`hp:comboBox`·`hp:edit`·`hp:listBox`·`hp:scrollBar` | `form-control` | "양식 컨트롤" 상자 + caption·값 |
 | `hp:video` | `video` | "동영상" 상자 |
 | `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 각주 본문은 쪽(단) 아래 각주 영역, 미주 본문은 구역 끝 `note-list` |
@@ -335,7 +335,8 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
 
 - 크기는 `hp:curSz`(가로·세로가 모두 0보다 크면) → `hp:sz` → `hp:orgSz` 순서의 HWPUNIT이다. 흐름은
   `hp:pos treatAsChar="1"`이면 `inline`, `textWrap`이 `IN_FRONT_OF_TEXT`·`BEHIND_TEXT`이면 자리를 차지하지 않는
-  `floating`, 그 밖은 `block`이다. 문단 `layoutHeight`는 줄 배치 캐시·표 높이와 함께 inline 최대 높이 + block 높이 합을
+  `floating`, 그 밖은 `block`이다(표 셀·글상자 등 안쪽 개체에 쓰고, 본문 최상위 문단의 글자처럼 취급하지 않는 개체는 아래
+  "원본 위치 개체"를 따른다). 문단 `layoutHeight`는 줄 배치 캐시·표 높이와 함께 inline 최대 높이 + block 높이 합을
   반영하므로 무측정 첫 pagination도 자리를 잡고, 두 번째 pass는 DOM 실측을 쓴다.
 - 선언 높이가 쪽 본문 높이의 85%(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 decoder가 너비·높이를 같은 비율로 줄이고 원래
   크기와 배율을 `fitted`에 남긴다. renderer는 이름표에 "(축소)"와 `data-object-fitted`를 붙이고, 되살린 글상자 글이 같은
@@ -375,6 +376,47 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   manifest 기대값과 정확히 비교한다. renderer는 `countObjectPlaceholders`로 안내 배너("이 문서에는 화면에 완전히 표시되지
   않는 개체가 N개 있습니다 (…)")·상태 막대를 만들고, PDF 내보내기 요청에 개수를 실어 보내면 main이 저장 위치를 묻기 전에
   `dialog.showMessageBox`(창에 연결)로 [그래도 내보내기]/[취소]를 묻는다. E2E 경로(`HAN_FLOW_PDF_EXPORT_PATH`)는 묻지 않는다.
+
+### 원본 위치 개체
+
+`hp:pos treatAsChar="0"`인 그림(`ViewerImage`)·표(`ViewerTable`)·개체 자리 표시는 decoder가 `position: ViewerObjectPosition`
+(배치 `textWrap`·`textFlow`, 기준 `vertRelTo` PAPER·PAGE·PARA / `horzRelTo` PAPER·PAGE·COLUMN·PARA, 맞춤 TOP·CENTER·BOTTOM·
+INSIDE·OUTSIDE / LEFT·CENTER·RIGHT·INSIDE·OUTSIDE, offset, `flowWithText`, `zOrder`, 크기, `hp:outMargin`)를 붙인다. offset은
+32비트 부호 없는 음수(예: 4294964867)를 부호 있는 값으로 바꾸고(`signedHwpUnit`), 크기는 한/글이 쪽 배치에 쓰는 `hp:sz`를 먼저 쓴다
+(도형 `hp:curSz`는 글상자 글에 맞춰 더 클 수 있다). 사각형·타원·선·다각형·글상자는 `shape`(선 `hp:lineShape`, 면 `hc:winBrush`,
+선·다각형 꼭짓점을 `hp:sz`/`hp:orgSz` 비율로 늘린 값, 글상자 안쪽 여백·세로 맞춤)도 붙인다.
+
+본문 최상위 문단의 개체만 이 위치를 쓴다(renderer는 `ParagraphView`에 `objectFrame`(쪽·단·쪽 번호)을 넘길 때만 쓰고, 표 셀·글상자·
+머리말·꼬리말·각주 안 개체는 예전처럼 줄 흐름 안에 둔다). 배치 방식은 `object_position.ts`의 `objectPlacement`가 정한다.
+
+| 배치 | 조건 | 화면 | 쪽 나눔 |
+| --- | --- | --- | --- |
+| `band` | 문단 기준 + 자리 차지 | 문단 앞 흐름 안 블록(왼쪽 margin = 원본 가로 위치 − 문단 왼쪽, 위 padding = 세로 offset, 아래 padding = 아래 바깥 여백, 높이 = `hp:sz`) | 측정 DOM이 문단 높이에 넣는다. 흐름 안 표는 계속 행 단위로 나뉜다 |
+| `wrap` | 문단 기준 + 글 옆(SQUARE·TIGHT·THROUGH) | 문단 앞 float(단 왼쪽 반이면 왼쪽, `textFlow`가 한쪽이면 그 반대쪽), 문단은 `display: flow-root` | 측정 DOM이 문단 높이에 넣는다. 표는 나누지 않는다 |
+| `overlay` | 문단 기준 + 글 앞·뒤 | 문단(`position: relative`) 기준 절대 위치 | 영향 없음 |
+| `page` | 용지·쪽 기준 | 쪽 layer(`PageObjectLayer`, `.viewer-page` 기준 절대 위치) | 글 앞·뒤가 아니면 개체 띠(`pageObjectBand`, 바깥 여백 포함)만큼 그 쪽 본문을 줄인다 |
+
+- 위치 계산(`objectX`·`objectY`): 기준 영역 안에서 왼쪽·위 맞춤은 offset만큼 안쪽, 오른쪽·아래 맞춤은 끝에서 offset만큼 안쪽, 가운데는
+  가운데에서 offset만큼 오른쪽·아래다. 안쪽·바깥쪽 가로 맞춤은 홀수 쪽(1쪽부터)에서 왼쪽·오른쪽, 짝수 쪽에서 반대이고 세로는 위·아래로
+  본다. 문단 기준 세로는 문단 위 끝 + offset이며 흐름 안(`band`·`wrap`)은 음수 offset을 0으로 둔다. `flowWithText`면 쪽 본문 안으로,
+  모든 개체는 용지 안으로 옮긴다(쪽 overflow·PDF 잘림 방지). 용지 기준 세로 위치는 한/글 본문 영역(위쪽 여백 + 머리말 여백 아래) 안이면
+  머리말 여백만큼 위로 옮긴다. Han-Flow 쪽 본문이 위쪽 여백에서 시작하기 때문이다(쪽 크기 모델은 바꾸지 않는다).
+- 쪽 띠: pagination(`paginateViewerSection`의 `page` 인자)은 block을 놓을 때 그 block의 용지·쪽 기준 개체 띠를 쪽 띠 목록에 더하고
+  합친 띠 높이(겹친 부분은 한 번)의 늘어난 만큼 지금 단 사용 높이에 더한다. 다음 단은 띠 높이에서 시작한다. block과 늘어난 띠가 함께
+  들어가지 않으면 block(과 띠)을 다음 단·쪽으로 넘긴다. 결과는 `ViewerPage.bands`(쪽 본문 기준, 합친 띠)다. renderer
+  (`PageBandSpacers`)는 같은 띠를 본문 DOM에서 비운다: 본문 위 끝에 닿은 띠는 본문 앞 빈 블록, 가운데 띠는 폭 0 float(띠 위까지)와
+  폭 전체 float(띠 높이), 아래 끝에 닿은 띠는 pagination이 덜 채우므로 DOM이 없다. 다단이면 단마다 같은 띠를 둔다. 측정 DOM에는 쪽
+  기준 개체와 띠가 없어 문단 높이가 쪽과 무관하다. section pagination cache는 쪽 크기·여백·머리말 여백 값도 비교한다.
+- 쌓임: `.viewer-page`는 `isolation: isolate`라 글 뒤 개체(`z-index: -1`)가 쪽 배경 위·본문 글 아래에 그려지고, 그 밖의 개체는
+  `z-index: 1`이다. 표가 아닌 글 앞·뒤·쪽 기준 개체는 `pointer-events: none`이라 밑의 본문 글 선택·caret을 가리지 않는다. 쪽 기준 표는
+  쪽 layer에서도 같은 `editing` props로 그려 셀 글자 편집이 그대로다(표 앞·뒤 caret은 문단에 남는다).
+- 그리기: 그림은 상자 크기 그대로, 글상자는 원본 선·면 색·안쪽 여백·세로 맞춤 상자(`TextBoxView`, 높이 `hp:sz` 이상, 쪽 높이 한도를
+  넘으면 자리 표시처럼 `zoom`으로 줄임)에 읽기 전용 문단, 사각형·타원·선·다각형은 SVG(`ShapeView`, 선 굵기 0.5pt 이상, 굵기 절반만큼
+  상자를 넓혀 높이 0인 선도 그림), 그 밖의 개체는 자리 표시 상자를 원본 크기로 그린다. 종류·개수 집계(`data-object-kind`)는 그대로다.
+- E2E: verify_app은 원본 위치 개체마다 쪽·배치·종류와 용지 기준 상자(CSS px, 배율 제외)를 `positionedObjects`로 내고, 자리 차지·글 옆
+  개체가 비운 자리에 본문 글이 들어오면(`textOverlap`) 실패로 본다(저장본 재열기 포함). verify:matrix는 `createFloatingObjectHwpx`의
+  용지 기준 글상자·쪽 아래 그림·쪽 위 표 상자를 generator 기대값(`FLOATING_OBJECT_EXPECTED`)과 1.5px 안에서 비교하고, 문단 편집·쪽 위
+  표 셀 편집→Save As→재열기 뒤에도 같은 자리인지 본다.
 
 ### Decoder worker
 

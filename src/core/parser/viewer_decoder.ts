@@ -1,4 +1,4 @@
-import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
 import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
@@ -9,6 +9,7 @@ import {
   requiredNamespaceOf,
   storedToHwpUnitScale
 } from '../document/paragraph_margin_units'
+import { contentOutOfFlow } from '../layout/object_position'
 import { isRenderedStrikeShape } from './line_shape'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import {
@@ -183,6 +184,102 @@ function declaredSize(node: OrderedXmlNode): { width: number; height: number } |
   return positive(current) ?? positive(declared) ?? positive(original) ?? fallback
 }
 
+const TEXT_WRAPS = new Set<ViewerTextWrap>(['SQUARE', 'TIGHT', 'THROUGH', 'TOP_AND_BOTTOM', 'BEHIND_TEXT', 'IN_FRONT_OF_TEXT'])
+const VERT_REL = new Set(['PAPER', 'PAGE', 'PARA'])
+const HORZ_REL = new Set(['PAPER', 'PAGE', 'COLUMN', 'PARA'])
+const VERT_ALIGN = new Set(['TOP', 'CENTER', 'BOTTOM', 'INSIDE', 'OUTSIDE'])
+const HORZ_ALIGN = new Set(['LEFT', 'CENTER', 'RIGHT', 'INSIDE', 'OUTSIDE'])
+
+/** 위치 offset. 한/글은 음수를 32비트 부호 없는 수(예: 4294964867 = -2429)로 저장한다. */
+export function signedHwpUnit(value?: string): number {
+  const parsed = num(value)
+  if (!Number.isFinite(parsed)) return 0
+  return parsed >= 2 ** 31 && parsed < 2 ** 32 ? parsed - 2 ** 32 : parsed
+}
+
+/**
+ * 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`)의 원본 위치. 글자처럼 취급하거나 `hp:pos`·크기가 없으면 undefined다.
+ * 모르는 기준·맞춤 값은 한/글 기본값(문단·위·왼쪽)으로, 모르는 배치는 자리 차지(`TOP_AND_BOTTOM`)로 읽는다.
+ *
+ * 크기는 한/글이 쪽 배치에 쓰는 개체 크기(`hp:sz`)를 먼저 쓰고, 없으면 `fallback`(그림·도형의 현재 크기)을 쓴다. 도형의 현재
+ * 크기(`hp:curSz`)는 글상자 안 글에 맞춰 `hp:sz`보다 클 수 있는데, 한/글은 `hp:sz`로 본문 자리를 잡는다. 높이가 `limit`(쪽 본문
+ * 높이의 일정 비율)을 넘으면 같은 비율로 줄인다.
+ */
+function objectPosition(
+  node: OrderedXmlNode,
+  fallback: { width: number; height: number } | undefined,
+  limit?: number
+): ViewerObjectPosition | undefined {
+  const pos = child(node, 'hp:pos')
+  if (!pos || pos.attributes.treatAsChar === '1') return undefined
+  const declared = child(node, 'hp:sz')
+  const layoutSize = declared && num(declared.attributes.width) > 0 && num(declared.attributes.height) > 0
+    ? { width: num(declared.attributes.width), height: num(declared.attributes.height) }
+    : fallback
+  const size = fitObjectSize(layoutSize, limit).size
+  if (!size) return undefined
+  const width = Number.isFinite(size.width) ? Math.max(size.width, 0) : 0
+  const height = Number.isFinite(size.height) ? Math.max(size.height, 0) : 0
+  if (!(width > 0 || height > 0)) return undefined
+  const attribute = (name: string, allowed: Set<string>, fallback: string) =>
+    allowed.has(pos.attributes[name] ?? '') ? pos.attributes[name]! : fallback
+  const wrap = node.attributes.textWrap as ViewerTextWrap | undefined
+  return {
+    wrap: wrap && TEXT_WRAPS.has(wrap) ? wrap : 'TOP_AND_BOTTOM',
+    textFlow: node.attributes.textFlow ?? 'BOTH_SIDES',
+    vertRelTo: attribute('vertRelTo', VERT_REL, 'PARA') as ViewerObjectPosition['vertRelTo'],
+    horzRelTo: attribute('horzRelTo', HORZ_REL, 'PARA') as ViewerObjectPosition['horzRelTo'],
+    vertAlign: attribute('vertAlign', VERT_ALIGN, 'TOP') as ViewerObjectPosition['vertAlign'],
+    horzAlign: attribute('horzAlign', HORZ_ALIGN, 'LEFT') as ViewerObjectPosition['horzAlign'],
+    vertOffset: signedHwpUnit(pos.attributes.vertOffset),
+    horzOffset: signedHwpUnit(pos.attributes.horzOffset),
+    flowWithText: pos.attributes.flowWithText === '1',
+    allowOverlap: pos.attributes.allowOverlap === '1',
+    zOrder: Number.isFinite(num(node.attributes.zOrder)) ? num(node.attributes.zOrder) : 0,
+    width,
+    height,
+    outMargin: box(child(node, 'hp:outMargin'))
+  }
+}
+
+const SHAPE_STROKE_NONE = new Set(['NONE', ''])
+
+/** 도형·글상자의 선·채우기·꼭짓점(`hp:lineShape`·`hc:fillBrush`·`hc:startPt`/`hc:endPt`·`hc:pt`). 그릴 것이 없으면 undefined. */
+function shapeStyle(node: OrderedXmlNode, size: { width: number; height: number } | undefined): ViewerShapeStyle | undefined {
+  const style: ViewerShapeStyle = {}
+  const line = child(node, 'hp:lineShape')
+  const color = line?.attributes.color ?? ''
+  const strokeWidth = num(line?.attributes.width)
+  if (line && !SHAPE_STROKE_NONE.has(line.attributes.style ?? '') && /^#[0-9a-f]{6}$/iu.test(color) && strokeWidth > 0) {
+    style.stroke = { color, width: strokeWidth, style: line.attributes.style ?? 'SOLID' }
+  }
+  const brush = child(node, 'hc:fillBrush')
+  const winBrush = brush ? child(brush, 'hc:winBrush') : undefined
+  const face = winBrush?.attributes.faceColor ?? ''
+  // alpha는 투명도(0 불투명 ~ 255 투명)다.
+  if (/^#[0-9a-f]{6}$/iu.test(face) && num(winBrush?.attributes.alpha) < 255) style.fill = face
+  const original = child(node, 'hp:orgSz')
+  const scaleX = size && num(original?.attributes.width) > 0 ? size.width / num(original!.attributes.width) : 1
+  const scaleY = size && num(original?.attributes.height) > 0 ? size.height / num(original!.attributes.height) : 1
+  const point = (item: OrderedXmlNode) => ({ x: num(item.attributes.x) * scaleX, y: num(item.attributes.y) * scaleY })
+  if (node.name === 'hp:line') {
+    const start = child(node, 'hc:startPt')
+    const end = child(node, 'hc:endPt')
+    if (start && end) style.points = [point(start), point(end)]
+  } else if (node.name === 'hp:polygon') {
+    const points = children(node, 'hc:pt').map(point)
+    if (points.length >= 2) style.points = points
+  }
+  const drawText = child(node, 'hp:drawText')
+  if (drawText) {
+    const margin = child(drawText, 'hp:textMargin')
+    if (margin) style.textMargin = box(margin)
+    const subList = child(drawText, 'hp:subList')
+    if (subList?.attributes.vertAlign) style.textVerticalAlign = subList.attributes.vertAlign
+  }
+  return Object.keys(style).length ? style : undefined
+}
+
 function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
   if (child(node, 'hp:pos')?.attributes.treatAsChar === '1') return 'inline'
   const wrap = node.attributes.textWrap
@@ -227,6 +324,8 @@ function placeholder(
   extra: Partial<ViewerObjectPlaceholder> = {}
 ): ViewerObjectPlaceholder {
   const { size, fitted } = fitObjectSize(declaredSize(node), context.objectHeightLimit)
+  const position = objectPosition(node, size, context.objectHeightLimit)
+  const shape = SHAPE_ELEMENTS.has(node.name) ? shapeStyle(node, position ?? size) : undefined
   return {
     type: 'object-placeholder',
     kind,
@@ -236,6 +335,8 @@ function placeholder(
     ...(size ? { size } : {}),
     label: OBJECT_KIND_LABELS[kind],
     ...(fitted ? { fitted } : {}),
+    ...(position ? { position } : {}),
+    ...(shape ? { shape } : {}),
     ...extra
   }
 }
@@ -473,11 +574,13 @@ function decodeParagraph(
   const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
   const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
   const measuredLayoutHeight = lineSegments.length ? Math.max(...ends) - Math.min(...starts) : 0
-  const tableLayoutHeight = content.reduce(
+  // 본문 최상위 문단의 용지·쪽 기준 개체와 글 앞·뒤 개체는 문단 흐름 밖(`object_position.ts`)이라 높이에 넣지 않는다.
+  const flowContent = topLevel ? content.filter((item) => !contentOutOfFlow(item)) : content
+  const tableLayoutHeight = flowContent.reduce(
     (maximum, item) => item.type === 'table' ? Math.max(maximum, item.height ?? 0) : maximum,
     0
   )
-  const layoutHeight = Math.max(measuredLayoutHeight, tableLayoutHeight, placeholderLayoutHeight(content))
+  const layoutHeight = Math.max(measuredLayoutHeight, tableLayoutHeight, placeholderLayoutHeight(flowContent))
   const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
   const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess)?.block
   return {
@@ -495,7 +598,10 @@ function decodeParagraph(
 function decodeImage(node: OrderedXmlNode): ViewerImage {
   const resource = descendants(node, 'hc:img')[0]
   const size = descendants(node, 'hp:curSz')[0] ?? child(node, 'hp:sz')
-  return { type: 'image', resourceId: resource?.attributes.binaryItemIDRef, width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined }
+  const width = size ? num(size.attributes.width) : undefined
+  const height = size ? num(size.attributes.height) : undefined
+  const position = objectPosition(node, width !== undefined && height !== undefined ? { width, height } : declaredSize(node))
+  return { type: 'image', resourceId: resource?.attributes.binaryItemIDRef, width, height, ...(position ? { position } : {}) }
 }
 
 function decodeTable(
@@ -532,7 +638,10 @@ function decodeTable(
       }
     })
   }))
-  return { type: 'table', id, rowCount: num(node.attributes.rowCnt) || rows.length, columnCount: num(node.attributes.colCnt), width: size ? num(size.attributes.width) : undefined, height: size ? num(size.attributes.height) : undefined, pageBreak: node.attributes.pageBreak, repeatHeader: node.attributes.repeatHeader === '1', rows }
+  const width = size ? num(size.attributes.width) : undefined
+  const height = size ? num(size.attributes.height) : undefined
+  const position = width !== undefined && height !== undefined ? objectPosition(node, { width, height }) : undefined
+  return { type: 'table', id, rowCount: num(node.attributes.rowCnt) || rows.length, columnCount: num(node.attributes.colCnt), width, height, pageBreak: node.attributes.pageBreak, repeatHeader: node.attributes.repeatHeader === '1', rows, ...(position ? { position } : {}) }
 }
 
 function decodePageNumber(nodes: OrderedXmlNode[]): ViewerPageNumber | undefined {
