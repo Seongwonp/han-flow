@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -70,6 +70,7 @@ import {
   restoreParagraphEditorSelection
 } from './paragraph_selection'
 import { DocumentLayoutMeasurements, EditingImeTransientState } from './renderer_state'
+import { MeasurementStylesTracker, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
@@ -94,11 +95,7 @@ function borderCss(border: ViewerCellStyle['left']): string {
   return border.type === 'NONE' ? 'none' : `${Math.max(border.widthMm, 0.12)}mm solid ${border.color}`
 }
 
-/**
- * 문단·표·개체를 그릴 때 문서에서 읽는 값. 문서 object 대신 이것만 넘겨, 편집 patch가 section만 바꿨을 때는 같은 object가
- * 유지되어 memo한 section 측정 DOM이 다시 그려지지 않게 한다.
- */
-export type ViewerRenderStyles = Pick<ViewerDocument, 'page' | 'charStyles' | 'paraStyles' | 'cellStyles' | 'resources'>
+export type { ViewerRenderStyles }
 
 function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerRenderStyles): CSSProperties {
   const style = document.charStyles[item.charStyleId]
@@ -1086,7 +1083,8 @@ export function ParagraphView({
 }
 
 /**
- * section 하나의 측정용 DOM. 편집 patch가 바꾸지 않은 section은 section·style object가 그대로라 다시 그리지 않는다.
+ * section 하나의 측정용 DOM. 편집 patch가 바꾸지 않은 section은 다시 그리지 않는다. style은 측정값 표지(`stylesKey`)가 같으면
+ * 바뀌어도 건너뛴다. 표지가 같다는 것은 바뀐 style id를 쓰는 section이 모두 새 object라는 뜻이다(`MeasurementStylesTracker`).
  */
 const MeasurementSection = memo(function MeasurementSection({
   section,
@@ -1095,6 +1093,7 @@ const MeasurementSection = memo(function MeasurementSection({
 }: {
   section: ViewerSection
   styles: ViewerRenderStyles
+  stylesKey: object
   width: number
 }) {
   const footnotes = sectionFootnotes(section)
@@ -1131,7 +1130,7 @@ const MeasurementSection = memo(function MeasurementSection({
       measureId={note.sourcePath}
     />)}</div>}
   </div>
-})
+}, (previous, next) => previous.section === next.section && previous.width === next.width && previous.stylesKey === next.stylesKey)
 
 /** section 본문의 각주(문서 순서). section object는 바꾸지 않으므로 object마다 한 번만 모은다. */
 const sectionFootnoteCache = new WeakMap<ViewerSection, ViewerNote[]>()
@@ -1148,6 +1147,16 @@ function sectionFootnotes(section: ViewerSection): ViewerNote[] {
 function markEditingTiming(name: string): void {
   performance.clearMarks(name)
   performance.mark(name)
+}
+
+function markLayoutMeasured(measuredSections: number): void {
+  performance.clearMarks('han-flow:layout-measured')
+  performance.mark('han-flow:layout-measured', { detail: { measuredSections } })
+}
+
+/** `reuse`에서 그대로 가져오지 않고 새로 잰 section 수. */
+export function countMeasuredSections(next: DocumentLayoutMeasurements, reuse: DocumentLayoutMeasurements | undefined): number {
+  return next.sections.filter((entry, index) => entry && entry !== reuse?.sections[index]).length
 }
 
 function measureHeights(elements: Iterable<HTMLElement>, key: (element: HTMLElement) => string): Record<string, number> {
@@ -1180,8 +1189,8 @@ function measureSectionElement(element: Element, section: ViewerSection): Layout
 }
 
 /**
- * 측정 DOM(`container`의 section별 자식)에서 section 높이를 잰다. `reuse`가 같은 style로 잰 값이면 object가 그대로인
- * section은 다시 재지 않고 그 측정 object를 그대로 쓴다.
+ * 측정 DOM(`container`의 section별 자식)에서 section 높이를 잰다. `reuse`가 같은 style 묶음 표지(`styles`)로 잰 값이면
+ * object가 그대로인 section은 다시 재지 않고 그 측정 object를 그대로 쓴다.
  */
 export function measureDocumentLayout(
   document: Pick<ViewerDocument, 'sections'>,
@@ -1580,20 +1589,22 @@ export default function App() {
   const projectionIdRef = useRef<number | undefined>(undefined)
   // 전체 문서로 바뀌었는지(편집 patch가 아닌지). 그러면 이전처럼 측정값을 비우고 모든 section을 다시 잰다.
   const documentReplacedRef = useRef(false)
+  // 측정값을 다시 쓸 수 있는 style 묶음 표지. 편집 patch가 알린 style id만 바뀌면 표지가 그대로다.
+  const measurementStyles = useRef(new MeasurementStylesTracker())
   const showDocument = useCallback((next: ViewerDocument | null, projectionId?: number, patched = false) => {
     documentRef.current = next
     projectionIdRef.current = projectionId
     documentReplacedRef.current = !patched
+    if (!patched) measurementStyles.current.reset()
     setDocument(next)
   }, [])
   editingTransient.current.synchronize(editing, editingPending)
   // 편집 patch가 section만 바꾸면 style map object가 그대로라 아래 값도 모두 그대로다(측정 DOM memo·측정 재사용의 기준).
+  // style definition을 바꾼 patch도 바뀐 id만 새 object이고, 글꼴을 바꾼 글자 모양 object도 id별로 다시 쓴다.
   const charStyles = document?.charStyles
+  const resolvedCharStyleCache = useRef(new WeakMap<ViewerCharStyle, ViewerCharStyle>())
   const resolvedCharStyles = useMemo(() => charStyles
-    ? Object.fromEntries(Object.entries(charStyles).map(([id, style]) => [id, {
-        ...style,
-        fontFamily: style.fontFamily ? fontResolutions[style.fontFamily]?.resolved ?? style.fontFamily : undefined
-      }]))
+    ? resolveCharStyles(charStyles, fontResolutions, resolvedCharStyleCache.current)
     : undefined, [charStyles, fontResolutions])
   const effectiveDocument = useMemo(
     () => document && resolvedCharStyles ? { ...document, charStyles: resolvedCharStyles } : null,
@@ -1605,6 +1616,7 @@ export default function App() {
       : null,
     [document?.page, resolvedCharStyles, document?.paraStyles, document?.cellStyles, document?.resources]
   )
+  const measurementStylesKey = useMemo(() => renderStyles ? measurementStyles.current.keyFor(renderStyles) : undefined, [renderStyles])
   const sectionPaginationCache = useRef<SectionPagination[]>([])
   const pagination = useMemo(() => {
     const startedAt = performance.now()
@@ -1890,35 +1902,50 @@ export default function App() {
   }, [requestedFontsKey])
   const layoutMeasurementsRef = useRef(layoutMeasurements)
   layoutMeasurementsRef.current = layoutMeasurements
+  // 이번 측정에서 새로 잰 section 수. 측정값으로 다시 나눈 쪽이 commit되면 표시를 남긴다(입력 지연 측정 'bold' mode가 읽는다).
+  const measuredSectionsRef = useRef<number | undefined>(undefined)
+  const commitMeasurements = useCallback((next: DocumentLayoutMeasurements, previous: DocumentLayoutMeasurements | undefined) => {
+    measuredSectionsRef.current = countMeasuredSections(next, previous)
+    setLayoutMeasurements(next)
+  }, [setLayoutMeasurements])
+  useLayoutEffect(() => {
+    const measuredSections = measuredSectionsRef.current
+    if (measuredSections === undefined) return
+    measuredSectionsRef.current = undefined
+    markLayoutMeasured(measuredSections)
+  }, [pagination])
   useLayoutEffect(() => {
     const container = measurementRef.current
-    if (!effectiveDocument || !renderStyles || !container) return
+    if (!effectiveDocument || !measurementStylesKey || !container) return
     const replaced = documentReplacedRef.current
     documentReplacedRef.current = false
     const previous = replaced ? undefined : layoutMeasurementsRef.current
     if (replaced) {
       // 새 문서(열기·편집 시작·refresh): 이전처럼 측정값을 비우고 모든 section을 다시 잰다.
       if (layoutMeasurementsRef.current) setLayoutMeasurements(undefined)
-    } else if (previous && previous.styles === renderStyles) {
-      // 편집 patch: style·쪽 크기가 그대로면 바뀐 section만 그리기 전에 바로 잰다(한 번에 맞는 쪽으로 그린다).
+    } else if (previous && previous.styles === measurementStylesKey) {
+      // 편집 patch: style 표지·쪽 크기가 그대로면 바뀐 section(style definition이 바뀐 id를 쓰는 section 포함)만
+      // 그리기 전에 바로 잰다(한 번에 맞는 쪽으로 그린다).
       // 글꼴을 내려받는 중이면(또는 이번 측정이 글꼴 내려받기를 시작했으면) 아래 비동기 측정이 다시 잰다.
       if (globalThis.document.fonts.status === 'loaded') {
-        const next = measureDocumentLayout(effectiveDocument, renderStyles, container, previous)
+        const next = measureDocumentLayout(effectiveDocument, measurementStylesKey, container, previous)
         if (next.sections.length !== previous.sections.length || next.sections.some((entry, index) => entry !== previous.sections[index])) {
-          setLayoutMeasurements(next)
+          commitMeasurements(next, previous)
+        } else {
+          markLayoutMeasured(0)
         }
         if (globalThis.document.fonts.status === 'loaded') return
       }
     }
-    // 그 밖(첫 측정, style·글꼴이 바뀐 편집 결과): 글꼴이 준비된 다음 frame에 잰다. style이 그대로면 바뀐 section만 잰다.
+    // 그 밖(첫 측정, 글꼴 목록·찾은 글꼴이 바뀐 편집 결과): 글꼴이 준비된 다음 frame에 잰다. 표지가 그대로면 바뀐 section만 잰다.
     let cancelled = false
-    const reuse = previous?.styles === renderStyles ? previous : undefined
+    const reuse = previous?.styles === measurementStylesKey ? previous : undefined
     void globalThis.document.fonts.ready.then(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))).then(() => {
       if (cancelled || !measurementRef.current) return
-      setLayoutMeasurements(measureDocumentLayout(effectiveDocument, renderStyles, measurementRef.current, reuse))
+      commitMeasurements(measureDocumentLayout(effectiveDocument, measurementStylesKey, measurementRef.current, reuse), reuse)
     })
     return () => { cancelled = true }
-  }, [effectiveDocument, renderStyles])
+  }, [effectiveDocument, measurementStylesKey])
   useEffect(() => () => {
     if (rhwpAdapter) void rhwpAdapter.then((adapter) => adapter.closeRhwpFixedPageDocument())
   }, [])
@@ -1996,6 +2023,7 @@ export default function App() {
         return
       }
       next = patched
+      measurementStyles.current.notePatch(result.patch)
       showDocument(next, result.patch.projectionId, true)
     } else {
       next = result.document
@@ -2833,6 +2861,7 @@ export default function App() {
       key={section.id}
       section={section}
       styles={renderStyles}
+      stylesKey={measurementStylesKey!}
       width={hwpUnitToCssPx(viewerColumnContentWidth(
         effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right,
         section.columnLayout

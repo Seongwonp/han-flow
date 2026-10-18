@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### 글자·문단 모양 편집 증분 측정
+
+- 글자·문단·셀 모양 command가 header.xml을 바꿔도 style map 전체 대신 id별로 바뀐 definition만 patch에 담고(`styleChanges`, 지운 id는 null), 바뀐 id를 쓰는 section 위치를 알림(`restyledSections`). 참조 id는 해석 결과의 본문·표 셀·머리말·꼬리말·각주·미주 문단 글자·문단 모양과 셀 테두리 id로 정하고(`sectionStyleIds`), definition 내용은 section 해석에 쓰이지 않으므로 그 section은 다시 해석하지 않음. 기존 id의 definition이 바뀌면 그 id를 쓰는 section 모두, 글꼴 목록이 바뀌면 예전처럼 style map 전체(모든 section 다시 잼)
+- renderer는 바뀐 id만 새 style object로 합치고 영향 section만 얕은 복사로 새 object로 만들며, 측정값을 style object 대신 측정값 표지(`MeasurementStylesTracker`)로 묶어 patch가 알린 id만 바뀌면 나머지 section 측정값·쪽 나눔·측정 DOM을 다시 씀. 찾은 글꼴을 넣은 글자 모양도 id별 object를 다시 씀
+- `benchmark:edit-latency`에 글자 모양 mode(`HAN_FLOW_EDIT_LATENCY_MODE=bold`: [굵게]·[실행 취소]를 번갈아 20번, 측정 DOM 다시 재기·쪽 나눔 완료 표시 `han-flow:layout-measured`와 다시 잰 section 수)를 추가. large-progressive 15,003쪽에서 누른 때부터 다시 재고 쪽을 나눈 때까지 p50/p95 401.8/464.5·361.0/437.4ms → 40.7/56.8·37.1/45.3ms, DOM 반영 p50 219.1·209.5ms → 40.9·37.2ms, 다시 잰 section 80 → 1(같은 컨테이너 두 번씩). 한 글자 입력 input→DOM p50/p95 41.5/68.2ms → 37.1/65.0ms(회귀 없음)
+- 증분 projection 동치 검사가 `styleChanges` 밖 id의 style object 공유와 바뀐 id를 쓰는 section이 모두 patch·`restyledSections`에 있는지 확인하고, section별 style 변경(새 글자 모양·실행 취소·기존 글자/문단 모양·셀 테두리·글꼴 목록) test와 renderer 측정 재사용 test(`measurement_styles.test.ts`)를 추가
+
+### HWP 기호 글꼴 사설 영역 글자
+
+- 사용자 HWP 문서 1종의 PDF 검증이 U+F0E8 4자를 사설 영역 손실로 실패하던 원인: rhwp(`@rhwp/core` 0.7.19)는 SVG를 그릴 때 기호 글꼴(Wingdings) PUA 글자를 표준 기호(U+F0E8 → ➔ U+2794)로 바꾸지만 쪽 글자 위치표는 원래 code point라 화면 글자 층(선택·검색·복사)만 U+F0E8이었음. PDF를 다시 그린 PNG에 기호 4개가 그려져 있고 PDF 글자도 ➔로 추출됨을 확인(손실이 아니라 글자 층 불일치)
+- rhwp `map_pua_bullet_char`의 기본 PUA(U+F020–U+F0FF) 48개 항목(0.7.19와 상류 `1a76570e`가 같음, MIT, `THIRD_PARTY_NOTICES.md`)을 `SYMBOL_FONT_PUA_DISPLAY`로 옮겨 HWP 쪽 글자 층(`parseRhwpTextLayout`, adapter에서 분리)과 HWPX 화면(`hancomPuaDisplayText`)에 씀. 원문·저장 bytes는 그대로. `verify:pdf` 표시 대체 표도 두 표를 읽고, 허용 목록은 늘리지 않음
+- 사용자 문서 5종 verify_app·verify_pdf 통과, 쪽 수는 변경 전과 같음(doc1 2·doc2 3·doc3 1·doc4 1·doc5-d04 2쪽). doc4 화면 글자 575 → 579(➔ 4자가 비교 글자가 됨), PDF 571 그대로. 남은 8자는 rhwp가 가운뎃점을 `<circle>`로 그려 추출되지 않는 기존 차이(보존율 0.986, 기준 0.98)
+
 ### 복구 기록 마무리
 
 - 앱 시작·문서 열기 때 남은 복구 기록을 header(첫 record)만 읽어 목록·제안을 만들고, 전체 record의 길이·CRC·구조 확인은 [복구]를 고른 뒤 편집 worker가 함(main은 기록 bytes만 넘김, 제안 때 본 header와 달라도 손상). 63 MiB 합성 기록 하나의 목록 시간 약 0.84초 → 3–4ms(첫 호출 31ms, 같은 컨테이너). 뒷부분 손상은 그때 격리해 격리 동작은 같음. 대화상자는 편집 수 대신 기록 크기를 보이고, 편집 수와 끊긴 꼬리 여부는 복구 뒤 상태 막대에 알림

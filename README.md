@@ -409,15 +409,17 @@ npm run release:audit
 (`screenPagePrivateUseCounts`·`pdfPagePrivateUseCounts`·`excludedPrivateUse`), ASCII 숫자 수(`screenPageDigitCounts`·
 `pdfPageDigitCounts`·`digits`)를 함께 남기고, 화면보다 PDF에서 숫자가 적은 페이지가 있거나 필수 문자열(fixture 옆
 manifest의 `requiredPdfText` 또는 `HAN_FLOW_PDF_REQUIRED_TEXT` JSON 배열)이 PDF 텍스트에 없으면 실패합니다. 사설 영역
-글자도 code point별로 비교해(`privateUseLosses`), PDF에서 빠진 글자가 한컴 PUA 표시 대체 표에 있고 PDF에 대체 문자가 있거나
+글자도 code point별로 비교해(`privateUseLosses`), PDF에서 빠진 글자가 한컴·기호 글꼴 PUA 표시 대체 표에 있고 PDF에 대체 문자가 있거나
 이유와 함께 허용 목록(manifest `allowedPrivateUseLoss` 또는 `HAN_FLOW_PDF_ALLOWED_PUA`)에 있을 때만 통과합니다. PDF 제목과
 기본 파일 이름이 문서 이름인지도 확인하며, `verify:matrix`는 표지·목차·본문 서식 fixture(`report-toc`)에 이 PDF 검증을
 함께 실행합니다.
 
 HWPX 화면은 rhwp가 한/글 PDF와 대조해 의미를 확인한 한컴 PUA 기호 표(MIT, `THIRD_PARTY_NOTICES.md`)에 있는 글자만
 표준 Unicode로 바꿔 그립니다(예: U+F03DA → □). 바꾼 글자는 PDF에서도 추출됩니다. 원문·편집 입력 칸·저장 bytes는 원래
-글자를 유지하고, 표에 없는 PUA와 HWP(rhwp `@rhwp/core` 0.7.19 SVG) 화면은 그대로입니다. 원 숫자 ③ 자리(U+F028B)는 rhwp 표가
-근거 문서를 찾지 못해 일부러 빼 두었으므로 Han-Flow 표에도 없습니다.
+글자를 유지하고, 표에 없는 PUA는 그대로입니다. 원 숫자 ③ 자리(U+F028B)는 rhwp 표가
+근거 문서를 찾지 못해 일부러 빼 두었으므로 Han-Flow 표에도 없습니다. 기호 글꼴(Wingdings) 사설 영역 글자(U+F020–U+F0FF,
+예: U+F0E8 → ➔)는 rhwp(`@rhwp/core` 0.7.19)가 HWP 쪽 SVG에 그리는 것과 같은 표(MIT)로 HWP 쪽 글자 층(선택·검색·복사)과
+HWPX 화면에 표준 기호로 보입니다.
 
 `fixture:v3-windows`는 Windows 한/글 외부 승인에 사용할 공개 original·identity·일반 문단
 편집본·표 셀 편집본·A4 문서와 SHA-256 검사 스크립트를 `artifacts/v3-windows/`에 만든다.
@@ -437,12 +439,18 @@ npm run release:check -- /path/to/private-reference.hwpx
 ```bash
 npm run benchmark:app -- /path/to/document.hwp
 npm run benchmark:memory -- /path/to/document.hwp
+xvfb-run -a npm run benchmark:edit-latency
+HAN_FLOW_EDIT_LATENCY_MODE=bold xvfb-run -a npm run benchmark:edit-latency
 npm run measure:package -- /path/to/v1/Han-Flow.app
 npm run probe:hwp -- /path/to/document.hwp
 npm run probe:hwp -- /path/to/document.hwp \
   --hwpx /path/to/reference.hwpx \
   --pdf /path/to/reference.pdf
 ```
+
+`benchmark:edit-latency`는 합성 large-progressive(약 15,000쪽)에서 한 글자 입력부터 화면 반영까지를 재고, `bold`
+mode는 [굵게]·[실행 취소]를 번갈아 눌러 글자 모양 변경 뒤 측정 DOM을 다시 재고 쪽을 다시 나눌 때까지와 다시 잰 section 수를
+냅니다. 글자·문단·셀 모양 command는 바뀐 모양을 쓰는 section만 다시 잽니다(측정 p50 약 380ms → 약 39ms, 80 section → 1).
 
 검증 명령은 본문 대신 페이지·구조 count, 비공백 문자 수, timing과 안정적인 오류 코드만
 출력합니다. 임시 visual state와 Electron user-data는 검증 종료 후 삭제합니다.

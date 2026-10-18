@@ -509,18 +509,27 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   각주·미주 번호, 목록 번호(`applyParagraphMarkers`), 개체 순번, `hp:t`·문단(빈 문단 anchor) 순번은 모두 section 안에서
   세고, 쪽 번호 이어 세기(`startNum`)·머리말·꼬리말 상속은 renderer가 쪽 목록에서 매번 다시 정한다(`page_decorations.ts`).
   - section XML이 바뀌면 그 section만 다시 해석한다.
-  - header.xml이 바뀌면 style map을 다시 읽어 patch에 담고, `heading`(목록 번호·글머리표) 또는 `charPrIDRef`(빈 문단
+  - header.xml이 바뀌면 style map을 다시 읽고, `heading`(목록 번호·글머리표) 또는 `charPrIDRef`(빈 문단
     caret 글자 모양)가 바뀐 문단 style id를 `paraPrIDRef`·`styleIDRef`로 참조하는 section도 다시 해석한다. 글자·문단·셀
     모양 command는 새 id만 더하므로 보통 편집한 section만 해당한다.
+  - 글자·문단·셀 모양 definition(`charStyles`·`paraStyles`·`cellStyles`)은 id별로 앞 header와 비교해 바뀐 것만
+    patch에 담는다(`styleChanges`, 지운 id는 null). section 해석 결과는 이 definition 내용과 무관하므로 다시 해석하지 않고,
+    바뀐 id를 참조하는 section 위치만 `restyledSections`로 알린다. 참조 id는 해석 결과(`ViewerSection`)의 본문·표 셀·머리말·
+    꼬리말·각주·미주 문단 `charStyleId`·`paraStyleId`와 셀 `borderFillId`로 정한다(`sectionStyleIds`, section object별
+    cache). 기존 id의 definition이 바뀌면 그 id를 쓰는 section 모두가 해당하고(모든 section이 쓰면 모두), 글꼴 목록
+    (`fonts`)이 바뀌면 글꼴 이름이 여러 글자 모양에 번지므로 style map 전체(`styles`)를 보낸다.
   - 전체 다시 해석(전체 문서 응답): entry 목록(경로·순서)이 바뀌었을 때, section·header 밖 entry(그림·manifest 등)가
     바뀌었을 때, 문서 쪽 크기(첫 `hp:pagePr`)나 자리 표시 높이 한도가 바뀌었을 때. refresh(충돌 복구)도 처음부터 해석한다.
   - 동치 검사(`tests/parser/viewer_projection.test.ts`): 공개 corpus 38종에 golden 회귀와 같은 command 표본을
     적용·되돌리기·다시 적용·되돌리기한 4,049단계에서 patch를 앞 문서에 적용한 결과가 같은 package의
     `decodeViewerDocument`와 `toStrictEqual`로 같다(80 section large-progressive는 10단계마다와 마지막, 나머지는 매 단계 비교:
-    3,893회). patch에 없는 section·style map·쪽·resource는 앞 문서 object를 그대로 쓴다. header 목록 번호 정의 변경과
-    쪽 크기·그림 entry fallback은 따로 검사한다.
+    3,893회). patch에 없는 section·style map·쪽·resource는 앞 문서 object를 그대로 쓰고, `styleChanges`에 없는 id의
+    style object도 그대로이며, 바뀐 id를 쓰는 section은 모두 patch나 `restyledSections`에 있다. header 목록 번호 정의 변경,
+    section별 style definition 변경(새 글자 모양·기존 글자/문단 모양·셀 테두리·글꼴 목록), 쪽 크기·그림 entry fallback은
+    따로 검사한다.
 - renderer 적용: renderer는 마지막 `projectionId`와 문서를 ref로 들고, patch의 `baseProjectionId`가 같으면
-  `applyViewerDocumentPatch`로 바뀐 section만 새 object로 바꾼다. 다르거나(응답을 놓친 경우) section 수·위치가 맞지 않으면
+  `applyViewerDocumentPatch`로 바뀐 section만 새 object로 바꾼다. `styleChanges`는 앞 style map을 복사해 바뀐 id만 바꾸거나
+  지우고, `restyledSections`의 section은 내용은 같은 얕은 복사로 새 object가 되어 측정·쪽 나눔 cache가 그 section만 다시 한다. 다르거나(응답을 놓친 경우) section 수·위치가 맞지 않으면
   (`ViewerDocumentPatchMismatchError`, `applyViewerDocumentPatchIfCurrent`) 편집 실패로 다루지 않고 patch를 버린 뒤 refresh로
   전체 문서를 받아 다시 맞춘다. revision·selection 처리(`reconcileEditingSelection`)는 전과 같다.
 - main thread에 남은 일: IPC 요청 검증과 경로 허용목록, worker 응답의 structured clone 역직렬화와 renderer IPC 직렬화(편집
@@ -622,6 +631,12 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 
 - 편집 patch가 section만 바꾸면 style map·쪽·resource object가 그대로라 측정·조판 입력(`renderStyles`)도 그대로다.
   측정 DOM은 section마다 memo한 `MeasurementSection`이라 바뀐 section만 다시 그린다. 글꼴 목록이 바뀔 때만 글꼴을 다시 찾는다.
+- 글자·문단·셀 모양 command처럼 style definition을 바꾼 patch도 바뀐 id만 새 style object다. 찾은 글꼴 이름을 넣은 글자 모양
+  (`resolveCharStyles`)도 원본 object와 찾은 글꼴이 그대로면 앞 object를 다시 쓴다. 측정값은 style object 대신 측정값 표지
+  (`MeasurementStylesTracker`, `src/renderer/src/measurement_styles.ts`)와 함께 둔다. 적용한 patch가 알린 id(`styleChanges`)만
+  object가 바뀌면 표지를 그대로 두고(그 id를 쓰는 section은 이미 새 object다), 쪽 크기·resource가 바뀌거나 patch가 알리지 않은 id가
+  바뀌면(찾은 글꼴 변경, 글꼴 목록이 바뀐 patch의 style map 전체) 새 표지를 만들어 모든 section을 다시 잰다. `MeasurementSection`
+  memo도 section·너비·표지만 비교한다.
 - 측정값(`DocumentLayoutMeasurements`)은 section마다 그 측정에 쓴 section object와 함께 둔다. 같은 style이고 글꼴이 모두
   준비돼 있으면 layout effect에서 바뀐 section만 그리기 전에 바로 재고(`measureDocumentLayout`), 글꼴을 내려받는 중이면
   `fonts.ready` 다음 frame에 다시 잰다. 전체 문서로 바뀌면(열기·편집 시작·refresh) 전처럼 측정값을 비우고 모두 다시 잰다.
@@ -638,6 +653,10 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 - 패키지 앱 측정(`xvfb-run -a npm run benchmark:edit-latency`, large-progressive 15,004쪽, Linux x64 xvfb):
   한 글자 입력 event부터 편집 결과가 DOM에 반영될 때까지 p50 989ms → 31ms(p95 2,084ms → 44ms), 다음 frame까지
   p50 1,224ms → 41ms. 요청 왕복(편집 요청 시작부터 결과 도착) p50 594ms → 12ms, 결과 도착부터 DOM 반영 p50 310ms → 18ms.
+- 글자 모양 측정(`HAN_FLOW_EDIT_LATENCY_MODE=bold`, 같은 문서 15,003쪽): 문단 글자 전체를 골라 [굵게]와 [실행 취소]를 번갈아
+  20번 누른다(같은 모양 definition이 있으면 command가 그 id를 다시 쓰므로 켜고 끄기만으로는 header가 처음 한 번만 바뀐다).
+  누른 때부터 측정 DOM을 다시 재고 쪽을 다시 나눈 때(`han-flow:layout-measured` 표시)까지 p50/p95 401.8/464.5·361.0/437.4ms →
+  40.7/56.8·37.1/45.3ms(같은 컨테이너 두 번씩), DOM 반영 p50 219.1·209.5ms → 40.9·37.2ms, 다시 잰 section 80 → 1.
 
 ### HWP Web Worker
 
@@ -785,7 +804,7 @@ Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked
 Poppler `pdfinfo`, `pdftotext`, `pdftoppm`으로 페이지 수, 각 page MediaBox에 대응하는 용지
 크기, 페이지별 비공백 글자 수와 대표 PNG 재렌더를 검사한다. HWPX는 화면과 PDF의 페이지별
 글자 수가 같아야 한다. 사설 영역(PUA) 글자는 비교 글자 수에서 빼되 code point별로 화면(mount된 쪽)과 PDF 같은 쪽을 비교해,
-PDF에서 빠진 글자는 한컴 PUA 표시 대체 표(`hancom_pua_display.ts`, script가 TS 원본에서 표를 그대로 읽음)에 있고 PDF 같은 쪽에
+PDF에서 빠진 글자는 한컴·기호 글꼴 PUA 표시 대체 표(`hancom_pua_display.ts`, script가 TS 원본에서 두 표를 그대로 읽음)에 있고 PDF 같은 쪽에
 대체 문자열이 있거나, 이유와 함께 허용 목록(fixture manifest `expected.allowedPrivateUseLoss`·`HAN_FLOW_PDF_ALLOWED_PUA`)에 있을
 때만 통과한다(`privateUseLosses`). 모든 문서 공통 허용 목록은 비어 있다. U+F028B(원 숫자 ③ 자리)는 rhwp 상류 표가 근거 문서에
 리터럴 ③이 쓰여 의미를 확인하지 못했다며 일부러 빼 두어 Han-Flow 표에도 없다. HWP는 화면의 별도 text layer와 인쇄 SVG의 추출 경로가 다르므로 전체
@@ -801,6 +820,16 @@ glyph만 쓰게 한다. rhwp가 글자마다 `textLength`로 폭을 고정하므
 fixture는 이 경로의 숫자·문장 부호 줄을 담고 `verify:hwp-matrix`가 manifest의
 `requiredPdfText`가 PDF 텍스트에 있는지 확인한다. rhwp가 가운뎃점(U+00B7)을 `<circle>`로 그리는
 경우처럼 SVG에 글자로 남지 않는 문자는 여전히 추출되지 않으며 보존율 허용 범위에 포함된다.
+
+rhwp는 SVG를 그릴 때 기호 글꼴(Wingdings) 사설 영역 글자(U+F020–U+F0FF, HWP가 `U+F000 + 글꼴 code`로 저장)를
+`map_pua_bullet_char` 표로 표준 기호로 바꾸지만(예: U+F0E8 → ➔ U+2794), 쪽 글자 위치표(`getPageTextLayout`)는 원래
+code point를 준다. 그래서 화면 글자 층에는 U+F0E8, SVG·PDF에는 ➔가 있어 선택·검색·복사 글자가 그린 기호와 달랐고
+`verify:pdf`가 사설 영역 손실로 보았다(사용자 문서 1종, 4자. PDF를 다시 그린 PNG에서 기호가 그려져 있고 PDF 글자도 ➔로
+추출됨을 확인). `parseRhwpTextLayout`(`rhwp_text_layout.ts`)이 같은 표(`SYMBOL_FONT_PUA_DISPLAY`, `@rhwp/core` 0.7.19와
+상류 `1a76570e`의 48개 항목이 같음)로 글자 층 run 글자를 바꾸므로 화면 글자·SVG·PDF가 같다. 바뀐 글자는 모두 기본 평면 한
+글자라 글자 offset·폭은 그대로다. 한컴 PUA 표(`VERIFIED_HANCOM_PUA_DISPLAY`)는 0.7.19 SVG가 그리는 것과 다를 수 있어 HWP 글자
+층에는 쓰지 않는다. HWPX 화면은 두 표를 모두 쓴다(`hancomPuaDisplayText`). 기호 글꼴 표는 글꼴 칸을 구분하지 않으므로 Symbol
+글꼴의 같은 code point도 같은 기호로 바뀐다(rhwp가 그리는 것과 같다). `@rhwp/core`를 올리면 상류 표와 다시 비교한다.
 
 visual state는 고정 지연 직후 바로 읽지 않는다. background decode가 끝나고 DOM measurement가
 완료된 뒤 전체·mount page signature가 250ms 간격으로 3회 같을 때만 상태를 확정한다. 대형

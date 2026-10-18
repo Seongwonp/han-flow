@@ -26,8 +26,8 @@ test('글꼴 glyph가 없으면 PDF에서 추출되지 않는 사설 영역 글�
 test('main E2E visual state와 HWP fixed-page 글자 수도 같은 규칙을 쓴다', () => {
   const main = readFileSync(resolve(root, 'src/main/index.ts'), 'utf8')
   assert.ok(main.includes(`page.innerText.match(/${COMPARABLE_CHARACTER_PATTERN.source.replaceAll('\\', '\\\\')}/gu)`))
-  const adapter = readFileSync(resolve(root, 'src/renderer/src/rhwp_fixed_page_adapter.ts'), 'utf8')
-  assert.ok(adapter.includes(".replace(/[\\s\\p{Co}]/gu, '')"))
+  const layout = readFileSync(resolve(root, 'src/renderer/src/rhwp_text_layout.ts'), 'utf8')
+  assert.ok(layout.includes(".replace(/[\\s\\p{Co}]/gu, '')"))
 })
 
 test('textCensus는 비교 글자와 별도로 공백 외 전체·사설 영역·ASCII 숫자를 센다', async () => {
@@ -96,6 +96,8 @@ test('사설 영역 글자 손실은 표시 대체 표(PDF에 대체 문자열 �
   // 표는 src/core/document/hancom_pua_display.ts를 그대로 읽는다.
   assert.equal(displayMap.get(0xf028a), '②')
   assert.equal(displayMap.get(0xf012b), '(인)')
+  // 기호 글꼴(Wingdings) PUA 표도 읽는다(rhwp가 HWP 쪽 SVG에 그리는 글자).
+  assert.equal(displayMap.get(0xf0e8), '➔')
   assert.equal(displayMap.size, (readFileSync(resolve(root, 'src/core/document/hancom_pua_display.ts'), 'utf8').match(/\[0xf[0-9a-f]+, '/g) ?? []).length)
   // ③(U+F028B)은 rhwp 상류가 근거 부족으로 뺐다. 표에도 공통 허용 목록에도 없다.
   assert.equal(displayMap.has(0xf028b), false)

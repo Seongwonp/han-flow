@@ -34,5 +34,25 @@ describe('편집 projection patch 적용', () => {
     expect(applyViewerDocumentPatchIfCurrent(document, 3, patch({ sectionCount: 3 }))).toBeUndefined()
     expect(applyViewerDocumentPatchIfCurrent(document, 3, patch({ sections: [{ index: 5, section: section('x') }] })))
       .toBeUndefined()
+    expect(applyViewerDocumentPatchIfCurrent(document, 3, patch({ restyledSections: [2] }))).toBeUndefined()
+  })
+
+  test('style definition 변경은 바뀐 id만 합치고 그 id를 쓰는 section만 새 object로 만든다', () => {
+    const styled = { ...document, charStyles: { '0': { id: '0', height: 1000, color: '#000000', bold: false, italic: false, underline: false, strikeout: false } } }
+    const next = applyViewerDocumentPatchIfCurrent(styled, 3, patch({
+      sections: [],
+      styleChanges: { charStyles: { '1': { ...styled.charStyles['0'], id: '1', bold: true } }, paraStyles: {}, cellStyles: {} },
+      restyledSections: [0]
+    }))!
+    expect(next.sections[0]).not.toBe(styled.sections[0])
+    expect(next.sections[0]).toEqual(styled.sections[0])
+    expect(next.sections[1]).toBe(styled.sections[1])
+    expect(next.charStyles['0']).toBe(styled.charStyles['0'])
+    expect(next.charStyles['1'].bold).toBe(true)
+    expect(next.paraStyles).toBe(styled.paraStyles)
+    const removed = applyViewerDocumentPatchIfCurrent(next, 3, patch({
+      sections: [], styleChanges: { charStyles: { '1': null }, paraStyles: {}, cellStyles: {} }
+    }))!
+    expect(Object.keys(removed.charStyles)).toEqual(['0'])
   })
 })

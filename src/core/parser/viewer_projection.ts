@@ -1,5 +1,11 @@
 import type { ViewerDocument } from '../document/viewer_document'
-import type { ViewerDocumentPatch } from '../document/viewer_document_patch'
+import {
+  referencesStyleIds,
+  styleChangeIds,
+  VIEWER_STYLE_MAP_NAMES,
+  type ViewerDocumentPatch,
+  type ViewerStyleChanges
+} from '../document/viewer_document_patch'
 import type { OrderedXmlNode } from './ordered_xml'
 import type { HwpxPackageIndex } from './package_reader'
 import type { HwpxSourcePackage } from './source_package'
@@ -25,9 +31,14 @@ import {
  * - 바뀐 entry는 앞·뒤 package의 entry bytes를 비교해 정한다(command 종류를 믿지 않으므로 undo·redo도 같은 규칙이다).
  * - section XML이 바뀌면 그 section만 다시 해석한다. 각주·미주 번호, 목록 번호, 개체·`hp:t`·문단 순번은 모두 section
  *   안에서 세므로 다른 section에 번지지 않는다. 쪽 번호 이어 세기·머리말·꼬리말 상속은 renderer가 쪽 목록에서 매번 다시 정한다.
- * - header.xml이 바뀌면 header style map을 다시 읽어 patch에 담고, section 해석이 header에서 읽는 값(문단 style의
+ * - header.xml이 바뀌면 header style map을 다시 읽고, section 해석이 header에서 읽는 값(문단 style의
  *   `heading` → 목록 번호·글머리표, 문단 style의 `charPrIDRef` → 빈 문단 caret 글자 모양)이 바뀐 id를 참조하는 section도
  *   다시 해석한다. 새로 만든 style id만 늘었다면 그 id를 쓰는 section(편집한 section)만 해당한다.
+ * - header의 글자·문단·셀 모양 definition(`charStyles`·`paraStyles`·`cellStyles`)은 id별로 비교해 바뀐 것만 patch에 담는다
+ *   (`styleChanges`). 그 밖의 section 해석 결과는 definition 내용과 무관하므로 다시 해석하지 않고, 바뀐 id를 참조하는
+ *   section 위치만 `restyledSections`로 알려 renderer가 그 section만 다시 재게 한다. 기존 id의 definition이 바뀌면 그 id를
+ *   쓰는 section 모두가 해당한다(모든 section이 쓰면 모두). 글꼴 목록(`fonts`)이 바뀌면 글꼴 이름이 여러 글자 모양에 번지므로
+ *   style map 전체를 담는다(`styles`, renderer는 모든 section을 다시 잰다).
  * - 전체 다시 해석(patch 대신 전체 문서): entry 목록(경로·순서)이 달라졌을 때, section·header 밖 entry(그림·manifest 등)가
  *   바뀌었을 때, 문서 쪽 크기(첫 `hp:pagePr`)나 그에서 온 자리 표시 높이 한도가 바뀌었을 때.
  */
@@ -50,6 +61,8 @@ export interface ViewerProjectionResult {
   /** 이번에 다시 해석한 section 수와 header 해석 여부(측정·test용). */
   decodedSections: number
   headerDecoded: boolean
+  /** 다시 해석하지 않았지만 바뀐 style definition을 참조해 renderer가 다시 재야 하는 section 수(측정·test용). */
+  restyledSections: number
 }
 
 const sameGeometry = (left: ViewerPageGeometry, right: ViewerPageGeometry): boolean =>
@@ -69,6 +82,26 @@ function changedHeaderInputs(
     if (before.styleCharacterIds[id] !== after.styleCharacterIds[id]) styles.add(id)
   }
   return { paraStyles, styles }
+}
+
+/** id별로 바뀐 글자·문단·셀 모양 definition. 글꼴 목록이 바뀌면 `fontsChanged`이다. */
+function changedStyleDefinitions(
+  before: ViewerHeaderProjection,
+  after: ViewerHeaderProjection
+): { fontsChanged: boolean; changes: ViewerStyleChanges; count: number } {
+  const changes: ViewerStyleChanges = { charStyles: {}, paraStyles: {}, cellStyles: {} }
+  let count = 0
+  for (const name of VIEWER_STYLE_MAP_NAMES) {
+    const previous: Record<string, unknown> = before[name]
+    const next: Record<string, unknown> = after[name]
+    const target: Record<string, unknown> = changes[name]
+    for (const id of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+      if (JSON.stringify(previous[id]) === JSON.stringify(next[id])) continue
+      target[id] = next[id] ?? null
+      count += 1
+    }
+  }
+  return { fontsChanged: JSON.stringify(before.fonts) !== JSON.stringify(after.fonts), changes, count }
 }
 
 const intersects = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => {
@@ -127,7 +160,8 @@ export class ViewerProjectionCache {
       document,
       fallback,
       decodedSections: sections.length,
-      headerDecoded: true
+      headerDecoded: true,
+      restyledSections: 0
     }
   }
 
@@ -143,6 +177,7 @@ export class ViewerProjectionCache {
     }
     const dirty = new Set(changed.filter((path) => sectionPositions.has(path)).map((path) => sectionPositions.get(path)!))
     let header = state.header
+    let styleDefinitions: ReturnType<typeof changedStyleDefinitions> | undefined
     if (headerChanged) {
       header = decodeViewerHeader(await sourcePackage.readOrderedXml(state.index.headerPath))
       const affected = changedHeaderInputs(state.header, header)
@@ -153,6 +188,7 @@ export class ViewerProjectionCache {
           }
         })
       }
+      styleDefinitions = changedStyleDefinitions(state.header, header)
     }
     const positions = [...dirty].sort((left, right) => left - right)
     const parsed = await Promise.all(positions.map(async (position) => {
@@ -171,6 +207,18 @@ export class ViewerProjectionCache {
         ...inputs
       }
     }
+    // 바뀐 style definition을 참조하지만 다시 해석하지 않은 section(앞 해석 결과의 참조 id로 정한다).
+    const restyled: number[] = []
+    let styles: Pick<ViewerDocumentPatch, 'styles' | 'styleChanges'> = {}
+    if (styleDefinitions?.fontsChanged) {
+      styles = { styles: { fonts: header.fonts, charStyles: header.charStyles, paraStyles: header.paraStyles, cellStyles: header.cellStyles } }
+    } else if (styleDefinitions?.count) {
+      styles = { styleChanges: styleDefinitions.changes }
+      const changedIds = styleChangeIds(styleDefinitions.changes)
+      sections.forEach((section, position) => {
+        if (!dirty.has(position) && referencesStyleIds(section.decoded.section, changedIds)) restyled.push(position)
+      })
+    }
     const document = assembleViewerDocument(state.geometry, header, state.resources, sections.map((section) => section.decoded))
     const projectionId = this.nextProjectionId++
     this.state = { ...state, sourcePackage, header, sections, document, projectionId }
@@ -182,13 +230,13 @@ export class ViewerProjectionCache {
         projectionId,
         sectionCount: sections.length,
         sections: positions.map((position) => ({ index: position, section: sections[position].decoded.section })),
-        ...(headerChanged
-          ? { styles: { fonts: header.fonts, charStyles: header.charStyles, paraStyles: header.paraStyles, cellStyles: header.cellStyles } }
-          : {}),
+        ...styles,
+        ...(restyled.length ? { restyledSections: restyled } : {}),
         diagnostics: document.diagnostics
       },
       decodedSections: positions.length,
-      headerDecoded: headerChanged
+      headerDecoded: headerChanged,
+      restyledSections: restyled.length
     }
   }
 }

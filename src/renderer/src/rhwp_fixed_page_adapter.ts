@@ -2,24 +2,19 @@ import rhwpWasmUrl from '@rhwp/core/rhwp_bg.wasm?url'
 import {
   FixedPageDescriptor,
   FixedPageOpenResult,
-  FixedPageTextLayout,
-  FixedPageTextRun
+  FixedPageTextLayout
 } from '../../core/document/fixed_page_document'
 import { HwpWorkerClient, HwpWorkerError } from './hwp_worker_client'
 import {
   HwpWorkerOpenResult,
   HwpWorkerOperation
 } from './hwp_worker_protocol'
+import { parseRhwpTextLayout } from './rhwp_text_layout'
 import { applyExtractableTextDefaults } from './svg_text_extraction'
 
 const PAGE_CACHE_LIMIT = 20
 const TEXT_LAYOUT_CACHE_LIMIT = 20
-const MAX_TEXT_RUNS_PER_PAGE = 100_000
-const MAX_TEXT_CHARACTERS_PER_PAGE = 5_000_000
-const MAX_TEXT_COORDINATE = 1_000_000
-const MAX_FONT_SIZE = 10_000
 const MAX_SVG_CHARACTERS = 50_000_000
-const MAX_TEXT_LAYOUT_CHARACTERS = 50_000_000
 export const HWP_OPEN_TIMEOUT_MS = 30_000
 export const HWP_PAGE_TIMEOUT_MS = 15_000
 
@@ -34,10 +29,6 @@ const pageCache = new Map<number, RenderedRhwpFixedPage>()
 const textLayoutCache = new Map<number, FixedPageTextLayout>()
 const pageJobs = new Map<number, Promise<RenderedRhwpFixedPage>>()
 let renderQueue: Promise<void> = Promise.resolve()
-
-interface RhwpTextLayout {
-  runs?: unknown[]
-}
 
 export interface RenderedRhwpFixedPage {
   svg: string
@@ -177,40 +168,6 @@ function safeSvg(svg: string): string {
   return new XMLSerializer().serializeToString(root)
 }
 
-function finite(value: unknown, fallback = 0): number {
-  const number = Number(value)
-  return Number.isFinite(number) ? number : fallback
-}
-
-function parseTextRun(value: unknown): FixedPageTextRun | null {
-  if (!value || typeof value !== 'object') return null
-  const run = value as Record<string, unknown>
-  if (typeof run.text !== 'string' || run.text.length > 1_000_000) return null
-  const x = finite(run.x, Number.NaN)
-  const y = finite(run.y, Number.NaN)
-  const width = finite(run.w, Number.NaN)
-  const height = finite(run.h, Number.NaN)
-  const fontSize = finite(run.fontSize, 12)
-  if (![x, y, width, height, fontSize].every(Number.isFinite)) return null
-  if (
-    [x, y, width, height].some((number) => Math.abs(number) > MAX_TEXT_COORDINATE) ||
-    fontSize < 0 ||
-    fontSize > MAX_FONT_SIZE
-  ) return null
-  return {
-    text: run.text,
-    x,
-    y,
-    width: Math.max(width, 0),
-    height: Math.max(height, 0),
-    fontFamily: typeof run.fontFamily === 'string' && run.fontFamily.length <= 200
-      ? run.fontFamily
-      : undefined,
-    fontSize: Math.max(fontSize, 1),
-    ratio: Math.min(Math.max(finite(run.ratio, 1), 0.1), 10)
-  }
-}
-
 function rememberTextLayout(index: number, layout: FixedPageTextLayout): void {
   textLayoutCache.delete(index)
   textLayoutCache.set(index, layout)
@@ -232,31 +189,7 @@ async function pageTextLayout(index: number, cache = true): Promise<FixedPageTex
     { index },
     HWP_PAGE_TIMEOUT_MS
   )
-  if (typeof serialized !== 'string' || serialized.length > MAX_TEXT_LAYOUT_CHARACTERS) {
-    throw new Error(`${index + 1}페이지의 텍스트 레이아웃 크기가 허용 범위를 넘었습니다.`)
-  }
-  const value = JSON.parse(serialized) as RhwpTextLayout
-  if (!Array.isArray(value.runs) || value.runs.length > MAX_TEXT_RUNS_PER_PAGE) {
-    throw new Error(`${index + 1}페이지의 텍스트 레이아웃이 올바르지 않습니다.`)
-  }
-  const runs: FixedPageTextRun[] = []
-  let characterCount = 0
-  for (const rawRun of value.runs) {
-    const run = parseTextRun(rawRun)
-    if (!run) continue
-    characterCount += run.text.length
-    if (characterCount > MAX_TEXT_CHARACTERS_PER_PAGE) {
-      throw new Error(`${index + 1}페이지의 텍스트가 허용 범위를 넘었습니다.`)
-    }
-    runs.push(run)
-  }
-  const text = runs.map((run) => run.text).join('')
-  const layout = {
-    runs,
-    text,
-    // PDF 비교 규칙(scripts/pdf_text_count.mjs)과 같이 공백·사설 영역 글자는 세지 않는다.
-    nonWhitespaceCharacters: Array.from(text.normalize('NFC').replace(/[\s\p{Co}]/gu, '')).length
-  }
+  const layout = parseRhwpTextLayout(serialized, index)
   if (cache) rememberTextLayout(index, layout)
   return layout
 }

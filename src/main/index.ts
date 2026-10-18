@@ -324,6 +324,8 @@ function captureVisualState(window: BrowserWindow): void {
   const editText = testValue('HAN_FLOW_VISUAL_EDIT_TEXT')
   // 한 글자 입력 지연 측정(keystroke 수). 문단에 한 글자씩 넣고 입력 event부터 편집 결과가 화면 DOM에 반영될 때까지 잰다.
   const editLatencyKeystrokes = Number(testValue('HAN_FLOW_VISUAL_EDIT_LATENCY') ?? 0)
+  // 측정할 편집: text(한 글자 입력, 기본)·bold(문단 글자 전체를 골라 굵게 켜기·끄기를 번갈아). bold는 측정 DOM 다시 재기까지 잰다.
+  const editLatencyMode = testValue('HAN_FLOW_VISUAL_EDIT_LATENCY_MODE') === 'bold' ? 'bold' : 'text'
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
@@ -633,6 +635,7 @@ function captureVisualState(window: BrowserWindow): void {
         }
         const frame = () => new Promise((resolve) => requestAnimationFrame(resolve))
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        ${RIBBON_E2E_HELPERS}
         const surfaceLabel = 'HWPX 문단 편집'
         const surfaces = () => Array.from(document.querySelectorAll('[aria-label="' + surfaceLabel + '"]'))
         const readySurface = () => surfaces().find((element) => element.dataset.inputReady === 'true' && (element.textContent ?? '').length > 0)
@@ -650,19 +653,75 @@ function captureVisualState(window: BrowserWindow): void {
           if (!element.firstChild) element.append(document.createTextNode(''))
           return element.firstChild
         }
-        const setSelection = (element, offset) => {
+        const setSelection = (element, offset, focusOffset = offset) => {
           const node = textNode(element)
-          window.getSelection().setBaseAndExtent(node, offset, node, offset)
+          window.getSelection().setBaseAndExtent(node, offset, node, focusOffset)
         }
+        const mode = ${JSON.stringify(editLatencyMode)}
+        const boldLabel = '현재 텍스트 블록 굵게'
+        const boldButton = () => document.querySelector('[aria-label="' + boldLabel + '"]')
+        if (mode === 'bold') {
+          phase = 'bold-button'
+          await revealRibbonControl(boldLabel)
+        }
+        const measuredMark = () => performance.getEntriesByName('han-flow:layout-measured').at(-1)
         target.focus()
         await frame(); await frame(); await sleep(500)
         const samples = []
+        const originalText = target.textContent ?? ''
         for (let index = 0; index < ${editLatencyKeystrokes}; index += 1) {
-          phase = 'keystroke-' + index
+          phase = (mode === 'bold' ? 'bold-' : 'keystroke-') + index
           target = await waitFor(() => {
             const candidate = surfaces().find((element) => element.dataset.sourceTextNodeId === anchorId)
             return candidate?.dataset.inputReady === 'true' ? candidate : undefined
           })
+          if (mode === 'bold') {
+            target.focus()
+            setSelection(target, 0, (target.textContent ?? '').length)
+            target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+            const button = await waitFor(() => {
+              const candidate = boldButton()
+              return candidate && !candidate.disabled ? candidate : undefined
+            })
+            await frame(); await frame()
+            const pressed = button.getAttribute('aria-pressed') === 'true'
+            // 짝수 번째는 [굵게], 홀수 번째는 [실행 취소]. 같은 모양 definition이 이미 있으면 command가 그 id를 다시 쓰므로
+            // 켜고 끄기만 번갈아서는 header.xml이 처음 한 번만 바뀐다. 실행 취소는 더한 \`hh:charPr\`를 지워 매번 header가 바뀐다.
+            const action = index % 2 === 0 ? button : await revealRibbonControl('실행 취소')
+            const before = revision()
+            let domAt
+            const observer = new MutationObserver(() => {
+              if (domAt === undefined && revision() > before) domAt = performance.now()
+            })
+            observer.observe(pages(), { attributes: true, attributeFilter: ['data-editing-revision'] })
+            const startedAt = performance.now()
+            action.click()
+            await waitFor(() => domAt !== undefined)
+            observer.disconnect()
+            // 바뀐 style로 측정 DOM을 다시 재고 pagination이 끝난 시각(renderer 표시 'han-flow:layout-measured').
+            const measured = await waitFor(() => {
+              const mark = measuredMark()
+              return mark && mark.startTime >= startedAt ? mark : undefined
+            })
+            await frame()
+            const frameAt = performance.now()
+            const result = performance.getEntriesByName('han-flow:editing-result').at(-1)?.startTime
+            const boldAfter = await waitFor(() => boldButton()?.getAttribute('aria-pressed') === String(!pressed), 5000)
+              .then(() => true, () => false)
+            samples.push({
+              domMs: domAt - startedAt,
+              measuredMs: measured.startTime - startedAt,
+              nextFrameMs: frameAt - startedAt,
+              requestMs: result !== undefined ? result - startedAt : null,
+              rendererMs: result !== undefined ? measured.startTime - result : null,
+              action: index % 2 === 0 ? 'bold' : 'undo',
+              measuredSections: measured.detail?.measuredSections ?? null,
+              boldAfter
+            })
+            await waitFor(() => !document.querySelector('.viewer-status')?.textContent?.includes('반영 중'))
+            await sleep(400)
+            continue
+          }
           const original = target.textContent ?? ''
           const before = revision()
           const insert = String.fromCharCode(0xac00 + index)
@@ -703,6 +762,24 @@ function captureVisualState(window: BrowserWindow): void {
           } : null
         }
         const text = surfaces().find((element) => element.dataset.sourceTextNodeId === anchorId)?.textContent ?? ''
+        if (mode === 'bold') {
+          const counts = samples.map((sample) => sample.measuredSections).filter((value) => typeof value === 'number')
+          return {
+            mode,
+            keystrokes: samples.length,
+            totalPages: Number(pages()?.dataset.totalPages ?? 0),
+            revision: revision(),
+            textUnchanged: text === originalText,
+            boldToggled: samples.every((sample) => sample.boldAfter),
+            inputToDomMs: summary(samples.map((sample) => sample.domMs)),
+            inputToMeasuredMs: summary(samples.map((sample) => sample.measuredMs)),
+            inputToNextFrameMs: summary(samples.map((sample) => sample.nextFrameMs)),
+            requestRoundTripMs: summary(samples.map((sample) => sample.requestMs)),
+            rendererUpdateMs: summary(samples.map((sample) => sample.rendererMs)),
+            measuredSections: counts.length ? { min: Math.min(...counts), max: Math.max(...counts) } : null,
+            samples
+          }
+        }
         return {
           keystrokes: samples.length,
           totalPages: Number(pages()?.dataset.totalPages ?? 0),

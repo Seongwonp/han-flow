@@ -26,8 +26,9 @@ export interface ViewerLoadTiming {
 }
 
 /**
- * 화면 측정값. section마다 그 측정에 쓴 section object와 함께 둔다. 측정에 쓴 style·쪽 크기(`styles`)가 같으면 편집 뒤에는
- * object가 바뀐 section만 다시 재고, 나머지 section의 측정 object는 그대로 써서 section별 pagination cache가 맞게 한다.
+ * 화면 측정값. section마다 그 측정에 쓴 section object와 함께 둔다. 측정에 쓴 style 묶음 표지(`styles`,
+ * `MeasurementStylesTracker`)가 같으면 편집 뒤에는 object가 바뀐 section만 다시 재고, 나머지 section의 측정 object는 그대로 써서
+ * section별 pagination cache가 맞게 한다. style definition을 바꾼 편집도 그 id를 쓰는 section만 새 object라 표지가 그대로다.
  */
 export interface DocumentLayoutMeasurements {
   styles: object

@@ -6,7 +6,7 @@
 // - 다만 그 제외가 다른 손실을 가리지 않도록 {@link textCensus}로 공백 외 전체 글자(raw)·제외한 사설 영역 글자·ASCII
 //   숫자를 따로 세어 verify_pdf 결과에 항상 남긴다. 숫자는 사설 영역이 아니므로 하나라도 빠지면 실패다.
 // - 사설 영역 글자도 code point별로 화면과 PDF를 비교한다({@link privateUseLosses}). PDF에서 빠진 사설 영역 글자는
-//   (1) 한컴 PUA 표시 대체 표(src/core/document/hancom_pua_display.ts)에 있고 PDF 같은 페이지에 그 대체 문자열이 있거나,
+//   (1) 한컴·기호 글꼴 PUA 표시 대체 표(src/core/document/hancom_pua_display.ts)에 있고 PDF 같은 페이지에 그 대체 문자열이 있거나,
 //   (2) 이유와 함께 허용 목록({@link PRIVATE_USE_LOSS_ALLOWLIST}·fixture manifest `expected.allowedPrivateUseLoss`)에 있을
 //   때만 통과하고, 나머지는 실패다.
 // main의 E2E visual state(src/main/index.ts)도 같은 pattern을 쓴다.
@@ -62,15 +62,21 @@ export const PRIVATE_USE_LOSS_ALLOWLIST = new Map([])
 
 let displayMapCache
 /**
- * 한컴 PUA 표시 대체 표(`src/core/document/hancom_pua_display.ts`)를 읽는다. 검증 script는 TypeScript를 import하지 않으므로
+ * 한컴 PUA·기호 글꼴(Wingdings) PUA 표시 대체 표(`src/core/document/hancom_pua_display.ts`의
+ * `VERIFIED_HANCOM_PUA_DISPLAY`·`SYMBOL_FONT_PUA_DISPLAY`)를 읽는다. 검증 script는 TypeScript를 import하지 않으므로
  * 원본 파일의 `[0xf028a, '②']` 항목을 그대로 읽어 표가 두 벌로 갈라지지 않게 한다.
  * @returns Map<number, string>
  */
 export function hancomPuaDisplayMap(root = resolve(import.meta.dirname, '..')) {
   if (displayMapCache && root === displayMapCache.root) return displayMapCache.map
   const source = readFileSync(resolve(root, 'src/core/document/hancom_pua_display.ts'), 'utf8')
-  const table = source.slice(source.indexOf('VERIFIED_HANCOM_PUA_DISPLAY'), source.indexOf('])', source.indexOf('VERIFIED_HANCOM_PUA_DISPLAY')))
-  const map = new Map([...table.matchAll(/\[0x([0-9a-f]+),\s*'([^']+)'\]/giu)].map((match) => [parseInt(match[1], 16), match[2]]))
+  const map = new Map()
+  for (const name of ['VERIFIED_HANCOM_PUA_DISPLAY', 'SYMBOL_FONT_PUA_DISPLAY']) {
+    const start = source.indexOf(`const ${name}`)
+    if (start < 0) throw new Error(`PUA 표시 대체 표를 찾지 못했습니다: ${name}`)
+    const table = source.slice(start, source.indexOf('])', start))
+    for (const match of table.matchAll(/\[0x([0-9a-f]+),\s*'([^']+)'\]/giu)) map.set(parseInt(match[1], 16), match[2])
+  }
   if (!map.size) throw new Error('한컴 PUA 표시 대체 표를 읽지 못했습니다.')
   displayMapCache = { root, map }
   return map

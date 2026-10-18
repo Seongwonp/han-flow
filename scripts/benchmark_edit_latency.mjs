@@ -10,10 +10,16 @@ import { loadGenerator } from './corpus/corpus_runtime.mjs'
  * 편집을 시작한 뒤 본문 문단 하나에 한 글자씩 insertText를 넣고, 입력 event부터 편집 결과(revision)가 화면 DOM에 반영될 때까지와
  * 다음 frame까지를 잰다. renderer 쪽 구간은 편집 요청 시작·결과 도착 시각 표시(`performance.mark`)로 나눈다.
  *
+ * `HAN_FLOW_EDIT_LATENCY_MODE=bold`이면 같은 문단 글자 전체를 골라 [굵게]와 [실행 취소]를 번갈아 누른다(굵게는 header.xml에
+ * `hh:charPr`를 더하고 실행 취소는 지운다. 매번 header가 바뀐다). 누른 때부터 DOM 반영, 측정 DOM을 다시 재고 쪽을 다시 나눈 때(`inputToMeasuredMs`),
+ * 다음 frame까지와 그때 새로 잰 section 수(`measuredSections`)를 낸다.
+ *
  *   xvfb-run -a npm run benchmark:edit-latency -- [fixture.hwpx] [Han-Flow 실행 파일]
+ *   HAN_FLOW_EDIT_LATENCY_MODE=bold xvfb-run -a npm run benchmark:edit-latency
  */
 
-const keystrokes = Number(process.env.HAN_FLOW_EDIT_LATENCY_KEYSTROKES ?? 30)
+const mode = process.env.HAN_FLOW_EDIT_LATENCY_MODE === 'bold' ? 'bold' : 'text'
+const keystrokes = Number(process.env.HAN_FLOW_EDIT_LATENCY_KEYSTROKES ?? (mode === 'bold' ? 20 : 30))
 const fixtureArgument = process.argv[2]
 const appBinary = process.argv[3] ? resolve(process.argv[3]) : defaultAppBinary()
 
@@ -40,6 +46,7 @@ try {
         HAN_FLOW_VISUAL_CAPTURE_DELAY_MS: '500',
         HAN_FLOW_VISUAL_READY_TIMEOUT_MS: '120000',
         HAN_FLOW_VISUAL_EDIT_LATENCY: String(keystrokes),
+        HAN_FLOW_VISUAL_EDIT_LATENCY_MODE: mode,
         HAN_FLOW_E2E_USER_DATA: join(directory, 'user-data'),
         HAN_FLOW_DIRTY_ACTION: 'discard'
       },
@@ -64,7 +71,12 @@ try {
   }
   const { samples: _samples, ...summary } = probe
   console.log('HAN_FLOW_EDIT_LATENCY', JSON.stringify(summary))
-  if (!probe.textEndsWithInput) throw new Error('입력한 글자가 화면 문단에 남지 않았습니다.')
+  if (mode === 'bold') {
+    if (!probe.boldToggled) throw new Error('[굵게]가 누를 때마다 바뀌지 않았습니다.')
+    if (!probe.textUnchanged) throw new Error('글자 모양을 바꾼 문단의 글자가 달라졌습니다.')
+  } else if (!probe.textEndsWithInput) {
+    throw new Error('입력한 글자가 화면 문단에 남지 않았습니다.')
+  }
 } finally {
   await rm(directory, { recursive: true, force: true })
 }
