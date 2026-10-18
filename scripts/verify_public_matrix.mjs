@@ -99,15 +99,19 @@ const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'm
 // 쪽 나눔 스트레스 합성 fixture(generator 함수로 직접 만든다). 화면 overflow·용지/셀 밖 글자 0, 원문 개체 종류별 수,
 // 화면과 PDF의 페이지별 글자 수가 같아야 한다.
 // - long-objects: 쪽보다 높은 수식·글상자와 표 셀 안 글상자 → 줄여 그린 자리 표시 2개 이상
-// - footnote-flow: 각주 40개 → 구역 끝 각주 목록이 쪽을 넘어 나뉘어 3쪽
+// - footnote-flow: 각주 40개 → 각주마다 번호 표시가 놓인 쪽 아래에 놓이고(verify_app이 쪽 불일치를 실패로 본다) 본문이 그만큼 줄어 여러 쪽
+// - footnote-long: 한 쪽보다 긴 각주 → 줄 단위로 나뉘어 다음 쪽 아래에 이어지고 overflow 없음
 // - inline-objects: 글자+수식·글자+글상자 문단과 셀 안 글자+수식
 const LAYOUT_STRESS_FIXTURES = [
   { id: 'long-objects', create: 'createLongObjectHwpx' },
   { id: 'footnote-flow', create: 'createFootnoteFlowHwpx' },
+  { id: 'footnote-long', create: 'createLongFootnoteHwpx' },
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
 ]
+// 긴 각주 편집 E2E: 쪽을 넘어 나뉜 첫 각주의 앞 조각(원본 문단 전체를 잘라 그린 입력 칸)에 입력하고 저장한 뒤 다시 연다.
+const LONG_FOOTNOTE_EDIT_TEXT = '긴각주고침'
 
-// 편집 범위 확장 E2E(createEditScopeHwpx, 2쪽): 표만 든 문단의 표 앞·뒤 caret, 구역 끝 목록의 각주·미주 본문, 두 쪽에 같은
+// 편집 범위 확장 E2E(createEditScopeHwpx, 2쪽): 표만 든 문단의 표 앞·뒤 caret, 쪽 아래 각주·구역 끝 미주 본문, 두 쪽에 같은
 // 머리말·꼬리말에 입력·실행 취소·다시 실행한 뒤 Save As하고 저장본을 다시 열어 글자를 확인한다. 머리말·꼬리말은 두 쪽의 입력 칸이
 // 함께 바뀌고 저장본의 두 쪽 모두에 글자가 있어야 하며, 칸 끝·처음의 방향 키가 다른 쪽의 같은 칸으로 caret을 옮기면 안 된다.
 const EDIT_SCOPE_CASES = [
@@ -227,6 +231,11 @@ try {
     })
   }
   const editScope = (target) => editScopeResults.find((result) => result.target === target)
+  const longFootnoteEdit = await verify(generator.createLongFootnoteHwpx(directory, 'han-flow-footnote-long-edit.hwpx'), 500, false, {
+    HAN_FLOW_VERIFY_EDIT_TEXT: LONG_FOOTNOTE_EDIT_TEXT,
+    HAN_FLOW_VERIFY_EDIT_TARGET: 'note',
+    HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+  })
 
   const continuation = results.find(({ fixtureId }) => fixtureId === 'cell-continuation')
   const compatibility = results.find(({ fixtureId }) => fixtureId === 'images-rowspan')
@@ -249,9 +258,22 @@ try {
     stress('long-objects')?.fittedObjects?.declared >= 2 && stress('long-objects')?.fittedObjects?.body >= 1
       ? undefined
       : `long-objects: 쪽보다 큰 수식·글상자를 줄여 그리지 않음(${JSON.stringify(stress('long-objects')?.fittedObjects)})`,
-    stress('footnote-flow')?.totalPages === 3 && stress('footnote-flow')?.placeholderCounts?.footnote === 40
+    stress('footnote-flow')?.totalPages >= 2 && stress('footnote-flow')?.placeholderCounts?.footnote === 40 &&
+      stress('footnote-flow')?.footnotePlacement?.anchors === 40 && stress('footnote-flow')?.footnotePlacement?.notes === 40
       ? undefined
-      : `footnote-flow: 각주 40개 목록이 3쪽으로 나뉘지 않음(${stress('footnote-flow')?.totalPages}쪽)`,
+      : `footnote-flow: 각주 40개가 번호 표시가 놓인 쪽 아래에 모두 놓이지 않음(${stress('footnote-flow')?.totalPages}쪽, ${JSON.stringify(stress('footnote-flow')?.footnotePlacement)})`,
+    stress('footnote-long')?.footnotePlacement?.notes === 5 && stress('footnote-long')?.footnotePlacement?.continuations >= 1
+      ? undefined
+      : `footnote-long: 한 쪽보다 긴 각주가 다음 쪽으로 이어지지 않음(${JSON.stringify(stress('footnote-long')?.footnotePlacement)})`,
+    longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
+    longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
+    longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
+    longFootnoteEdit.saveAs?.reopenedFootnotePlacement?.notes === 5 && longFootnoteEdit.saveAs.reopenedFootnotePlacement.continuations >= 1
+      ? undefined
+      : `footnote-long 편집: 저장본의 각주 배치가 다름(${JSON.stringify(longFootnoteEdit.saveAs?.reopenedFootnotePlacement)})`,
+    editScope('note')?.footnotePlacement?.anchors === 1 && editScope('note')?.footnotePlacement?.notes === 1
+      ? undefined
+      : `edit-scope note: 각주가 번호 표시가 놓인 쪽 아래에 없음(${JSON.stringify(editScope('note')?.footnotePlacement)})`,
     ...editScopeResults.filter(({ passed }) => !passed).map(({ target, failures: scopeFailures }) => `edit-scope ${target}: ${scopeFailures.join(', ')}`),
     ...editScopeResults.filter(({ saveAs }) => !saveAs?.reopenedTextPresent).map(({ target }) => `edit-scope ${target}: 저장본에 입력 글자가 없음`),
     editScope('table-caret')?.editingProbe?.anchorTransition?.from?.endsWith(':table-before')
@@ -309,9 +331,17 @@ try {
     objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice }) => ({
       fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice
     })),
-    layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts }) => ({
-      fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts
+    layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement }) => ({
+      fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement
     })),
+    longFootnoteEdit: {
+      passed: longFootnoteEdit.passed,
+      totalPages: longFootnoteEdit.totalPages,
+      noteKind: longFootnoteEdit.editingProbe?.noteKind,
+      footnotePlacement: longFootnoteEdit.footnotePlacement,
+      reopenedTextPresent: longFootnoteEdit.saveAs?.reopenedTextPresent,
+      reopenedFootnotePlacement: longFootnoteEdit.saveAs?.reopenedFootnotePlacement
+    },
     editScope: editScopeResults.map(({ target, passed, totalPages, editingProbe, saveAs }) => ({
       target,
       passed,

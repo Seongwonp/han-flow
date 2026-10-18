@@ -5,7 +5,9 @@ import { ViewerDocument, ViewerObjectPlaceholder, ViewerParagraph } from '../../
 import { countObjectPlaceholders } from '../../src/core/document/object_placeholder'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { isEditableTextParagraph, NoteListView, ObjectPlaceholderView, ParagraphView } from '../../src/renderer/src/App'
+import { FootnoteAreaView, isEditableTextParagraph, NoteListView, ObjectPlaceholderView, ParagraphView } from '../../src/renderer/src/App'
+import { sectionFootnoteSettings } from '../../src/core/layout/footnote_layout'
+import { paginateViewerDocument } from '../../src/core/layout/pagination'
 import { ObjectPlaceholderBanner, ViewerStatusBar } from '../../src/renderer/src/ViewerShell'
 import { pdfObjectPlaceholderConfirmation } from '../../src/main/pdf_export_warning'
 
@@ -84,20 +86,27 @@ describe('원본 개체 자리 표시 renderer', () => {
     expect(surfaceAt).toBeGreaterThan(placeholderAt)
   })
 
-  test('각주 번호는 위 첨자로, 각주·미주 본문은 구역 끝 목록으로 그린다', async () => {
+  test('각주 번호는 위 첨자로, 각주 본문은 쪽 아래 각주 영역으로, 미주 본문은 구역 끝 목록으로 그린다', async () => {
     const document = await open('ext-pyhwpx-foot-endnotes.hwpx')
     const blocks = document.sections[0].blocks
     const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: findParagraph(document, hasKind('footnote')), document }))
     expect(markup).toContain('<sup data-object-kind="footnote"')
     expect(markup).toContain('class="viewer-note-marker" title="각주 1)">1)</sup>')
-    // 각주·미주 문단마다 block이 하나씩이다. 이어지는 block은 구분선을 빼고 앞 block과 다른 종류일 때만 제목을 쓴다.
+    // 각주 본문은 번호 표시가 놓인 쪽 아래 각주 영역에 그린다.
+    const [page] = paginateViewerDocument(document).filter((item) => item.footnotes)
+    expect(page.blocks).toContain(findParagraph(document, hasKind('footnote')))
+    const settings = sectionFootnoteSettings(document.sections[0].footnoteSettings)
+    const area = renderToStaticMarkup(createElement(FootnoteAreaView, { footnotes: page.footnotes![0], settings, columnWidth: 42520, document }))
+    expect(area).toContain('class="viewer-footnotes" data-note-kind="footnote"')
+    expect(area).toContain('class="viewer-footnote-line"')
+    expect(area).toContain('<span class="viewer-note-number">1)</span>')
+    expect(area).toContain('각주 본문')
+    // 구역 끝 목록에는 미주만 남는다.
     const lists = blocks.flatMap((block) => block.content).filter((item) => item.type === 'note-list')
-    expect(lists).toHaveLength(2)
-    const notes = lists.map((list) => renderToStaticMarkup(createElement(NoteListView, { item: list as any, document }))).join('')
-    expect(notes.match(/viewer-note-list-continued/g)).toHaveLength(1)
-    expect(notes).toContain('<div class="viewer-note-heading">각주</div>')
+    expect(lists).toHaveLength(1)
+    const notes = renderToStaticMarkup(createElement(NoteListView, { item: lists[0] as any, document }))
     expect(notes).toContain('<div class="viewer-note-heading">미주</div>')
-    expect(notes).toContain('각주 본문')
+    expect(notes).not.toContain('각주 본문')
     expect(notes).toContain('미주 본문')
   })
 

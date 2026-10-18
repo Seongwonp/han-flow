@@ -43,7 +43,40 @@ export interface ViewerCellStyle { id: string; backgroundColor?: string; left: V
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
 export interface ViewerColumnDefinition { width: HwpUnit; gap: HwpUnit }
 export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[] }
-export interface ViewerSection { id: string; blocks: ViewerParagraph[]; pageNumber?: ViewerPageNumber; columnLayout?: ViewerColumnLayout; headers: ViewerHeaderFooter[]; footers: ViewerHeaderFooter[] }
+export interface ViewerSection {
+  id: string
+  blocks: ViewerParagraph[]
+  pageNumber?: ViewerPageNumber
+  columnLayout?: ViewerColumnLayout
+  headers: ViewerHeaderFooter[]
+  footers: ViewerHeaderFooter[]
+  /** 구역 정의의 각주 모양(`hp:footNotePr`). 없으면 {@link DEFAULT_FOOTNOTE_SETTINGS}를 쓴다. */
+  footnoteSettings?: ViewerFootnoteSettings
+}
+
+/**
+ * 각주 모양(OWPML `hp:footNotePr`). 길이·간격은 HWPUNIT.
+ * - `line.length`: 구분선 길이. 음수(-1)는 한/글 기본값(단 너비의 1/3로 그린다), 0은 선 없음.
+ * - `spacing.aboveLine`: 본문과 구분선 사이, `belowLine`: 구분선과 첫 각주 사이, `betweenNotes`: 각주 사이.
+ * - `numbering`: `CONTINUOUS`(문서 전체 이어서)·`ON_SECTION`(구역마다 새로)·`ON_PAGE`(쪽마다 새로), `newNum`은 시작 번호.
+ * - `placement`: `EACH_COLUMN`·`MERGED_COLUMN`·`RIGHT_MOST_COLUMN`, `beneathText`면 쪽 아래가 아니라 본문 바로 아래에 둔다.
+ */
+export interface ViewerFootnoteSettings {
+  format: { type: string; userChar: string; prefixChar: string; suffixChar: string; superscript: boolean }
+  line: { type: string; length: HwpUnit; widthMm: number; color: string }
+  spacing: { betweenNotes: HwpUnit; belowLine: HwpUnit; aboveLine: HwpUnit }
+  numbering: { type: 'CONTINUOUS' | 'ON_SECTION' | 'ON_PAGE'; newNum: number }
+  placement: { place: string; beneathText: boolean }
+}
+
+/** 한/글이 새 문서에 쓰는 각주 모양(공개 fixture의 `hp:footNotePr`과 같다). */
+export const DEFAULT_FOOTNOTE_SETTINGS: ViewerFootnoteSettings = {
+  format: { type: 'DIGIT', userChar: '', prefixChar: '', suffixChar: ')', superscript: false },
+  line: { type: 'SOLID', length: -1, widthMm: 0.12, color: '#000000' },
+  spacing: { betweenNotes: 283, belowLine: 567, aboveLine: 850 },
+  numbering: { type: 'CONTINUOUS', newNum: 1 },
+  placement: { place: 'EACH_COLUMN', beneathText: false }
+}
 export interface ViewerParagraph {
   id: string
   paraStyleId: string
@@ -118,13 +151,18 @@ export interface ViewerObjectPlaceholder {
   /** 각주·미주 번호 표시(예: "1)"). */
   marker?: string
   /**
+   * 각주(`kind: 'footnote'`)의 본문. 각주는 이 번호 표시가 놓인 쪽(단) 아래에 그린다(`pagination.ts`). 미주는 구역 끝
+   * 목록(`ViewerNoteList`)에 모으므로 없다.
+   */
+  note?: ViewerNote
+  /**
    * 선언 높이가 쪽 본문 높이를 넘어 `size`를 비율대로 줄였으면 원래 선언 크기와 배율. renderer는 줄였다는 표시를 하고
    * 되살린 글이 줄인 높이를 넘으면 글도 같은 한도에 맞춰 줄인다.
    */
   fitted?: { declared: { width: HwpUnit; height: HwpUnit }; scale: number }
 }
 
-/** 구역 끝에 모아 보여 주는 각주·미주 본문 목록(읽기 전용). */
+/** 구역 끝에 모아 보여 주는 미주 본문 목록. 각주는 번호 표시가 놓인 쪽 아래에 그린다. */
 export interface ViewerNoteList {
   type: 'note-list'
   notes: ViewerNote[]
@@ -136,7 +174,12 @@ export interface ViewerNoteList {
   /** 앞 block과 같은 각주·미주의 다음 문단이면 true(번호를 다시 쓰지 않는다). */
   continuesNote?: boolean
 }
-export interface ViewerNote { kind: 'footnote' | 'endnote'; marker: string; sourcePath: string; paragraphs: ViewerParagraph[] }
+export interface ViewerNote {
+  kind: 'footnote' | 'endnote'
+  marker: string
+  sourcePath: string
+  paragraphs: ViewerParagraph[]
+}
 export interface ViewerTable { type: 'table'; id: string; rowCount: number; columnCount: number; width?: HwpUnit; height?: HwpUnit; pageBreak?: string; repeatHeader: boolean; rows: ViewerTableRow[] }
 export interface ViewerTableRow { cells: ViewerTableCell[]; fragmentHeight?: HwpUnit }
 export interface ViewerTableCell {
@@ -162,6 +205,27 @@ export interface ViewerTableCell {
  */
 export function isObjectPlaceholder(item: ViewerContent): item is ViewerObjectPlaceholder {
   return item.type === 'object-placeholder'
+}
+
+/**
+ * 문단에 번호 표시가 있는 각주(문서 순서). 표 셀·글상자 글 안 번호 표시도 센다. 각주 본문 안 각주는 세지 않는다(한/글은
+ * 각주 안에 각주를 넣지 못한다).
+ */
+export function paragraphFootnotes(paragraph: ViewerParagraph): ViewerNote[] {
+  const notes: ViewerNote[] = []
+  const visit = (content: readonly ViewerContent[]): void => {
+    for (const item of content) {
+      if (item.type === 'object-placeholder') {
+        if (item.note) notes.push(item.note)
+        // 글상자 글처럼 개체 안에 되살린 문단의 각주도 그 개체가 놓인 쪽 아래에 둔다.
+        else if (item.paragraphs) for (const nested of item.paragraphs) visit(nested.content)
+      } else if (item.type === 'table') {
+        for (const row of item.rows) for (const cell of row.cells) for (const nested of cell.paragraphs) visit(nested.content)
+      }
+    }
+  }
+  visit(paragraph.content)
+  return notes
 }
 
 export function supportsViewerColumnFlow(layout?: ViewerColumnLayout): layout is ViewerColumnLayout {

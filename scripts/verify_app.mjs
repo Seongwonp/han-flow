@@ -261,6 +261,8 @@ try {
     state.overflowPages.length ? `페이지 overflow: ${state.overflowPages.join(', ')}` : undefined,
     state.outsidePageTextPages?.length ? `용지 밖으로 나간 글자: ${state.outsidePageTextPages.join(', ')}페이지` : undefined,
     state.cellOverflowTexts?.length ? `표 셀 밖으로 나간 글자: ${state.cellOverflowTexts.join(', ')}` : undefined,
+    // 각주는 본문 번호 표시가 놓인 쪽 아래에서 시작해야 한다(이어지는 조각은 다음 쪽).
+    state.footnotePlacement?.mismatched?.length ? `각주가 번호 표시와 다른 쪽에 있음: ${state.footnotePlacement.mismatched.join(', ')}` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
     source.error ? `원본 개체 검사 실패: ${source.error}` : undefined,
     // 회귀 방지: 원본 종류별 개체 수보다 화면 자리 표시가 적으면 개체가 조용히 사라진 것이다.
@@ -365,6 +367,7 @@ try {
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
     verifiesSavedFile && savedState && savedState.totalPages < 1 ? 'Save As 결과 페이지가 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.overflowPages?.length ? `Save As 결과 page overflow: ${savedState.overflowPages.join(', ')}` : undefined,
+    verifiesSavedFile && savedState?.footnotePlacement?.mismatched?.length ? `Save As 결과 각주가 번호 표시와 다른 쪽에 있음: ${savedState.footnotePlacement.mismatched.join(', ')}` : undefined,
     verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.rows !== 3 ? '표 구조 저장본 행 수 불일치' : undefined,
     verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.columns !== 3 ? '표 구조 저장본 열 수 불일치' : undefined,
     verifiesSavedFile && tableStructureProbe && savedState?.tableTopologies?.[0]?.rowCellCounts?.[1] !== 3 ? '표 구조 저장본 분할 cell 수 불일치' : undefined,
@@ -382,6 +385,7 @@ try {
     cellOverflowTexts: state.cellOverflowTexts,
     columnCounts: state.columnCounts,
     columnTextCounts: state.columnTextCounts,
+    footnotePlacement: state.footnotePlacement,
     errorCode: expectedError ? state.errorCode : undefined,
     windowTitle: state.windowTitle,
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
@@ -408,7 +412,8 @@ try {
       reopenedTableTopologies: savedState?.tableTopologies,
       reopenedTextPresent: editTarget ? savedState?.expectedTextPresent : undefined,
       reopenedTextPageCount: editTarget ? savedState?.expectedTextPageCount : undefined,
-      reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined
+      reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined,
+      reopenedFootnotePlacement: editTarget ? savedState?.footnotePlacement : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {
       journalsBeforeKill: state.crashReport?.journalsBeforeKill,

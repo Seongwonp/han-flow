@@ -1180,6 +1180,27 @@ function captureVisualState(window: BrowserWindow): void {
         }
         return []
       }),
+      // 쪽 아래 각주: 본문 번호 표시(sup)가 놓인 쪽과 그 각주 첫 조각이 놓인 쪽이 다른 각주, 다음 쪽으로 이어지는 조각 수.
+      // 화면에 올린 쪽(virtualization)끼리만 비교한다.
+      footnotePlacement: (() => {
+        const anchorPages = new Map()
+        const notePages = new Map()
+        let continuations = 0
+        for (const page of document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')) {
+          const index = Number(page.dataset.pageIndex)
+          page.querySelectorAll('sup[data-object-kind="footnote"]').forEach((marker) => {
+            if (!marker.closest('.viewer-footnotes') && !anchorPages.has(marker.dataset.sourcePath)) anchorPages.set(marker.dataset.sourcePath, index)
+          })
+          page.querySelectorAll('.viewer-footnotes .viewer-footnote').forEach((note) => {
+            if (note.classList.contains('viewer-footnote-continued')) continuations += 1
+            else if (!notePages.has(note.dataset.sourcePath)) notePages.set(note.dataset.sourcePath, index)
+          })
+        }
+        const mismatched = Array.from(anchorPages).filter(([path, index]) => notePages.has(path) && notePages.get(path) !== index)
+          .map(([path, index]) => path + ': ' + (index + 1) + '쪽 번호, ' + (notePages.get(path) + 1) + '쪽 각주')
+        const missing = Array.from(anchorPages.keys()).filter((path) => !notePages.has(path))
+        return { anchors: anchorPages.size, notes: notePages.size, continuations, mismatched, missing }
+      })(),
       columnCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column').length),
       columnTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) =>
         Array.from(page.querySelectorAll(':scope > .viewer-column-flow > .viewer-column')).map((column) =>

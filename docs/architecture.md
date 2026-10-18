@@ -276,7 +276,8 @@ viewer decoder(ordered XML, 접근자만 다르다)가 같은 함수를 쓰고 `
   (`.viewer-table-caret`)으로 그려 편집 모드 쪽 배치가 보기 모드와 같다. pagination이 표를 쪽마다 나누면 표 앞 content는 첫 조각에만, 표 뒤
   content는 마지막 조각에만 둔다(같은 anchor의 입력 칸이 두 번 나오지 않는다).
 
-각주·미주 본문(`hp:footNote`·`hp:endNote`의 `hp:subList`)은 decoder가 section 안 `hp:t` 순번 anchor를 붙여 구역 끝 `note-list` block에 두고,
+각주·미주 본문(`hp:footNote`·`hp:endNote`의 `hp:subList`)은 decoder가 section 안 `hp:t` 순번 anchor를 붙여 각주는 번호 표시
+자리 표시(`ViewerObjectPlaceholder.note`, 쪽 아래에 그린다)에, 미주는 구역 끝 `note-list` block에 두고,
 머리말·꼬리말은 전부터 anchor가 있었다. capability는 글자만 든 문단(빈 문단 합성 anchor 포함, 표·그림이 든 문단 제외)을 `NOTE_TEXT`·
 `HEADER_FOOTER_TEXT`로 열고 문단마다 범위 scope(`…:note:…`·`…:header-footer:…`)를 둔다. 글자 입력·삭제·치환은 기존 `replace-text` command가
 subList 안 `hp:t`만 고치므로 번호 `hp:autoNum`·본문 위치 control·머리말 정의 bytes는 그대로다. 문단 나눔·병합·글자/문단 모양은 `SUBLIST_TEXT`로
@@ -316,7 +317,7 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
 그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 흐름 위치에 남긴다.
 원본 좌표·회전·쪽 배치(글 앞·뒤, 쪽 기준 위치)와 개체 자체의 그림(수식 조판, 차트·OLE·도형 그리기)은 재현하지 않으며,
-상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주·미주 본문은 쪽 아래가 아니라 구역 끝 목록에 둔다.
+상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
 
 | 원본 element | kind | 화면 |
 | --- | --- | --- |
@@ -327,7 +328,7 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
 | 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자 |
 | `hp:btn`·`hp:radioBtn`·`hp:checkBtn`·`hp:comboBox`·`hp:edit`·`hp:listBox`·`hp:scrollBar` | `form-control` | "양식 컨트롤" 상자 + caption·값 |
 | `hp:video` | `video` | "동영상" 상자 |
-| `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 본문은 구역 끝 `note-list` |
+| `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 각주 본문은 쪽(단) 아래 각주 영역, 미주 본문은 구역 끝 `note-list` |
 | `hp:ctrl/hp:fieldBegin type="MEMO"` | `memo` | 줄 안 "메모: …" 표시 |
 | `hp:dutmal` | `ruby` | HTML ruby(본말 + 덧말) |
 | 그 밖의 run 자식 `hp:*`(`hp:compose` 포함) | `unknown` | "알 수 없는 개체" 상자 |
@@ -341,12 +342,32 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   한도를 넘으면 layout effect에서 본문에 CSS `zoom`(`data-fit-scale`)을 걸어 글을 줄인다. `zoom`은 layout 크기도 줄이므로
   측정·pagination·PDF가 같은 높이를 보고 글자는 PDF에서도 추출된다. 한 문단이 쪽을 넘어 잘리거나 PDF에서 글이 빠지지 않게 하는
   표시상 조정이며 원본 크기는 저장할 때 그대로다.
-- 구역 끝 각주·미주 목록은 각주·미주 문단마다 `note-list` block 하나(`s<N>:notes`, `s<N>:notes:<순번>`)로 만들어
-  pagination이 각주 사이에서 쪽을 나눌 수 있다. 이어지는 block은 `continuesKind`(같은 종류 제목·구분선 생략)와
-  `continuesNote`(같은 각주의 다음 문단, 번호 생략)를 가진다.
+- 구역 끝 미주 목록은 미주 문단마다 `note-list` block 하나(`s<N>:notes`, `s<N>:notes:<순번>`)로 만들어
+  pagination이 미주 사이에서 쪽을 나눌 수 있다. 이어지는 block은 `continuesKind`(같은 종류 제목·구분선 생략)와
+  `continuesNote`(같은 미주의 다음 문단, 번호 생략)를 가진다. `hp:endNotePr` 위치(`END_OF_DOCUMENT`·`END_OF_SECTION`)와
+  관계없이 구역마다 구역 끝에 둔다(문서 끝으로 옮기면 section별 증분 해석·pagination cache와 section별 편집 anchor 문맥이 깨진다).
+- 쪽 아래 각주(2026-10-18): decoder는 구역 첫 문단의 `hp:secPr/hp:footNotePr`를 `ViewerSection.footnoteSettings`(번호 모양
+  `autoNumFormat`, 구분선 `noteLine` 길이·종류·굵기·색, 간격 `noteSpacing` aboveLine·belowLine·betweenNotes, 번호 매기기
+  `numbering`, 위치 `placement`)로 읽고 각주 본문을 번호 표시 자리 표시에 둔다(`paragraphFootnotes`가 표 셀·글상자 글 안 번호도 문서
+  순서로 모은다). 번호는 원본 `hp:autoNum num`을 쓰되 `ON_SECTION`은 `newNum`부터 구역 각주 모양으로 센다. pagination
+  (`paginateViewerSection`, `footnote_layout.ts`)은 block을 놓은 단(단이 하나면 쪽)마다 각주 영역 높이(aboveLine + 구분선 굵기 +
+  belowLine + 각주 조각 높이 합 + 각주 사이 간격)를 본문 높이에서 뺀다. block과 그 각주가 함께 들어가지 않으면 block을 다음 단·쪽으로
+  넘기고, 각주가 빈 쪽에도 들어가지 않을 만큼 길면 첫 조각이 들어갈 때 block을 두고 각주를 나눈다. 나머지는 다음 단·쪽 아래 처음에
+  이어 놓고(`continued`), 남은 각주가 있는 동안 본문 block은 다음 단·쪽으로 간다. 나눌 자리(`ViewerNoteMetrics.breaks`)는 측정
+  DOM(`footnote_measurement.ts`)이 각주마다 문단 경계와, 글자 run만 든 문단의 줄 경계(text node `getClientRects` 줄 조각에서 새 줄
+  시작 글자를 이분 탐색하고 화면 PUA 대체 글자 offset을 원문 offset으로 되돌림)로 잰다. 측정 전에는 decoder 줄 배치 높이로 문단
+  경계에서만 나눈다. 측정값은 section `LayoutMeasurements.noteMetrics`에 들어 section 단위 pagination cache와 함께 바뀐 section만
+  다시 잰다. `ON_PAGE` 번호는 쪽을 다 나눈 뒤 쪽 안 첫 조각 순서로 다시 매겨 쪽 object의 본문 번호 표시와 각주 조각을 함께 바꾼다
+  (원본 section은 그대로).
+- 각주 조각(`ViewerPageFootnote.pieces`)의 문단 조각은 `whole`(원본 문단, 편집 입력 칸), `head`(줄 경계에서 나눈 앞 줄: 보기·PDF는
+  앞 줄 글자만, 편집 중에는 원본 문단 전체를 조각 높이로 잘라 그 자리에서 입력), `rest`(이어지는 줄: 편집 anchor를 지운 읽기 전용
+  글자)다. 그래서 같은 `hp:t`의 입력 칸은 문서 전체에 하나뿐이다(머리말처럼 되풀이된 anchor가 생기지 않는다). 이어지는 조각은 번호
+  칸을 `visibility: hidden`으로 남겨 본문 폭이 측정 때와 같다. renderer는 단이 하나면 각주 영역을 쪽 본문 아래 끝(꼬리말 위)에
+  절대 위치로, 다단이면 단마다 단 아래 끝에, `beneathText`면 본문 바로 뒤에 그린다. 구분선 길이 `-1`은 단 너비의 1/3, 양수는 그 길이다.
+  `MERGED_COLUMN`·`RIGHT_MOST_COLUMN`도 단마다 둔다.
 - `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
 - 글상자·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 각주·미주 본문은 2026-10-14부터 section 안
-  `hp:t` 순번 anchor를 받아 구역 끝 목록에서 글자를 고칠 수 있다(위 "표 앞·뒤 caret과 subList 글자"). 자리 표시는
+  `hp:t` 순번 anchor를 받아 쪽 아래 각주·구역 끝 미주 목록에서 글자를 고칠 수 있다(위 "표 앞·뒤 caret과 subList 글자"). 자리 표시는
   `isObjectPlaceholder`로 편집 capability(`editing_capability.ts`)와 renderer `isEditableTextParagraph`에서 건너뛰므로
   같은 문단 글자 run의 편집 가능 여부는 자리 표시를 넣기 전과 같다(편집 coverage 수치 불변).
 - 누름틀·하이퍼링크 등 본문 run에 글이 그대로 있는 필드는 자리 표시를 만들지 않는다.
@@ -652,7 +673,9 @@ fixture를 각각 격리 실행한다. 대형 문서는 전체 page count보다 
 matrix에는 이미지 12개와 `rowSpan=2` 표, 필수 entry가 빠진 손상 package도 포함한다.
 손상 입력은 오류 문구 자체를 수집하지 않고 사용자 오류가 비어 있지 않게 표시되는지만 검사한다.
 편집 범위 합성 fixture(`createEditScopeHwpx`, 2쪽)로는 표 앞·뒤 caret, 각주·미주 본문, 머리말·꼬리말에 각각 입력→실행 취소·다시 실행→
-Save As→재열기를 따로 실행한다. 머리말·꼬리말은 저장본의 두 쪽 모두에 글자가 있어야 하고, 칸 끝·처음의 방향 키(Shift 포함)가 다른 쪽의
+Save As→재열기를 따로 실행한다. 각주 배치는 verify_app이 쪽마다 본문 번호 표시와 각주 첫 조각의 쪽이 다르면 실패로 보고
+(`footnotePlacement`), 긴 각주 합성 fixture(`createLongFootnoteHwpx`)로 쪽을 넘어 이어지는 각주의 overflow 0·화면/PDF 글자 수와
+나뉜 각주 앞 조각 입력→Save As→재열기를 확인한다. 머리말·꼬리말은 저장본의 두 쪽 모두에 글자가 있어야 하고, 칸 끝·처음의 방향 키(Shift 포함)가 다른 쪽의
 같은 칸으로 caret을 옮기지 않아야 한다.
 HWPX core와 production matrix, 고정 HWP matrix의 실행 대상은 상위 `fixture_catalog.json`에서
 동일한 fixture ID로 선택한다. 각 형식 manifest가 catalog와 어긋나면 GUI 실행 전에 실패한다.

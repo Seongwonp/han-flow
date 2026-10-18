@@ -4,11 +4,12 @@ import { join } from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { collectObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO } from '../../src/core/document/object_placeholder'
-import { ViewerNoteList } from '../../src/core/document/viewer_document'
+import { paragraphFootnotes } from '../../src/core/document/viewer_document'
+import { footnoteAreaHeight, sectionFootnoteSettings } from '../../src/core/layout/footnote_layout'
 import { paginateViewerDocument } from '../../src/core/layout/pagination'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { NoteListView, ObjectPlaceholderView } from '../../src/renderer/src/App'
+import { ObjectPlaceholderView } from '../../src/renderer/src/App'
 import {
   createFootnoteFlowHwpx,
   createLongObjectHwpx,
@@ -16,7 +17,7 @@ import {
   LONG_OBJECT_TEXTS
 } from '../fixtures/public/create_synthetic_hwpx'
 
-describe('쪽보다 큰 자리 표시와 긴 각주 목록', () => {
+describe('쪽보다 큰 자리 표시와 많은 각주', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-page-fit-'))
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -47,38 +48,32 @@ describe('쪽보다 큰 자리 표시와 긴 각주 목록', () => {
     expect(markup).toContain('원본 높이가 쪽보다 커서 줄여 표시합니다.')
   })
 
-  test('각주 40개 목록은 각주마다 block이 되어 pagination이 각주 사이에서 쪽을 나눈다', async () => {
+  test('각주 40개는 번호 표시가 놓인 쪽 아래에 놓이고 본문은 각주 영역만큼 줄어든다', async () => {
     const document = await decodeViewerDocument(await HwpxSourcePackage.open(createFootnoteFlowHwpx(directory)))
     const blocks = document.sections[0].blocks
-    const noteBlocks = blocks.filter((block) => block.content[0]?.type === 'note-list')
-    expect(noteBlocks).toHaveLength(FOOTNOTE_FLOW_COUNT)
-    expect(noteBlocks.map((block) => block.id)).toEqual(
-      Array.from({ length: FOOTNOTE_FLOW_COUNT }, (_, index) => index ? `s0:notes:${index}` : 's0:notes')
-    )
-    const lists = noteBlocks.map((block) => block.content[0] as ViewerNoteList)
-    expect(lists[0].continuesKind).toBeUndefined()
-    expect(lists.slice(1).every((list) => list.continuesKind === 'footnote')).toBe(true)
-    expect(lists.map((list) => list.notes[0].marker)).toEqual(Array.from({ length: FOOTNOTE_FLOW_COUNT }, (_, index) => `${index + 1})`))
+    // 각주는 구역 끝 목록이 아니라 번호 표시에 든다.
+    expect(blocks.some((block) => block.content[0]?.type === 'note-list')).toBe(false)
+    const notes = blocks.flatMap(paragraphFootnotes)
+    expect(notes).toHaveLength(FOOTNOTE_FLOW_COUNT)
+    expect(notes.map((note) => note.marker)).toEqual(Array.from({ length: FOOTNOTE_FLOW_COUNT }, (_, index) => `${index + 1})`))
 
     const bodyHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
+    const settings = sectionFootnoteSettings(document.sections[0].footnoteSettings)
     const pages = paginateViewerDocument(document, {
-      // 화면 측정처럼 각주마다 2400 HWPUNIT(약 3줄), 본문 문단 1600을 준다. 각주 목록 전체(96000)는 한 쪽보다 길다.
-      blockHeights: Object.fromEntries(blocks.map((block) => [block.id, noteBlocks.includes(block) ? 2400 : 1600])),
-      tableRowHeights: {}
+      // 화면 측정처럼 각주마다 2400 HWPUNIT(약 3줄), 본문 문단 1600을 준다. 각주를 모두 더하면(96000) 한 쪽보다 길다.
+      blockHeights: Object.fromEntries(blocks.map((block) => [block.id, 1600])),
+      tableRowHeights: {},
+      noteMetrics: Object.fromEntries(notes.map((note) => [note.sourcePath, { height: 2400, paragraphTops: [0], breaks: [] }]))
     })
-    const notePages = pages.filter((page) => page.blocks.some((block) => noteBlocks.includes(block)))
-    expect(notePages.length).toBeGreaterThanOrEqual(2)
+    expect(pages.length).toBeGreaterThanOrEqual(3)
     for (const page of pages) {
-      const used = page.blocks.reduce((sum, block) => sum + (noteBlocks.includes(block) ? 2400 : 1600), 0)
+      const footnotes = page.footnotes?.[0] ?? []
+      // 쪽 안 번호 표시와 쪽 아래 각주가 같은 순서로 하나씩 대응한다.
+      expect(footnotes.map((footnote) => footnote.note)).toEqual(page.blocks.flatMap(paragraphFootnotes))
+      expect(footnotes.every((footnote) => !footnote.continued && !footnote.continues)).toBe(true)
+      const used = page.blocks.length * 1600 + footnoteAreaHeight(settings, footnotes.length, footnotes.reduce((sum, footnote) => sum + footnote.height, 0))
       expect(used).toBeLessThanOrEqual(bodyHeight)
     }
-
-    // 이어지는 block은 구분선과 같은 종류 제목을 다시 그리지 않는다.
-    const first = renderToStaticMarkup(createElement(NoteListView, { item: lists[0], document }))
-    const next = renderToStaticMarkup(createElement(NoteListView, { item: lists[1], document }))
-    expect(first).toContain('<div class="viewer-note-heading">각주</div>')
-    expect(next).not.toContain('viewer-note-heading')
-    expect(next).toContain('viewer-note-list viewer-note-list-continued')
-    expect(next).toContain('<span class="viewer-note-number">2)</span>')
+    expect(pages.flatMap((page) => page.footnotes?.[0] ?? [])).toHaveLength(FOOTNOTE_FLOW_COUNT)
   })
 })

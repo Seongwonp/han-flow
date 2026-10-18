@@ -2,7 +2,7 @@ import AdmZip from 'adm-zip'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { ViewerDocument, ViewerNoteList } from '../../src/core/document/viewer_document'
+import { paragraphFootnotes, ViewerDocument, ViewerNote, ViewerNoteList } from '../../src/core/document/viewer_document'
 import { applyViewerDocumentPatch } from '../../src/core/document/viewer_document_patch'
 import { editingCapabilities, listEditingAnchorContexts } from '../../src/core/editing/editing_capability'
 import { HwpxEditHistory } from '../../src/core/editing/history'
@@ -44,8 +44,13 @@ function anchorOf(source: HwpxSourcePackage, text: string) {
   return anchor
 }
 
-function noteLists(document: ViewerDocument): ViewerNoteList[] {
-  return document.sections[0].blocks.flatMap((block) => block.content.filter((item): item is ViewerNoteList => item.type === 'note-list'))
+/** 쪽 아래에 그리는 각주(본문 번호 표시에 든 본문)와 구역 끝 미주 목록의 미주. 각주를 먼저 둔다. */
+function documentNotes(document: ViewerDocument): ViewerNote[] {
+  const blocks = document.sections[0].blocks
+  return [
+    ...blocks.flatMap(paragraphFootnotes),
+    ...blocks.flatMap((block) => block.content.filter((item): item is ViewerNoteList => item.type === 'note-list')).flatMap((list) => list.notes)
+  ]
 }
 
 /** edit-scope fixture의 section XML을 바꾼 사본. */
@@ -66,13 +71,12 @@ describe('각주·미주 본문 글자 편집', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-note-text-'))
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-  test('구역 끝 목록의 각주·미주 본문에 anchor와 NOTE_TEXT context가 있고 글자 입력만 연다', async () => {
+  test('쪽 아래 각주와 구역 끝 미주 본문에 anchor와 NOTE_TEXT context가 있고 글자 입력만 연다', async () => {
     const source = await HwpxSourcePackage.open(createEditScopeHwpx(directory))
     const document = await decodeViewerDocument(source)
     const footnote = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteBody)
     const endnote = anchorOf(source, EDIT_SCOPE_TEXTS.endnoteBody)
-    const lists = noteLists(document)
-    expect(lists.flatMap((list) => list.notes).map((note) => [note.kind, note.marker, note.paragraphs[0].content])).toEqual([
+    expect(documentNotes(document).map((note) => [note.kind, note.marker, note.paragraphs[0].content])).toEqual([
       ['footnote', '1)', [{ type: 'text', text: EDIT_SCOPE_TEXTS.footnoteBody, charStyleId: '0', sourceAnchor: { sectionPath, textNodeId: footnote.textNodeId } }]],
       ['endnote', '1)', [{ type: 'text', text: EDIT_SCOPE_TEXTS.endnoteBody, charStyleId: '0', sourceAnchor: { sectionPath, textNodeId: endnote.textNodeId } }]]
     ])
@@ -102,9 +106,9 @@ describe('각주·미주 본문 글자 편집', () => {
     const edited = history.package.readEntry(sectionPath).toString('utf8')
     expect(edited).toBe(original.replace(`<hp:t>${EDIT_SCOPE_TEXTS.footnoteBody}</hp:t>`, '<hp:t>각주을 고친 본문</hp:t>'))
     const projected = await decodeViewerDocument(history.package)
-    const notes = noteLists(projected).flatMap((list) => list.notes)
+    const notes = documentNotes(projected)
     expect(notes.map((note) => [note.kind, note.marker, note.sourcePath])).toEqual(
-      noteLists(await decodeViewerDocument(source)).flatMap((list) => list.notes).map((note) => [note.kind, note.marker, note.sourcePath])
+      documentNotes(await decodeViewerDocument(source)).map((note) => [note.kind, note.marker, note.sourcePath])
     )
     expect(notes[0].paragraphs[0].content).toMatchObject([{ text: '각주을 고친 본문' }])
     // 본문 쪽 각주 번호 표시도 그대로다.
@@ -166,7 +170,7 @@ describe('각주·미주 본문 글자 편집', () => {
       `<hp:rect id="1"><hp:sz width="1000" height="1000"/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>상자</hp:t><hp:ctrl><hp:footNote number="2"><hp:subList><hp:p><hp:run><hp:t>상자 각주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl></hp:run></hp:p></hp:subList></hp:drawText></hp:rect>`
     ))
     const document = await decodeViewerDocument(await HwpxSourcePackage.open(path))
-    const boxNote = noteLists(document).flatMap((list) => list.notes).find((note) => note.paragraphs[0]?.content.some((item) => item.type === 'text' && item.text === '상자 각주'))!
+    const boxNote = documentNotes(document).find((note) => note.paragraphs[0]?.content.some((item) => item.type === 'text' && item.text === '상자 각주'))!
     expect(boxNote.paragraphs[0].content).toMatchObject([{ text: '상자 각주', sourceAnchor: undefined }])
     expect(listEditingAnchorContexts(document).filter((context) => context.structure === 'NOTE_TEXT')).toHaveLength(2)
   })

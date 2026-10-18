@@ -6,7 +6,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { ViewerDocument, ViewerNoteList } from '../../src/core/document/viewer_document'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { NoteListView, ParagraphView, sublistParagraphEditing } from '../../src/renderer/src/App'
+import { FootnoteAreaView, NoteListView, ParagraphView, sublistParagraphEditing } from '../../src/renderer/src/App'
+import { sectionFootnoteSettings } from '../../src/core/layout/footnote_layout'
+import { paginateViewerDocument } from '../../src/core/layout/pagination'
 import { createEditScopeHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 const noop = () => undefined
@@ -77,13 +79,22 @@ describe('편집 범위 확장 화면', () => {
       .not.toContain('viewer-editable-text')
   })
 
-  test('구역 끝 각주·미주 목록은 편집 중 본문 문단에 입력 칸을 둔다', () => {
+  test('쪽 아래 각주 영역과 구역 끝 미주 목록은 편집 중 본문 문단에 입력 칸을 하나씩 둔다', () => {
+    const pages = paginateViewerDocument(document)
+    // 각주는 번호 표시가 든 첫 쪽 아래에 있다.
+    expect(pages.map((page) => page.footnotes?.[0]?.length ?? 0)).toEqual([1, 0])
+    const settings = sectionFootnoteSettings(document.sections[0].footnoteSettings)
+    const footnotes = render(createElement(FootnoteAreaView, { footnotes: pages[0].footnotes![0], settings, columnWidth: 48190, document, editing: pageEditing({ allowTableParagraph: true }) as any }))
+    expect(count(footnotes, 'aria-label="HWPX 각주·미주 편집"')).toBe(1)
+    expect(footnotes).toContain('data-note-kind="footnote"')
+    expect(footnotes).toContain('data-editor-range-scope="Contents/section0.xml:note:')
     const lists = document.sections[0].blocks
       .flatMap((block) => block.content.filter((item): item is ViewerNoteList => item.type === 'note-list'))
     const markup = lists.map((item) => render(createElement(NoteListView, { item, document, editing: pageEditing({ allowTableParagraph: true }) as any }))).join('')
-    expect(count(markup, 'aria-label="HWPX 각주·미주 편집"')).toBe(2)
-    expect(markup).toContain('data-editor-range-scope="Contents/section0.xml:note:')
+    expect(count(markup, 'aria-label="HWPX 각주·미주 편집"')).toBe(1)
+    expect(markup).toContain('data-note-kind="endnote"')
     expect(lists.map((item) => render(createElement(NoteListView, { item, document }))).join('')).not.toContain('viewer-editable-text')
+    expect(render(createElement(FootnoteAreaView, { footnotes: pages[0].footnotes![0], settings, columnWidth: 48190, document }))).not.toContain('viewer-editable-text')
   })
 
   test('머리말 편집 props는 active 쪽에만 selection 복원을 넘기고 문단 구조를 막는다', () => {

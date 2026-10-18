@@ -61,6 +61,7 @@ function visitContent(content: readonly ViewerContent[], visit: (item: ViewerObj
     if (item.type === 'object-placeholder') {
       visit(item)
       if (item.paragraphs) visitParagraphs(item.paragraphs, visit)
+      if (item.note) visitParagraphs(item.note.paragraphs, visit)
     } else if (item.type === 'table') {
       for (const row of item.rows) for (const cell of row.cells) visitParagraphs(cell.paragraphs, visit)
     } else if (item.type === 'note-list') {
@@ -135,7 +136,7 @@ export function objectPlaceholderDetailLines(counts: ObjectPlaceholderCounts): s
     equation: '수식 원문(script)을 상자 안에 글자로 보여 줍니다.',
     'text-box': '글상자 안 글은 보여 주지만 위치·모양은 원본과 다릅니다.',
     shape: '도형은 크기만 맞춘 상자로 보여 줍니다.',
-    footnote: '각주 번호는 본문에, 각주 내용은 구역 끝에 모아 보여 줍니다.',
+    footnote: '각주 내용은 번호가 놓인 쪽 아래에 보여 줍니다. 각주 모양(번호 모양·구분선·간격)은 구역 설정을 따르고 위치는 원본과 조금 다를 수 있습니다.',
     endnote: '미주 번호는 본문에, 미주 내용은 구역 끝에 모아 보여 줍니다.',
     memo: '메모 내용은 본문 안 작은 상자로 보여 줍니다.',
     ruby: '덧말은 본말 위·아래 작은 글자로 비슷하게 보여 줍니다.'

@@ -124,6 +124,16 @@ button { font: inherit; }
 .viewer-note { display: flex; gap: 4px; align-items: baseline; }
 .viewer-note-number { flex: none; }
 .viewer-note-body { flex: 1; min-width: 0; }
+/* 쪽(단) 아래 각주. 측정 DOM(.viewer-footnotes-measure)도 같은 글자 크기로 재야 쪽에서 같은 자리에서 줄이 바뀐다. */
+.viewer-footnotes, .viewer-footnotes-measure { font-size: 9pt; white-space: normal; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-footnotes { z-index: 1; }
+.viewer-footnote-line { flex: none; }
+.viewer-note-number-sup { font-size: .7em; vertical-align: super; line-height: 0; }
+/* 편집 중 쪽을 넘는 각주 문단의 앞 조각: 원본 문단 전체를 조각 높이로 잘라 그 자리에서 고친다. */
+.viewer-footnote-clip { overflow: hidden; }
+.viewer-column-flow-with-footnotes { height: 100%; align-items: stretch; }
+.viewer-column-flow-with-footnotes .viewer-column { display: flex; flex-direction: column; }
+.viewer-column-footnotes-bottom { margin-top: auto; }
 .viewer-object-banner { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 16px; background: #fff7e0; border-bottom: 1px solid #e6cf8f; color: #5c4400; font-size: 12px; }
 .viewer-object-banner-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-object-banner button { flex: none; height: 24px; padding: 0 10px; font-size: 12px; }

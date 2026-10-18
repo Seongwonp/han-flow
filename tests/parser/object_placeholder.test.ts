@@ -1,4 +1,4 @@
-import { ViewerDocument, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph } from '../../src/core/document/viewer_document'
+import { paragraphFootnotes, ViewerDocument, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph } from '../../src/core/document/viewer_document'
 import {
   collectObjectPlaceholders,
   countObjectPlaceholders,
@@ -145,26 +145,32 @@ describe('원본 개체 자리 표시 decoder', () => {
     expect(content).toHaveLength(2)
   })
 
-  test('각주·미주는 본문에 번호를, 구역 끝 목록에 본문을 둔다', async () => {
+  test('각주는 번호 표시에 본문을 두고(쪽 아래에 그린다), 미주는 구역 끝 목록에 둔다', async () => {
     const note = (name: string, number: number, text: string) =>
       `<hp:ctrl><${name} number="${number}" suffixChar="41"><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">` +
       `<hp:ctrl><hp:autoNum num="${number}"><hp:autoNumFormat type="DIGIT" suffixChar=")"/></hp:autoNum></hp:ctrl><hp:t>${text}</hp:t></hp:run>` +
       `<hp:linesegarray><hp:lineseg vertpos="0" vertsize="900"/></hp:linesegarray></hp:p></hp:subList></${name}></hp:ctrl>`
     const document = await decode(paragraph(`<hp:t>본문</hp:t>${note('hp:footNote', 1, '각주 본문')}${note('hp:endNote', 1, '미주 본문')}<hp:t/>`))
     const blocks = document.sections[0].blocks
-    expect(blocks[1].content.filter((item) => item.type === 'object-placeholder')).toEqual([
+    const markers = blocks[1].content.filter((item): item is ViewerObjectPlaceholder => item.type === 'object-placeholder')
+    expect(markers.map(({ note: _note, ...item }) => item)).toEqual([
       { type: 'object-placeholder', kind: 'footnote', element: 'hp:footNote', sourcePath: `${SECTION}#hp:footNote:0`, flow: 'marker', label: '각주', marker: '1)' },
       { type: 'object-placeholder', kind: 'endnote', element: 'hp:endNote', sourcePath: `${SECTION}#hp:endNote:0`, flow: 'marker', label: '미주', marker: '1)' }
     ])
-    // 쪽 사이에서 나눌 수 있게 각주·미주 문단마다 block 하나씩 둔다.
-    const noteBlocks = blocks.slice(-2)
-    expect(noteBlocks.map((block) => block.id)).toEqual(['s0:notes', 's0:notes:1'])
-    expect(noteBlocks.every((block) => block.layoutHeight > 0)).toBe(true)
-    const lists = noteBlocks.map((block) => block.content[0] as ViewerNoteList)
-    expect(lists.map((list) => [list.continuesKind, list.continuesNote])).toEqual([[undefined, undefined], ['footnote', undefined]])
-    expect(lists.flatMap((list) => list.notes).map((item) => [item.kind, item.marker, item.paragraphs[0].content.find((content) => content.type === 'text')])).toEqual([
-      // 각주·미주 본문은 section 안 `hp:t` 순번으로 편집 anchor를 받는다(구역 끝 목록에서 글자 편집).
-      ['footnote', '1)', { type: 'text', text: '각주 본문', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:1` } }],
+    // 각주 본문은 section 안 `hp:t` 순번으로 편집 anchor를 받고 번호 표시에 함께 둔다. 미주 번호 표시에는 본문이 없다.
+    expect(markers[0].note).toMatchObject({ kind: 'footnote', marker: '1)', sourcePath: `${SECTION}#hp:footNote:0` })
+    expect(markers[0].note!.paragraphs[0].content.find((content) => content.type === 'text')).toEqual(
+      { type: 'text', text: '각주 본문', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:1` } }
+    )
+    expect(markers[1].note).toBeUndefined()
+    expect(paragraphFootnotes(blocks[1])).toEqual([markers[0].note])
+    // 구역 끝 목록에는 미주만 둔다(미주 문단마다 block 하나).
+    const noteBlocks = blocks.filter((block) => block.content[0]?.type === 'note-list')
+    expect(noteBlocks.map((block) => block.id)).toEqual(['s0:notes'])
+    expect(noteBlocks[0].layoutHeight).toBeGreaterThan(0)
+    const list = noteBlocks[0].content[0] as ViewerNoteList
+    expect([list.continuesKind, list.continuesNote]).toEqual([undefined, undefined])
+    expect(list.notes.map((item) => [item.kind, item.marker, item.paragraphs[0].content.find((content) => content.type === 'text')])).toEqual([
       ['endnote', '1)', { type: 'text', text: '미주 본문', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:2` } }]
     ])
     expect(countObjectPlaceholders(document)).toEqual({ footnote: 1, endnote: 1 })

@@ -1,4 +1,5 @@
-import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { footnoteMarker } from '../document/note_number'
 import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
   ParagraphMetricAncestor,
@@ -114,6 +115,8 @@ interface DecodeContext {
   styleCharacterIds: ParagraphStyleCharacterIds
   objectOrdinals: Map<OrderedXmlNode, number>
   notes: ViewerNote[]
+  /** 구역의 각주 모양. 구역마다 새로 매기는 번호(`ON_SECTION`)는 decoder가 센다. */
+  footnoteSettings?: ViewerFootnoteSettings
   /** 자리 표시 선언 높이 한도(HWPUNIT, 쪽 본문 높이의 일정 비율). 없으면 줄이지 않는다. */
   objectHeightLimit?: number
 }
@@ -303,11 +306,16 @@ function decodeObject(node: OrderedXmlNode, id: string, context: DecodeContext):
 function decodeControl(node: OrderedXmlNode, id: string, context: DecodeContext): ViewerObjectPlaceholder | undefined {
   if (node.name === 'hp:footNote' || node.name === 'hp:endNote') {
     const kind = node.name === 'hp:footNote' ? 'footnote' as const : 'endnote' as const
-    const marker = noteMarker(node, context.notes.filter((note) => note.kind === kind).length + 1)
+    const ordinal = context.notes.filter((note) => note.kind === kind).length
+    const marker = kind === 'footnote' && context.footnoteSettings?.numbering.type === 'ON_SECTION'
+      ? footnoteMarker(context.footnoteSettings, context.footnoteSettings.numbering.newNum + ordinal)
+      : noteMarker(node, ordinal + 1)
     const sourcePath = objectSourcePath(node, context)
-    // 각주·미주 본문은 section XML 안에 있어 같은 `hp:t` 순번으로 편집 anchor를 붙인다(구역 끝 목록에서 글자 편집).
-    context.notes.push({ kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context, true) })
-    return { type: 'object-placeholder', kind, element: node.name, sourcePath, flow: 'marker', label: OBJECT_KIND_LABELS[kind], marker }
+    // 각주·미주 본문은 section XML 안에 있어 같은 `hp:t` 순번으로 편집 anchor를 붙인다(쪽 아래 각주·구역 끝 미주에서 글자 편집).
+    const note: ViewerNote = { kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context, true) }
+    context.notes.push(note)
+    // 각주는 번호 표시가 놓인 쪽 아래에 그리도록 본문을 번호 표시에 함께 둔다. 미주는 구역 끝 목록에 모은다.
+    return { type: 'object-placeholder', kind, element: node.name, sourcePath, flow: 'marker', label: OBJECT_KIND_LABELS[kind], marker, ...(kind === 'footnote' ? { note } : {}) }
   }
   if (node.name === 'hp:fieldBegin') {
     const subList = child(node, 'hp:subList')
@@ -543,6 +551,48 @@ function decodePageNumber(nodes: OrderedXmlNode[]): ViewerPageNumber | undefined
   }
 }
 
+/** 구역 정의 첫 `hp:footNotePr`(각주 모양). 없으면 undefined(renderer·pagination이 한/글 기본값을 쓴다). */
+function decodeFootnoteSettings(root: OrderedXmlNode | undefined): ViewerFootnoteSettings | undefined {
+  // 구역 정의(`hp:secPr`)는 구역 첫 문단에 있다. 구역 전체를 다시 훑지 않는다.
+  const first = root ? child(root, 'hp:p') : undefined
+  const footNotePr = first ? descendants(first, 'hp:footNotePr')[0] : undefined
+  if (!footNotePr) return undefined
+  const defaults = DEFAULT_FOOTNOTE_SETTINGS
+  const format = child(footNotePr, 'hp:autoNumFormat')?.attributes
+  const line = child(footNotePr, 'hp:noteLine')?.attributes
+  const spacing = child(footNotePr, 'hp:noteSpacing')?.attributes
+  const numbering = child(footNotePr, 'hp:numbering')?.attributes
+  const placement = child(footNotePr, 'hp:placement')?.attributes
+  const length = (value: string | undefined, fallback: number) => {
+    const parsed = Number(value)
+    return value !== undefined && Number.isFinite(parsed) ? parsed : fallback
+  }
+  const numberingType = numbering?.type === 'ON_SECTION' || numbering?.type === 'ON_PAGE' ? numbering.type : 'CONTINUOUS'
+  return {
+    format: {
+      type: format?.type ?? defaults.format.type,
+      userChar: format?.userChar ?? defaults.format.userChar,
+      prefixChar: format?.prefixChar ?? defaults.format.prefixChar,
+      suffixChar: format?.suffixChar ?? defaults.format.suffixChar,
+      superscript: format ? format.supscript === '1' : defaults.format.superscript
+    },
+    line: {
+      type: line?.type ?? defaults.line.type,
+      length: length(line?.length, defaults.line.length),
+      // `width="0.12 mm"`처럼 단위가 붙는다.
+      widthMm: Math.max(length(line?.width?.replace(/\s*mm$/i, ''), defaults.line.widthMm), 0),
+      color: line?.color ?? defaults.line.color
+    },
+    spacing: {
+      betweenNotes: Math.max(length(spacing?.betweenNotes, defaults.spacing.betweenNotes), 0),
+      belowLine: Math.max(length(spacing?.belowLine, defaults.spacing.belowLine), 0),
+      aboveLine: Math.max(length(spacing?.aboveLine, defaults.spacing.aboveLine), 0)
+    },
+    numbering: { type: numberingType, newNum: Math.max(Math.trunc(length(numbering?.newNum, 1)), 1) },
+    placement: { place: placement?.place ?? defaults.placement.place, beneathText: placement?.beneathText === '1' }
+  }
+}
+
 function decodeColumnLayout(
   nodes: OrderedXmlNode[],
   source: string
@@ -689,12 +739,13 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
 }
 
 /**
- * 구역 끝 각주·미주 목록. 쪽 사이에서 나눌 수 있게 각주·미주 문단마다 block 하나를 만든다(문단이 없는 각주는 block 하나).
- * 첫 block id는 `${id}`, 다음은 `${id}:${순번}`이다. 각주를 미주보다 먼저 모으고 같은 종류 안에서는 문서 순서를 지킨다.
+ * 구역 끝 미주 목록. 쪽 사이에서 나눌 수 있게 미주 문단마다 block 하나를 만든다(문단이 없는 미주는 block 하나).
+ * 첫 block id는 `${id}`, 다음은 `${id}:${순번}`이다. 문서 순서를 지킨다. 각주는 번호 표시가 놓인 쪽 아래에 그리므로
+ * 여기에 넣지 않는다(`ViewerObjectPlaceholder.note`).
  * 높이는 줄 배치 캐시 합(없으면 1000)에 종류 제목 줄(1600)을 더한 추정값이다(화면 측정이 덮어쓴다).
  */
 function noteListBlocks(notes: ViewerNote[], id: string): ViewerParagraph[] {
-  const ordered = (['footnote', 'endnote'] as const).flatMap((kind) => notes.filter((note) => note.kind === kind))
+  const ordered = notes.filter((note) => note.kind === 'endnote')
   const blocks: ViewerParagraph[] = []
   let previousKind: ViewerNote['kind'] | undefined
   for (const note of ordered) {
@@ -823,12 +874,14 @@ export function decodeViewerSection(
 ): DecodedViewerSection {
   const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
   const root = nodes.find((node) => node.name === 'hs:sec')
+  const footnoteSettings = decodeFootnoteSettings(root)
   const context: DecodeContext = {
     sectionPath: path,
     sourceSection: path,
     styleCharacterIds: header.styleCharacterIds,
     objectOrdinals: objectOrdinals(nodes),
     notes: [],
+    footnoteSettings,
     objectHeightLimit
   }
   const columns = decodeColumnLayout(nodes, path)
@@ -843,6 +896,7 @@ export function decodeViewerSection(
     blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
     pageNumber: decodePageNumber(nodes),
     columnLayout: columns.columnLayout,
+    ...(footnoteSettings ? { footnoteSettings } : {}),
     headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, context).map((control) => ({
       ...control,
       paragraphs: applyParagraphMarkers(control.paragraphs, header.paraStyles)

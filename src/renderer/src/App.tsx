@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, memo, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { isObjectPlaceholder, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerHeaderFooter, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -30,6 +30,8 @@ import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layo
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
 import { LayoutMeasurements, paginateViewerSectionsIncremental, SectionPagination } from '../../core/layout/pagination'
+import { footnoteLineLength, footnoteLineThickness, sectionFootnoteSettings, ViewerNoteMetrics, ViewerPageFootnote } from '../../core/layout/footnote_layout'
+import { measureNoteElement } from './footnote_measurement'
 import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
@@ -159,16 +161,19 @@ function Content({
   item,
   document,
   measurable = false,
+  contentIndex,
   editing
 }: {
   item: ViewerContent
   document: ViewerRenderStyles
   measurable?: boolean
+  /** 측정 DOM에서 각주 줄 경계를 content 순번으로 찾을 때 쓴다(`footnote_measurement.ts`). */
+  contentIndex?: number
   editing?: ParagraphEditingProps
 }) {
   if (item.type === 'text') {
     // 화면 표시만 검증된 한컴 PUA 기호를 표준 글자로 바꾼다(편집 입력 surface와 원문은 그대로).
-    return <span style={textCss(item, document)}>{hancomPuaDisplayText(item.text)}</span>
+    return <span style={textCss(item, document)} data-content-index={measurable ? contentIndex : undefined}>{hancomPuaDisplayText(item.text)}</span>
   }
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
@@ -303,7 +308,7 @@ export function sublistParagraphEditing(
   }
 }
 
-/** 구역 끝에 모은 각주·미주 본문. 편집 중에는 본문 문단의 글자를 고칠 수 있다(번호·본문 위치의 번호 표시는 그대로). */
+/** 구역 끝에 모은 미주 본문. 편집 중에는 본문 문단의 글자를 고칠 수 있다(번호·본문 위치의 번호 표시는 그대로). */
 export function NoteListView({ item, document, editing }: { item: ViewerNoteList; document: ViewerRenderStyles; editing?: ParagraphEditingProps }) {
   const noteEditing = sublistParagraphEditing(editing, 'NOTE_TEXT', 'HWPX 각주·미주 편집', editing?.desiredSelection)
   const groups = (['footnote', 'endnote'] as const)
@@ -318,6 +323,79 @@ export function NoteListView({ item, document, editing }: { item: ViewerNoteList
         <div className="viewer-note-body">{note.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={noteEditing} />)}</div>
       </div>)}
     </section>)}
+  </div>
+}
+
+const FOOTNOTE_LINE_STYLES: Record<string, CSSProperties['borderTopStyle']> = {
+  DASH: 'dashed', DOT: 'dotted', DASH_DOT: 'dashed', DASH_DOT_DOT: 'dashed', LONG_DASH: 'dashed', CIRCLE: 'dotted',
+  DOUBLE_SLIM: 'double', SLIM_THICK: 'double', THICK_SLIM: 'double', SLIM_THICK_SLIM: 'double'
+}
+
+/**
+ * 쪽(단) 아래 각주 하나의 조각. 번호·본문 배치는 구역 끝 미주 목록과 같다(`.viewer-note`). 앞 쪽에서 이어지는 조각은 번호
+ * 칸을 보이지 않게 남겨(본문 폭이 측정 때와 같아 줄이 같은 자리에서 바뀐다) 번호를 다시 쓰지 않는다.
+ * 편집 중에는 온전한 문단과 앞 줄 조각(`head`, 원본 문단 전체를 조각 높이로 잘라 그린다)만 입력 칸이고, 이어지는 줄 조각은 읽기 전용이다.
+ */
+export function FootnoteView({ footnote, superscript, document, editing, measureId }: {
+  footnote: Pick<ViewerPageFootnote, 'note' | 'marker' | 'pieces' | 'continued' | 'continues'>
+  superscript: boolean
+  document: ViewerRenderStyles
+  editing?: ParagraphEditingProps
+  /** 측정 DOM에서 각주 전체를 그릴 때 `data-measure-note`로 쓰는 각주 source path. */
+  measureId?: string
+}) {
+  const measurable = measureId !== undefined
+  return <div
+    className={`viewer-note viewer-footnote${footnote.continued ? ' viewer-footnote-continued' : ''}`}
+    data-source-path={footnote.note.sourcePath}
+    data-measure-note={measureId}
+    data-footnote-continues={footnote.continues ? 'true' : undefined}
+  >
+    <span className={`viewer-note-number${superscript ? ' viewer-note-number-sup' : ''}`} style={footnote.continued ? { visibility: 'hidden' } : undefined} aria-hidden={footnote.continued || undefined}>{footnote.marker}</span>
+    <div className="viewer-note-body">{footnote.pieces.map((piece) => {
+      if (piece.part === 'head' && editing && !measurable) {
+        return <div key={piece.paragraph.id} className="viewer-footnote-clip" style={{ height: hwpUnitToCssPx(piece.clipHeight ?? 0) }}>
+          <ParagraphView paragraph={piece.source} document={document} editing={editing} />
+        </div>
+      }
+      return <ParagraphView key={piece.paragraph.id} paragraph={piece.paragraph} document={document} measurable={measurable} editing={piece.part === 'whole' ? editing : undefined} />
+    })}</div>
+  </div>
+}
+
+/**
+ * 쪽(단) 아래 각주 영역: 본문과의 간격, 구역 각주 모양의 구분선(종류·굵기·색·길이), 구분선 아래 간격, 각주 사이 간격.
+ * 높이는 pagination(`footnoteAreaHeight`)이 본문에서 뺀 높이와 같다.
+ */
+export function FootnoteAreaView({ footnotes, settings, columnWidth, document, editing, style }: {
+  footnotes: readonly ViewerPageFootnote[]
+  settings: ViewerFootnoteSettings
+  columnWidth: number
+  document: ViewerRenderStyles
+  editing?: ParagraphEditingProps
+  style?: CSSProperties
+}) {
+  const noteEditing = sublistParagraphEditing(editing, 'NOTE_TEXT', 'HWPX 각주·미주 편집', editing?.desiredSelection)
+  const thickness = footnoteLineThickness(settings)
+  return <div
+    className="viewer-footnotes"
+    data-note-kind="footnote"
+    contentEditable={false}
+    style={{ ...style, paddingTop: hwpUnitToCssPx(settings.spacing.aboveLine) }}
+  >
+    <div
+      className="viewer-footnote-line"
+      aria-hidden
+      style={{
+        width: hwpUnitToCssPx(footnoteLineLength(settings, columnWidth)),
+        height: hwpUnitToCssPx(thickness),
+        borderTop: thickness ? `${Math.max(hwpUnitToCssPx(thickness), 0.75)}px ${FOOTNOTE_LINE_STYLES[settings.line.type] ?? 'solid'} ${settings.line.color}` : undefined,
+        marginBottom: hwpUnitToCssPx(settings.spacing.belowLine)
+      }}
+    />
+    {footnotes.map((footnote, index) => <div key={`${footnote.note.sourcePath}:${footnote.continued ? 'next' : 'first'}`} style={index ? { marginTop: hwpUnitToCssPx(settings.spacing.betweenNotes) } : undefined}>
+      <FootnoteView footnote={footnote} superscript={settings.format.superscript} document={document} editing={noteEditing} />
+    </div>)}
   </div>
 }
 
@@ -663,7 +741,7 @@ export function ParagraphView({
       }
       return surface
     })
-    : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} editing={editing} />)}</div>
+    : paragraph.content.map((item, index) => <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} contentIndex={index} editing={editing} />)}</div>
 }
 
 /**
@@ -678,10 +756,30 @@ const MeasurementSection = memo(function MeasurementSection({
   styles: ViewerRenderStyles
   width: number
 }) {
+  const footnotes = sectionFootnotes(section)
+  const superscript = sectionFootnoteSettings(section.footnoteSettings).format.superscript
   return <div data-measure-section={section.id} style={{ width }}>
     {section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={styles} measurable />)}
+    {footnotes.length > 0 && <div className="viewer-footnotes-measure">{footnotes.map((note) => <FootnoteView
+      key={note.sourcePath}
+      footnote={{ note, marker: note.marker, pieces: note.paragraphs.map((paragraph) => ({ paragraph, source: paragraph, part: 'whole' })), continued: false, continues: false }}
+      superscript={superscript}
+      document={styles}
+      measureId={note.sourcePath}
+    />)}</div>}
   </div>
 })
+
+/** section 본문의 각주(문서 순서). section object는 바꾸지 않으므로 object마다 한 번만 모은다. */
+const sectionFootnoteCache = new WeakMap<ViewerSection, ViewerNote[]>()
+function sectionFootnotes(section: ViewerSection): ViewerNote[] {
+  let notes = sectionFootnoteCache.get(section)
+  if (!notes) {
+    notes = section.blocks.flatMap(paragraphFootnotes)
+    sectionFootnoteCache.set(section, notes)
+  }
+  return notes
+}
 
 /** 입력 지연 측정 hook(E2E)이 읽는 시각 표시. 이름마다 마지막 하나만 남긴다. */
 function markEditingTiming(name: string): void {
@@ -689,10 +787,18 @@ function markEditingTiming(name: string): void {
   performance.mark(name)
 }
 
-function measureSectionElement(element: Element): LayoutMeasurements {
+function measureSectionElement(element: Element, section: ViewerSection): LayoutMeasurements {
   const blockHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).map((item) => [item.dataset.measureBlockId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
   const tableRowHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-row-id]')).map((item) => [item.dataset.measureRowId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
-  return { blockHeights, tableRowHeights }
+  const footnotes = sectionFootnotes(section)
+  if (!footnotes.length) return { blockHeights, tableRowHeights }
+  const notes = new Map(footnotes.map((note) => [note.sourcePath, note]))
+  const noteMetrics: Record<string, ViewerNoteMetrics> = {}
+  element.querySelectorAll<HTMLElement>('[data-measure-note]').forEach((item) => {
+    const note = notes.get(item.dataset.measureNote!)
+    if (note) noteMetrics[note.sourcePath] = measureNoteElement(item, note)
+  })
+  return { blockHeights, tableRowHeights, noteMetrics }
 }
 
 /**
@@ -712,7 +818,7 @@ export function measureDocumentLayout(
       const cached = previous?.sections[index]
       if (cached && cached.section === section) return cached
       const element = container.children[index]
-      return element ? { section, measurements: measureSectionElement(element) } : undefined
+      return element ? { section, measurements: measureSectionElement(element, section) } : undefined
     })
   }
 }
@@ -2434,12 +2540,25 @@ export default function App() {
             document={renderStyles!}
             editing={pageEditing}
           />)
+          // 각주는 단마다(단이 하나면 쪽) 아래에 둔다. 본문 바로 아래 두기(`beneathText`)면 본문 흐름 뒤에 잇는다.
+          const footnoteSettings = sectionFootnoteSettings(effectiveDocument.sections[page.sectionIndex]?.footnoteSettings)
+          const columnWidth = viewerColumnContentWidth(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right, page.columnLayout)
+          const footnoteArea = (columnIndex: number, style?: CSSProperties) => page.footnotes?.[columnIndex]?.length
+            ? <FootnoteAreaView footnotes={page.footnotes[columnIndex]} settings={footnoteSettings} columnWidth={columnWidth} document={renderStyles!} editing={pageEditing} style={style} />
+            : undefined
           const body = page.columns && page.columnLayout
             ? <ViewerColumnFlow
                 gap={hwpUnitToCssPx(page.columnLayout.sameGap)}
                 columns={page.columns.map(renderParagraphs)}
+                footers={page.footnotes ? page.columns.map((_column, columnIndex) => footnoteArea(columnIndex)) : undefined}
+                footersBeneathText={footnoteSettings.placement.beneathText}
               />
-            : renderParagraphs(page.blocks)
+            : <>{renderParagraphs(page.blocks)}{footnoteArea(0, footnoteSettings.placement.beneathText ? undefined : {
+                position: 'absolute',
+                left: hwpUnitToCssPx(effectiveDocument.page.margin.left),
+                right: hwpUnitToCssPx(effectiveDocument.page.margin.right),
+                bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom)
+              })}</>
           return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{body}<HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}

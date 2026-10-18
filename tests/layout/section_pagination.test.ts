@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
+  paragraphFootnotes,
   supportsViewerColumnFlow,
   ViewerColumnLayout,
   ViewerDocument,
@@ -20,7 +21,7 @@ import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
 import { fixturePath, openedFixtures } from '../editing/golden_cases'
 
 /** section별 pagination 이전의 문서 단위 구현(변경 전 `paginateViewerDocument` 그대로). */
-function legacyPaginate(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
+function previousPaginate(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
   const pages: ViewerPage[] = []
   const availableHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
   let activeColumnLayout: ViewerColumnLayout | undefined
@@ -125,8 +126,14 @@ describe('section별 pagination', () => {
     async (_id, fixture) => {
       const document = await decodeViewerDocument(await HwpxSourcePackage.open(fixturePath(directory, fixture)))
       const { flat, sections } = syntheticMeasurements(document)
-      expect(paginateViewerDocument(document)).toEqual(legacyPaginate(document))
-      expect(paginateViewerDocument(document, flat)).toEqual(legacyPaginate(document, flat))
+      // 각주가 있는 문서는 쪽 아래 각주 영역만큼 본문이 줄어 이전 구현과 쪽 배치가 다르다. 그런 문서는 문서 단위 결과를 기준으로 한다.
+      const hasFootnotes = document.sections.some((section) => section.blocks.some((block) => paragraphFootnotes(block).length > 0))
+      const legacyPaginate = (target: ViewerDocument, measurements?: LayoutMeasurements) =>
+        hasFootnotes ? paginateViewerDocument(target, measurements) : previousPaginate(target, measurements)
+      if (!hasFootnotes) {
+        expect(paginateViewerDocument(document)).toEqual(legacyPaginate(document))
+        expect(paginateViewerDocument(document, flat)).toEqual(legacyPaginate(document, flat))
+      }
       // renderer처럼 section마다 따로 잰 측정값을 써도 같다.
       const incremental = paginateViewerSectionsIncremental(document, (index) => sections[index])
       expect(incremental.pages).toEqual(legacyPaginate(document, flat))

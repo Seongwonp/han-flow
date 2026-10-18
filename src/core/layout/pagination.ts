@@ -1,10 +1,25 @@
-import { supportsViewerColumnFlow, ViewerColumnLayout, ViewerDocument, ViewerParagraph, ViewerSection, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { paragraphFootnotes, supportsViewerColumnFlow, ViewerColumnLayout, ViewerContent, ViewerDocument, ViewerNote, ViewerParagraph, ViewerSection, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { footnoteMarker } from '../document/note_number'
 import { cellOccupiedHeight, findSplittableCell, ParagraphHeights, tableSupportsCellSplitting } from './cell_fragment'
+import {
+  estimatedNoteMetrics,
+  fitNoteCursor,
+  footnoteAreaHeight,
+  noteCursorY,
+  noteFragmentPieces,
+  sectionFootnoteSettings,
+  ViewerNoteMetrics,
+  ViewerPageFootnote
+} from './footnote_layout'
 
 export interface ViewerPage {
   blocks: ViewerParagraph[]
   columns?: ViewerParagraph[][]
   columnLayout?: ViewerColumnLayout
+  /**
+   * 쪽 아래 각주 조각. 단마다 하나씩(단이 하나면 `[0]`만) 있고, 각주가 없는 쪽은 undefined다. 본문은 이 높이만큼 줄어든다.
+   */
+  footnotes?: ViewerPageFootnote[][]
   sectionIndex: number
   sectionPageIndex: number
 }
@@ -12,6 +27,8 @@ export interface ViewerPage {
 export interface LayoutMeasurements {
   blockHeights: Record<string, number>
   tableRowHeights: Record<string, number>
+  /** 각주(`ViewerNote.sourcePath`)마다 화면에서 잰 높이와 나눌 수 있는 자리. 없으면 decoder 줄 배치 높이로 어림한다. */
+  noteMetrics?: Record<string, ViewerNoteMetrics>
 }
 
 function declaredRowHeight(row: ViewerTableRow): number {
@@ -145,10 +162,23 @@ export function pageBodyHeight(document: Pick<ViewerDocument, 'page'>): number {
   return document.page.height - document.page.margin.top - document.page.margin.bottom
 }
 
+/** 아직 쪽(단) 아래에 다 놓지 못한 각주와 다음 조각이 시작할 경계(`ViewerNoteMetrics.breaks` index, -1은 처음). */
+interface PendingFootnote {
+  note: ViewerNote
+  metrics: ViewerNoteMetrics
+  cursor: number
+}
+
 /**
  * section 하나를 쪽으로 나눈다. section은 언제나 새 쪽에서 시작하고(앞 section의 남은 쪽을 먼저 내보낸다) 다단 상태·
  * 원본 줄 배치 위치도 section마다 처음부터 센다. 그래서 문서 pagination은 section별 결과를 이어 붙인 것과 같고,
  * 편집으로 section 하나만 바뀌면 그 section만 다시 나누면 된다(`paginateViewerSectionsIncremental`).
+ *
+ * 각주는 번호 표시가 든 block이 놓인 단(단이 하나면 쪽) 아래에 둔다. 단의 본문 높이는 각주 영역(구분선·간격 포함)만큼 줄어든다.
+ * - block과 각주가 함께 들어가지 않으면 block을 다음 쪽(단)으로 넘긴다.
+ * - 각주가 빈 쪽에도 다 들어가지 않을 만큼 길면 block을 두고 각주 첫 줄부터 남은 자리만큼 놓은 뒤 나머지를 다음 쪽(단)
+ *   아래 처음에 이어 놓는다(문단 경계·측정한 줄 경계에서 나눈다). 남은 각주가 있으면 다음 본문 block도 다음 쪽으로 간다.
+ * - 쪽마다 새로 매기는 번호(`ON_PAGE`)는 쪽을 다 나눈 뒤 다시 매긴다(`renumberFootnotesByPage`).
  */
 export function paginateViewerSection(
   section: ViewerSection,
@@ -159,42 +189,92 @@ export function paginateViewerSection(
   const pages: ViewerPage[] = []
   const activeColumnLayout = supportsViewerColumnFlow(section.columnLayout) ? section.columnLayout : undefined
   const columnCount = activeColumnLayout?.count ?? 1
+  const settings = sectionFootnoteSettings(section.footnoteSettings)
   let currentColumns: ViewerParagraph[][] = [[]]
+  let currentNotes: ViewerPageFootnote[][] = [[]]
   let columnIndex = 0
   let usedHeight = 0
+  let notesHeight = 0
   let sectionPageIndex = 0
   let previousLayoutTop: number | undefined
   let previousBlockFragmented = false
+  const pending: PendingFootnote[] = []
+  // 표 머리글 행 되풀이처럼 같은 각주 번호 표시가 여러 조각에 나와도 각주 본문은 한 번만 놓는다.
+  const placedNotes = new Set<string>()
   const currentColumn = () => currentColumns[columnIndex]
+  const columnNotes = () => currentNotes[columnIndex]
+  const noteArea = (extraCount = 0, extraHeight = 0) =>
+    footnoteAreaHeight(settings, columnNotes().length + extraCount, notesHeight + extraHeight)
+  const metricsOf = (note: ViewerNote) => measurements?.noteMetrics?.[note.sourcePath] ?? estimatedNoteMetrics(note)
+  /** 남은 각주를 지금 단 아래에 들어가는 만큼 놓는다. 단이 비었으면 들어가지 않아도 한 조각은 놓는다(무한 반복 방지). */
+  const fillNotes = () => {
+    while (pending.length) {
+      const item = pending[0]
+      const space = availableHeight - usedHeight - noteArea(1)
+      let cursor = fitNoteCursor(item.metrics, item.cursor, space)
+      const columnEmpty = !currentColumn().length && !columnNotes().length
+      if (cursor === item.cursor) {
+        if (!columnEmpty) return
+        cursor = item.cursor + 1
+      }
+      const height = noteCursorY(item.metrics, cursor) - noteCursorY(item.metrics, item.cursor)
+      const continues = cursor < item.metrics.breaks.length
+      columnNotes().push({
+        note: item.note,
+        marker: item.note.marker,
+        pieces: noteFragmentPieces(item.note, item.metrics, item.cursor, cursor),
+        continued: item.cursor >= 0,
+        continues,
+        height
+      })
+      notesHeight += height
+      if (continues) {
+        item.cursor = cursor
+        return
+      }
+      pending.shift()
+    }
+  }
   const resetPage = () => {
     currentColumns = Array.from({ length: columnCount }, () => [])
+    currentNotes = Array.from({ length: columnCount }, () => [])
     columnIndex = 0
     usedHeight = 0
+    notesHeight = 0
   }
   const flush = () => {
     const blocks = currentColumns.flat()
-    if (blocks.length) {
+    const hasNotes = currentNotes.some((notes) => notes.length)
+    if (blocks.length || hasNotes) {
       pages.push({
         blocks,
         ...(activeColumnLayout ? {
           columns: currentColumns.map((column) => [...column]),
           columnLayout: activeColumnLayout
         } : {}),
+        ...(hasNotes ? { footnotes: currentNotes.map((notes) => [...notes]) } : {}),
         sectionIndex,
         sectionPageIndex
       })
       sectionPageIndex += 1
     }
     resetPage()
+    fillNotes()
   }
   const advanceFlow = () => {
     if (columnIndex + 1 < columnCount) {
       columnIndex += 1
       usedHeight = 0
+      notesHeight = 0
+      fillNotes()
     } else {
       flush()
     }
     previousLayoutTop = undefined
+  }
+  // 남은 각주가 단을 다 채우고 있으면 본문 block은 다음 단·쪽으로 간다.
+  const advanceWhileNotesPending = () => {
+    while (pending.length) advanceFlow()
   }
 
   resetPage()
@@ -203,19 +283,99 @@ export function paginateViewerSection(
     if (originalBlock.pageBreak) flush()
     else if ((originalBlock.columnBreak || sourceFlowRestart) && activeColumnLayout) advanceFlow()
     else if (sourceFlowRestart) flush()
-    const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight, availableHeight, measurements)
+    advanceWhileNotesPending()
+    const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight - noteArea(), availableHeight, measurements)
     fragments.forEach((block, fragmentIndex) => {
       const measuredHeight = measurements?.blockHeights[block.id]
       const height = measuredHeight ?? block.layoutHeight
-      if (fragmentIndex > 0 || (currentColumn().length && height > 0 && usedHeight + height > availableHeight)) advanceFlow()
+      const notes = paragraphFootnotes(block).filter((note) => !placedNotes.has(note.sourcePath))
+      const metrics = notes.map(metricsOf)
+      const notesTotal = metrics.reduce((sum, item) => sum + item.height, 0)
+      if (fragmentIndex > 0) advanceFlow()
+      else if (currentColumn().length || columnNotes().length) {
+        const fits = usedHeight + height + noteArea(notes.length, notesTotal) <= availableHeight
+        if (!fits && (currentColumn().length || height > 0)) {
+          // 빈 단에 block과 각주가 다 들어가면 block을 넘긴다. 각주가 빈 단보다도 길면 각주 첫 조각이 여기에 들어갈 때만 둔다.
+          const fitsFresh = height + footnoteAreaHeight(settings, notes.length, notesTotal) <= availableHeight
+          const firstPiece = metrics[0] ? noteCursorY(metrics[0], 0) : 0
+          const fitsPartially = notes.length > 0 && usedHeight + height + noteArea(1, firstPiece) <= availableHeight
+          if (fitsFresh || !fitsPartially) advanceFlow()
+        }
+      }
+      advanceWhileNotesPending()
       currentColumn().push(block)
       usedHeight += height
+      notes.forEach((note, index) => {
+        placedNotes.add(note.sourcePath)
+        pending.push({ note, metrics: metrics[index], cursor: -1 })
+      })
+      fillNotes()
     })
     previousBlockFragmented = fragments.length > 1
     if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutTop
   })
+  while (pending.length) flush()
   flush()
-  return pages
+  return settings.numbering.type === 'ON_PAGE' ? renumberFootnotesByPage(pages, (value) => footnoteMarker(settings, value)) : pages
+}
+
+function remarkContent(content: ViewerContent[], markers: ReadonlyMap<string, string>): ViewerContent[] {
+  let changed = false
+  const next = content.map((item): ViewerContent => {
+    if (item.type === 'object-placeholder' && item.note && markers.has(item.sourcePath)) {
+      changed = true
+      const marker = markers.get(item.sourcePath)!
+      return { ...item, marker, note: { ...item.note, marker } }
+    }
+    if (item.type === 'table') {
+      let tableChanged = false
+      const rows = item.rows.map((row) => ({
+        ...row,
+        cells: row.cells.map((cell) => {
+          const paragraphs = cell.paragraphs.map((paragraph) => {
+            const remarked = remarkContent(paragraph.content, markers)
+            if (remarked === paragraph.content) return paragraph
+            tableChanged = true
+            return { ...paragraph, content: remarked }
+          })
+          return tableChanged ? { ...cell, paragraphs } : cell
+        })
+      }))
+      if (!tableChanged) return item
+      changed = true
+      return { ...item, rows }
+    }
+    return item
+  })
+  return changed ? next : content
+}
+
+/**
+ * 쪽마다 새로 매기는 각주 번호(`ON_PAGE`). 쪽 안 각주 첫 조각 순서대로 1부터 매기고, 본문 번호 표시와 각주 조각 번호를 함께 바꾼다.
+ * 앞 쪽에서 이어지는 조각은 앞 쪽 번호를 그대로 쓴다.
+ */
+export function renumberFootnotesByPage(pages: ViewerPage[], format: (value: number) => string): ViewerPage[] {
+  const markers = new Map<string, string>()
+  return pages.map((page) => {
+    if (!page.footnotes) return page
+    let counter = 0
+    const footnotes = page.footnotes.map((notes) => notes.map((footnote) => {
+      if (!footnote.continued) markers.set(footnote.note.sourcePath, format(++counter))
+      const marker = markers.get(footnote.note.sourcePath) ?? footnote.marker
+      return { ...footnote, marker, note: { ...footnote.note, marker } }
+    }))
+    const remark = (block: ViewerParagraph) => {
+      const content = remarkContent(block.content, markers)
+      return content === block.content ? block : { ...block, content }
+    }
+    const blocks = page.blocks.map(remark)
+    return {
+      ...page,
+      blocks,
+      ...(page.columns ? { columns: page.columns.map((column) => column.map((block) => blocks[page.blocks.indexOf(block)] ?? remark(block))) } : {}),
+      footnotes
+    }
+  })
 }
 
 /** section 하나의 pagination 결과와 그 입력. 입력 object가 모두 같으면 다음 pagination에서 그대로 쓴다. */

@@ -515,7 +515,10 @@ export function createLongObjectHwpx(directory: string, fileName = 'han-flow-lon
   return path
 }
 
-/** 각주 40개(각 2~3줄)가 든 A4 합성 문서(직접 작성, 개인정보 없음). 구역 끝 각주 목록이 한 쪽보다 길어 쪽을 넘어 나뉘어야 한다. */
+/**
+ * 각주 40개(각 2~3줄)가 든 A4 합성 문서(직접 작성, 개인정보 없음). 각주를 모두 더하면 한 쪽보다 길어, 각주마다 번호 표시가
+ * 놓인 쪽 아래에 놓이면서 본문이 각주 높이만큼 줄어 여러 쪽으로 나뉘어야 한다.
+ */
 export const FOOTNOTE_FLOW_COUNT = 40
 const footnote = (index: number) =>
   `<hp:ctrl><hp:footNote number="${index + 1}" suffixChar="41" instId="${9000 + index}"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="${index + 1}" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>각주 ${index + 1}번 본문입니다. 구역 끝 각주 목록은 각주마다 나뉘어 쪽을 넘어 이어져야 합니다. 이 문장은 각주 하나가 여러 줄을 차지하도록 일부러 길게 적었습니다. 화면과 PDF의 글자 수가 같아야 합니다.</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:footNote></hp:ctrl>`
@@ -533,6 +536,52 @@ export function createFootnoteFlowHwpx(directory: string, fileName = 'han-flow-f
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(footnoteFlowSection))
+  zip.writeZip(path)
+  return path
+}
+
+/**
+ * 쪽 아래 각주 배치 검증용 A4 합성 문서(직접 작성, 개인정보 없음). 구역 정의에 한/글 기본 각주 모양(`hp:footNotePr`)을 둔다.
+ * - 첫 본문 문단의 각주 1은 한 쪽보다 긴 문단 하나와 짧은 문단 하나로 되어 있어 쪽을 넘어 줄 단위로 나뉘어야 한다.
+ * - 뒤 본문 문단 몇 개에 짧은 각주가 붙는다. 각주는 번호 표시가 놓인 쪽 아래(또는 이어지는 각주 다음)에서 시작해야 한다.
+ * verify:matrix가 화면 overflow 0, 번호 표시와 각주 첫 조각의 쪽 일치, 화면과 PDF 글자 수, 긴 각주 편집·저장을 확인한다.
+ */
+export const LONG_FOOTNOTE_TEXTS = {
+  title: '긴 각주 배치 시험 문서',
+  longSentence: (index: number) => `긴 각주 ${index + 1}번째 문장은 쪽 아래 각주 영역이 한 쪽을 넘을 때 줄 단위로 나뉘어 다음 쪽으로 이어지는지 확인합니다. `,
+  longTail: '긴 각주의 마지막 문단입니다.',
+  body: (index: number) => `본문 ${index + 1}번 문단입니다. 쪽 아래 각주가 차지하는 높이만큼 본문이 줄어야 합니다.`,
+  shortNote: (index: number) => `짧은 각주 ${index}번 본문입니다.`
+} as const
+export const LONG_FOOTNOTE_SENTENCES = 60
+export const LONG_FOOTNOTE_BODY_PARAGRAPHS = 40
+const LONG_FOOTNOTE_SHORT_ANCHORS = [6, 14, 22, 31]
+const footNotePr = '<hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr>'
+const flowNote = (number: number, paragraphs: string[]) =>
+  `<hp:ctrl><hp:footNote number="${number}" suffixChar="41" instId="${9300 + number}"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP">${paragraphs.map((text, index) =>
+    `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${index === 0 ? `<hp:ctrl><hp:autoNum num="${number}" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl>` : ''}<hp:t>${text}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+  ).join('')}</hp:subList></hp:footNote></hp:ctrl>`
+const longFootnoteSection = () => {
+  let number = 1
+  const body = Array.from({ length: LONG_FOOTNOTE_BODY_PARAGRAPHS }, (_, index) => {
+    const note = index === 0
+      ? flowNote(number++, [Array.from({ length: LONG_FOOTNOTE_SENTENCES }, (_unused, sentence) => LONG_FOOTNOTE_TEXTS.longSentence(sentence)).join(''), LONG_FOOTNOTE_TEXTS.longTail])
+      : LONG_FOOTNOTE_SHORT_ANCHORS.includes(index) ? flowNote(number, [LONG_FOOTNOTE_TEXTS.shortNote(number++)]) : ''
+    return `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${LONG_FOOTNOTE_TEXTS.body(index)}</hp:t>${note}${note ? '<hp:t/>' : ''}</hp:run><hp:linesegarray><hp:lineseg vertpos="${(index + 1) * 1600}" vertsize="1000"/></hp:linesegarray></hp:p>`
+  })
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr.replace('</hp:secPr>', `${footNotePr}</hp:secPr>`)}</hp:run><hp:run charPrIDRef="0"><hp:t>${LONG_FOOTNOTE_TEXTS.title}</hp:t></hp:run></hp:p>
+  ${body.join('\n  ')}
+</hs:sec>`
+}
+
+export function createLongFootnoteHwpx(directory: string, fileName = 'han-flow-long-footnote.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(longFootnoteSection()))
   zip.writeZip(path)
   return path
 }

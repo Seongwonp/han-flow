@@ -1,5 +1,6 @@
 import {
   isObjectPlaceholder,
+  paragraphFootnotes,
   ViewerDocument,
   ViewerParagraph,
   ViewerSection,
@@ -15,7 +16,7 @@ import { isSurrogateBoundarySafe } from './xml_scan'
 /**
  * - `TOP_LEVEL_TEXT`: 구역 본문 문단(표만 든 문단의 표 앞·뒤 글자 포함)
  * - `TABLE_CELL_TEXT`: 최상위 표의 셀 문단
- * - `NOTE_TEXT`: 구역 끝 목록에 보이는 각주·미주 본문 문단
+ * - `NOTE_TEXT`: 쪽 아래 각주와 구역 끝 미주 목록의 본문 문단
  * - `HEADER_FOOTER_TEXT`: 머리말·꼬리말 문단
  * 각주·미주·머리말·꼬리말은 글자 입력·삭제·치환만 허용한다(문단 나눔·병합, 글자·문단 모양은 막는다).
  */
@@ -241,8 +242,8 @@ function tableContexts(table: ViewerTable, sectionPath: string): EditingAnchorCo
 function paragraphSourcePath(paragraph: ViewerParagraph): string | undefined {
   for (const item of paragraph.content) {
     if (item.type === 'text' && item.sourceAnchor) return item.sourceAnchor.sectionPath
-    if (item.type === 'note-list') {
-      for (const note of item.notes) {
+    if (item.type === 'note-list' || (item.type === 'object-placeholder' && item.note)) {
+      for (const note of item.type === 'note-list' ? item.notes : [item.note!]) {
         for (const nested of note.paragraphs) {
           const path = paragraphSourcePath(nested)
           if (path) return path
@@ -377,7 +378,9 @@ function sectionAnchorContexts(section: ViewerSection): readonly EditingAnchorCo
             ? item.notes.flatMap((note) => sublistContexts(note.paragraphs, sectionPath, 'NOTE_TEXT'))
             : []
       )
-      return [...topLevel, ...nested]
+      // 각주 본문은 번호 표시가 놓인 쪽 아래에 그리지만 원본 위치(번호 표시가 든 문단)에서 센다.
+      const footnotes = paragraphFootnotes(paragraph).flatMap((note) => sublistContexts(note.paragraphs, sectionPath, 'NOTE_TEXT'))
+      return [...topLevel, ...nested, ...footnotes]
     })
     result.push(
       ...[...section.headers, ...section.footers].flatMap((control) =>

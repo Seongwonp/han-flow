@@ -94,16 +94,22 @@ export function ViewerPageStack({
 interface ViewerColumnFlowProps {
   gap: number
   columns: ReactNode[][]
+  /** 단마다 아래에 둘 각주 영역. 있으면 단을 쪽 본문 높이로 늘려 각주를 단 아래 끝에 붙인다. */
+  footers?: ReactNode[]
+  /** 각주를 단 아래 끝이 아니라 본문 바로 아래에 둔다(`hp:placement beneathText`). */
+  footersBeneathText?: boolean
 }
 
-export function ViewerColumnFlow({ gap, columns }: ViewerColumnFlowProps) {
+export function ViewerColumnFlow({ gap, columns, footers, footersBeneathText = false }: ViewerColumnFlowProps) {
+  const withFooters = Boolean(footers?.some(Boolean))
   return <div
-    className="viewer-column-flow"
+    className={`viewer-column-flow${withFooters ? ' viewer-column-flow-with-footnotes' : ''}`}
     data-column-count={columns.length}
     style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, columnGap: gap }}
   >
     {columns.map((column, index) => <div className="viewer-column" data-column-index={index} key={index}>
       {column}
+      {footers?.[index] && <div className={`viewer-column-footnotes${footersBeneathText ? '' : ' viewer-column-footnotes-bottom'}`}>{footers[index]}</div>}
     </div>)}
   </div>
 }
