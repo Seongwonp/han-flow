@@ -483,6 +483,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [공개 호환성 corpus 전략](docs/public_corpus_strategy.md)
 - [HWP/HWPX 오픈소스 참고 프로젝트 검토](docs/open_source_reference_review.md)
 - [V3 macOS 한국어 IME 수동 검증 matrix](docs/v3_ime_manual_matrix.md)
+- [다음 작업](docs/next_steps.md)
 - [V3 Windows 한/글 재열기 matrix](docs/v3_windows_round_trip_matrix.md)
 - [V4 macOS 배포 조사와 구현 전략](docs/v4_release_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
