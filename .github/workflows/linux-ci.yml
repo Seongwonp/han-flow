@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test-package-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout

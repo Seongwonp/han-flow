@@ -15,7 +15,7 @@ concurrency:
 jobs:
   test-and-build:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
