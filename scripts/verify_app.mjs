@@ -14,9 +14,9 @@ const searchQuery = process.env.HAN_FLOW_VERIFY_SEARCH_QUERY
 const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
-// 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말).
-// 없으면 본문 문단(또는 표 셀).
-const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer']
+// 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
+// column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단(또는 표 셀).
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column']
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
@@ -393,6 +393,7 @@ try {
     cellOverflowTexts: state.cellOverflowTexts,
     columnCounts: state.columnCounts,
     columnTextCounts: state.columnTextCounts,
+    columnLayouts: state.columnLayouts?.length ? state.columnLayouts : undefined,
     footnotePlacement: state.footnotePlacement,
     positionedObjects: state.positionedObjects,
     errorCode: expectedError ? state.errorCode : undefined,
@@ -423,7 +424,8 @@ try {
       reopenedTextPageCount: editTarget ? savedState?.expectedTextPageCount : undefined,
       reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined,
       reopenedFootnotePlacement: editTarget ? savedState?.footnotePlacement : undefined,
-      reopenedPositionedObjects: savedState?.positionedObjects
+      reopenedPositionedObjects: savedState?.positionedObjects,
+      reopenedColumnLayouts: savedState?.columnLayouts?.length ? savedState.columnLayouts : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {
       journalsBeforeKill: state.crashReport?.journalsBeforeKill,

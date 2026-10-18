@@ -8,7 +8,7 @@ import { formatPageNumber } from '../../src/core/layout/page_number'
 import { walkOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxPackageReader } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createMultiColumnFallbackHwpx, createMultiColumnHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createCellFragmentHwpx, createCompatibilityHwpx, createListMarkerHwpx, createMultiColumnHwpx, createParallelColumnHwpx, createSyntheticHwpx } from '../fixtures/public/create_synthetic_hwpx'
 
 describe('공개 synthetic HWPX 회귀 fixture', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-fixture-'))
@@ -25,7 +25,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
   const compatibilityFixture = createCompatibilityHwpx(directory)
   const listMarkerFixture = createListMarkerHwpx(directory)
   const multiColumnFixture = createMultiColumnHwpx(directory)
-  const multiColumnFallbackFixture = createMultiColumnFallbackHwpx(directory)
+  const parallelColumnFixture = createParallelColumnHwpx(directory)
 
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
@@ -205,12 +205,14 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     ])
   })
 
-  test('지원하지 않는 다단 흐름 유형은 단일 흐름 fallback을 계속 진단한다', async () => {
-    const document = await decodeViewerDocument(await HwpxPackageReader.open(multiColumnFallbackFixture))
+  test('평행 다단은 단 나눔으로 단을 채우고 근사 배치임을 진단한다', async () => {
+    const document = await decodeViewerDocument(await HwpxPackageReader.open(parallelColumnFixture))
     expect(document.diagnostics).toEqual([expect.objectContaining({
       source: 'Contents/section0.xml',
-      code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK'
+      code: 'HWPX_PARALLEL_COLUMN_APPROXIMATED'
     })])
-    expect(paginateViewerDocument(document).every((page) => page.columns === undefined)).toBe(true)
+    const pages = paginateViewerDocument(document)
+    expect(pages.every((page) => page.columns?.length === 2 || page.regions?.length)).toBe(true)
+    expect(pages.flatMap((page) => page.blocks.map(({ id }) => id))).toEqual(document.sections[0].blocks.map(({ id }) => id))
   })
 })

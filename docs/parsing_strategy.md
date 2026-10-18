@@ -89,12 +89,12 @@ header/footer의 `subList`는 일반 문단 디코더를 재사용한다. pagina
 number pattern의 해당 level token(`^1` 등)을 목록 순번으로 치환한다. marker는 본문과
 header/footer 및 표 cell 문단에 같은 방식으로 적용한다.
 
-구역 문단의 `hp:colPr`은 type, layout, `colCount`, `sameSz`, `sameGap`과 개별 `hp:col`
-width·gap을 읽어 `ViewerSection.columnLayout`으로 보존한다. 단 개수는 1~16의 안전한 정수만
-허용한다. 동일 너비 `NEWSPAPER/LEFT`는 문단의 `columnBreak`와 단 높이를 사용해 왼쪽 단,
-오른쪽 단, 다음 페이지 순으로 배치한다. renderer 실측 폭은 본문 폭에서 공통 간격을 뺀 뒤 단 수로
-나누므로 좁은 단의 줄바꿈 높이도 pagination에 반영된다. `PARALLEL`, `RIGHT`·`MIRROR`와 서로 다른
-너비는 단일 흐름으로 표시하고 안정적인 loss diagnostic을 반환한다.
+구역 문단의 `hp:colPr`은 type, layout, `colCount`, `sameSz`, `sameGap`, 개별 `hp:colSz`
+width·gap과 `hp:colLine`을 읽어 구역 첫 정의는 `ViewerSection.columnLayout`, 그 뒤 문단 안 정의는
+그 문단의 `ViewerParagraph.columnLayout`(같은 쪽 아래 새 다단 영역)으로 보존한다. 단 개수는 1~16의
+안전한 정수만 허용한다. 모든 유형·배치를 단별로 조판하며, 단 너비는 단마다 다시 실측해 좁은 단의
+줄바꿈 높이도 pagination에 반영된다. 평행 다단은 근사 배치이므로 `HWPX_PARALLEL_COLUMN_APPROXIMATED`를
+반환한다(자세한 규칙은 `architecture.md`).
 
 ## 4. 대형 문서
 

@@ -324,8 +324,8 @@ function captureVisualState(window: BrowserWindow): void {
   const editLatencyKeystrokes = Number(testValue('HAN_FLOW_VISUAL_EDIT_LATENCY') ?? 0)
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
-  // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말).
-  // 없으면 본문 문단·표 셀.
+  // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
+  // column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단·표 셀.
   const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
   const editTargetLabels: Record<string, string> = {
     'table-caret': 'HWPX 표 앞뒤 글자 편집',
@@ -333,14 +333,16 @@ function captureVisualState(window: BrowserWindow): void {
     note: 'HWPX 각주·미주 편집',
     endnote: 'HWPX 각주·미주 편집',
     header: 'HWPX 머리말 편집',
-    footer: 'HWPX 꼬리말 편집'
+    footer: 'HWPX 꼬리말 편집',
+    column: 'HWPX 문단 편집'
   }
   // 같은 입력 칸 이름을 쓰는 대상 가운데 고를 칸(표 앞·뒤 caret, 각주·미주 목록)의 조상 selector.
   const editTargetScopes: Record<string, string> = {
     'table-caret': '.viewer-table-caret-before',
     'table-caret-after': '.viewer-table-caret-after',
     note: '[data-note-kind="footnote"]',
-    endnote: '[data-note-kind="endnote"]'
+    endnote: '[data-note-kind="endnote"]',
+    column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]'
   }
   const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
   const decorationTarget = editTarget === 'header' || editTarget === 'footer'
@@ -1241,6 +1243,35 @@ function captureVisualState(window: BrowserWindow): void {
           (column.textContent?.match(/\\S/g) || []).length
         )
       ),
+      // 다단 영역마다 단의 가로 위치(쪽 왼쪽 끝 기준 CSS px, 확대 비율 제외)·글자, 단 사이 구분선 위치. 화면에 올린 쪽만 잰다.
+      columnLayouts: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
+        const pageBox = page.getBoundingClientRect()
+        const scale = page.offsetWidth ? pageBox.width / page.offsetWidth : 1
+        const x = (value) => Math.round((value - pageBox.left) / scale * 10) / 10
+        return {
+          page: Number(page.dataset.pageIndex) + 1,
+          regions: Array.from(page.querySelectorAll(':scope > .viewer-column-flow')).map((region) => {
+            const regionBox = region.getBoundingClientRect()
+            return {
+              top: Math.round((regionBox.top - pageBox.top) / scale * 10) / 10,
+              height: Math.round(regionBox.height / scale * 10) / 10,
+              columns: Array.from(region.querySelectorAll(':scope > .viewer-column')).map((column) => {
+                const box = column.getBoundingClientRect()
+                return {
+                  index: Number(column.dataset.columnIndex),
+                  left: x(box.left),
+                  width: Math.round(box.width / scale * 10) / 10,
+                  text: (column.textContent ?? '').replace(/\\s+/g, ' ').trim()
+                }
+              }),
+              rules: Array.from(region.querySelectorAll(':scope > .viewer-column-rule')).map((rule) => {
+                const box = rule.getBoundingClientRect()
+                return { x: x(box.left + box.width / 2), height: Math.round(box.height / scale * 10) / 10 }
+              })
+            }
+          })
+        }
+      }).filter((page) => page.regions.length),
       tableTopologies: Array.from(document.querySelectorAll('.viewer-page .viewer-table')).map((table) => ({
         rows: table.querySelectorAll(':scope > tbody > tr').length,
         columns: table.querySelectorAll(':scope > colgroup > col').length,

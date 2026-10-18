@@ -184,7 +184,8 @@ Sprint 3 후반·4와 병행할 편집 코어 tree 모델 전환은 [편집 코�
 - [x] 글머리표·번호 목록 marker 전용 variant와 exact count 관문
 - [x] 다단 읽기 전용 모델·fallback diagnostic 전용 variant
 - [x] 동일 너비 `NEWSPAPER/LEFT`의 단별 흐름·column break·production DOM 관문
-- [ ] 나머지 다단 유형·각주·수식과 머리말·꼬리말 전용 variant 확장
+- [x] 배분·평행 다단, `RIGHT`·`MIRROR`, 서로 다른 단 너비·구분선, 구역 중간 다단 변경 합성 variant와 단 위치 E2E 관문
+- [ ] 수식과 머리말·꼬리말 전용 variant 확장
 - [x] production DOM matrix를 manifest ID와 연결해 core 추정·실측 차이를 함께 보고
 - [ ] 개인정보 없는 공개 corpus 30–50개 확보
 - [x] 외부 fixture intake 계약(`source: file`, sha256·출처·라이선스·개인정보 없음 확인)

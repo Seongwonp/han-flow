@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### HWPX 다단 조판 완성
+
+- `hp:colPr`의 모든 유형·배치를 단별로 조판: 일반 다단(`NEWSPAPER`), 배분 다단(`BALANCED_NEWSPAPER`, 구역 끝 쪽 단 높이 맞춤), 평행 다단(`PARALLEL`, 단 나눔마다 다음 단·마지막 단의 단 나눔은 같은 쪽 아래 새 줄로 가는 근사, `HWPX_PARALLEL_COLUMN_APPROXIMATED` 진단)과 `LEFT`·`RIGHT`(첫 단이 오른쪽)·`MIRROR`(짝수 쪽 오른쪽부터). 예전 단일 흐름 fallback(`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`)은 없앰
+- 서로 다른 단 너비(`sameSz="0"`): `hp:colSz`(예전 `hp:col`만 읽어 너비를 놓치던 결함 수정)를 한/글 비율 값으로 보고 본문 폭에 맞춰 단·간격을 놓고, 측정 DOM이 첫 단과 너비가 다른 단으로 한 번 더 재(`LayoutMeasurements.columnHeights`) pagination이 단마다 그 너비 높이를 씀. 단 사이 구분선(`hp:colLine` 종류·굵기·색)을 간격 한가운데에 그림
+- 구역 중간 문단의 새 다단 정의를 같은 쪽 앞 영역 아래 새 다단 영역으로 조판(`ViewerPage.regions`, 닫히는 영역은 문단 경계로 단 높이를 맞춤). 단 나눔은 다음 단(마지막 단이면 다음 쪽)으로 가고, 화면 글이 원본보다 커서 이미 넘친 단은 원본의 다음 단 시작을 받아 거의 빈 단을 만들지 않음(공개 원본 `ext-hwpxlib-multi-column` 3단 비동일 너비가 한/글처럼 2쪽)
+- 각주는 놓인 단(영역이 여럿이면 마지막 영역의 단) 아래, 단 기준 가로 위치 개체(`horzRelTo="COLUMN"`)·문단 기준 개체는 block이 놓인 영역·단 범위를 씀. 단 순서와 무관하게 DOM은 흐름 순서라 caret 이동·선택·PDF 글 순서가 같음
+- verify_app이 다단 영역별 단 위치·글자·구분선(`columnLayouts`)을 내고, verify:matrix에 합성 fixture(`createColumnLayoutHwpx`: 비동일 너비·구분선·구역 중간 변경·`RIGHT` 단 기준 그림·각주·`MIRROR`·배분·평행)의 글자 단 위치·단 왼쪽 끝·폭·구분선을 기대값과 1.5px 안에서 비교하고 화면/PDF 글자 수, 둘째 단 문단 편집→Save As→재열기 뒤 같은 배치를 확인하는 검사를 추가. 공개 corpus manifest의 `ext-hwpxlib-multi-column` 기대값을 진단 0·추정 1쪽으로 고침
+- 사용자 문서 5종(모두 1단)의 화면·PDF 쪽·글자 수는 변경 전과 같음. large-progressive 한 글자 입력 지연 input→DOM p50/p95 39.0/58.2ms → 35.6/47.0ms(같은 컨테이너, 회귀 없음)
+
 ### HWPX 원본 위치 개체
 
 - 본문 문단의 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`: 그림·표·글상자·사각형·타원·선·다각형·그 밖의 자리 표시)를 문단 흐름 대신 원본 위치에 그림. decoder가 `hp:pos`(기준 용지·쪽·단·문단, 맞춤 위·가운데·아래·안쪽·바깥쪽/왼쪽·가운데·오른쪽, offset, 본문 안 제한)·`hp:sz`·`hp:outMargin`·`textWrap`·`textFlow`와 도형 선·면 색·꼭짓점을 읽고(32비트 음수 offset 복원, 쪽 배치 크기는 `hp:sz`), 순수 위치 함수(`object_position.ts`)를 화면·pagination·PDF가 함께 씀

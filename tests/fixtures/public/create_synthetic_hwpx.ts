@@ -225,7 +225,7 @@ export function createMultiColumnHwpx(directory: string, fileName = 'han-flow-mu
   return path
 }
 
-export function createMultiColumnFallbackHwpx(directory: string, fileName = 'han-flow-multi-column-fallback.hwpx'): string {
+export function createParallelColumnHwpx(directory: string, fileName = 'han-flow-parallel-column.hwpx'): string {
   const path = join(directory, fileName)
   const zip = new AdmZip(undefined, { noSort: true })
   addMimetype(zip)
@@ -685,6 +685,103 @@ export function createFloatingObjectHwpx(directory: string, fileName = 'han-flow
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(floatingSection))
+  zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}
+
+/**
+ * 다단 배치 E2E용 합성 문서(직접 작성, 개인정보 없음). 쪽 30000×20000, 왼쪽·오른쪽·위·아래 여백 1500(본문 폭 27000). 구역마다:
+ * - 구역 0(1쪽): 한 단 제목 → 문단 안 새 다단 정의(2단, 서로 다른 너비 9000·16500, 간격 1500, 실선 구분선) 6문단 → 다시 한 단.
+ *   가운데 2단 영역은 같은 쪽 아래 한 단 영역이 이어지므로 단 높이를 맞춰 3문단씩 놓인다.
+ * - 구역 1(2쪽): 오른쪽부터(`RIGHT`) 같은 너비 2단, 단 기준 가로 위치 그림(첫 단 왼쪽 끝), 각주, 단 나눔.
+ * - 구역 2(3·4쪽): 맞쪽(`MIRROR`) 2단. 홀수 쪽은 왼쪽부터, 짝수 쪽은 오른쪽부터 놓인다.
+ * - 구역 3(5쪽): 배분 다단(`BALANCED_NEWSPAPER`) 3단 6문단 → 구역 끝에서 2문단씩 놓인다.
+ * - 구역 4(6쪽): 평행 다단(`PARALLEL`) 2단. 마지막 단의 단 나눔은 같은 쪽 아래 새 줄을 시작한다.
+ * verify:matrix가 글자가 기대한 쪽·영역·단에 있고 단 가로 위치·구분선 위치가 기대값(HWPUNIT, 용지 왼쪽 기준)과 같은지 본다.
+ */
+export const COLUMN_LAYOUT_PAGE = { width: 30000, height: 20000, margin: 1500 } as const
+const columnLayoutColPr = (attributes: string, children = '') => `<hp:ctrl><hp:colPr id="" ${attributes}>${children}</hp:colPr></hp:ctrl>`
+const columnLayoutParagraph = (top: number, runs: string, flags = '') =>
+  `<hp:p paraPrIDRef="0"${flags}><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="${top}" vertsize="1000"/></hp:linesegarray></hp:p>`
+const columnLayoutSection = (body: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  ${body}
+</hs:sec>`
+const columnLayoutSecPr = `<hp:secPr><hp:pagePr width="${COLUMN_LAYOUT_PAGE.width}" height="${COLUMN_LAYOUT_PAGE.height}"><hp:margin left="${COLUMN_LAYOUT_PAGE.margin}" right="${COLUMN_LAYOUT_PAGE.margin}" top="${COLUMN_LAYOUT_PAGE.margin}" bottom="${COLUMN_LAYOUT_PAGE.margin}" header="0" footer="0"/></hp:pagePr></hp:secPr>`
+const columnLayoutPicture = `<hp:pic id="9601" zOrder="9601" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="3000" height="3000"/><hp:curSz width="3000" height="3000"/><hc:img binaryItemIDRef="image1"/><hp:sz width="3000" widthRelTo="ABSOLUTE" height="3000" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="0" allowOverlap="1" holdAnchorAndSO="0" vertRelTo="PAGE" horzRelTo="COLUMN" vertAlign="CENTER" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`
+const columnLayoutFootnote = `<hp:ctrl><hp:footNote number="1" suffixChar="41" instId="9602"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="1" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>단 각주</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:footNote></hp:ctrl>`
+const sameColumns = (type: string, layout: string, count: number, line = '') =>
+  columnLayoutColPr(`type="${type}" layout="${layout}" colCount="${count}" sameSz="1" sameGap="1500"`, line)
+const columnLayoutSections = [
+  columnLayoutSection([
+    columnLayoutParagraph(0, `${columnLayoutSecPr}${columnLayoutColPr('type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"')}<hp:t>다단 영역 시험</hp:t>`),
+    columnLayoutParagraph(1600, `${columnLayoutColPr('type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="0" sameGap="0"', '<hp:colLine type="SOLID" width="0.12 mm" color="#3355AA"/><hp:colSz width="9000" gap="1500"/><hp:colSz width="16500" gap="0"/>')}<hp:t>가운데단1</hp:t>`),
+    ...[2, 3, 4, 5, 6].map((index) => columnLayoutParagraph(1600 * index, `<hp:t>가운데단${index}</hp:t>`)),
+    columnLayoutParagraph(11200, `${columnLayoutColPr('type="NEWSPAPER" layout="LEFT" colCount="1" sameSz="1" sameGap="0"')}<hp:t>한단끝문단</hp:t>`)
+  ].join('\n  ')),
+  columnLayoutSection([
+    columnLayoutParagraph(0, `${sameColumns('NEWSPAPER', 'RIGHT', 2, '<hp:colLine type="DASH" width="0.4 mm" color="#AA3333"/>')}<hp:t>오른쪽첫단1</hp:t>${columnLayoutPicture}`),
+    columnLayoutParagraph(1600, `<hp:t>오른쪽첫단2</hp:t>${columnLayoutFootnote}<hp:t/>`),
+    columnLayoutParagraph(3200, '<hp:t>오른쪽둘째단1</hp:t>', ' columnBreak="1"')
+  ].join('\n  ')),
+  columnLayoutSection([
+    columnLayoutParagraph(0, `${sameColumns('NEWSPAPER', 'MIRROR', 2)}<hp:t>맞쪽홀1</hp:t>`),
+    columnLayoutParagraph(1600, '<hp:t>맞쪽홀2</hp:t>', ' columnBreak="1"'),
+    columnLayoutParagraph(3200, '<hp:t>맞쪽짝1</hp:t>', ' pageBreak="1"'),
+    columnLayoutParagraph(4800, '<hp:t>맞쪽짝2</hp:t>', ' columnBreak="1"')
+  ].join('\n  ')),
+  columnLayoutSection([
+    columnLayoutParagraph(0, `${sameColumns('BALANCED_NEWSPAPER', 'LEFT', 3)}<hp:t>배분1</hp:t>`),
+    ...[2, 3, 4, 5, 6].map((index) => columnLayoutParagraph(1600 * (index - 1), `<hp:t>배분${index}</hp:t>`))
+  ].join('\n  ')),
+  columnLayoutSection([
+    columnLayoutParagraph(0, `${sameColumns('PARALLEL', 'LEFT', 2)}<hp:t>평행가1</hp:t>`),
+    columnLayoutParagraph(1600, '<hp:t>평행나1</hp:t>', ' columnBreak="1"'),
+    columnLayoutParagraph(3200, '<hp:t>평행가2</hp:t>', ' columnBreak="1"'),
+    columnLayoutParagraph(4800, '<hp:t>평행나2</hp:t>', ' columnBreak="1"')
+  ].join('\n  '))
+]
+
+const columnLeft = COLUMN_LAYOUT_PAGE.margin
+const sameWidth2 = (27000 - 1500) / 2
+const sameWidth3 = (27000 - 3000) / 3
+/** 글자마다 기대하는 쪽(1부터)·영역·단(흐름 순서)과 그 단의 용지 기준 왼쪽 끝·폭(HWPUNIT). */
+export const COLUMN_LAYOUT_EXPECTED = {
+  pages: 6,
+  columns: [
+    { text: '다단 영역 시험', page: 1, region: 0, column: 0, left: columnLeft, width: 27000 },
+    ...[1, 2, 3].map((index) => ({ text: `가운데단${index}`, page: 1, region: 1, column: 0, left: columnLeft, width: 9000 })),
+    ...[4, 5, 6].map((index) => ({ text: `가운데단${index}`, page: 1, region: 1, column: 1, left: columnLeft + 10500, width: 16500 })),
+    { text: '한단끝문단', page: 1, region: 2, column: 0, left: columnLeft, width: 27000 },
+    { text: '오른쪽첫단1', page: 2, region: 0, column: 0, left: columnLeft + 27000 - sameWidth2, width: sameWidth2 },
+    { text: '오른쪽첫단2', page: 2, region: 0, column: 0, left: columnLeft + 27000 - sameWidth2, width: sameWidth2 },
+    { text: '오른쪽둘째단1', page: 2, region: 0, column: 1, left: columnLeft, width: sameWidth2 },
+    { text: '맞쪽홀1', page: 3, region: 0, column: 0, left: columnLeft, width: sameWidth2 },
+    { text: '맞쪽홀2', page: 3, region: 0, column: 1, left: columnLeft + sameWidth2 + 1500, width: sameWidth2 },
+    { text: '맞쪽짝1', page: 4, region: 0, column: 0, left: columnLeft + sameWidth2 + 1500, width: sameWidth2 },
+    { text: '맞쪽짝2', page: 4, region: 0, column: 1, left: columnLeft, width: sameWidth2 },
+    ...[1, 2, 3, 4, 5, 6].map((index) => ({ text: `배분${index}`, page: 5, region: 0, column: Math.floor((index - 1) / 2), left: columnLeft + Math.floor((index - 1) / 2) * (sameWidth3 + 1500), width: sameWidth3 })),
+    { text: '평행가1', page: 6, region: 0, column: 0, left: columnLeft, width: sameWidth2 },
+    { text: '평행나1', page: 6, region: 0, column: 1, left: columnLeft + sameWidth2 + 1500, width: sameWidth2 },
+    { text: '평행가2', page: 6, region: 1, column: 0, left: columnLeft, width: sameWidth2 },
+    { text: '평행나2', page: 6, region: 1, column: 1, left: columnLeft + sameWidth2 + 1500, width: sameWidth2 }
+  ],
+  /** 단 사이 구분선(간격 한가운데, 용지 기준). */
+  rules: [
+    { page: 1, region: 1, x: columnLeft + 9000 + 750 },
+    { page: 2, region: 0, x: columnLeft + sameWidth2 + 750 }
+  ],
+  /** 단 기준(`horzRelTo="COLUMN"`) 왼쪽 맞춤 그림: 오른쪽부터 놓인 첫 단의 왼쪽 끝. */
+  picture: { page: 2, x: columnLeft + 27000 - sameWidth2, width: 3000 }
+} as const
+
+export function createColumnLayoutHwpx(directory: string, fileName = 'han-flow-column-layout.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  columnLayoutSections.forEach((section, index) => zip.addFile(`Contents/section${index}.xml`, Buffer.from(section)))
   zip.addFile('BinData/image1.png', solidPng)
   zip.writeZip(path)
   return path

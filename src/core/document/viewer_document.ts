@@ -41,8 +41,18 @@ export interface ViewerHeadingStyle { type: string; idRef: string; level: number
 export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
 export interface ViewerResource { id: string; path: string; mime: string; data: string }
+/** 서로 다른 너비 단(`hp:colSz`)의 너비와 그 단 뒤 간격. 원본 값 그대로이고(한/글은 비율 값을 쓴다) 쪽 본문 폭에 맞춰 늘리거나 줄인다. */
 export interface ViewerColumnDefinition { width: HwpUnit; gap: HwpUnit }
-export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[] }
+/** 단 사이 구분선(`hp:colLine`). */
+export interface ViewerColumnLine { type: string; widthMm: number; color: string }
+/**
+ * 다단 정의(OWPML `hp:colPr`).
+ * - `type`: `NEWSPAPER`(일반 다단)·`BALANCED_NEWSPAPER`(배분 다단)·`PARALLEL`(평행 다단).
+ * - `layout`: `LEFT`(왼쪽 단부터)·`RIGHT`(오른쪽 단부터)·`MIRROR`(홀수 쪽은 왼쪽부터, 짝수 쪽은 오른쪽부터).
+ * - `sameSize`면 단 너비가 같고 단 사이가 `sameGap`(HWPUNIT)이다. 아니면 `columns`의 단별 너비·간격을 쓴다.
+ * - `line`: 단 사이 구분선. 없거나 종류가 `NONE`이면 그리지 않는다.
+ */
+export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[]; line?: ViewerColumnLine }
 export interface ViewerSection {
   id: string
   blocks: ViewerParagraph[]
@@ -82,6 +92,11 @@ export interface ViewerParagraph {
   paraStyleId: string
   pageBreak: boolean
   columnBreak?: boolean
+  /**
+   * 구역 중간의 새 다단 정의(이 문단 안 `hp:colPr`). 이 문단부터 새 다단 영역이 같은 쪽에서 앞 영역 아래로 시작한다.
+   * 구역의 첫 다단 정의는 `ViewerSection.columnLayout`에 둔다.
+   */
+  columnLayout?: ViewerColumnLayout
   layoutTop?: HwpUnit
   layoutHeight: HwpUnit
   marker?: string
@@ -293,17 +308,35 @@ export function paragraphFootnotes(paragraph: ViewerParagraph): ViewerNote[] {
   return notes
 }
 
+/** 단이 여럿인 다단 정의인지. 모든 유형(`NEWSPAPER`·`BALANCED_NEWSPAPER`·`PARALLEL`)과 배치(`LEFT`·`RIGHT`·`MIRROR`)를 단별로 조판한다. */
 export function supportsViewerColumnFlow(layout?: ViewerColumnLayout): layout is ViewerColumnLayout {
-  return Boolean(
-    layout &&
-    layout.count > 1 &&
-    layout.type === 'NEWSPAPER' &&
-    layout.layout === 'LEFT' &&
-    layout.sameSize
-  )
+  return Boolean(layout && layout.count > 1)
 }
 
+/**
+ * 단 너비(HWPUNIT, 흐름 순서). 같은 너비면 `(본문 폭 - 전체 간격) / 단 수`, 서로 다른 너비면 `hp:colSz` 너비·간격 합이 본문 폭이
+ * 되게 비례로 늘리거나 줄인다(한/글은 합이 32768인 비율 값을 쓴다). 선언이 모자란 단은 남은 폭을 똑같이 나눈다.
+ */
+export function viewerColumnWidths(bodyWidth: HwpUnit, layout?: ViewerColumnLayout): { widths: HwpUnit[]; gaps: HwpUnit[] } {
+  if (!supportsViewerColumnFlow(layout)) return { widths: [bodyWidth], gaps: [0] }
+  const count = layout.count
+  const declared = layout.columns.slice(0, count).filter((column) => Number.isFinite(column.width) && column.width > 0)
+  if (layout.sameSize || !declared.length) {
+    const gap = Math.max(layout.sameGap, 0)
+    const width = Math.max((bodyWidth - gap * (count - 1)) / count, 0)
+    return { widths: Array.from({ length: count }, () => width), gaps: Array.from({ length: count }, (_, index) => index < count - 1 ? gap : 0) }
+  }
+  const declaredGaps = declared.map((column, index) => index < count - 1 ? Math.max(Number.isFinite(column.gap) ? column.gap : 0, 0) : 0)
+  // 선언이 모자라면 선언한 단의 평균 너비와 공통 간격으로 채운 뒤 전체를 본문 폭에 맞춘다.
+  const averageWidth = declared.reduce((sum, column) => sum + column.width, 0) / declared.length
+  const widths = Array.from({ length: count }, (_, index) => declared[index]?.width ?? averageWidth)
+  const gaps = Array.from({ length: count }, (_, index) => index >= count - 1 ? 0 : index < declared.length ? declaredGaps[index] : Math.max(layout.sameGap, 0))
+  const total = widths.reduce((sum, width) => sum + width, 0) + gaps.reduce((sum, gap) => sum + gap, 0)
+  const scale = total > 0 ? bodyWidth / total : 0
+  return { widths: widths.map((width) => width * scale), gaps: gaps.map((gap) => gap * scale) }
+}
+
+/** 첫 단(흐름 순서) 너비. 단이 하나면 본문 폭이다. */
 export function viewerColumnContentWidth(bodyWidth: HwpUnit, layout?: ViewerColumnLayout): HwpUnit {
-  if (!supportsViewerColumnFlow(layout)) return bodyWidth
-  return Math.max((bodyWidth - layout.sameGap * (layout.count - 1)) / layout.count, 0)
+  return viewerColumnWidths(bodyWidth, layout).widths[0]
 }

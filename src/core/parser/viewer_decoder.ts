@@ -1,4 +1,4 @@
-import { supportsViewerColumnFlow, ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
 import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
@@ -702,22 +702,27 @@ function decodeFootnoteSettings(root: OrderedXmlNode | undefined): ViewerFootnot
   }
 }
 
-function decodeColumnLayout(
-  nodes: OrderedXmlNode[],
+/** 문단(또는 node 목록) 안의 첫 `hp:colPr`. 머리말·꼬리말·글상자·표 셀(`hp:subList`) 안은 보지 않는다. */
+function findColumnNode(items: readonly OrderedXmlNode[]): OrderedXmlNode | undefined {
+  for (const item of items) {
+    if (item.name === 'hp:header' || item.name === 'hp:footer' || item.name === 'hp:subList') continue
+    if (item.name === 'hp:colPr') return item
+    const nested = findColumnNode(item.children)
+    if (nested) return nested
+  }
+  return undefined
+}
+
+/** `width="0.12 mm"`처럼 단위가 붙은 선 굵기(mm). */
+function lineWidthMm(value: string | undefined): number {
+  const parsed = Number(value?.replace(/\s*mm$/i, ''))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0.12
+}
+
+function decodeColumnNode(
+  columnNode: OrderedXmlNode,
   source: string
 ): { columnLayout?: ViewerColumnLayout; diagnostics: ViewerDiagnostic[] } {
-  const findColumnNode = (items: OrderedXmlNode[]): OrderedXmlNode | undefined => {
-    for (const item of items) {
-      if (item.name === 'hp:header' || item.name === 'hp:footer' || item.name === 'hp:subList') continue
-      if (item.name === 'hp:colPr') return item
-      const nested = findColumnNode(item.children)
-      if (nested) return nested
-    }
-    return undefined
-  }
-  const columnNode = findColumnNode(nodes)
-  if (!columnNode) return { diagnostics: [] }
-
   const count = num(columnNode.attributes.colCount)
   if (!Number.isSafeInteger(count) || count < 1 || count > 16) {
     return {
@@ -729,23 +734,29 @@ function decodeColumnLayout(
     }
   }
 
+  const line = child(columnNode, 'hp:colLine')
+  // 단별 너비는 OWPML `hp:colSz`다. 예전 생성기의 `hp:col`도 같은 뜻으로 읽는다.
+  const definitions = [...children(columnNode, 'hp:colSz'), ...children(columnNode, 'hp:col')]
   const columnLayout: ViewerColumnLayout = {
     type: columnNode.attributes.type ?? 'NEWSPAPER',
     layout: columnNode.attributes.layout ?? 'LEFT',
     count,
-    sameSize: columnNode.attributes.sameSz === '1',
+    sameSize: columnNode.attributes.sameSz !== '0',
     sameGap: num(columnNode.attributes.sameGap),
-    columns: children(columnNode, 'hp:col').map((column) => ({
+    columns: definitions.map((column) => ({
       width: num(column.attributes.width),
       gap: num(column.attributes.gap)
-    }))
+    })),
+    ...(line && line.attributes.type && line.attributes.type !== 'NONE'
+      ? { line: { type: line.attributes.type, widthMm: lineWidthMm(line.attributes.width), color: line.attributes.color ?? '#000000' } }
+      : {})
   }
   const diagnostics: ViewerDiagnostic[] = []
-  if (count > 1 && !supportsViewerColumnFlow(columnLayout)) {
+  if (count > 1 && columnLayout.type === 'PARALLEL') {
     diagnostics.push({
       source,
-      code: 'HWPX_MULTI_COLUMN_LAYOUT_FALLBACK',
-      message: `다단 ${count}단 속성은 보존했지만 현재 단별 흐름 조판은 지원하지 않아 단일 본문 흐름으로 표시합니다.`
+      code: 'HWPX_PARALLEL_COLUMN_APPROXIMATED',
+      message: `평행 다단 ${count}단은 단 나눔마다 다음 단으로, 마지막 단의 단 나눔은 같은 쪽 아래 새 줄로 옮기고 넘치는 글은 일반 다단처럼 이어 표시합니다.`
     })
   }
   if (count > 1 && !columnLayout.sameSize && columnLayout.columns.length !== count) {
@@ -756,6 +767,33 @@ function decodeColumnLayout(
     })
   }
   return { columnLayout, diagnostics }
+}
+
+/**
+ * 구역 최상위 문단마다 다단 정의(`hp:colPr`)를 읽는다. 처음 나온 정의는 구역 다단(`section`), 그 뒤 정의는 그 문단에서
+ * 시작하는 새 다단 영역(`paragraphs`, 문단 순번별)이다.
+ */
+function decodeColumnLayouts(
+  paragraphs: readonly OrderedXmlNode[],
+  source: string
+): { section?: ViewerColumnLayout; paragraphs: Map<number, ViewerColumnLayout>; diagnostics: ViewerDiagnostic[] } {
+  const diagnostics: ViewerDiagnostic[] = []
+  const byParagraph = new Map<number, ViewerColumnLayout>()
+  let section: ViewerColumnLayout | undefined
+  let found = false
+  paragraphs.forEach((paragraph, index) => {
+    const node = findColumnNode(paragraph.children)
+    if (!node) return
+    const decoded = decodeColumnNode(node, source)
+    diagnostics.push(...decoded.diagnostics)
+    if (!found) {
+      found = true
+      section = decoded.columnLayout
+    } else if (decoded.columnLayout) {
+      byParagraph.set(index, decoded.columnLayout)
+    }
+  })
+  return { section, paragraphs: byParagraph, diagnostics }
 }
 
 function decodeHeaderFooters(
@@ -993,10 +1031,15 @@ export function decodeViewerSection(
     footnoteSettings,
     objectHeightLimit
   }
-  const columns = decodeColumnLayout(nodes, path)
+  const paragraphNodes = root ? children(root, 'hp:p') : []
+  const columns = decodeColumnLayouts(paragraphNodes, path)
   const blocks = root
     ? applyParagraphMarkers(
-        children(root, 'hp:p').map((p, index) => decodeParagraph(p, `s${sectionIndex}:p${index}`, context, true)),
+        paragraphNodes.map((p, index) => {
+          const paragraph = decodeParagraph(p, `s${sectionIndex}:p${index}`, context, true)
+          const columnLayout = columns.paragraphs.get(index)
+          return columnLayout ? { ...paragraph, columnLayout } : paragraph
+        }),
         header.paraStyles
       )
     : []
@@ -1004,7 +1047,7 @@ export function decodeViewerSection(
     id: `section-${sectionIndex}`,
     blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
     pageNumber: decodePageNumber(nodes),
-    columnLayout: columns.columnLayout,
+    columnLayout: columns.section,
     ...(footnoteSettings ? { footnoteSettings } : {}),
     headers: decodeHeaderFooters(nodes, 'hp:header', sectionIndex, context).map((control) => ({
       ...control,

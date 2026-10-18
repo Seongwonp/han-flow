@@ -219,10 +219,10 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 2,
+        "diagnostics": 0,
         "multiColumnSections": 1,
         "declaredColumns": 3,
-        "estimatedPages": 2,
+        "estimatedPages": 1,
         "placeholders": {}
       }
     },

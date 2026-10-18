@@ -29,7 +29,7 @@ import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { LayoutMeasurements, paginateViewerSectionsIncremental, SectionPagination } from '../../core/layout/pagination'
+import { LayoutMeasurements, pageColumnRegions, paginateViewerSectionsIncremental, SectionPagination, ViewerColumnRegion } from '../../core/layout/pagination'
 import { footnoteLineLength, footnoteLineThickness, sectionFootnoteSettings, ViewerNoteMetrics, ViewerPageFootnote } from '../../core/layout/footnote_layout'
 import { measureNoteElement } from './footnote_measurement'
 import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
@@ -44,8 +44,10 @@ import {
   PageFrame,
   paragraphObjectOffset,
   PositionedContent,
-  positionedContent
+  positionedContent,
+  regionPageBands
 } from '../../core/layout/object_position'
+import { columnMeasurementGroups, ColumnMeasurementGroup, columnRects, columnSeparators, columnWidthKey } from '../../core/layout/column_layout'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
@@ -69,7 +71,7 @@ import {
 } from './paragraph_selection'
 import { DocumentLayoutMeasurements, EditingImeTransientState } from './renderer_state'
 import { useRendererState } from './use_renderer_state'
-import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
+import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
@@ -517,12 +519,13 @@ function PageObjectView({ item, frame, horizontal, document, editing }: {
 }
 
 /**
- * 쪽에 놓인 block(본문 최상위 문단)의 용지·쪽 기준 개체를 쪽 위 절대 위치에 모아 그린다. 단이 여럿이면 block이 놓인 단을 쓴다.
+ * 쪽에 놓인 block(본문 최상위 문단)의 용지·쪽 기준 개체를 쪽 위 절대 위치에 모아 그린다. 단이 여럿이면 block이 놓인 다단 영역·단을
+ * 쓴다(단 기준 가로 위치).
  */
-export function PageObjectLayer({ blocks, columns, frameOf, document, editing }: {
+export function PageObjectLayer({ blocks, regions, frameOf, document, editing }: {
   blocks: readonly ViewerParagraph[]
-  columns?: readonly (readonly ViewerParagraph[])[]
-  frameOf: (columnIndex: number) => ObjectFrame
+  regions?: readonly Pick<ViewerColumnRegion, 'columns'>[]
+  frameOf: (regionIndex: number, columnIndex: number) => ObjectFrame
   document: ViewerRenderStyles
   editing?: ParagraphEditingProps
 }) {
@@ -530,8 +533,16 @@ export function PageObjectLayer({ blocks, columns, frameOf, document, editing }:
   for (const block of blocks) {
     const items = block.content.filter((item): item is PositionedContent => positionedContent(item) && contentPlacement(item) === 'page')
     if (!items.length) continue
-    const columnIndex = Math.max(columns?.findIndex((column) => column.includes(block)) ?? 0, 0)
-    const frame = frameOf(columnIndex)
+    let regionIndex = 0
+    let columnIndex = 0
+    regions?.some((region, index) => {
+      const column = region.columns.findIndex((candidate) => candidate.includes(block))
+      if (column < 0) return false
+      regionIndex = index
+      columnIndex = column
+      return true
+    })
+    const frame = frameOf(regionIndex, columnIndex)
     const style = document.paraStyles[block.paraStyleId]
     const indent = paragraphIndentBox(style?.margin ?? {}, style?.indent)
     const horizontal = paragraphHorizontalFrame(frame, indent.marginLeft, style?.margin.right ?? 0)
@@ -1077,16 +1088,31 @@ const MeasurementSection = memo(function MeasurementSection({
 }) {
   const footnotes = sectionFootnotes(section)
   const superscript = sectionFootnoteSettings(section.footnoteSettings).format.superscript
+  const bodyWidth = styles.page.width - styles.page.margin.left - styles.page.margin.right
+  // 다단 정의마다 그 영역 첫 단 너비로 재고, 첫 단과 너비가 다른 단은 그 너비로 한 번 더 잰다(`columnMeasurementGroups`).
+  const groups = useMemo(() => columnMeasurementGroups(section, bodyWidth), [section, bodyWidth])
   // 문단 기준 개체는 문단 높이에 들므로 첫 단·1쪽 기준으로 같은 자리에 그려 잰다(가로 위치만 쪽마다 다를 수 있다).
-  const objectFrame = useMemo<ObjectFrame>(() => ({
+  const frameOf = (group: ColumnMeasurementGroup, columnWidth: number): ObjectFrame => ({
     page: styles.page,
-    columnLeft: styles.page.margin.left,
-    columnWidth: viewerColumnContentWidth(styles.page.width - styles.page.margin.left - styles.page.margin.right, section.columnLayout),
+    columnLeft: styles.page.margin.left + (columnRects(group.layout, bodyWidth, 1)[0]?.left ?? 0),
+    columnWidth,
     pageNumber: 1
-  }), [styles.page, section.columnLayout])
-  return <div data-measure-section={section.id} style={{ width }}>
-    {section.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={styles} measurable objectFrame={objectFrame} />)}
-    {footnotes.length > 0 && <div className="viewer-footnotes-measure">{footnotes.map((note) => <FootnoteView
+  })
+  const paragraphs = (group: ColumnMeasurementGroup, columnWidth: number) => {
+    const objectFrame = frameOf(group, columnWidth)
+    return group.blocks.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={styles} measurable objectFrame={objectFrame} />)
+  }
+  const single = groups.length === 1 && !groups[0].extraWidths.length
+  return <div data-measure-section={section.id} style={{ width: single ? width : hwpUnitToCssPx(bodyWidth) }}>
+    {single
+      ? paragraphs(groups[0], groups[0].width)
+      : groups.map((group, index) => <div key={`group${index}`}>
+          <div style={{ width: hwpUnitToCssPx(group.width) }}>{paragraphs(group, group.width)}</div>
+          {group.extraWidths.map((extraWidth) => <div key={columnWidthKey(extraWidth)} data-measure-variant={columnWidthKey(extraWidth)} style={{ width: hwpUnitToCssPx(extraWidth) }}>
+            {paragraphs(group, extraWidth)}
+          </div>)}
+        </div>)}
+    {footnotes.length > 0 && <div className="viewer-footnotes-measure" style={single ? undefined : { width: hwpUnitToCssPx(groups[0].width) }}>{footnotes.map((note) => <FootnoteView
       key={note.sourcePath}
       footnote={{ note, marker: note.marker, pieces: note.paragraphs.map((paragraph) => ({ paragraph, source: paragraph, part: 'whole' })), continued: false, continues: false }}
       superscript={superscript}
@@ -1113,18 +1139,33 @@ function markEditingTiming(name: string): void {
   performance.mark(name)
 }
 
+function measureHeights(elements: Iterable<HTMLElement>, key: (element: HTMLElement) => string): Record<string, number> {
+  return Object.fromEntries(Array.from(elements, (item) => [key(item), cssPxToHwpUnit(item.getBoundingClientRect().height)]))
+}
+
 function measureSectionElement(element: Element, section: ViewerSection): LayoutMeasurements {
-  const blockHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).map((item) => [item.dataset.measureBlockId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
-  const tableRowHeights = Object.fromEntries(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-row-id]')).map((item) => [item.dataset.measureRowId!, cssPxToHwpUnit(item.getBoundingClientRect().height)]))
+  // 서로 다른 너비 단으로 한 번 더 그린 묶음(`data-measure-variant`)은 단 너비별 높이(`columnHeights`)로 따로 모은다.
+  const variants = Array.from(element.querySelectorAll<HTMLElement>('[data-measure-variant]'))
+  const outsideVariants = (item: HTMLElement) => !variants.length || !item.closest('[data-measure-variant]')
+  const blockHeights = measureHeights(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).filter(outsideVariants), (item) => item.dataset.measureBlockId!)
+  const tableRowHeights = measureHeights(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-row-id]')).filter(outsideVariants), (item) => item.dataset.measureRowId!)
+  let columnHeights: LayoutMeasurements['columnHeights']
+  for (const variant of variants) {
+    const key = variant.dataset.measureVariant!
+    columnHeights ??= {}
+    const entry = columnHeights[key] ??= { blockHeights: {}, tableRowHeights: {} }
+    Object.assign(entry.blockHeights, measureHeights(variant.querySelectorAll<HTMLElement>('[data-measure-block-id]'), (item) => item.dataset.measureBlockId!))
+    Object.assign(entry.tableRowHeights, measureHeights(variant.querySelectorAll<HTMLElement>('[data-measure-row-id]'), (item) => item.dataset.measureRowId!))
+  }
   const footnotes = sectionFootnotes(section)
-  if (!footnotes.length) return { blockHeights, tableRowHeights }
+  if (!footnotes.length) return { blockHeights, tableRowHeights, ...(columnHeights ? { columnHeights } : {}) }
   const notes = new Map(footnotes.map((note) => [note.sourcePath, note]))
   const noteMetrics: Record<string, ViewerNoteMetrics> = {}
   element.querySelectorAll<HTMLElement>('[data-measure-note]').forEach((item) => {
     const note = notes.get(item.dataset.measureNote!)
     if (note) noteMetrics[note.sourcePath] = measureNoteElement(item, note)
   })
-  return { blockHeights, tableRowHeights, noteMetrics }
+  return { blockHeights, tableRowHeights, noteMetrics, ...(columnHeights ? { columnHeights } : {}) }
 }
 
 /**
@@ -2862,42 +2903,75 @@ export default function App() {
           const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
           const pageFrame = effectiveDocument.page
           const bodyWidth = pageFrame.width - pageFrame.margin.left - pageFrame.margin.right
-          const objectColumnWidth = viewerColumnContentWidth(bodyWidth, page.columnLayout)
+          const bodyHeight = pageFrame.height - pageFrame.margin.top - pageFrame.margin.bottom
+          const pageNumberForColumns = index + 1
+          // 다단 영역(위에서부터)과 영역마다의 단 범위. 오른쪽부터 놓는 배치(`RIGHT`, 짝수 쪽 `MIRROR`)는 쪽 번호로 정한다.
+          const regions = pageColumnRegions(page)
+          const regionRects = regions.map((region) => columnRects(region.columnLayout, bodyWidth, pageNumberForColumns))
           // 단마다 원본 위치 개체의 가로 기준(단·문단)이 다르다. 쪽 번호는 안쪽·바깥쪽 맞춤에 쓴다.
-          const objectFrameOf = (columnIndex: number): ObjectFrame => ({
-            page: pageFrame,
-            columnLeft: pageFrame.margin.left + columnIndex * (objectColumnWidth + (page.columnLayout?.sameGap ?? 0)),
-            columnWidth: objectColumnWidth,
-            pageNumber: index + 1
-          })
-          const bandSpacers = <PageBandSpacers key="object-bands" bands={page.bands} bodyHeight={pageFrame.height - pageFrame.margin.top - pageFrame.margin.bottom} />
-          const renderParagraphs = (paragraphs: typeof page.blocks, columnIndex = 0) => paragraphs.map((paragraph) => <ParagraphView
-            key={paragraph.id}
-            paragraph={paragraph}
-            document={renderStyles!}
-            editing={pageEditing}
-            objectFrame={objectFrameOf(columnIndex)}
-          />)
+          const objectFrameOf = (regionIndex: number, columnIndex: number): ObjectFrame => {
+            const rect = regionRects[regionIndex]?.[columnIndex] ?? { left: 0, width: bodyWidth }
+            return { page: pageFrame, columnLeft: pageFrame.margin.left + rect.left, columnWidth: rect.width, pageNumber: index + 1 }
+          }
+          const renderParagraphs = (paragraphs: typeof page.blocks, regionIndex = 0, columnIndex = 0) => {
+            const objectFrame = objectFrameOf(regionIndex, columnIndex)
+            return paragraphs.map((paragraph) => <ParagraphView
+              key={paragraph.id}
+              paragraph={paragraph}
+              document={renderStyles!}
+              editing={pageEditing}
+              objectFrame={objectFrame}
+            />)
+          }
           // 각주는 단마다(단이 하나면 쪽) 아래에 둔다. 본문 바로 아래 두기(`beneathText`)면 본문 흐름 뒤에 잇는다.
+          // 다단 영역이 여럿이면 마지막 영역의 단 아래에 둔다.
           const footnoteSettings = sectionFootnoteSettings(effectiveDocument.sections[page.sectionIndex]?.footnoteSettings)
-          const columnWidth = viewerColumnContentWidth(effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right, page.columnLayout)
+          const lastRegion = regions.length - 1
           const footnoteArea = (columnIndex: number, style?: CSSProperties) => page.footnotes?.[columnIndex]?.length
-            ? <FootnoteAreaView footnotes={page.footnotes[columnIndex]} settings={footnoteSettings} columnWidth={columnWidth} document={renderStyles!} editing={pageEditing} style={style} />
+            ? <FootnoteAreaView footnotes={page.footnotes[columnIndex]} settings={footnoteSettings} columnWidth={regionRects[lastRegion]?.[columnIndex]?.width ?? bodyWidth} document={renderStyles!} editing={pageEditing} style={style} />
             : undefined
-          const body = page.columns && page.columnLayout
-            ? <ViewerColumnFlow
-                gap={hwpUnitToCssPx(page.columnLayout.sameGap)}
-                columns={page.columns.map((column, columnIndex) => [bandSpacers, ...renderParagraphs(column, columnIndex)])}
-                footers={page.footnotes ? page.columns.map((_column, columnIndex) => footnoteArea(columnIndex)) : undefined}
-                footersBeneathText={footnoteSettings.placement.beneathText}
-              />
-            : <>{bandSpacers}{renderParagraphs(page.blocks)}{footnoteArea(0, footnoteSettings.placement.beneathText ? undefined : {
+          const columnRules = (regionIndex: number): ViewerColumnRule[] => {
+            const line = regions[regionIndex].columnLayout?.line
+            if (!line) return []
+            const width = Math.max(hwpUnitToCssPx(line.widthMm * 7200 / 25.4), 0.75)
+            return columnSeparators(regions[regionIndex].columnLayout, bodyWidth, pageNumberForColumns).map((separator) => ({
+              x: hwpUnitToCssPx(separator.x),
+              width,
+              style: FOOTNOTE_LINE_STYLES[line.type] ?? 'solid',
+              color: line.color
+            }))
+          }
+          let regionsAbove = 0
+          const body = regions.length > 1 || regions[0].columnLayout
+            ? regions.map((region, regionIndex) => {
+                const last = regionIndex === lastRegion
+                const regionHeight = last ? Math.max(bodyHeight - region.top, 0) : region.height ?? 0
+                const bandSpacers = <PageBandSpacers key="object-bands" bands={regionPageBands(page.bands, region.top, last ? Infinity : regionHeight)} bodyHeight={regionHeight} />
+                const rules = columnRules(regionIndex)
+                const footers = last && page.footnotes ? region.columns.map((_column, columnIndex) => footnoteArea(columnIndex)) : undefined
+                // 뒤 영역이 이어지는 영역은 pagination이 잡은 높이로, 마지막 영역은 쪽 본문 끝까지(구분선·각주가 있을 때) 둔다.
+                const height = !last
+                  ? `${hwpUnitToCssPx(regionHeight)}px`
+                  : rules.length || footers?.some(Boolean) ? (regionsAbove > 0 ? `calc(100% - ${regionsAbove}px)` : '100%') : undefined
+                if (!last) regionsAbove += hwpUnitToCssPx(regionHeight)
+                return <ViewerColumnFlow
+                  key={`region${regionIndex}`}
+                  regionIndex={regions.length > 1 ? regionIndex : undefined}
+                  rects={regionRects[regionIndex].map((rect) => ({ left: hwpUnitToCssPx(rect.left), width: hwpUnitToCssPx(rect.width) }))}
+                  rules={rules}
+                  height={height}
+                  columns={region.columns.map((column, columnIndex) => [bandSpacers, ...renderParagraphs(column, regionIndex, columnIndex)])}
+                  footers={footers}
+                  footersBeneathText={footnoteSettings.placement.beneathText}
+                />
+              })
+            : <><PageBandSpacers key="object-bands" bands={page.bands} bodyHeight={bodyHeight} />{renderParagraphs(page.blocks)}{footnoteArea(0, footnoteSettings.placement.beneathText ? undefined : {
                 position: 'absolute',
                 left: hwpUnitToCssPx(effectiveDocument.page.margin.left),
                 right: hwpUnitToCssPx(effectiveDocument.page.margin.right),
                 bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom)
               })}</>
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{body}<PageObjectLayer blocks={page.blocks} columns={page.columns} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

@@ -197,3 +197,16 @@ export function pageBandLayout(bands: readonly PageBand[], bodyHeight: HwpUnit):
   }
   return { top, middle: middle.filter((band) => band.bottom > top).map((band) => ({ top: Math.max(band.top, top), bottom: band.bottom })) }
 }
+
+/**
+ * 쪽 본문 기준 띠를 쪽 안 다단 영역(`top`부터 `height`만큼) 기준으로 옮긴다. 영역 밖 띠는 빼고 영역에 걸친 띠는 영역 안으로 자른다.
+ * 영역이 쪽 본문 위 끝에서 쪽 끝까지면 띠 그대로다.
+ */
+export function regionPageBands(bands: readonly PageBand[] | undefined, top: HwpUnit, height: HwpUnit): PageBand[] | undefined {
+  if (!bands?.length) return undefined
+  if (top <= 0 && !Number.isFinite(height)) return [...bands]
+  const shifted = bands
+    .map((band) => ({ top: Math.max(band.top - top, 0), bottom: Math.min(band.bottom - top, height) }))
+    .filter((band) => band.bottom > band.top)
+  return shifted.length ? shifted : undefined
+}

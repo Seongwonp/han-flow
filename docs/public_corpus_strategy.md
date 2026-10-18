@@ -86,7 +86,7 @@ production matrix 6종도 통과했고 이 fixture의 DOM 실측은 1쪽, 단 2�
 
 ## 5. 확대 순서
 
-1. `RIGHT`·`MIRROR`·비동일 너비 다단, 각주·수식과 머리말·꼬리말 variant를 추가한다.
+1. 수식과 머리말·꼬리말 variant를 추가한다(다단 유형·배치·너비 variant는 `createColumnLayoutHwpx`로 추가했다).
 2. 실패한 실제 문서는 본문을 복사하지 않고 같은 구조를 재현하는 최소 generator로 축소한다.
 3. 같은 fixture ID의 core 추정과 DOM 실측을 나란히 집계하는 통합 요약을 추가한다.
 4. corpus 30–50개에서 열기 성공률, crash·timeout, 본문 문자 수와 구조 보존률을 집계한다.

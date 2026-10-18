@@ -171,6 +171,39 @@ function sameFloatingObjects(before = [], after = []) {
     ['x', 'y', 'width'].every((axis) => Math.abs(item[axis] - after[index][axis]) <= FLOATING_TOLERANCE_PX))
 }
 
+// 다단 배치 E2E(createColumnLayoutHwpx): 글자가 기대한 쪽·다단 영역·단(흐름 순서)에 있고, 그 단의 왼쪽 끝·폭과 단 사이 구분선
+// 위치가 generator 기대값(COLUMN_LAYOUT_EXPECTED, HWPUNIT)과 오차 안에서 같아야 한다. 단 기준 그림은 오른쪽부터 놓인 첫 단 왼쪽
+// 끝에 있어야 한다. 둘째 단 문단을 고쳐 저장한 뒤 다시 열어도 단 배치가 같아야 한다.
+const COLUMN_TOLERANCE_PX = 1.5
+const COLUMN_EDIT_TEXT = '단편집'
+
+function columnLayoutFailures(result, expected, label = 'column-layout') {
+  const layouts = result?.columnLayouts ?? []
+  const failures = []
+  if (result?.totalPages !== expected.pages) failures.push(`${label}: ${result?.totalPages}쪽(기대 ${expected.pages}쪽)`)
+  for (const item of expected.columns) {
+    const region = layouts.find((page) => page.page === item.page)?.regions?.[item.region]
+    const column = region?.columns?.find((candidate) => candidate.index === item.column)
+    if (!column?.text?.includes(item.text)) {
+      failures.push(`${label}: '${item.text}'이 ${item.page}쪽 ${item.region}번 영역 ${item.column}번 단에 없음`)
+      continue
+    }
+    for (const axis of ['left', 'width']) {
+      const difference = Math.abs(column[axis] - hwpToPx(item[axis]))
+      if (difference > COLUMN_TOLERANCE_PX) failures.push(`${label}: '${item.text}' 단 ${axis} ${column[axis]}px(기대 ${hwpToPx(item[axis]).toFixed(1)}px)`)
+    }
+  }
+  for (const rule of expected.rules) {
+    const rules = layouts.find((page) => page.page === rule.page)?.regions?.[rule.region]?.rules ?? []
+    if (!rules.some((candidate) => Math.abs(candidate.x - hwpToPx(rule.x)) <= COLUMN_TOLERANCE_PX && candidate.height > 0)) {
+      failures.push(`${label}: ${rule.page}쪽 구분선이 ${hwpToPx(rule.x).toFixed(1)}px에 없음(${JSON.stringify(rules)})`)
+    }
+  }
+  const picture = floatingObject(result?.positionedObjects, 'image', 'page')
+  failures.push(...floatingBoxFailures(`${label} 단 기준 그림`, picture, expected.picture))
+  return failures
+}
+
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
@@ -271,6 +304,15 @@ try {
   const floatingEdits = []
   for (const edit of FLOATING_EDIT_CASES) floatingEdits.push({ id: edit.id, ...await verify(floatingPath, 500, false, edit.environment) })
 
+  const columnPath = generator.createColumnLayoutHwpx(directory, 'han-flow-column-layout.hwpx')
+  const columnView = await verify(columnPath, 500)
+  pdfResults.push({ fixtureId: 'column-layout', ...await verifyPdf(columnPath) })
+  const columnEdit = await verify(columnPath, 500, false, {
+    HAN_FLOW_VERIFY_EDIT_TEXT: COLUMN_EDIT_TEXT,
+    HAN_FLOW_VERIFY_EDIT_TARGET: 'column',
+    HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+  })
+
   const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
   const editScopeResults = []
   for (const scope of EDIT_SCOPE_CASES) {
@@ -328,6 +370,14 @@ try {
     floatingEdits.find(({ id }) => id === 'table-cell')?.editingProbe?.surface === 'table-cell'
       ? undefined
       : 'floating-objects 쪽 위 표 셀 편집 surface가 검증되지 않음',
+    columnView.passed ? undefined : `column-layout: ${columnView.failures.join(', ')}`,
+    ...columnLayoutFailures(columnView, generator.COLUMN_LAYOUT_EXPECTED),
+    columnEdit.passed ? undefined : `column-layout 편집: ${columnEdit.failures.join(', ')}`,
+    columnEdit.saveAs?.reopenedTextPresent ? undefined : 'column-layout 편집: 저장본에 입력 글자가 없음',
+    columnEdit.columnLayouts?.find((page) => page.page === 1)?.regions?.[1]?.columns?.[1]?.text?.includes(COLUMN_EDIT_TEXT)
+      ? undefined
+      : 'column-layout 편집: 입력 글자가 2단 영역 둘째 단에 없음',
+    ...columnLayoutFailures({ ...columnEdit, columnLayouts: columnEdit.saveAs?.reopenedColumnLayouts, positionedObjects: columnEdit.saveAs?.reopenedPositionedObjects, totalPages: columnEdit.saveAs?.reopenedPages }, generator.COLUMN_LAYOUT_EXPECTED, 'column-layout 저장본'),
     longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
     longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
     longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
@@ -402,6 +452,12 @@ try {
       totalPages: floatingView.totalPages,
       positionedObjects: floatingView.positionedObjects,
       edits: floatingEdits.map(({ id, passed, totalPages, saveAs }) => ({ id, passed, totalPages, reopenedPages: saveAs?.reopenedPages }))
+    },
+    columnLayout: {
+      passed: columnView.passed,
+      totalPages: columnView.totalPages,
+      columnLayouts: columnView.columnLayouts,
+      edit: { passed: columnEdit.passed, reopenedPages: columnEdit.saveAs?.reopenedPages, reopenedTextPresent: columnEdit.saveAs?.reopenedTextPresent }
     },
     longFootnoteEdit: {
       passed: longFootnoteEdit.passed,

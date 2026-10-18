@@ -204,14 +204,38 @@ fallback `hp:default` 안에서도 읽어 동일한 `ViewerParaStyle`로 정규�
 투영해 저장 후 검증할 수 있게 하며, 목록 marker projection은 복제된 heading을 그대로 사용한다.
 이 계약은 기존 탭·목록의 보존만 뜻하며 탭 정의나 bullet·numbering definition 편집을 허용하지 않는다.
 
-구역의 `hp:colPr`은 `ViewerSection.columnLayout`에 type, layout, 단 개수, 동일 너비 여부,
-공통 간격과 개별 단 너비·간격으로 정규화한다. 잘못된 단 개수는 모델에 넣지 않고 안정적인
-`HWPX_INVALID_COLUMN_LAYOUT` diagnostic을 남긴다. 동일 너비 `NEWSPAPER/LEFT`는 문단의
-`columnBreak`, 단별 가용 높이와 source/DOM 측정 높이로 왼쪽 단→오른쪽 단→다음 페이지 순서의
-`ViewerPage.columns`를 만든다. renderer 측정 폭도 `(본문 폭 - 전체 단 간격) / 단 수`로 계산하고
-CSS grid에 같은 간격을 사용한다. 지원하지 않는 `PARALLEL`, `RIGHT`·`MIRROR`와 비동일 너비는
-`HWPX_MULTI_COLUMN_LAYOUT_FALLBACK`을 남기고 단일 흐름으로 표시한다. 서로 다른 너비 선언 수가
-단 개수와 다르면 별도 incomplete 진단을 추가해 구조 손실을 숨기지 않는다.
+구역의 첫 `hp:colPr`은 `ViewerSection.columnLayout`, 그 뒤 최상위 문단 안 `hp:colPr`은 그 문단의
+`ViewerParagraph.columnLayout`(구역 중간 새 다단 영역)으로 type(`NEWSPAPER`·`BALANCED_NEWSPAPER`·`PARALLEL`), layout
+(`LEFT`·`RIGHT`·`MIRROR`), 단 개수, 동일 너비 여부, 공통 간격, 단별 너비·간격(`hp:colSz`, 예전 생성기의 `hp:col`도 읽는다)과
+구분선(`hp:colLine` 종류·굵기·색)으로 정규화한다. 머리말·꼬리말·`hp:subList` 안 정의는 보지 않는다. 잘못된 단 개수는 모델에 넣지
+않고 `HWPX_INVALID_COLUMN_LAYOUT`을, 평행 다단은 근사 배치임을 알리는 `HWPX_PARALLEL_COLUMN_APPROXIMATED`를, 서로 다른 너비
+선언 수가 단 개수와 다르면 `HWPX_COLUMN_DEFINITION_INCOMPLETE`를 남긴다.
+
+단 기하는 순수 함수(`viewerColumnWidths`, `src/core/layout/column_layout.ts`)가 pagination·renderer·PDF에 같이 쓴다.
+같은 너비는 `(본문 폭 - 전체 간격) / 단 수`, 서로 다른 너비는 `hp:colSz` 너비·간격(한/글은 합이 32768인 비율 값) 합을 본문 폭에
+맞춰 늘리거나 줄이고 모자란 선언은 평균 너비로 채운다. `columnRects`는 흐름 순서(0번이 첫 단)의 단 범위를 주고, `RIGHT`와 짝수 쪽
+`MIRROR`는 첫 단을 본문 오른쪽 끝에 붙여 단 뒤 간격을 왼쪽으로 둔다. `columnSeparators`는 이웃한 단 사이 간격 한가운데다.
+
+pagination(`paginateViewerSection`)은 쪽마다 다단 영역 목록을 들고 흐름 순서로 단을 채운다. 배치(`LEFT`·`RIGHT`·`MIRROR`)는
+흐름을 바꾸지 않고 renderer가 단 위치만 바꾸므로 쪽 번호를 모르는 section 단위 pagination이 그대로 유지된다.
+- 단 나눔과 측정값이 있을 때 원본 줄 배치가 위로 되돌아가는 문단은 다음 단(마지막 단이면 다음 쪽)으로 간다. 화면 높이 때문에
+  이미 다음 단·쪽으로 넘쳤으면(`spilled`) 원본의 다음 단 시작은 지금 단이 받아 넘친 몇 문단만 든 단을 만들지 않는다.
+- 새 다단 정의 문단은 같은 쪽 앞 영역 아래에서 새 영역을 시작한다(쪽 나눔이나 원본 새 쪽이면 다음 쪽 위). 닫히는 영역은
+  `balancedColumnStarts`로 단 높이를 맞추고(문단 경계, 가장 높은 단이 가장 낮아지는 나눔) 그 높이에서 새 영역이 시작한다. 배분
+  다단은 구역 끝 쪽에서도 맞춘다. 단 나눔·원본 줄 배치로 단을 넘긴 영역, 각주가 놓인 영역, 평행 다단은 맞추지 않는다.
+- 평행 다단의 마지막 단 단 나눔은 같은 쪽 가장 긴 단 아래에 같은 다단의 새 영역(줄)을 연다. 넘치는 글은 일반 다단처럼 흐른다.
+- 같은 쪽 아래 영역의 빈 단은 block이 들어갈 때까지 다음 단·쪽으로 넘겨 글이 쪽 밖으로 나가지 않는다.
+- 결과 쪽은 영역이 하나면 이전처럼 `columns`·`columnLayout`(한 단이면 둘 다 없음), 여럿이면 `regions`(위 끝 `top`, 뒤 영역이
+  이어지는 영역의 `height`)다. `pageColumnRegions`가 두 모양을 영역 목록으로 바꾼다. 각주 칸은 마지막 영역의 단 수를 따르고 단이
+  줄면 남는 칸 각주를 마지막 칸에 모은다. 개체 띠는 영역마다 그 영역 기준으로 옮겨 비운다(`regionPageBands`).
+
+측정 DOM(`MeasurementSection`)은 다단 정의가 같은 연속 block 묶음(`columnMeasurementGroups`)을 그 영역 첫 단 너비로 재
+`blockHeights`·`tableRowHeights`에 두고, 첫 단과 너비가 다른 단이 있으면 그 너비로 한 번 더 그려(`data-measure-variant`)
+`LayoutMeasurements.columnHeights[단 너비]`에 둔다. pagination은 단 너비가 첫 단과 다르면 그 값을 먼저 쓴다. 같은 너비 다단 하나뿐인
+section은 이전과 같은 DOM 하나다. renderer(`ViewerColumnFlow`)는 영역마다 단 범위로 grid track(단과 그 사이 간격)을 만들고 단을
+`grid-column`으로 놓되 DOM은 흐름 순서라 글 선택·caret 이동·PDF 글 순서가 흐름 순서다. 구분선은 영역 안 절대 위치 세로선이다.
+원본 위치 개체의 단 기준 가로 위치(`horzRelTo="COLUMN"`)와 문단 기준 개체는 block이 놓인 영역·단의 범위를 쓴다
+(`PageObjectLayer`, 쪽 번호로 `MIRROR` 방향을 정한다).
 
 표 셀 text와 구조 편집 조건은 분리한다. pagination fragment를 제외한 모든 셀에서 source anchor만으로
 이루어진 문단은 `TABLE_CELL_TEXT` context가 되어 text 입력·삭제·치환을 허용한다. 구조 command(행·열
@@ -364,7 +388,7 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   앞 줄 글자만, 편집 중에는 원본 문단 전체를 조각 높이로 잘라 그 자리에서 입력), `rest`(이어지는 줄: 편집 anchor를 지운 읽기 전용
   글자)다. 그래서 같은 `hp:t`의 입력 칸은 문서 전체에 하나뿐이다(머리말처럼 되풀이된 anchor가 생기지 않는다). 이어지는 조각은 번호
   칸을 `visibility: hidden`으로 남겨 본문 폭이 측정 때와 같다. renderer는 단이 하나면 각주 영역을 쪽 본문 아래 끝(꼬리말 위)에
-  절대 위치로, 다단이면 단마다 단 아래 끝에, `beneathText`면 본문 바로 뒤에 그린다. 구분선 길이 `-1`은 단 너비의 1/3, 양수는 그 길이다.
+  절대 위치로, 다단이면 단마다(다단 영역이 여럿이면 마지막 영역의 단마다) 단 아래 끝에, `beneathText`면 본문 바로 뒤에 그린다. 구분선 길이 `-1`은 단 너비의 1/3, 양수는 그 길이다.
   `MERGED_COLUMN`·`RIGHT_MOST_COLUMN`도 단마다 둔다.
 - `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
 - 글상자·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 각주·미주 본문은 2026-10-14부터 section 안
@@ -405,7 +429,7 @@ INSIDE·OUTSIDE / LEFT·CENTER·RIGHT·INSIDE·OUTSIDE, offset, `flowWithText`, 
   합친 띠 높이(겹친 부분은 한 번)의 늘어난 만큼 지금 단 사용 높이에 더한다. 다음 단은 띠 높이에서 시작한다. block과 늘어난 띠가 함께
   들어가지 않으면 block(과 띠)을 다음 단·쪽으로 넘긴다. 결과는 `ViewerPage.bands`(쪽 본문 기준, 합친 띠)다. renderer
   (`PageBandSpacers`)는 같은 띠를 본문 DOM에서 비운다: 본문 위 끝에 닿은 띠는 본문 앞 빈 블록, 가운데 띠는 폭 0 float(띠 위까지)와
-  폭 전체 float(띠 높이), 아래 끝에 닿은 띠는 pagination이 덜 채우므로 DOM이 없다. 다단이면 단마다 같은 띠를 둔다. 측정 DOM에는 쪽
+  폭 전체 float(띠 높이), 아래 끝에 닿은 띠는 pagination이 덜 채우므로 DOM이 없다. 다단이면 단마다 같은 띠를 두고, 한 쪽에 다단 영역이 여럿이면 띠를 영역 기준으로 옮기고 자른다. 측정 DOM에는 쪽
   기준 개체와 띠가 없어 문단 높이가 쪽과 무관하다. section pagination cache는 쪽 크기·여백·머리말 여백 값도 비교한다.
 - 쌓임: `.viewer-page`는 `isolation: isolate`라 글 뒤 개체(`z-index: -1`)가 쪽 배경 위·본문 글 아래에 그려지고, 그 밖의 개체는
   `z-index: 1`이다. 표가 아닌 글 앞·뒤·쪽 기준 개체는 `pointer-events: none`이라 밑의 본문 글 선택·caret을 가리지 않는다. 쪽 기준 표는
@@ -417,6 +441,10 @@ INSIDE·OUTSIDE / LEFT·CENTER·RIGHT·INSIDE·OUTSIDE, offset, `flowWithText`, 
   개체가 비운 자리에 본문 글이 들어오면(`textOverlap`) 실패로 본다(저장본 재열기 포함). verify:matrix는 `createFloatingObjectHwpx`의
   용지 기준 글상자·쪽 아래 그림·쪽 위 표 상자를 generator 기대값(`FLOATING_OBJECT_EXPECTED`)과 1.5px 안에서 비교하고, 문단 편집·쪽 위
   표 셀 편집→Save As→재열기 뒤에도 같은 자리인지 본다.
+- 다단 E2E: verify_app은 쪽마다 다단 영역(`.viewer-column-flow`)의 위 끝·높이, 단(흐름 순번)의 용지 기준 왼쪽 끝·폭·글자와 구분선
+  위치를 `columnLayouts`로 낸다. verify:matrix는 `createColumnLayoutHwpx`의 글자가 기대한 쪽·영역·단에 있고 단 범위·구분선·단 기준
+  그림이 `COLUMN_LAYOUT_EXPECTED`와 1.5px 안에서 같은지, 화면/PDF 글자 수와 둘째 단 문단 편집(`HAN_FLOW_VERIFY_EDIT_TARGET=column`)
+  →Save As→재열기 뒤 같은 배치인지 본다.
 
 ### Decoder worker
 

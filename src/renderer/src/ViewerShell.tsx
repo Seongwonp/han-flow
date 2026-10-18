@@ -91,26 +91,75 @@ export function ViewerPageStack({
   </div>
 }
 
+/** 단 하나의 가로 범위(쪽 본문 왼쪽 기준 CSS px). */
+export interface ViewerColumnBox { left: number; width: number }
+/** 단 사이 구분선(쪽 본문 왼쪽 기준 CSS px, 선 한가운데). */
+export interface ViewerColumnRule { x: number; width: number; style: string; color: string }
+
 interface ViewerColumnFlowProps {
-  gap: number
+  /** 같은 너비 단 사이 간격(`rects`가 없을 때). */
+  gap?: number
+  /** 단마다의 내용(흐름 순서, 0번이 첫 단). DOM도 이 순서라 글 읽기·선택·PDF 글 순서가 흐름 순서다. */
   columns: ReactNode[][]
-  /** 단마다 아래에 둘 각주 영역. 있으면 단을 쪽 본문 높이로 늘려 각주를 단 아래 끝에 붙인다. */
+  /** 단마다의 가로 범위(흐름 순서). 있으면 단을 이 자리에 놓는다(서로 다른 너비, 오른쪽부터 놓는 배치). */
+  rects?: ViewerColumnBox[]
+  /** 단 사이 구분선. */
+  rules?: ViewerColumnRule[]
+  /** 영역 높이(CSS 길이). 같은 쪽에 뒤 영역이 이어지는 영역, 구분선·각주가 있는 영역에 준다. */
+  height?: string
+  /** 단마다 아래에 둘 각주 영역. 있으면 단을 영역 높이로 늘려 각주를 단 아래 끝에 붙인다. */
   footers?: ReactNode[]
   /** 각주를 단 아래 끝이 아니라 본문 바로 아래에 둔다(`hp:placement beneathText`). */
   footersBeneathText?: boolean
+  /** 쪽 안 다단 영역 순번(위에서부터). */
+  regionIndex?: number
 }
 
-export function ViewerColumnFlow({ gap, columns, footers, footersBeneathText = false }: ViewerColumnFlowProps) {
+/** 단 범위를 왼쪽부터 늘어놓은 grid track(단 사이 간격도 track이다)과 단마다 놓을 track 번호(1부터). */
+export function columnGridTracks(rects: readonly ViewerColumnBox[]): { template: string; tracks: number[] } {
+  const order = rects.map((rect, index) => ({ rect, index })).sort((left, right) => left.rect.left - right.rect.left)
+  const sizes: string[] = []
+  const tracks: number[] = Array.from({ length: rects.length }, () => 1)
+  let cursor = 0
+  for (const { rect, index } of order) {
+    const gap = rect.left - cursor
+    if (gap > 0.01) sizes.push(`${+gap.toFixed(3)}px`)
+    sizes.push(`${+Math.max(rect.width, 0).toFixed(3)}px`)
+    tracks[index] = sizes.length
+    cursor = rect.left + rect.width
+  }
+  return { template: sizes.join(' '), tracks }
+}
+
+export function ViewerColumnFlow({ gap = 0, columns, rects, rules, height, footers, footersBeneathText = false, regionIndex }: ViewerColumnFlowProps) {
   const withFooters = Boolean(footers?.some(Boolean))
+  const grid = rects?.length === columns.length ? columnGridTracks(rects) : undefined
   return <div
     className={`viewer-column-flow${withFooters ? ' viewer-column-flow-with-footnotes' : ''}`}
     data-column-count={columns.length}
-    style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))`, columnGap: gap }}
+    data-column-region={regionIndex}
+    style={{
+      gridTemplateColumns: grid ? grid.template : `repeat(${columns.length}, minmax(0, 1fr))`,
+      ...(grid ? {} : { columnGap: gap }),
+      ...(height !== undefined ? { height } : {}),
+      ...(rules?.length ? { position: 'relative' as const } : {})
+    }}
   >
-    {columns.map((column, index) => <div className="viewer-column" data-column-index={index} key={index}>
+    {columns.map((column, index) => <div
+      className="viewer-column"
+      data-column-index={index}
+      key={index}
+      style={grid ? { gridColumn: grid.tracks[index], gridRow: 1 } : undefined}
+    >
       {column}
       {footers?.[index] && <div className={`viewer-column-footnotes${footersBeneathText ? '' : ' viewer-column-footnotes-bottom'}`}>{footers[index]}</div>}
     </div>)}
+    {rules?.map((rule, index) => <div
+      className="viewer-column-rule"
+      aria-hidden="true"
+      key={`rule${index}`}
+      style={{ left: rule.x - rule.width / 2, width: rule.width, borderLeft: `${rule.width}px ${rule.style} ${rule.color}` }}
+    />)}
   </div>
 }
 
