@@ -260,6 +260,51 @@ function lineSplitShape(splits = []) {
   return { across, samePage }
 }
 
+// 구역마다 쪽 크기·방향·여백 E2E(createSectionPageHwpx, A4 세로 2쪽·A4 가로 1쪽·B5 맞쪽 2쪽): 쪽마다 쪽 상자 크기와 본문 여백(맞쪽
+// 짝수 쪽은 왼쪽·오른쪽을 바꾼다), 쪽 번호 아래 끝(그 구역 꼬리말 띠 아래 끝), 머리말 자리, 가로 구역 용지 오른쪽 아래 기준 글상자가
+// 기대값(SECTION_PAGE_EXPECTED, HWPUNIT)과 같아야 하고, PDF는 쪽마다 그 구역 용지 크기여야 한다. B5 구역 둘째 단을 고쳐 저장한 뒤
+// 다시 열어도 같아야 한다.
+const SECTION_PAGE_EDIT_TEXT = '구역쪽편집'
+
+function sectionPageFailures(result, expected, label = 'section-page') {
+  const failures = []
+  if (result?.totalPages !== expected.pages.length) failures.push(`${label}: ${result?.totalPages}쪽(기대 ${expected.pages.length}쪽)`)
+  const boxes = result?.pageBoxes ?? []
+  const decorations = result?.pageDecorations ?? []
+  for (const page of expected.pages) {
+    const box = boxes.find((item) => item.page === page.page)
+    if (!box) {
+      failures.push(`${label}: ${page.page}쪽 쪽 상자가 없음`)
+      continue
+    }
+    const sizes = [['width', box.width, page.width], ['height', box.height, page.height], ...['top', 'right', 'bottom', 'left'].map((side) => [`padding-${side}`, box.padding?.[side], page.padding[side]])]
+    for (const [name, actual, hwp] of sizes) {
+      if (!(Math.abs(actual - hwpToPx(hwp)) <= FLOATING_TOLERANCE_PX)) failures.push(`${label}: ${page.page}쪽 ${name} ${actual}px(기대 ${hwpToPx(hwp).toFixed(1)}px)`)
+    }
+    const decoration = decorations.find((item) => item.page === page.page)
+    const number = decoration?.pageNumber
+    if (!number || Math.abs(number.bottom - hwpToPx(page.pageNumberBottom)) > FLOATING_TOLERANCE_PX) failures.push(`${label}: ${page.page}쪽 쪽 번호 아래 끝 ${number?.bottom}px(기대 ${hwpToPx(page.pageNumberBottom).toFixed(1)}px)`)
+    if (number?.overlap) failures.push(`${label}: ${page.page}쪽 쪽 번호가 본문과 겹침`)
+    const header = decoration?.header
+    if (!header || header.y < hwpToPx(page.headerTop) - 1 || header.bottom > hwpToPx(page.padding.top) + 1 || Math.abs(header.x - hwpToPx(page.padding.left)) > 2) {
+      failures.push(`${label}: ${page.page}쪽 머리말이 머리말 띠 밖(${JSON.stringify(header)})`)
+    }
+  }
+  failures.push(...floatingBoxFailures(`${label} 용지 오른쪽 아래 글상자`, floatingObject(result?.positionedObjects, 'text-box', 'page', 'IN_FRONT_OF_TEXT'), expected.corner))
+  return failures
+}
+
+function sectionPagePdfFailures(result, expected, label = 'section-page PDF') {
+  const sizes = result?.pageSizes ?? []
+  if (sizes.length !== expected.pages.length) return [`${label}: ${sizes.length}쪽(기대 ${expected.pages.length}쪽)`]
+  return expected.pages.flatMap((page, index) => {
+    const actual = sizes[index]
+    return actual && Math.abs(actual.widthPoints - page.pdf.widthPoints) <= 1.5 && Math.abs(actual.heightPoints - page.pdf.heightPoints) <= 1.5
+      ? []
+      : [`${label}: ${page.page}쪽 용지 ${JSON.stringify(actual)}(기대 ${page.pdf.widthPoints.toFixed(1)}×${page.pdf.heightPoints.toFixed(1)}pt)`]
+  })
+}
+
 function pageFlowFailures(result, expected, label = 'page-flow') {
   const failures = []
   const decorations = result?.pageDecorations ?? []
@@ -432,6 +477,16 @@ try {
     HAN_FLOW_VERIFY_EDIT_SAVE: '1'
   })
 
+  const sectionPagePath = generator.createSectionPageHwpx(directory, 'han-flow-section-page.hwpx')
+  const sectionPageView = await verify(sectionPagePath, 500)
+  const sectionPagePdf = await verifyPdf(sectionPagePath)
+  pdfResults.push({ fixtureId: 'section-page', ...sectionPagePdf })
+  const sectionPageEdit = await verify(sectionPagePath, 500, false, {
+    HAN_FLOW_VERIFY_EDIT_TEXT: SECTION_PAGE_EDIT_TEXT,
+    HAN_FLOW_VERIFY_EDIT_TARGET: 'column',
+    HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+  })
+
   const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
   const editScopeResults = []
   for (const scope of EDIT_SCOPE_CASES) {
@@ -538,6 +593,15 @@ try {
     pageFlowEdit.editingProbe?.surface === 'line-split' ? undefined : `page-flow 편집: 줄 단위로 나뉜 문단 앞 조각을 고치지 않음(${pageFlowEdit.editingProbe?.surface})`,
     pageFlowEdit.saveAs?.reopenedTextPresent ? undefined : 'page-flow 편집: 저장본에 입력 글자가 없음',
     ...pageFlowFailures({ ...pageFlowEdit, totalPages: pageFlowEdit.saveAs?.reopenedPages, pageDecorations: pageFlowEdit.saveAs?.reopenedPageDecorations, positionedObjects: pageFlowEdit.saveAs?.reopenedPositionedObjects, lineSplits: pageFlowEdit.saveAs?.reopenedLineSplits, columnLayouts: pageFlowEdit.saveAs?.reopenedColumnLayouts }, generator.PAGE_FLOW_EXPECTED, 'page-flow 저장본'),
+    sectionPageView.passed ? undefined : `section-page: ${sectionPageView.failures.join(', ')}`,
+    ...sectionPageFailures(sectionPageView, generator.SECTION_PAGE_EXPECTED),
+    ...sectionPagePdfFailures(sectionPagePdf, generator.SECTION_PAGE_EXPECTED),
+    sectionPageEdit.passed ? undefined : `section-page 편집: ${sectionPageEdit.failures.join(', ')}`,
+    sectionPageEdit.saveAs?.reopenedTextPresent ? undefined : 'section-page 편집: 저장본에 입력 글자가 없음',
+    sectionPageEdit.columnLayouts?.find((page) => page.page === 4)?.regions?.[0]?.columns?.[1]?.text?.includes(SECTION_PAGE_EDIT_TEXT)
+      ? undefined
+      : 'section-page 편집: 입력 글자가 B5 구역 첫 쪽 둘째 단에 없음',
+    ...sectionPageFailures({ ...sectionPageEdit, totalPages: sectionPageEdit.saveAs?.reopenedPages, pageBoxes: sectionPageEdit.saveAs?.reopenedPageBoxes, pageDecorations: sectionPageEdit.saveAs?.reopenedPageDecorations, positionedObjects: sectionPageEdit.saveAs?.reopenedPositionedObjects }, generator.SECTION_PAGE_EXPECTED, 'section-page 저장본'),
     longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
     longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
     longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
@@ -648,6 +712,13 @@ try {
       lineSplits: pageFlowView.lineSplits,
       pageNumbers: pageFlowView.pageDecorations?.map(({ page, pageNumber }) => ({ page, ...pageNumber })),
       edit: { passed: pageFlowEdit.passed, surface: pageFlowEdit.editingProbe?.surface, reopenedPages: pageFlowEdit.saveAs?.reopenedPages, reopenedTextPresent: pageFlowEdit.saveAs?.reopenedTextPresent }
+    },
+    sectionPage: {
+      passed: sectionPageView.passed,
+      totalPages: sectionPageView.totalPages,
+      pageBoxes: sectionPageView.pageBoxes,
+      pdfPageSizes: sectionPagePdf.pageSizes,
+      edit: { passed: sectionPageEdit.passed, reopenedPages: sectionPageEdit.saveAs?.reopenedPages, reopenedTextPresent: sectionPageEdit.saveAs?.reopenedTextPresent }
     },
     longFootnoteEdit: {
       passed: longFootnoteEdit.passed,

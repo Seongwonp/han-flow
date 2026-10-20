@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### 구역마다 다른 쪽 크기·방향·여백
+
+- 구역(`hp:secPr/hp:pagePr`)마다 쪽 설정을 따로 읽어(`sectionPageGeometries`, 없으면 앞 구역 것) 쪽 상자·본문·머리말·꼬리말 띠·쪽 번호·각주 영역·원본 위치 개체(용지·쪽 기준)·단·자리 표시 높이 한도를 그 구역 값으로 그림(`ViewerSection.page`·`viewerSectionPage`·`renderStylesForPage`). 가로 방향(`landscape="NARROWLY"`, 한/글은 세로 용지 크기를 씀)은 용지를 돌리고, 제본 여백은 왼쪽(`LEFT_ONLY`)·위쪽(`TOP_BOTTOM`)에 더하며 맞쪽(`LEFT_RIGHT`)은 짝수 쪽 왼쪽·오른쪽 여백을 바꿈(`viewerPageFrameAt`). 공개 corpus `ext-hwpxlib-page-size`(B4 가로)가 이제 가로로 나옴
+- PDF는 쪽 크기가 다르면 쪽 크기별 CSS named page(`hwpxPagePrintCss`)와 `preferCSSPageSize`로 쪽마다 그 용지 크기. 가상화는 쪽마다 높이(`fixedPageVirtualRange`)
+- 증분 projection은 구역 쪽 설정이 바뀐 구역과 그 설정을 잇는 구역만 다시 해석(문서 첫 쪽 설정이 바뀔 때만 전체), section pagination cache는 구역 쪽 크기·여백을 비교
+- verify_app에 `pageBoxes`(쪽 상자 크기·padding)·머리말 왼쪽 끝을, verify:matrix에 합성 fixture `createSectionPageHwpx`(A4 세로·A4 가로·B5 맞쪽, 쪽마다 상자·padding·쪽 번호·머리말·용지 기준 글상자·넓은 표, PDF 쪽마다 용지 크기, B5 둘째 단 편집→Save As→재열기)를 추가. 단위 test `section_page_setup`
+
 ### 쪽 번호·머리말 자리, 개체 회전·쌓임 순서, 본문 줄 단위 쪽 나눔
 
 - 쪽 본문을 한/글 본문 영역(위쪽 여백 + 머리말 여백 ~ 아래쪽 여백 + 꼬리말 여백)으로 바꾸고(`viewerPageGeometry`), 쪽 번호(`hp:pageNum`)는 본문 밖 꼬리말 띠 아래 끝(위쪽 위치는 머리말 띠 위 끝, 띠가 0이면 여백 가운데, 안쪽·바깥쪽은 홀짝 쪽)에, 머리말·꼬리말은 각 띠 위 끝에 둠(`pageDecorationLayout`·`pageNumberAnchor`·`PageNumberView`). 사용자 문서 doc5-d04 1쪽 쪽 번호가 맨 아래 로고와 겹치던 문제를 고침. 용지 기준 개체를 머리말 여백만큼 올리던 보정은 없앰

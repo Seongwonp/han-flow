@@ -1,4 +1,4 @@
-import type { ViewerCharStyle, ViewerDocument } from '../../core/document/viewer_document'
+import { sameViewerPageFrame, type ViewerCharStyle, type ViewerDocument, type ViewerPageSetup } from '../../core/document/viewer_document'
 import {
   styleChangeIds,
   VIEWER_STYLE_MAP_NAMES,
@@ -12,6 +12,28 @@ import type { FontResolution } from '../../core/fonts/font_resolver'
  * object가 유지되어 memo한 section 측정 DOM이 다시 그려지지 않게 한다. `charStyles`의 글꼴 이름은 이 컴퓨터에서 찾은 글꼴이다.
  */
 export type ViewerRenderStyles = Pick<ViewerDocument, 'page' | 'charStyles' | 'paraStyles' | 'cellStyles' | 'resources'>
+
+const pageStylesCache = new WeakMap<ViewerRenderStyles, Map<string, ViewerRenderStyles>>()
+
+/**
+ * 구역(쪽)마다 쪽 설정이 다를 때 그 쪽 설정(`page`)으로 바꾼 render style. 문서 쪽 설정과 값이 같으면 `styles`를 그대로 쓰고, 같은
+ * 쪽 설정 값에는 같은 object를 돌려준다(memo한 측정·쪽 DOM이 다시 그려지지 않게).
+ */
+export function renderStylesForPage(styles: ViewerRenderStyles, page: ViewerPageSetup): ViewerRenderStyles {
+  if (sameViewerPageFrame(styles.page, page)) return styles
+  let cache = pageStylesCache.get(styles)
+  if (!cache) {
+    cache = new Map()
+    pageStylesCache.set(styles, cache)
+  }
+  const key = JSON.stringify([page.width, page.height, page.margin, page.headerOffset, page.footerOffset, page.landscape, page.mirrorMargins])
+  let derived = cache.get(key)
+  if (!derived) {
+    derived = { ...styles, page }
+    cache.set(key, derived)
+  }
+  return derived
+}
 
 /**
  * 글꼴 이름을 이 컴퓨터에서 찾은 글꼴로 바꾼 글자 모양. 원본 style object와 바꾼 글꼴 이름이 그대로인 id는 앞 결과 object를

@@ -2,8 +2,26 @@ import type { ParagraphStructureBlock } from '../editing/paragraph_structure'
 import type { MathElement } from './equation_script'
 export type HwpUnit = number
 
+/**
+ * 구역 쪽 설정(OWPML `hp:secPr/hp:pagePr`). `width`·`height`는 화면에 놓는 용지 크기로, 가로 방향(`landscape="NARROWLY"`)이면
+ * 원본 용지 크기를 돌린 값이다. `margin`은 쪽 본문 여백(위쪽 + 머리말 여백, 아래쪽 + 꼬리말 여백, 제본 여백을 더한 홀수 쪽 값)이고
+ * `headerOffset`·`footerOffset`은 머리말·꼬리말 띠 높이다.
+ * - `landscape`: 원본이 가로 방향이다.
+ * - `mirrorMargins`: 맞쪽 제본(`gutterType="LEFT_RIGHT"`). 짝수 쪽은 왼쪽·오른쪽 여백을 바꾼다(`viewerPageFrameAt`).
+ */
+export interface ViewerPageSetup {
+  width: HwpUnit
+  height: HwpUnit
+  margin: BoxSpacing
+  headerOffset: HwpUnit
+  footerOffset: HwpUnit
+  landscape?: boolean
+  mirrorMargins?: boolean
+}
+
 export interface ViewerDocument {
-  page: { width: HwpUnit; height: HwpUnit; margin: BoxSpacing; headerOffset: HwpUnit; footerOffset: HwpUnit }
+  /** 문서 첫 `hp:pagePr`의 쪽 설정. 구역마다의 쪽 설정은 `ViewerSection.page`이고, 없는 구역(옛 모델·test)은 이 값을 쓴다. */
+  page: ViewerPageSetup
   fonts: Record<string, string>
   charStyles: Record<string, ViewerCharStyle>
   paraStyles: Record<string, ViewerParaStyle>
@@ -64,6 +82,8 @@ export interface ViewerColumnLine { type: string; widthMm: number; color: string
 export interface ViewerColumnLayout { type: string; layout: string; count: number; sameSize: boolean; sameGap: HwpUnit; columns: ViewerColumnDefinition[]; line?: ViewerColumnLine }
 export interface ViewerSection {
   id: string
+  /** 이 구역의 쪽 크기·여백(`hp:pagePr`, 없으면 앞 구역 것). 없으면 문서 `page`를 쓴다(`viewerSectionPage`). */
+  page?: ViewerPageSetup
   blocks: ViewerParagraph[]
   pageNumber?: ViewerPageNumber
   columnLayout?: ViewerColumnLayout
@@ -371,6 +391,38 @@ export function paragraphFootnotes(paragraph: ViewerParagraph): ViewerNote[] {
   }
   visit(paragraph.content)
   return notes
+}
+
+/** 구역 `sectionIndex`의 쪽 설정. 구역에 없으면 문서 첫 쪽 설정이다. */
+export function viewerSectionPage(document: Pick<ViewerDocument, 'page' | 'sections'>, sectionIndex: number): ViewerPageSetup {
+  return document.sections[sectionIndex]?.page ?? document.page
+}
+
+const mirroredFrames = new WeakMap<ViewerPageSetup, ViewerPageSetup>()
+
+/**
+ * 쪽 번호(1부터 센 문서 쪽 순서) `pageNumber` 쪽의 쪽 설정. 맞쪽 제본(`mirrorMargins`)의 짝수 쪽은 왼쪽·오른쪽 여백을 바꿔 제본
+ * 여백이 안쪽(오른쪽)에 오게 한다. 본문 폭·높이는 홀수 쪽과 같아 쪽 나눔은 바뀌지 않는다.
+ */
+export function viewerPageFrameAt(page: ViewerPageSetup, pageNumber: number): ViewerPageSetup {
+  if (!page.mirrorMargins || pageNumber % 2 !== 0) return page
+  let mirrored = mirroredFrames.get(page)
+  if (!mirrored) {
+    mirrored = { ...page, margin: { ...page.margin, left: page.margin.right, right: page.margin.left } }
+    mirroredFrames.set(page, mirrored)
+  }
+  return mirrored
+}
+
+/** 쪽 크기·본문 여백이 같은지(값으로 비교). */
+export function sameViewerPageFrame(left: ViewerPageSetup, right: ViewerPageSetup): boolean {
+  return left === right || (
+    left.width === right.width && left.height === right.height &&
+    left.margin.top === right.margin.top && left.margin.right === right.margin.right &&
+    left.margin.bottom === right.margin.bottom && left.margin.left === right.margin.left &&
+    left.headerOffset === right.headerOffset && left.footerOffset === right.footerOffset &&
+    Boolean(left.mirrorMargins) === Boolean(right.mirrorMargins) && Boolean(left.landscape) === Boolean(right.landscape)
+  )
 }
 
 /** 단이 여럿인 다단 정의인지. 모든 유형(`NEWSPAPER`·`BALANCED_NEWSPAPER`·`PARALLEL`)과 배치(`LEFT`·`RIGHT`·`MIRROR`)를 단별로 조판한다. */

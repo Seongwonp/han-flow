@@ -1,4 +1,4 @@
-import { paragraphFootnotes, supportsViewerColumnFlow, ViewerColumnLayout, viewerColumnWidths, ViewerContent, ViewerDocument, ViewerNote, ViewerParagraph, ViewerSection, ViewerTable, ViewerTableRow } from '../document/viewer_document'
+import { paragraphFootnotes, supportsViewerColumnFlow, viewerSectionPage, ViewerColumnLayout, viewerColumnWidths, ViewerContent, ViewerDocument, ViewerNote, ViewerParagraph, ViewerSection, ViewerTable, ViewerTableRow } from '../document/viewer_document'
 import { balancedColumnStarts, columnWidthKey } from './column_layout'
 import { footnoteMarker } from '../document/note_number'
 import { cellOccupiedHeight, findSplittableCell, ParagraphHeights, tableSupportsCellSplitting } from './cell_fragment'
@@ -307,13 +307,13 @@ export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] 
 }
 
 export function paginateViewerDocument(document: ViewerDocument, measurements?: LayoutMeasurements): ViewerPage[] {
-  const availableHeight = pageBodyHeight(document)
-  return document.sections.flatMap((section, sectionIndex) =>
-    paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page)
-  )
+  return document.sections.flatMap((section, sectionIndex) => {
+    const page = viewerSectionPage(document, sectionIndex)
+    return paginateViewerSection(section, sectionIndex, pageBodyHeight({ page }), measurements, page)
+  })
 }
 
-/** pagination이 쓰는 쪽 본문 높이(HWPUNIT). */
+/** pagination이 쓰는 쪽 본문 높이(HWPUNIT). 구역마다 쪽 설정이 다르면 그 구역 쪽 설정(`viewerSectionPage`)으로 부른다. */
 export function pageBodyHeight(document: Pick<ViewerDocument, 'page'>): number {
   return document.page.height - document.page.margin.top - document.page.margin.bottom
 }
@@ -858,17 +858,19 @@ function pageFrameKey(page: PageFrame): string {
 
 /**
  * section별 측정값으로 문서를 나누되, 앞 결과(`previous`)에서 section·위치·쪽 크기·측정 object가 모두 같은 section은 다시
- * 나누지 않고 쪽 object를 그대로 쓴다. 결과는 같은 입력의 `paginateViewerSection`을 이어 붙인 것과 같다.
+ * 나누지 않고 쪽 object를 그대로 쓴다. 결과는 같은 입력의 `paginateViewerSection`을 이어 붙인 것과 같다. 쪽 크기·여백은 구역마다
+ * 그 구역 쪽 설정(`viewerSectionPage`)이다.
  */
 export function paginateViewerSectionsIncremental(
   document: Pick<ViewerDocument, 'page' | 'sections'>,
   measurementsOf: (sectionIndex: number) => LayoutMeasurements | undefined,
   previous: readonly SectionPagination[] = []
 ): { pages: ViewerPage[]; sections: SectionPagination[]; reused: number } {
-  const availableHeight = pageBodyHeight(document)
-  const pageKey = pageFrameKey(document.page)
   let reused = 0
   const sections = document.sections.map((section, sectionIndex): SectionPagination => {
+    const page = viewerSectionPage(document, sectionIndex)
+    const availableHeight = pageBodyHeight({ page })
+    const pageKey = pageFrameKey(page)
     const measurements = measurementsOf(sectionIndex)
     const cached = previous[sectionIndex]
     if (
@@ -883,7 +885,7 @@ export function paginateViewerSectionsIncremental(
       return cached
     }
     const wanted = new Set<string>()
-    const pages = paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page, wanted)
+    const pages = paginateViewerSection(section, sectionIndex, availableHeight, measurements, page, wanted)
     return {
       section,
       sectionIndex,

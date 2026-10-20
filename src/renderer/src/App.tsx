@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerObjectTransform, ViewerPageNumber, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, viewerPageFrameAt, viewerSectionPage, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerObjectTransform, ViewerPageNumber, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -74,7 +74,7 @@ import {
   restoreParagraphEditorSelection
 } from './paragraph_selection'
 import { answerInputFlushRequest, DocumentLayoutMeasurements, EditingImeTransientState, EditingInputFlusher, selectionAfterInput } from './renderer_state'
-import { MeasurementStylesTracker, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
+import { MeasurementStylesTracker, renderStylesForPage, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
 import { countIncompleteObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
@@ -1870,6 +1870,26 @@ export function FixedPageTextLayer({ layout, searchQuery }: { layout: FixedPageT
   </div>
 }
 
+/**
+ * HWPX 쪽 크기가 구역마다 다를 때의 인쇄 CSS. 쪽 크기(CSS px)마다 이름 있는 `@page`를 만들고 쪽 상자(`data-page-index`)에 그
+ * 이름을 붙여, PDF(`printToPDF`의 `preferCSSPageSize`)가 쪽마다 그 구역 용지 크기로 나오게 한다.
+ */
+export function hwpxPagePrintCss(sizes: ReadonlyArray<{ width: number; height: number }>): string {
+  const names = new Map<string, string>()
+  const rules: string[] = []
+  sizes.forEach((size, index) => {
+    const key = `${size.width}x${size.height}`
+    let name = names.get(key)
+    if (!name) {
+      name = `han-flow-page-size-${names.size}`
+      names.set(key, name)
+      rules.push(`@page ${name} { size: ${size.width}px ${size.height}px; margin: 0; }`)
+    }
+    rules.push(`.viewer-page[data-page-index="${index}"] { page: ${name}; }`)
+  })
+  return rules.join('\n')
+}
+
 export function fixedPagePrintCss(pages: FixedPageDescriptor[]): string {
   return pages.map((page) => {
     const name = `han-flow-fixed-page-${page.index}`
@@ -2026,8 +2046,14 @@ export default function App() {
   const pageCount = fixedDocument?.pageCount ?? pages.length
   const hasDocument = Boolean(effectiveDocument || fixedDocument)
   const virtualized = pageCount > 50 && !printing
-  const pageHeight = effectiveDocument ? hwpUnitToCssPx(effectiveDocument.page.height) : 0
-  const pageStride = (pageHeight + 24) * zoom
+  // 쪽마다 그 구역 쪽 설정의 용지 크기(CSS px). 구역마다 쪽 크기가 다르면 가상화·PDF 용지가 쪽마다 이 크기를 쓴다.
+  const pageBoxSizes = useMemo(() => effectiveDocument
+    ? pages.map((page) => {
+        const setup = viewerSectionPage(effectiveDocument, page.sectionIndex)
+        return { width: hwpUnitToCssPx(setup.width), height: hwpUnitToCssPx(setup.height) }
+      })
+    : [], [effectiveDocument, pages])
+  const pageSizesMixed = pageBoxSizes.some((size) => size.width !== pageBoxSizes[0].width || size.height !== pageBoxSizes[0].height)
   useLayoutEffect(() => {
     if (
       !editing ||
@@ -2055,12 +2081,7 @@ export default function App() {
     if (!virtualized) return
     const next = fixedDocument
       ? fixedPageVirtualRange(fixedDocument.pages, scrollTop, viewportHeight, zoom)
-      : {
-          start: Math.max(Math.floor(scrollTop / pageStride) - 2, 0),
-          end: Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length),
-          topSpacer: Math.max(Math.floor(scrollTop / pageStride) - 2, 0) * (pageHeight + 24),
-          bottomSpacer: Math.max(pages.length - Math.min(Math.ceil((scrollTop + viewportHeight) / pageStride) + 2, pages.length), 0) * (pageHeight + 24)
-        }
+      : fixedPageVirtualRange(pageBoxSizes, scrollTop, viewportHeight, zoom)
     setVisibleRange((current) =>
       current.start === next.start &&
       current.end === next.end &&
@@ -3332,11 +3353,12 @@ export default function App() {
     if (!hasDocument || printing || documentLoading) return
     setPrinting(true); setPdfStatus('PDF 저장 중…')
     try {
-      const fixedPage = fixedDocument?.pages[0]
+      // HWPX는 첫 쪽 구역의 용지 크기를 쓰고, 구역마다 용지 크기가 다르면 쪽마다 CSS 용지 크기(`hwpxPagePrintCss`)를 쓴다.
+      const firstPage = fixedDocument?.pages[0] ?? pageBoxSizes[0]
       const path = await api().exportPdf({
-        width: fixedPage ? fixedPage.width / 96 : hwpUnitToInches(effectiveDocument!.page.width),
-        height: fixedPage ? fixedPage.height / 96 : hwpUnitToInches(effectiveDocument!.page.height),
-        preferCssPageSize: Boolean(fixedDocument),
+        width: firstPage ? firstPage.width / 96 : hwpUnitToInches(effectiveDocument!.page.width),
+        height: firstPage ? firstPage.height / 96 : hwpUnitToInches(effectiveDocument!.page.height),
+        preferCssPageSize: Boolean(fixedDocument) || pageSizesMixed,
         // main이 내보내기 전에 원본과 다르게 나올 개체를 확인받는다(E2E 경로는 확인하지 않는다).
         ...(!fixedDocument && objectPlaceholderTotal ? { objectPlaceholders: objectPlaceholderCounts } : {})
       })
@@ -3388,16 +3410,21 @@ export default function App() {
 
   return <main className="viewer-app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
     {printing && fixedDocument && <style>{fixedPagePrintCss(fixedDocument.pages)}</style>}
-    {effectiveDocument && renderStyles && <div ref={measurementRef} className="viewer-measurement">{effectiveDocument.sections.map((section) => <MeasurementSection
-      key={section.id}
-      section={section}
-      styles={renderStyles}
-      stylesKey={measurementStylesKey!}
-      width={hwpUnitToCssPx(viewerColumnContentWidth(
-        effectiveDocument.page.width - effectiveDocument.page.margin.left - effectiveDocument.page.margin.right,
-        section.columnLayout
-      ))}
-    />)}</div>}
+    {printing && effectiveDocument && pageSizesMixed && <style>{hwpxPagePrintCss(pageBoxSizes)}</style>}
+    {effectiveDocument && renderStyles && <div ref={measurementRef} className="viewer-measurement">{effectiveDocument.sections.map((section, sectionIndex) => {
+      // 구역마다 그 구역 쪽 설정(용지 크기·여백)의 본문 폭으로 잰다.
+      const sectionPage = viewerSectionPage(effectiveDocument, sectionIndex)
+      return <MeasurementSection
+        key={section.id}
+        section={section}
+        styles={renderStylesForPage(renderStyles, sectionPage)}
+        stylesKey={measurementStylesKey!}
+        width={hwpUnitToCssPx(viewerColumnContentWidth(
+          sectionPage.width - sectionPage.margin.left - sectionPage.margin.right,
+          section.columnLayout
+        ))}
+      />
+    })}</div>}
     <ViewerToolbar
       fileName={fileName}
       shortcutPlatform={shortcutPlatform}
@@ -3494,7 +3521,9 @@ export default function App() {
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
           const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, registerInputFlush, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, documentStructureOf: structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
-          const pageFrame = effectiveDocument.page
+          // 쪽마다 그 구역 쪽 설정(용지 크기·여백, 맞쪽이면 짝수 쪽 여백을 바꾼 것)으로 그린다.
+          const pageFrame = viewerPageFrameAt(viewerSectionPage(effectiveDocument, page.sectionIndex), index + 1)
+          const pageStyles = renderStylesForPage(renderStyles!, pageFrame)
           const bodyWidth = pageFrame.width - pageFrame.margin.left - pageFrame.margin.right
           const bodyHeight = pageFrame.height - pageFrame.margin.top - pageFrame.margin.bottom
           const pageNumberForColumns = index + 1
@@ -3515,7 +3544,7 @@ export default function App() {
             return paragraphs.map((paragraph) => <ParagraphView
               key={paragraph.lineSplit?.part === 'head' ? paragraph.lineSplit.source.id : paragraph.id}
               paragraph={paragraph}
-              document={renderStyles!}
+              document={pageStyles}
               editing={pageEditing}
               objectFrame={objectFrame}
             />)
@@ -3525,7 +3554,7 @@ export default function App() {
           const footnoteSettings = sectionFootnoteSettings(effectiveDocument.sections[page.sectionIndex]?.footnoteSettings)
           const lastRegion = regions.length - 1
           const footnoteArea = (columnIndex: number, style?: CSSProperties) => page.footnotes?.[columnIndex]?.length
-            ? <FootnoteAreaView footnotes={page.footnotes[columnIndex]} settings={footnoteSettings} columnWidth={regionRects[lastRegion]?.[columnIndex]?.width ?? bodyWidth} document={renderStyles!} editing={pageEditing} style={style} />
+            ? <FootnoteAreaView footnotes={page.footnotes[columnIndex]} settings={footnoteSettings} columnWidth={regionRects[lastRegion]?.[columnIndex]?.width ?? bodyWidth} document={pageStyles} editing={pageEditing} style={style} />
             : undefined
           const columnRules = (regionIndex: number): ViewerColumnRule[] => {
             const line = regions[regionIndex].columnLayout?.line
@@ -3564,11 +3593,11 @@ export default function App() {
               })
             : <><PageBandSpacers key="object-bands" bands={page.bands} bodyHeight={bodyHeight} />{renderParagraphs(page.blocks)}{footnoteArea(0, footnoteSettings.placement.beneathText ? undefined : {
                 position: 'absolute',
-                left: hwpUnitToCssPx(effectiveDocument.page.margin.left),
-                right: hwpUnitToCssPx(effectiveDocument.page.margin.right),
-                bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom)
+                left: hwpUnitToCssPx(pageFrame.margin.left),
+                right: hwpUnitToCssPx(pageFrame.margin.right),
+                bottom: hwpUnitToCssPx(pageFrame.margin.bottom)
               })}</>
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={decorationLayout.header.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={decorationLayout.footer.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{pageNumber && decoration.pageNumber && <PageNumberView page={effectiveDocument.page} pageNumber={decoration.pageNumber} pageNumberIndex={decoration.pageNumberIndex} text={pageNumber} />}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(pageFrame.width), height: hwpUnitToCssPx(pageFrame.height), padding: `${hwpUnitToCssPx(pageFrame.margin.top)}px ${hwpUnitToCssPx(pageFrame.margin.right)}px ${hwpUnitToCssPx(pageFrame.margin.bottom)}px ${hwpUnitToCssPx(pageFrame.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={pageStyles} offset={decorationLayout.header.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={pageStyles} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={pageStyles} offset={decorationLayout.footer.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{pageNumber && decoration.pageNumber && <PageNumberView page={pageFrame} pageNumber={decoration.pageNumber} pageNumberIndex={decoration.pageNumberIndex} text={pageNumber} />}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

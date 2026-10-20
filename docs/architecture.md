@@ -573,7 +573,35 @@ renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 
 `pageNumberAnchor`가 쪽 번호 자리를 정한다: 아래쪽은 꼬리말 띠 아래 끝(띠가 0이면 아래쪽 여백 가운데, rhwp `footer_page_number_y`와
 같은 기준), 위쪽은 머리말 띠 위 끝(띠가 0이면 위쪽 여백 가운데), 가로는 본문 왼쪽·가운데·오른쪽, `INSIDE_*`·`OUTSIDE_*`는 표시
 번호 홀짝, `NONE`은 그리지 않는다. renderer `PageNumberView`는 그 점에 맞춰 `translate`로 상자를 놓고, `HeaderFooterView`는 띠 위
-끝에서 글을 시작한다(꼬리말은 용지 아래 끝에 붙인 최소 높이 상자라 띠와 아래쪽 여백보다 긴 글은 위로 늘어나 용지 밖으로 나가지 않는다). 쪽 크기·여백은 여전히 문서 첫 `hp:pagePr` 하나다.
+끝에서 글을 시작한다(꼬리말은 용지 아래 끝에 붙인 최소 높이 상자라 띠와 아래쪽 여백보다 긴 글은 위로 늘어나 용지 밖으로 나가지 않는다).
+
+### 구역마다 쪽 크기·방향·여백 (2026-10-20)
+
+쪽 설정은 구역(`hp:secPr/hp:pagePr`)마다 따로다. decoder `sectionPageGeometries`가 section마다 `viewerPageGeometry`를 정하고(그
+section에 `hp:pagePr`가 없으면 앞 section 것을 같은 object로 잇고, 앞에 없으면 문서 첫 `hp:pagePr`), `ViewerSection.page`에 둔다.
+`ViewerDocument.page`는 문서 첫 쪽 설정(구역 0과 같은 object)으로, 구역 쪽 설정이 없는 모델·test와 측정 style 표지가 쓴다. 모든
+소비자는 `viewerSectionPage(document, sectionIndex)`로 읽는다.
+
+- 용지 방향: 한/글은 가로 방향이어도 `width`·`height`에 세로 용지 크기를 쓰고 `landscape="NARROWLY"`로 표시한다(세로는 `WIDELY`,
+  공개 corpus `ext-hwpxlib-page-size`의 B4 가로 문서 줄 배치 폭 86172가 돌린 용지 본문 폭과 같음). decoder는 `NARROWLY`면 긴 쪽을
+  너비로 돌린다(`landscape: true`). 여백은 돌린 용지의 위·아래·왼쪽·오른쪽 그대로다.
+- 제본 여백(`hp:margin gutter`): `gutterType="LEFT_ONLY"`는 왼쪽, `TOP_BOTTOM`은 위쪽 여백에 더한다. `LEFT_RIGHT`(맞쪽)는 홀수 쪽 왼쪽에
+  더하고 `mirrorMargins`를 켜며, renderer는 짝수 쪽(문서 쪽 순서, 다단 `MIRROR`와 같은 기준)에 `viewerPageFrameAt`으로 왼쪽·오른쪽
+  여백을 바꾼다. 본문 폭·높이는 홀짝이 같으므로 pagination·측정은 구역 쪽 설정 하나를 쓴다.
+- section 해석(`decodeViewerSection`)은 그 구역 쪽 설정을 받아 자리 표시·그림 높이 한도(`objectHeightLimit`)를 정한다.
+- pagination(`paginateViewerDocument`·`paginateViewerSectionsIncremental`)은 구역마다 그 쪽 설정의 본문 높이·쪽 틀(용지·쪽 기준 개체
+  띠, 단 너비)을 쓰고, section pagination cache는 구역 쪽 크기·여백 값을 비교한다.
+- renderer: 측정 DOM(`MeasurementSection`)은 구역 쪽 설정의 본문 폭으로 재고, 쪽 DOM은 쪽마다 `viewerPageFrameAt(구역 쪽 설정, 쪽 번호)`로
+  쪽 상자 크기·padding·단 위치·각주 영역·머리말·꼬리말 띠·쪽 번호·원본 위치 개체 틀을 정한다. 문단·표·개체가 읽는 render style의
+  `page`는 `renderStylesForPage`로 그 쪽 설정으로 바꾼다(문서 쪽 설정과 값이 같으면 같은 object, 같은 값이면 같은 파생 object라 memo가
+  유지된다). 가상화는 쪽마다 높이가 달라도 되게 HWP 고정 쪽과 같은 `fixedPageVirtualRange`(쪽 높이 누적 offset)를 쓴다.
+- PDF: 쪽 크기가 모두 같으면 전처럼 첫 쪽 용지 크기 하나로 인쇄하고, 다르면 쪽 크기마다 CSS named page(`hwpxPagePrintCss`)를
+  `.viewer-page[data-page-index]`에 붙여 `preferCSSPageSize`로 인쇄한다(HWP 고정 쪽과 같은 방식). verify_pdf가 쪽마다 PDF 용지 크기를
+  화면 쪽 상자와 비교한다.
+- E2E: verify_app은 쪽마다 쪽 상자 크기·본문 padding(`pageBoxes`, 저장본은 `reopenedPageBoxes`)과 머리말 왼쪽 끝을 낸다. verify:matrix
+  `createSectionPageHwpx`(A4 세로 2쪽·A4 가로 1쪽·B5 맞쪽 2쪽)가 쪽마다 상자 크기·padding(맞쪽 짝수 쪽 바꿈)·쪽 번호 아래 끝·머리말 자리,
+  가로 구역 세로 본문보다 넓은 표(overflow 없음)·용지 오른쪽 아래 기준 글상자, PDF 쪽마다 용지 크기(pt), B5 둘째 단 편집→Save As→재열기를
+  확인한다. 단위 test `tests/layout/section_page_setup.test.ts`.
 
 줄 높이 바탕(2026-10-20): CSS 줄 상자는 문단 요소 글자 크기 × 줄 간격(strut)보다 낮아지지 않는다. 문단 요소가 기본 16px를 물려받으면
 10pt 160% 줄이 한/글(1000 + 600)보다 20% 커지므로, `paragraphStrutCss`가 문단 글자 run 가운데 가장 작은 글자 모양을 문단 요소에 준다.
@@ -667,10 +695,11 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 - 증분 projection(`src/core/parser/viewer_projection.ts`): worker는 마지막으로 보낸 projection의 package·section별 해석
   결과·header style map·그림 resource를 들고 있고, 새 package와 entry bytes를 비교해(`changedEntryPathsSince`, command
   종류를 믿지 않으므로 실행 취소·다시 실행도 같은 규칙) 바뀐 entry만 다시 해석한다. section 해석(`decodeViewerSection`)은
-  그 section XML, header의 `styleCharacterIds`·문단 style `heading`, 쪽 크기에서 온 자리 표시 높이 한도에만 달려 있다.
+  그 section XML, header의 `styleCharacterIds`·문단 style `heading`, 그 구역 쪽 설정(쪽 크기와 그에서 온 자리 표시 높이 한도)에만 달려 있다.
   각주·미주 번호, 목록 번호(`applyParagraphMarkers`), 개체 순번, `hp:t`·문단(빈 문단 anchor) 순번은 모두 section 안에서
   세고, 쪽 번호 이어 세기(`startNum`)·머리말·꼬리말 상속은 renderer가 쪽 목록에서 매번 다시 정한다(`page_decorations.ts`).
-  - section XML이 바뀌면 그 section만 다시 해석한다.
+  - section XML이 바뀌면 그 section만 다시 해석한다. 그 section의 `hp:pagePr`가 바뀌면 그 쪽 설정을 잇는(`hp:pagePr`가 없는) 뒤
+    section도 XML은 그대로지만 다시 해석한다(section마다 해석에 쓴 쪽 설정을 들고 값으로 비교한다).
   - header.xml이 바뀌면 style map을 다시 읽고, `heading`(목록 번호·글머리표) 또는 `charPrIDRef`(빈 문단
     caret 글자 모양)가 바뀐 문단 style id를 `paraPrIDRef`·`styleIDRef`로 참조하는 section도 다시 해석한다. 글자·문단·셀
     모양 command는 새 id만 더하므로 보통 편집한 section만 해당한다.
@@ -681,7 +710,8 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
     cache). 기존 id의 definition이 바뀌면 그 id를 쓰는 section 모두가 해당하고(모든 section이 쓰면 모두), 글꼴 목록
     (`fonts`)이 바뀌면 글꼴 이름이 여러 글자 모양에 번지므로 style map 전체(`styles`)를 보낸다.
   - 전체 다시 해석(전체 문서 응답): entry 목록(경로·순서)이 바뀌었을 때, section·header 밖 entry(그림·manifest 등)가
-    바뀌었을 때, 문서 쪽 크기(첫 `hp:pagePr`)나 자리 표시 높이 한도가 바뀌었을 때. refresh(충돌 복구)도 처음부터 해석한다.
+    바뀌었을 때, 문서 첫 쪽 설정(첫 `hp:pagePr`, `ViewerDocument.page`)이 바뀌었을 때. 둘째 구역부터의 쪽 설정 변경은 위처럼
+    그 구역들만 다시 해석한다. refresh(충돌 복구)도 처음부터 해석한다.
   - 동치 검사(`tests/parser/viewer_projection.test.ts`): 공개 corpus 38종에 golden 회귀와 같은 command 표본을
     적용·되돌리기·다시 적용·되돌리기한 4,049단계에서 patch를 앞 문서에 적용한 결과가 같은 package의
     `decodeViewerDocument`와 `toStrictEqual`로 같다(80 section large-progressive는 10단계마다와 마지막, 나머지는 매 단계 비교:
@@ -807,9 +837,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   `fonts.ready` 다음 frame에 다시 잰다. 전체 문서로 바뀌면(열기·편집 시작·refresh) 전처럼 측정값을 비우고 모두 다시 잰다.
 - pagination은 section마다 새 쪽에서 시작하고 다단·원본 줄 위치 상태도 section마다 처음부터 세므로
   (`paginateViewerSection`) 문서 쪽 목록은 section별 결과를 이어 붙인 것과 같다. `paginateViewerSectionsIncremental`은
-  section·위치·쪽 높이·측정 object가 그대로인 section의 쪽 object를 다시 쓴다(`tests/layout/section_pagination.test.ts`가
+  section·위치·구역 쪽 크기·여백·측정 object가 그대로인 section의 쪽 object를 다시 쓴다(`tests/layout/section_pagination.test.ts`가
   이전 문서 단위 구현과 38종 fixture에서 비교). 쪽 번호·머리말·꼬리말 decoration은 쪽 목록에서 매번 다시 정하고, 가상화
-  범위 계산도 전과 같다.
+  범위는 쪽마다 그 구역 용지 높이로 센다.
 - 편집 capability·문단 구조·자리 표시 개수는 section object별 `WeakMap` cache로 바뀐 section만 다시 센다.
 - 머리말·꼬리말 입력 칸은 쪽마다 같은 anchor로 되풀이된다. `HeaderFooterView`는 마지막으로 focus를 받은 쪽(`activeDecorationPage`)에만
   `desiredSelection`을 넘겨 여러 쪽의 입력 칸이 focus를 다투지 않게 하고, 다른 쪽 칸은 projection으로 같은 글자를 함께 받는다.
@@ -897,7 +927,8 @@ overflow 진단으로 검증한다.
 
 renderer는 PDF 준비 요청을 받으면 page virtualization을 잠시 해제하고 폰트와 이미지 decode,
 React paint가 끝날 때까지 기다린다. print media에서는 toolbar, status bar, page shadow와 page
-gap을 제거한다. HWPX는 HWPUNIT 용지 크기를 inch로 변환한 단일 custom page size를 사용한다.
+gap을 제거한다. HWPX는 쪽 크기가 모두 같으면 HWPUNIT 용지 크기를 inch로 변환한 단일 custom page size를, 구역마다
+다르면 HWP처럼 쪽 크기별 CSS named page(`hwpxPagePrintCss`)와 `preferCSSPageSize`를 사용한다.
 HWP fixed page는 각 article에 고유한 CSS named page와 px 용지 크기를 부여하고
 `preferCSSPageSize`로 인쇄한다. 인쇄 flex container는 좌측 원점에 정렬해 가로 page가 첫 세로
 page 폭을 기준으로 가운데 정렬되어 잘리는 것을 막는다. main process는 0 margin과 background

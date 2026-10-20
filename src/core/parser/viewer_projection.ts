@@ -16,6 +16,7 @@ import {
   decodeViewerResources,
   decodeViewerSection,
   documentPageGeometry,
+  sectionPageGeometries,
   type DecodedViewerSection,
   type ViewerHeaderProjection,
   type ViewerPageGeometry,
@@ -39,12 +40,16 @@ import {
  *   section 위치만 `restyledSections`로 알려 renderer가 그 section만 다시 재게 한다. 기존 id의 definition이 바뀌면 그 id를
  *   쓰는 section 모두가 해당한다(모든 section이 쓰면 모두). 글꼴 목록(`fonts`)이 바뀌면 글꼴 이름이 여러 글자 모양에 번지므로
  *   style map 전체를 담는다(`styles`, renderer는 모든 section을 다시 잰다).
+ * - 구역 쪽 설정(`hp:pagePr`)은 구역마다 따로다(없는 구역은 앞 구역 것을 잇는다). section의 쪽 설정이 바뀌면 그 section과,
+ *   그 설정을 잇는 뒤 section(XML은 그대로라도 쪽 크기·자리 표시 높이 한도가 바뀐다)만 다시 해석한다.
  * - 전체 다시 해석(patch 대신 전체 문서): entry 목록(경로·순서)이 달라졌을 때, section·header 밖 entry(그림·manifest 등)가
- *   바뀌었을 때, 문서 쪽 크기(첫 `hp:pagePr`)나 그에서 온 자리 표시 높이 한도가 바뀌었을 때.
+ *   바뀌었을 때, 문서 쪽 설정(문서 첫 `hp:pagePr`, 구역 쪽 설정이 없는 모델과 측정 style 표지가 쓴다)이 바뀌었을 때.
  */
 
 interface CachedSection {
   decoded: DecodedViewerSection
+  /** 이 section을 해석한 쪽 설정(앞 section에서 이은 것 포함). */
+  geometry: ViewerPageGeometry
   pagePr?: OrderedXmlNode
   paraStyleRefs: Set<string>
   styleRefs: Set<string>
@@ -147,9 +152,12 @@ export class ViewerProjectionCache {
     const header = decodeViewerHeader(await sourcePackage.readOrderedXml(index.headerPath))
     const parsed = await Promise.all(index.sectionPaths.map(async (path) => ({ path, nodes: await sourcePackage.readOrderedXml(path) })))
     const inputs = parsed.map(({ nodes }) => viewerSectionInputs(nodes))
-    const geometry = documentPageGeometry(inputs.map((input) => input.pagePr))
+    const pagePrs = inputs.map((input) => input.pagePr)
+    const geometries = sectionPageGeometries(pagePrs)
+    const geometry = geometries[0] ?? documentPageGeometry(pagePrs)
     const sections = parsed.map(({ path, nodes }, position): CachedSection => ({
-      decoded: decodeViewerSection(path, nodes, header, geometry.objectHeightLimit),
+      decoded: decodeViewerSection(path, nodes, header, geometries[position]),
+      geometry: geometries[position],
       ...inputs[position]
     }))
     const resources = await decodeViewerResources(sourcePackage, index.resourcePaths)
@@ -190,20 +198,35 @@ export class ViewerProjectionCache {
       }
       styleDefinitions = changedStyleDefinitions(state.header, header)
     }
-    const positions = [...dirty].sort((left, right) => left - right)
-    const parsed = await Promise.all(positions.map(async (position) => {
-      const path = state.index.sectionPaths[position]
-      const nodes = await sourcePackage.readOrderedXml(path)
-      return { position, path, nodes, inputs: viewerSectionInputs(nodes) }
+    const parsedSections = new Map<number, { nodes: OrderedXmlNode[]; inputs: ReturnType<typeof viewerSectionInputs> }>()
+    await Promise.all([...dirty].map(async (position) => {
+      const nodes = await sourcePackage.readOrderedXml(state.index.sectionPaths[position])
+      parsedSections.set(position, { nodes, inputs: viewerSectionInputs(nodes) })
     }))
-    const pagePrs = state.sections.map((section) => section.pagePr)
-    for (const { position, inputs } of parsed) pagePrs[position] = inputs.pagePr
-    if (!sameGeometry(documentPageGeometry(pagePrs), state.geometry)) return this.rebuild(sourcePackage, 'page-geometry')
+    const pagePrs = state.sections.map((section, position) => parsedSections.get(position)?.inputs.pagePr ?? section.pagePr)
+    const geometries = sectionPageGeometries(pagePrs)
+    if (!sameGeometry(geometries[0] ?? documentPageGeometry(pagePrs), state.geometry)) return this.rebuild(sourcePackage, 'page-geometry')
+    // 쪽 설정이 바뀐 section(앞 section의 `hp:pagePr`를 잇는 section 포함)은 XML이 그대로여도 다시 해석한다.
+    for (const [position, section] of state.sections.entries()) {
+      if (dirty.has(position)) continue
+      if (sameGeometry(section.geometry, geometries[position])) {
+        geometries[position] = section.geometry
+        continue
+      }
+      dirty.add(position)
+      const nodes = await sourcePackage.readOrderedXml(state.index.sectionPaths[position])
+      parsedSections.set(position, { nodes, inputs: viewerSectionInputs(nodes) })
+    }
+    const positions = [...dirty].sort((left, right) => left - right)
 
     const sections = state.sections.slice()
-    for (const { position, path, nodes, inputs } of parsed) {
+    for (const position of positions) {
+      const { nodes, inputs } = parsedSections.get(position)!
+      const previous = state.sections[position].geometry
+      const geometry = sameGeometry(previous, geometries[position]) ? previous : geometries[position]
       sections[position] = {
-        decoded: decodeViewerSection(path, nodes, header, state.geometry.objectHeightLimit),
+        decoded: decodeViewerSection(state.index.sectionPaths[position], nodes, header, geometry),
+        geometry,
         ...inputs
       }
     }
