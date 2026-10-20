@@ -81,6 +81,17 @@ Windows·macOS용 HWP/HWPX 데스크톱 뷰어 + **제한적 HWPX 편집기**(El
 - 알려진 제한: README "알려진 제한" 절
 - 변경 이력: [CHANGELOG.md](../CHANGELOG.md), 검증 기록: [verification_history.md](verification_history.md)
 
+### 2026-10-20 마지막 상태 (이어서 할 때 먼저 확인)
+
+- 마지막 기능 commit은 `24da592`(도형·그림 자르기·줄 간격 종류)다. 이 commit부터 이 인계 메모까지의 CI 결과를 마지막 세션에서
+  확인하지 못했다. **먼저 GitHub Actions에서 main 최신 commit의 Linux CI·Windows CI가 초록인지 확인한다.**
+  - 그 전 commit들(`4a98467` 화면 정확도 2차 합침, `60b0cff` 닫기 전 입력 반영 등)은 CI를 통과했다. `57be272`(각주·미주 편집 확장)는
+    Linux 통과, Windows는 60분 한도로 취소되어 한도를 90분으로 올렸다(`ebda766`).
+  - 빨간색이면: 실패 step 로그를 보고 원인을 고친다. 그날 합친 작업(구역별 쪽 크기 `73908a3`, 각주·미주 편집 `57be272`, 점검 수정
+    `0de017c`, 도형 `24da592`)이 서로 겹치는 곳은 `src/renderer/src/App.tsx`, `src/core/layout/pagination.ts`, `scripts/verify_public_matrix.mjs`다.
+  - Windows CI가 90분 한도에도 걸리면 `verify:matrix` 묶음을 두 job으로 나누는 것을 검토한다.
+- 로컬에서 같은 검사를 돌리려면 4절 명령표 순서대로(특히 `HAN_FLOW_NO_SANDBOX=1 xvfb-run -a npm run verify:matrix`, Linux 약 50분).
+
 ## 8. AI 도구로 이어서 작업할 때
 
 - 저장소 루트의 `CLAUDE.md`(Claude Code)와 `AGENTS.md`(Codex 등)가 이 문서를 가리킨다.
