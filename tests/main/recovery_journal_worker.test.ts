@@ -433,13 +433,15 @@ describe('편집 원본 지문', () => {
   test('package는 넘긴 bytes에서 열려, 그 뒤 경로의 파일이 바뀌어도 지문을 계산한 내용과 같다', async () => {
     const source = createListMarkerHwpx(directory, 'swap.hwpx')
     const { bytes } = await readFileWithFingerprint(source)
-    const expected = (await HwpxSourcePackage.open(source)).toBuffer()
+    // toBuffer()는 ZIP entry 시각을 지금 시각으로 찍어(2초 단위) 두 번 부르면 달라질 수 있으므로 entry 경로·bytes로 비교한다.
+    const entriesOf = (opened: HwpxSourcePackage) => opened.listEntries().map((entry) => [entry.path, entry.type === 'file' ? opened.readEntry(entry.path).toString('base64') : ''])
+    const expected = entriesOf(await HwpxSourcePackage.open(source))
     // 읽은 뒤 같은 경로를 다른 HWPX로 바꾼다(다시 읽으면 다른 내용).
     copyFileSync(createLargeTableHwpx(directory, { rows: 2, columns: 2, fileName: 'other.hwpx' }), source)
     const fromBytes = await HwpxSourcePackage.open(source, bytes)
-    expect(fromBytes.toBuffer().equals(expected)).toBe(true)
+    expect(entriesOf(fromBytes)).toEqual(expected)
     expect(fromBytes.sourcePath).toBe(source)
-    expect((await HwpxSourcePackage.open(source)).toBuffer().equals(expected)).toBe(false)
+    expect(entriesOf(await HwpxSourcePackage.open(source))).not.toEqual(expected)
   })
 
   test('일반 파일이 아니면 편집을 시작하지 않는다', async () => {
