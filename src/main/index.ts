@@ -1506,7 +1506,7 @@ function captureVisualState(window: BrowserWindow): void {
         page: Number(element.closest('.viewer-page').dataset.pageIndex) + 1,
         part: element.classList.contains('viewer-line-split-clip') ? 'head-edit' : element.dataset.lineSplit,
         source: element.dataset.lineSplitSource,
-        characters: (element.textContent.match(/[^\s\p{Co}]/gu) || []).length
+        characters: (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length
       })),
       // 쪽 번호·머리말·꼬리말 상자(용지 기준 CSS px, 배율 제외)와 그 상자에 들어온 본문 글·그림(머리말·꼬리말·각주 밖)이 있는지.
       // 쪽 번호는 본문 밖 꼬리말·머리말 띠에 놓여 본문과 겹치지 않아야 한다.
