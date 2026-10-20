@@ -46,10 +46,14 @@ describe('쪽보다 큰 자리 표시와 많은 각주', () => {
     expect(Math.max(...blocks.map((block) => block.layoutHeight))).toBeLessThanOrEqual(bodyHeight)
     expect(paginateViewerDocument(document).length).toBeGreaterThanOrEqual(2)
 
+    // 해석한 수식은 줄인 상자에 MathML로 그린다. 해석하지 못한 수식은 "(축소)" 이름표가 붙은 script 상자다.
     const markup = renderToStaticMarkup(createElement(ObjectPlaceholderView, { item: equation, document }))
     expect(markup).toContain(`data-object-fitted="${equation.fitted!.scale.toFixed(3)}"`)
-    expect(markup).toContain('수식 (축소)')
+    expect(markup).toContain('data-equation-rendered="true"')
     expect(markup).toContain('원본 높이가 쪽보다 커서 줄여 표시합니다.')
+    const fallback = renderToStaticMarkup(createElement(ObjectPlaceholderView, { item: { ...equation, equation: undefined }, document }))
+    expect(fallback).toContain('수식 (축소)')
+    expect(fallback).toContain('원본 높이가 쪽보다 커서 줄여 표시합니다.')
   })
 
   test('쪽 본문보다 높은 그림도 자리 표시와 같은 한도로 너비·높이를 같은 비율로 줄이고, 원본 위치 그림은 배치 상자도 줄인다', async () => {

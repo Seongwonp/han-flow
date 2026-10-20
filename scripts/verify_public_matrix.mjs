@@ -56,12 +56,12 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
   return JSON.parse(resultLine.slice('HAN_FLOW_APP_VERIFY '.length))
 }
 
-async function verifyPdf(fixture) {
+async function verifyPdf(fixture, environment = {}) {
   let standardOutput = ''
   let standardError = ''
   const exitCode = await new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, [resolve(root, 'scripts/verify_pdf.mjs'), fixture, appBinary], {
-      env: process.env,
+      env: { ...process.env, ...environment },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
@@ -93,6 +93,10 @@ const OBJECT_FIXTURE_IDS = [
   'ext-hwpxlib-buttons',
   'ext-hwpxlib-ole'
 ]
+// 수식 합성 fixture(createEquationHwpx): 해석한 수식은 MathML로 그려(renderedEquations) 안내 배너 개수에서 빠지고, 그리지 못한
+// 수식(EQUATION_FIXTURE_FALLBACKS)만 배너에 남는다. 화면과 PDF 글자 수가 같고 PDF에서 수식 기호·글자가 추출돼야 한다.
+// ext-hwpxlib-equation의 수식 1개도 그려 내므로 그 fixture에는 배너가 없어야 한다.
+const EQUATION_PDF_TEXT = ['∑', '∫', '√', '∞', 'α', 'β', '≠', '≤', '±', '×', 'θ', 'lim', 'sin', 'longdiv']
 // 원문 개체 종류가 matrix에 하나 이상 있어야 하는 종류.
 const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'memo', 'form-control', 'ole']
 
@@ -325,6 +329,12 @@ try {
     pdfResults.push({ fixtureId: id, ...await verifyPdf(path) })
   }
 
+  const equationPath = generator.createEquationHwpx(directory, 'han-flow-equations.hwpx')
+  const equationCount = generator.EQUATION_FIXTURE_SCRIPTS.length + 1
+  const equationView = await verify(equationPath, 500, false, { HAN_FLOW_VERIFY_EXPECT_PLACEHOLDERS: JSON.stringify({ equation: equationCount }) })
+  pdfResults.push({ fixtureId: 'equations', ...await verifyPdf(equationPath, { HAN_FLOW_PDF_REQUIRED_TEXT: JSON.stringify(EQUATION_PDF_TEXT) }) })
+  const publicEquation = objectResults.find(({ fixtureId }) => fixtureId === 'ext-hwpxlib-equation')
+
   const stressResults = []
   for (const stress of LAYOUT_STRESS_FIXTURES) {
     const path = generator[stress.create](directory, `han-flow-${stress.id}.hwpx`)
@@ -402,6 +412,16 @@ try {
     ...REQUIRED_OBJECT_KINDS
       .filter((kind) => !objectResults.some(({ sourceObjects }) => sourceObjects?.[kind] > 0))
       .map((kind) => `개체 matrix에 ${kind} 원문 fixture가 없음`),
+    equationView.passed ? undefined : `equations: ${equationView.failures.join(', ')}`,
+    equationView.renderedEquations === equationCount - generator.EQUATION_FIXTURE_FALLBACKS
+      ? undefined
+      : `equations: MathML로 그린 수식 ${equationView.renderedEquations}개(기대 ${equationCount - generator.EQUATION_FIXTURE_FALLBACKS})`,
+    equationView.objectNotice?.includes(`(수식 ${generator.EQUATION_FIXTURE_FALLBACKS})`)
+      ? undefined
+      : `equations: 안내 배너가 그리지 못한 수식만 세지 않음(${equationView.objectNotice})`,
+    publicEquation?.renderedEquations === 1 && !publicEquation.objectNotice
+      ? undefined
+      : `ext-hwpxlib-equation: 수식을 MathML로 그리지 않았거나 안내 배너가 남음(${publicEquation?.renderedEquations}, ${publicEquation?.objectNotice})`,
     ...stressResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: stressFailures }) => `${fixtureId}: 쪽 나눔 검증 실패(${stressFailures.join(', ')})`),
     stress('long-objects')?.fittedObjects?.declared >= 2 && stress('long-objects')?.fittedObjects?.body >= 1
       ? undefined
@@ -519,9 +539,17 @@ try {
     fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
       fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
     })),
-    objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice }) => ({
-      fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice
+    objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, renderedEquations, objectNotice }) => ({
+      fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, renderedEquations, objectNotice
     })),
+    equations: {
+      passed: equationView.passed,
+      totalPages: equationView.totalPages,
+      placeholderCounts: equationView.placeholderCounts,
+      renderedEquations: equationView.renderedEquations,
+      objectNotice: equationView.objectNotice,
+      pageTextCounts: equationView.pageTextCounts
+    },
     layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement }) => ({
       fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement
     })),

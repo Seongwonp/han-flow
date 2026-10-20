@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### HWPX 수식 조판(MathML)
+
+- 한컴 수식 script(`hp:equation/hp:script`)를 해석해 MathML로 그림: `over`·`atop`·`choose`, `sqrt`·`root … of`, `^`·`_`·`sup`·`sub`, `left … right`, `matrix`·`pmatrix`·`bmatrix`·`dmatrix`, `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`lim`의 `from`·`to`, 그리스 문자·기호·화살표, `rm`·`it`·`bold`, `~`·`` ` ``, 따옴표 글, `COLOR`. 기호 표·토큰 규칙은 rhwp(MIT) 참고(THIRD_PARTY_NOTICES.md)
+- 선언 상자(`hp:sz`)에 맞춰 배율을 정하고 `baseUnit`·`textColor`·`baseLine`을 씀. 근호·늘인 괄호는 글꼴 MATH 표 없이 글자를 CSS transform으로 늘여 화면과 PDF 추출 글자가 같음(pdftotext로 수식 기호 확인)
+- 해석하지 못한 수식(`ladder`·`longdiv` 등, 짝 안 맞는 괄호)만 전처럼 script 글자 상자로 남고, 그려 낸 수식은 "화면에 완전히 표시되지 않는 개체" 배너·PDF 확인·진단 개수에서 빠짐(원문 개체 census에는 그대로 셈)
+- 해석 단위 test·renderer test, 수식 합성 fixture(`createEquationHwpx`)와 verify:matrix 검사(그린 수식 수·배너·PDF 기호), `ext-hwpxlib-equation`은 배너 없음·corpus manifest 진단 0개로 기대값 변경
+
 ### 편집 범위: 글상자·메모 글자, subList 모양·문단 나눔, 각주 만들기·지우기
 
 - 글자만 든 글상자(도형 글 `hp:drawText`)와 메모 본문(`hp:fieldBegin type="MEMO"`)의 글자 입력·삭제·치환. decoder가 글자만 든 subList에 section `hp:t` 순번 anchor를 붙이고(표·그림·도형·수식·각주·필드가 하나라도 든 글상자·메모는 전체 읽기 전용) capability가 `TEXT_BOX_TEXT`·`MEMO_TEXT`로 연다. 원본 위치 글상자는 편집 중 그 자리에서 입력 칸이 되고(글 앞·뒤 글상자도 편집 중에는 누를 수 있음), 메모는 줄 안 "메모: …" 자리에 입력 칸을 둔다

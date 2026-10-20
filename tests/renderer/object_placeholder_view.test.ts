@@ -53,16 +53,37 @@ const hasKind = (kind: ViewerObjectPlaceholder['kind']) => (paragraph: ViewerPar
   paragraph.content.some((item) => item.type === 'object-placeholder' && item.kind === kind)
 
 describe('원본 개체 자리 표시 renderer', () => {
-  test('수식은 선언 크기의 테두리 상자에 "수식" 이름과 script를 보여 준다', async () => {
+  test('해석한 수식은 선언 크기 상자에 MathML로 그리고 script는 접근성 이름에 남긴다', async () => {
     const document = await open('ext-hwpxlib-equation.hwpx')
-    const markup = renderToStaticMarkup(createElement(ParagraphView, { paragraph: findParagraph(document, hasKind('equation')), document }))
-    expect(markup).toContain('class="viewer-object-placeholder viewer-object-inline"')
+    const markup = renderQuietly(createElement(ParagraphView, { paragraph: findParagraph(document, hasKind('equation')), document }))
+    expect(markup).toContain('class="viewer-equation viewer-object-inline viewer-equation-fit"')
     expect(markup).toContain('data-object-kind="equation"')
+    expect(markup).toContain('data-equation-rendered="true"')
     expect(markup).toContain('data-source-path="Contents/section0.xml#hp:equation:0"')
-    expect(markup).toContain('<span class="viewer-object-label">수식</span>')
-    expect(markup).toContain('<span class="viewer-object-fallback viewer-object-script">{&quot;123&quot;} over {123 sqrt {3466}} sum _{34} ^{12}</span>')
-    expect(markup).toMatch(/style="min-width:51px;min-height:44\.\d+px"/)
+    expect(markup).toContain('aria-label="수식: {&quot;123&quot;} over {123 sqrt {3466}} sum _{34} ^{12}"')
+    // 선언 크기(3825×3311 HWPUNIT), baseUnit 1100 = 11pt, baseLine 61%: 상자 아래 39%를 본문 기준선 아래에 둔다.
+    expect(markup).toMatch(/font-size:11pt;width:51px;height:44\.\d+px;vertical-align:-17\.22px/)
+    expect(markup).toContain('<math class="viewer-equation-math"><mrow><mfrac><mtext>123</mtext>')
+    expect(markup).toContain('<mo stretchy="false" class="eq-radical-sign" data-eq-stretch="radical" lspace="0" rspace="0">√</mo>')
+    expect(markup).toContain('<munderover><mo stretchy="false" class="eq-large" largeop="false" movablelimits="false">∑</mo><mn>34</mn><mn>12</mn></munderover>')
+    expect(markup).not.toContain('viewer-object-label')
     expect(markup).toContain('contenteditable="false"')
+  })
+
+  test('해석하지 못한 수식은 선언 크기의 테두리 상자에 "수식" 이름과 script를 보여 준다', async () => {
+    const document = await open('ext-hwpxlib-equation.hwpx')
+    const paragraph = findParagraph(document, hasKind('equation'))
+    const unparsed = {
+      ...paragraph,
+      content: paragraph.content.map((item) => item.type === 'object-placeholder' && item.kind === 'equation'
+        ? { ...item, fallbackText: 'longdiv {3} {12} {4}', equation: undefined }
+        : item)
+    }
+    const markup = renderQuietly(createElement(ParagraphView, { paragraph: unparsed, document }))
+    expect(markup).toContain('class="viewer-object-placeholder viewer-object-inline"')
+    expect(markup).toContain('<span class="viewer-object-label">수식</span>')
+    expect(markup).toContain('<span class="viewer-object-fallback viewer-object-script">longdiv {3} {12} {4}</span>')
+    expect(markup).toMatch(/style="min-width:51px;min-height:44\.\d+px"/)
   })
 
   test('글상자는 되살린 글을 상자 안 읽기 전용 문단으로 그린다', async () => {
@@ -140,7 +161,7 @@ describe('자리 표시 문서 안내', () => {
     expect(collapsed).toContain('>닫기</button>')
     expect(collapsed).not.toContain('viewer-object-banner-details')
     const expanded = renderToStaticMarkup(createElement(ObjectPlaceholderBanner, { counts, expanded: true, onToggleDetails: noop, onDismiss: noop }))
-    expect(expanded).toContain('<li>수식 2개 — 수식 원문(script)을 상자 안에 글자로 보여 줍니다.</li>')
+    expect(expanded).toContain('<li>수식 2개 — 해석하지 못한 수식 원문(script)을 상자 안에 글자로 보여 줍니다.</li>')
     expect(expanded).toContain('<li>글상자 1개 — 본문의 글상자는 원본 위치·선·면 색으로 그리고 글은 읽기 전용으로 보여 줍니다. 표 셀·머리말 안 글상자는 줄 안 상자로 보여 줍니다.</li>')
     expect(renderToStaticMarkup(createElement(ObjectPlaceholderBanner, { counts: {}, expanded: false, onToggleDetails: noop, onDismiss: noop }))).toBe('')
   })

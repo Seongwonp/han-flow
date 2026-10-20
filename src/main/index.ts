@@ -1460,7 +1460,9 @@ function captureVisualState(window: BrowserWindow): void {
           height: round(box.height / scale)
         }
       }),
-      recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby'))
+      // MathML로 그린 수식(수식 script를 해석한 것): 원본 개체 수에는 들고 안내 배너 개수에서는 빠진다.
+      renderedEquations: document.querySelectorAll('.viewer-page [data-equation-rendered]').length,
+      recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby, .viewer-page .viewer-equation-math'))
         .filter((element) => !element.parentElement?.closest('.viewer-object-body, .viewer-note-body'))
         .reduce((sum, element) => sum + (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length, 0),
       objectNotice: document.querySelector('.viewer-object-banner-text')?.textContent ?? null,

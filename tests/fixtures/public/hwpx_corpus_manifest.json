@@ -369,7 +369,7 @@
         "markedParagraphs": 0,
         "bulletParagraphs": 0,
         "numberedParagraphs": 0,
-        "diagnostics": 1,
+        "diagnostics": 0,
         "multiColumnSections": 0,
         "declaredColumns": 1,
         "estimatedPages": 1,

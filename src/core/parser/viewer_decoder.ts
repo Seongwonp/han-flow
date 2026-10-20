@@ -1,6 +1,7 @@
-import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerEquation, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
-import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
+import { parseEquationScript } from '../document/equation_script'
+import { countIncompleteObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
   ParagraphMetricAncestor,
   ParagraphMetricCandidate,
@@ -375,11 +376,28 @@ function noteMarker(note: OrderedXmlNode, fallbackNumber: number): string {
   return `${format?.attributes.prefixChar ?? ''}${number}${suffix}`
 }
 
+/** 수식 script를 MathML 나무로 해석하고 글자 크기·색·기준선을 읽는다. 해석하지 못하면 undefined(script 글자 상자). */
+function decodeEquation(node: OrderedXmlNode, script: string): ViewerEquation | undefined {
+  const parsed = parseEquationScript(script)
+  if (!parsed.ok) return undefined
+  const baseUnit = Number(node.attributes.baseUnit)
+  const baseLine = Number(node.attributes.baseLine)
+  const color = node.attributes.textColor
+  return {
+    math: parsed.math,
+    ...(Number.isFinite(baseUnit) && baseUnit >= 100 && baseUnit <= 100000 ? { baseUnit } : {}),
+    ...(/^#[0-9a-f]{6}$/i.test(color ?? '') ? { color } : {}),
+    ...(Number.isFinite(baseLine) && baseLine >= 0 && baseLine <= 100 ? { baseLine } : {})
+  }
+}
+
 /** run 안 개체 하나를 자리 표시로 바꾼다. 개체가 아니면 undefined. */
 function decodeObject(node: OrderedXmlNode, id: string, context: DecodeContext): ViewerObjectPlaceholder | undefined {
   if (node.name === 'hp:equation') {
     const script = child(node, 'hp:script')
-    return placeholder(node, context, 'equation', script && textOf(script).trim() ? { fallbackText: textOf(script).trim() } : {})
+    const text = script ? textOf(script).trim() : ''
+    const equation = text ? decodeEquation(node, text) : undefined
+    return placeholder(node, context, 'equation', { ...(text ? { fallbackText: text } : {}), ...(equation ? { equation } : {}) })
   }
   if (node.name === 'hp:chart') return placeholder(node, context, 'chart')
   if (node.name === 'hp:ole') {
@@ -972,7 +990,7 @@ function noteListBlocks(notes: ViewerNote[], id: string): ViewerParagraph[] {
 
 /** 구역마다 자리 표시 종류별 개수를 진단으로 남긴다. */
 function objectPlaceholderDiagnostics(section: ViewerSection, source: string): ViewerDiagnostic[] {
-  const counts = countObjectPlaceholders({ sections: [section] })
+  const counts = countIncompleteObjectPlaceholders({ sections: [section] })
   return OBJECT_KIND_ORDER.filter((kind) => counts[kind]).map((kind) => ({
     source,
     code: `HWPX_OBJECT_PLACEHOLDER_${kind.toUpperCase().replace(/-/g, '_')}`,
