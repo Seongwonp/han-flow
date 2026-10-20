@@ -1,11 +1,11 @@
 import type { HwpxSourcePackage } from '../parser/source_package'
 import { parseEmptyParagraphAnchorId, parseTableCaretAnchorId } from './empty_paragraph_anchor'
-import { paragraphStructureViolation } from './paragraph_structure'
+import { isNoteNumberControl, paragraphStructureViolation } from './paragraph_structure'
 import { sourceParagraphStructureAccess } from './paragraph_patch'
-import { parseSourceTree, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
+import { parseSourceTree, serializeSourceNode, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
 import { resolveTableFragmentCommand } from './table_patch'
 import { HwpxEditConflictError } from './text_patch'
-import { parseFootnotePath } from './footnote_patch'
+import { parseEndnotePath, parseFootnotePath } from './footnote_patch'
 import type { EditCommand, EditTransaction } from './transaction'
 
 /*
@@ -16,7 +16,9 @@ import type { EditCommand, EditTransaction } from './transaction'
  *   inverse 전용이라 기록의 forward command로 받지 않는다.
  * - 문단 fragment 교체: 교체 fragment는 `hp:p` element만 이어 붙인 것이고, 각 문단은 문단 구조 command의 공통 규칙
  *   ({@link paragraphStructureViolation}: `hp:run`·`hp:linesegarray`만, run마다 `hp:t` 하나와 `hp:lineBreak`·`hp:tab`)을
- *   통과해야 한다. planner(분할·병합·범위 치환)는 이 규칙을 통과한 문단에서만 fragment를 만든다.
+ *   통과해야 한다. planner(분할·병합·범위 치환)는 이 규칙을 통과한 문단에서만 fragment를 만든다. 각주·미주 첫 문단 나눔(복구 기록
+ *   version 5부터)은 첫 문단 첫 run의 번호 control을 받되, 그 control 원문이 바꾸기 전 fragment에 그대로 있어야 한다(번호를 새로
+ *   들이지 않는다).
  * - 표 fragment 교체: 교체 fragment는 `hp:tbl` element 하나이고, 바꾸기 전 표(`expectedFragment`, 적용 때 현재 원문과 같은지
  *   확인한다)에 없던 element 이름을 들이지 않으며, 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
  *   개수를 늘리지 않는다. 표 planner는 빈 행·열·셀을 단순 텍스트 셀에서만 복제하므로 이 범위 안이다.
@@ -30,8 +32,9 @@ import type { EditCommand, EditTransaction } from './transaction'
  *   inverse 전용 option(`restoreSelfClosingTag`·`insertSource`·`removeCreatedText`)은 live 편집의 forward command에 없으므로
  *   받지 않는다. 각주·미주·머리말·꼬리말·글상자·메모 글자도 같은 `#hp:t:N` anchor라 같은 규칙을 탄다. 대상 anchor가 실제로 있는지는
  *   적용할 때 편집 코어가 다시 본다.
- * - 각주 command(`insert-footnote`·`delete-footnote`, 복구 기록 version 4부터): 모양만 보고(`assertFootnoteCommandShape`) 위치·번호
- *   매기기 검사는 편집 코어가 적용할 때 한다. inverse 전용 `restore-footnote`는 forward로 받지 않는다.
+ * - 각주 command(`insert-footnote`·`delete-footnote`, 복구 기록 version 4부터)와 미주 command(`insert-endnote`·`delete-endnote`,
+ *   version 5부터): 모양만 보고(`assertFootnoteCommandShape`) 위치·번호 매기기 검사는 편집 코어가 적용할 때 한다(표 셀·글상자 안,
+ *   머리말·꼬리말 거부도 코어가 본다). inverse 전용 `restore-footnote`는 forward로 받지 않는다.
  */
 
 /** 편집 엔진이 forward transaction에 넣는 command 종류. */
@@ -44,7 +47,9 @@ export const FORWARD_EDIT_COMMAND_TYPES: ReadonlySet<EditCommand['type']> = new 
   'replace-table-fragment',
   'patch-table-fragment',
   'insert-footnote',
-  'delete-footnote'
+  'delete-footnote',
+  'insert-endnote',
+  'delete-endnote'
 ])
 
 /** 표 planner가 새로 만들 수 있는(개수가 늘 수 있는) 표 뼈대·단순 텍스트 셀 element. */
@@ -91,13 +96,17 @@ function countElements(nodes: readonly SourceNode[], counts = new Map<string, nu
   return counts
 }
 
-function assertParagraphReplacement(replacementFragment: string): void {
+function assertParagraphReplacement(expectedFragment: string, replacementFragment: string): void {
   const tree = parseFragment(replacementFragment, '문단')
   const access = sourceParagraphStructureAccess(tree)
-  for (const paragraph of rootElements(tree, 'hp:p', '문단')) {
-    const violation = paragraphStructureViolation<SourceNode>(paragraph, access)
+  rootElements(tree, 'hp:p', '문단').forEach((paragraph, index) => {
+    // 각주·미주 첫 문단의 번호 control은 첫 문단에서만, 바꾸기 전 fragment에 같은 원문이 있을 때만 받는다.
+    const firstRun = paragraph.children.find((child): child is SourceElement => child.kind === 'element' && child.name === 'hp:run')
+    const numbers = index === 0 && firstRun ? firstRun.children.filter((child) => isNoteNumberControl(child, access)) : []
+    const numberRun = numbers.length > 0 && numbers.every((control) => expectedFragment.includes(serializeSourceNode(tree, control)))
+    const violation = paragraphStructureViolation<SourceNode>(paragraph, access, { numberRun })
     if (violation) throw new HwpxEditConflictError(`복구 기록의 문단 fragment를 적용할 수 없습니다: ${violation.message}`)
-  }
+  })
 }
 
 function assertTableReplacement(expectedFragment: string, replacementFragment: string): void {
@@ -174,10 +183,13 @@ function assertTextCommandShape(command: Extract<EditCommand, { type: 'replace-t
 }
 
 /**
- * 각주 command 모양. 만들기는 그 section의 실제 `hp:t` anchor(`#hp:t:N`, 합성 caret 아님)와 0 이상 정수 offset, 지우기는 그 section의
- * 각주 경로(`#hp:footNote:K`)와 selection 기준 anchor다. anchor·각주가 실제로 있는지와 본문 문단 위치는 적용할 때 편집 코어가 본다.
+ * 각주·미주 command 모양. 만들기는 그 section의 실제 `hp:t` anchor(`#hp:t:N`, 합성 caret 아님)와 0 이상 정수 offset, 지우기는 그
+ * section의 각주(미주) 경로(`#hp:footNote:K`·`#hp:endNote:K`)와 selection 기준 anchor다. anchor·각주가 실제로 있는지와 번호 표시를
+ * 둘 수 있는 문단인지는 적용할 때 편집 코어가 본다.
  */
-function assertFootnoteCommandShape(command: Extract<EditCommand, { type: 'insert-footnote' | 'delete-footnote' }>): void {
+function assertFootnoteCommandShape(
+  command: Extract<EditCommand, { type: 'insert-footnote' | 'delete-footnote' | 'insert-endnote' | 'delete-endnote' }>
+): void {
   const value = command as unknown as Record<string, unknown>
   const sectionPath = value['sectionPath']
   const textNodeId = value['textNodeId']
@@ -186,10 +198,13 @@ function assertFootnoteCommandShape(command: Extract<EditCommand, { type: 'inser
     /^Contents\/section\d+\.xml$/.test(sectionPath) &&
     typeof textNodeId === 'string' &&
     isTextAnchorOf(sectionPath, textNodeId) &&
-    (command.type === 'insert-footnote'
+    (command.type === 'insert-footnote' || command.type === 'insert-endnote'
       ? textNodeId.startsWith(`${sectionPath}#hp:t:`) && Number.isSafeInteger(value['offset']) && (value['offset'] as number) >= 0
-      : typeof value['notePath'] === 'string' && parseFootnotePath(sectionPath, value['notePath']) !== undefined)
-  if (!valid) throw new HwpxEditConflictError('복구 기록의 각주 command 형식이 올바르지 않습니다.')
+      : typeof value['notePath'] === 'string' &&
+        (command.type === 'delete-footnote'
+          ? parseFootnotePath(sectionPath, value['notePath'])
+          : parseEndnotePath(sectionPath, value['notePath'])) !== undefined)
+  if (!valid) throw new HwpxEditConflictError('복구 기록의 각주·미주 command 형식이 올바르지 않습니다.')
 }
 
 /**
@@ -204,10 +219,13 @@ export function assertReplayableTransaction(transaction: EditTransaction, source
     }
     if (command.type === 'replace-text') {
       assertTextCommandShape(command)
-    } else if (command.type === 'insert-footnote' || command.type === 'delete-footnote') {
+    } else if (
+      command.type === 'insert-footnote' || command.type === 'delete-footnote' ||
+      command.type === 'insert-endnote' || command.type === 'delete-endnote'
+    ) {
       assertFootnoteCommandShape(command)
     } else if (command.type === 'replace-paragraph-fragment') {
-      assertParagraphReplacement(command.replacementFragment)
+      assertParagraphReplacement(command.expectedFragment, command.replacementFragment)
     } else if (command.type === 'replace-table-fragment') {
       assertTableReplacement(command.expectedFragment, command.replacementFragment)
     } else if (command.type === 'patch-table-fragment') {

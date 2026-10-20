@@ -371,6 +371,14 @@ function captureVisualState(window: BrowserWindow): void {
     memo: '[data-object-kind="memo"]'
   }
   const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
+  // 각주·미주 넣기·지우기 E2E 대상: 넣을 종류와 caret을 둘 입력 칸(본문·표 셀·글상자).
+  const noteInsertProbes: Record<string, { kind: 'footnote' | 'endnote'; hostLabel: string }> = {
+    footnote: { kind: 'footnote', hostLabel: 'HWPX 문단 편집' },
+    'endnote-insert': { kind: 'endnote', hostLabel: 'HWPX 문단 편집' },
+    'footnote-cell': { kind: 'footnote', hostLabel: 'HWPX 표 셀 편집' },
+    'footnote-text-box': { kind: 'footnote', hostLabel: 'HWPX 글상자 편집' }
+  }
+  const noteInsertProbe = editTarget ? noteInsertProbes[editTarget] : undefined
   const decorationTarget = editTarget === 'header' || editTarget === 'footer'
   const editSurfaceLabel = (editTarget && editTargetLabels[editTarget]) ??
     (editCellEnabled ? 'HWPX 표 셀 편집' : 'HWPX 문단 편집')
@@ -819,9 +827,10 @@ function captureVisualState(window: BrowserWindow): void {
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
-    if (!editTriggered && editText && editTarget === 'footnote') {
-      // 각주 만들기·지우기 E2E: 본문 caret에 [각주 넣기] → 새 각주 본문에 조합 입력 → 실행 취소(입력·각주)·다시 실행 →
-      // 새 각주 본문 caret에서 [각주 지우기] → 실행 취소 → (저장). 번호 표시는 쪽 화면의 각주 번호 표시로 센다.
+    if (!editTriggered && editText && noteInsertProbe) {
+      // 각주·미주 만들기·지우기 E2E: 본문·표 셀·글상자 caret에 [각주 넣기]·[미주 넣기] → 새 본문에 조합 입력 → 실행 취소(입력·각주)·
+      // 다시 실행 → 번호가 든 새 본문 첫 문단 Enter·실행 취소 → 새 본문 caret에서 [각주 지우기]·[미주 지우기] → 실행 취소 → (저장).
+      // 번호 표시는 쪽 화면의 각주(미주) 번호 표시로 센다.
       editTriggered = true
       stableSamples = 0
       previousSignature = ''
@@ -842,6 +851,9 @@ function captureVisualState(window: BrowserWindow): void {
         }
         ${RIBBON_E2E_HELPERS}
         const expected = ${JSON.stringify(editText)}
+        const noteKind = ${JSON.stringify(noteInsertProbe?.kind ?? 'footnote')}
+        const hostLabel = ${JSON.stringify(noteInsertProbe?.hostLabel ?? 'HWPX 문단 편집')}
+        const noteLabel = noteKind === 'endnote' ? '미주' : '각주'
         const button = (label) => document.querySelector('[aria-label="' + label + '"]')
         const waitButton = async (label) => {
           await revealRibbonControl(label)
@@ -850,7 +862,7 @@ function captureVisualState(window: BrowserWindow): void {
             return candidate && !candidate.disabled && !candidate.closest('[role="tabpanel"]')?.hidden ? candidate : undefined
           })
         }
-        const markers = () => Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker[data-object-kind="footnote"]')).map((marker) => marker.textContent)
+        const markers = () => Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker[data-object-kind="' + noteKind + '"]')).map((marker) => marker.textContent)
         const surfaceById = (id) => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]'))
           .find((element) => element.dataset.sourceTextNodeId === id)
         const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
@@ -889,7 +901,7 @@ function captureVisualState(window: BrowserWindow): void {
         setPhase('body-surface')
         await waitFor(() => document.querySelector('.viewer-editing-badge'))
         const activeTabAfterStart = selectedRibbonTab()
-        const body = await waitFor(() => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 문단 편집"]'))
+        const body = await waitFor(() => Array.from(document.querySelectorAll('.viewer-page [aria-label="' + hostLabel + '"]'))
           .find((element) => element.dataset.inputReady === 'true' && (element.textContent ?? '').length >= 4))
         body.focus()
         await settle()
@@ -897,7 +909,7 @@ function captureVisualState(window: BrowserWindow): void {
         body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
         await settle()
         const originalMarkers = markers()
-        await click('각주 넣기', 'insert-footnote', () => markers().length === originalMarkers.length + 1)
+        await click(noteLabel + ' 넣기', 'insert-note', () => markers().length === originalMarkers.length + 1)
         const insertedMarkers = markers()
         setPhase('new-footnote-caret')
         const noteSurface = await waitFor(() => {
@@ -923,7 +935,7 @@ function captureVisualState(window: BrowserWindow): void {
         // 마지막 음절의 compositionend 바로 뒤(음절 묶음이 아직 입력 칸에 머물러 commit 전) [실행 취소]를 한 번 누른다.
         const editedMatches = surfaceById(noteId)?.textContent === expected
         // 각주 넣기 상태 문구가 그대로면 아직 글자 commit 결과가 오지 않았다(입력 반영 전에 누른 실행 취소).
-        const undoClickedBeforeCommit = status().includes('각주 본문으로 이동')
+        const undoClickedBeforeCommit = status().includes(noteLabel + ' 본문으로 이동')
         await click('실행 취소', 'undo-text', () => surfaceById(noteId)?.textContent === '' && !button('다시 실행')?.disabled)
         const immediateUndoMatches = surfaceById(noteId)?.textContent === '' && markers().length === insertedMarkers.length
         await waitFor(() => caretAt(surfaceById(noteId), 0))
@@ -938,6 +950,21 @@ function captureVisualState(window: BrowserWindow): void {
         const redoSelectionMatches = caretAt(surfaceById(noteId), expected.length)
         // 입력 직후 실행 취소로 projection 전에 되돌렸으므로, 입력 글자의 projection caret은 다시 실행 뒤 위치로 본다.
         const projectedSelectionMatches = redoSelectionMatches
+        // 번호가 든 새 본문 첫 문단을 첫 글자 뒤에서 나눈다(Enter). 번호는 앞 문단에 남고 뒤 글자가 새 문단 입력 칸으로 간다.
+        setPhase('number-split')
+        const noteOrdinal = Number(noteId.slice(noteId.lastIndexOf(':') + 1))
+        const splitId = noteId.slice(0, noteId.lastIndexOf(':') + 1) + (noteOrdinal + 1)
+        const splitTarget = surfaceById(noteId)
+        splitTarget.focus()
+        await settle()
+        setSelection(splitTarget, 1, 1)
+        splitTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        await settle()
+        surfaceById(noteId).dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertParagraph' }))
+        await waitFor(() => surfaceById(splitId)?.textContent === Array.from(expected).slice(1).join('') && surfaceById(noteId)?.textContent === Array.from(expected)[0])
+        const numberSplit = markers().length === insertedMarkers.length && JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
+        await click('실행 취소', 'number-split-undo', () => surfaceById(noteId)?.textContent === expected && !surfaceById(splitId))
+        const numberSplitUndone = surfaceById(noteId)?.textContent === expected
         setPhase('delete-caret')
         const redone = surfaceById(noteId)
         redone.focus()
@@ -945,7 +972,7 @@ function captureVisualState(window: BrowserWindow): void {
         setSelection(redone, 1, 1)
         redone.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
         await settle()
-        await click('각주 지우기', 'delete-footnote', () => markers().length === originalMarkers.length)
+        await click(noteLabel + ' 지우기', 'delete-note', () => markers().length === originalMarkers.length)
         const deleted = JSON.stringify(markers()) === JSON.stringify(originalMarkers) &&
           !(document.querySelector('.viewer-pages')?.innerText ?? '').includes(expected)
         await click('실행 취소', 'delete-undo', () => markers().length === originalMarkers.length + 1 && surfaceById(noteId)?.textContent === expected)
@@ -958,13 +985,14 @@ function captureVisualState(window: BrowserWindow): void {
           saveButton.click()
           setPhase('save-complete')
           await waitFor(() => status().includes('저장 완료'))
-          saveStatusMatches = status().includes('각주') && /Preview (?:갱신 안 됨|없음)/.test(status())
+          saveStatusMatches = status().includes('각주·미주') && /Preview (?:갱신 안 됨|없음)/.test(status())
           dirtyCleared = !status().includes('저장 안 됨') && saveButton.disabled
         }
         return {
           mode: 'footnote',
-          surface: 'footnote',
-          noteKind: 'footnote',
+          surface: ${JSON.stringify(editTarget)},
+          noteKind,
+          hostLabel,
           activeTabAfterStart,
           originalMarkers,
           insertedMarkers,
@@ -977,6 +1005,8 @@ function captureVisualState(window: BrowserWindow): void {
           insertUndone,
           deleted,
           deleteUndone,
+          numberSplit,
+          numberSplitUndone,
           saveStatusMatches,
           dirtyCleared,
           dirtyAtEnd: status().includes('저장 안 됨'),
@@ -2880,9 +2910,10 @@ app.whenReady().then(() => {
         (key) => typeof (request as Record<string, unknown>)[key] === 'string'
       ) ||
       !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
-      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore']) ||
+      ![undefined, 'footnote', 'endnote'].includes((request as Record<string, unknown>)['noteKind'] as string | undefined)
     ) {
-      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 넣기 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주·미주 넣기 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.insertFootnote(event.sender.id, request as EditingInsertFootnoteRequest)
   }))
@@ -2897,7 +2928,7 @@ app.whenReady().then(() => {
       !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
       !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
     ) {
-      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 지우기 요청 형식이 올바르지 않습니다.')
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주·미주 지우기 요청 형식이 올바르지 않습니다.')
     }
     return editingSessions.deleteFootnote(event.sender.id, request as EditingDeleteFootnoteRequest)
   }))

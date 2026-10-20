@@ -87,10 +87,10 @@ describe('각주·미주 본문 글자 편집', () => {
     expect(capability.text).toEqual({ available: true })
     expect(capability.characterStyle).toEqual({ available: true })
     expect(capability.paragraphStyle).toEqual({ available: true })
-    // 각주 첫 문단은 번호(`hp:autoNum`) control이 글자와 같은 run에 있어 본문과 같은 규칙으로 문단 나눔·병합을 막는다.
-    expect(capability.paragraphStructure).toEqual({ available: false, reason: 'PARAGRAPH_HAS_OBJECT' })
+    // 각주 첫 문단은 번호(`hp:autoNum`) control이 글자와 같은 run에 있지만(한/글 저장본) 문단 나눔 규칙의 예외라 Enter를 받는다.
+    expect(capability.paragraphStructure).toEqual({ available: true })
     expect(capability.cellStyle.available).toBe(false)
-    expect(capability.focus?.structureGate).toEqual({ split: 'PARAGRAPH_HAS_OBJECT', mergePrevious: 'PARAGRAPH_HAS_OBJECT', mergeNext: 'PARAGRAPH_HAS_OBJECT' })
+    expect(capability.focus?.structureGate).toBeUndefined()
     // 본문과 각주를 함께 고른 선택은 서로 다른 구조다.
     const lead = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteLead)
     expect(editingCapabilities(document, {
@@ -121,11 +121,11 @@ describe('각주·미주 본문 글자 편집', () => {
     expect(history.package.readEntry(sectionPath).toString('utf8')).toBe(edited)
   })
 
-  test('번호 control이 든 각주 문단은 편집 코어도 문단 나눔·병합을 거부하고 글자·문단 모양은 받는다', async () => {
+  test('번호 control이 든 각주 첫 문단은 편집 코어도 나누고(앞 문단이 없어 병합은 하지 않는다) 글자·문단 모양을 받는다', async () => {
     const source = await HwpxSourcePackage.open(createEditScopeHwpx(directory, 'note-reject.hwpx'))
     const footnote = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteBody)
-    expect(() => planSplitParagraph(source, caret(footnote.textNodeId, 1))).toThrow(HwpxEditConflictError)
-    expect(() => planMergeParagraph(source, caret(footnote.textNodeId, 0), 'previous')).toThrow(HwpxEditConflictError)
+    expect(planSplitParagraph(source, caret(footnote.textNodeId, 1)).command.replacementFragment).toContain('</hp:autoNum></hp:ctrl><hp:t>각</hp:t></hp:run>')
+    expect(() => planMergeParagraph(source, caret(footnote.textNodeId, 0), 'previous')).toThrow('병합할 인접 문단이 없습니다.')
     expect(applyCharacterStyleCommand(source, { type: 'apply-character-style', sectionPath, textNodeId: footnote.textNodeId, bold: false }).changed).toBe(true)
     expect(applyParagraphStyleCommand(source, { type: 'apply-paragraph-style', sectionPath, textNodeId: footnote.textNodeId, align: 'CENTER' }).changed).toBe(true)
   })
@@ -166,15 +166,24 @@ describe('각주·미주 본문 글자 편집', () => {
     expect(applyEditTransaction(result.package, result.inverse!).package.readEntry(sectionPath).toString('utf8')).toBe(original)
   })
 
-  test('글상자 안 각주 본문처럼 읽기 전용 문단 안의 각주는 anchor를 붙이지 않는다', async () => {
-    const path = withSection(directory, 'note-in-box', (xml) => xml.replace(
+  test('개체가 든 글상자 안 각주처럼 읽기 전용 문단 안의 각주는 anchor를 붙이지 않고, 글자만 든 글상자 안 각주는 고칠 수 있다', async () => {
+    const box = (body: string) => `<hp:rect id="1"><hp:sz width="1000" height="1000"/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>상자</hp:t><hp:ctrl><hp:footNote number="2"><hp:subList><hp:p><hp:run><hp:t>상자 각주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl>${body}</hp:run></hp:p></hp:subList></hp:drawText></hp:rect>`
+    // 수식이 함께 든 글상자: 글상자 전체가 읽기 전용이다.
+    const path = withSection(directory, 'note-in-object-box', (xml) => xml.replace(
       `<hp:t>${EDIT_SCOPE_TEXTS.afterTable}</hp:t>`,
-      `<hp:rect id="1"><hp:sz width="1000" height="1000"/><hp:drawText><hp:subList><hp:p><hp:run><hp:t>상자</hp:t><hp:ctrl><hp:footNote number="2"><hp:subList><hp:p><hp:run><hp:t>상자 각주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl></hp:run></hp:p></hp:subList></hp:drawText></hp:rect>`
+      box('<hp:equation id="5"><hp:script>a+b</hp:script></hp:equation>')
     ))
     const document = await decodeViewerDocument(await HwpxSourcePackage.open(path))
     const boxNote = documentNotes(document).find((note) => note.paragraphs[0]?.content.some((item) => item.type === 'text' && item.text === '상자 각주'))!
     expect(boxNote.paragraphs[0].content).toMatchObject([{ text: '상자 각주', sourceAnchor: undefined }])
     expect(listEditingAnchorContexts(document).filter((context) => context.structure === 'NOTE_TEXT')).toHaveLength(2)
+    // 글자와 글자만 든 각주만 든 글상자(2026-10-20): 글상자 글과 그 안 각주 본문 모두 anchor가 있다.
+    const plainPath = withSection(directory, 'note-in-plain-box', (xml) => xml.replace(`<hp:t>${EDIT_SCOPE_TEXTS.afterTable}</hp:t>`, box('')))
+    const plain = await decodeViewerDocument(await HwpxSourcePackage.open(plainPath))
+    const contexts = listEditingAnchorContexts(plain)
+    const noteContext = contexts.find((context) => context.text === '상자 각주')!
+    expect(noteContext).toMatchObject({ structure: 'NOTE_TEXT', footnotePath: `${sectionPath}#hp:footNote:1`, noteBlock: 'FOOTNOTE_POSITION' })
+    expect(contexts.find((context) => context.text === '상자')).toMatchObject({ structure: 'TEXT_BOX_TEXT' })
   })
 })
 

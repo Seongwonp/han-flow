@@ -167,7 +167,7 @@ describe('리본 탭 markup', () => {
     for (const label of ['문서 열기', '새 창', 'HWPX 변경본 저장', 'PDF로 내보내기']) {
       expect(panelFor(markup, '파일')).toContain(`aria-label="${label}"`)
     }
-    expect(groupLabels(panelFor(markup, '편집'))).toEqual(['기록', '각주'])
+    expect(groupLabels(panelFor(markup, '편집'))).toEqual(['기록', '각주·미주'])
     // 각주 넣기·지우기는 capability가 열 때만 켠다.
     expect(control(markup, '각주 넣기')).toContain('disabled')
     expect(control(markup, '각주 지우기')).toContain('disabled')

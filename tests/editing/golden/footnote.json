@@ -1,268 +1,368 @@
 {
  "baseline": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 7 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 7 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 7 insert-middle": "Contents/section0.xml abea2e08e2c72628cb4cc1cc80daf9653acab74783a20fc5d9eb039f7027f899 @8:0-8:0",
+  "section0.xml 7 insert-end": "Contents/section0.xml 66244b9d700a691c4dffe76cca223470a17d867ac04a490912bc82cb81c7f77e @8:0-8:0",
+  "section0.xml 7 endnote-middle": "Contents/section0.xml fba940c5b7a3773be8d4bc29f4888218a0d17b0e577a1beac2401328ed16e7c8 @8:0-8:0"
  },
  "cell-continuation": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 5 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 5 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 11 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 11 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml a13752ec4c25cc2d3cbe63c57dc80d111b62b6ef36d846e18b856118517770b0 @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml f8ffd695a379723cd942a17882bb97b32ccf492d405e24a7e13aada0dc694951 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml f5259f9ae2e9f805f6039164fd54bd9a9ee45292bef9bf0198cf797ea579fa66 @1:0-1:0",
+  "section0.xml 5 insert-middle": "Contents/section0.xml 388b60328ef3d2ee78ba474ede0d8c6ff561465a779e43768726af07a96cd7ae @6:0-6:0",
+  "section0.xml 5 insert-end": "Contents/section0.xml fc950ac31684c1c22d6e3a52cc83532b4a4fd708e06ef2166a0c9e0a7a40ed76 @6:0-6:0",
+  "section0.xml 5 endnote-middle": "Contents/section0.xml 8e925f305c8a93e574298691c7e818b19843fb286df6b8e0b9e9046228e96497 @6:0-6:0",
+  "section0.xml 11 insert-middle": "Contents/section0.xml f37ab9f6a4ed030480f3c920d29e9a4ca80184e42b9e8a59fddc858a43c906c6 @12:0-12:0",
+  "section0.xml 11 insert-end": "Contents/section0.xml 495409a486bc81d91adeddbffa63834eed172e932a2bd8d554ef4715eb469fbf @12:0-12:0",
+  "section0.xml 11 endnote-middle": "Contents/section0.xml 1c892c093f40ba55288bb7fd82f0241b37b872bef610107630bda174b40b21b0 @12:0-12:0"
  },
  "images-rowspan": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml f9c54078394a87d491a9c4f2ace16ab463d482419109f4d5101e19877e2f469d @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml c78397b65d3c2057421be788d03c56bb6883a41097cb06f0925737667f5701fd @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 47ee73613421a8581ef54e7739c839770863adfee7f4c608fa907e51a14eb653 @1:0-1:0",
+  "section0.xml 1 insert-middle": "Contents/section0.xml 8090ee44430f6c1c4c221a6193ec3f167aefdd29d9b128461b289d44eead37a6 @2:0-2:0",
+  "section0.xml 1 insert-end": "Contents/section0.xml f0cfa0e6f6b357b6e16aa4dea19e927bc397dc4973ee0477d0f524089139128e @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml 4dba17e0ebb4028493e0098cad3807b93327a927c88cfc070aa2364f35ae952f @2:0-2:0",
+  "section0.xml 3 insert-middle": "Contents/section0.xml 7329a08f1fe7fdeaabc598e997de09f3436e976c665671e839ee5379c057fe62 @4:0-4:0",
+  "section0.xml 3 insert-end": "Contents/section0.xml b92fd139fc519bd280544b033c92afe26de8e34ea624b794792b04d8a21e265e @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml d989b4f49e824fcd26c6fa7b15ca1e16ed5025571637ed74d9f35756349b4718 @4:0-4:0"
  },
  "table-columns": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml 593864ada04db1b67af28fe58d1f1110cc3e1682a798317ea9c7b61fbbd9ebbc @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml faced644261a7ed9fe32c9dbe5e7120a31689de823e7e7a3cdbb53d4f4c15acd @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 23aa03cdaf28a2b458abd46b211a01751d70b04f4a0ad85c40ded707d475db61 @1:0-1:0",
+  "section0.xml 3 insert-middle": "Contents/section0.xml f41911b1ebb097ac3e547058d286a25f7a38aad2e707c728b89c1777148ae7ad @4:0-4:0",
+  "section0.xml 3 insert-end": "Contents/section0.xml 572600e0ed472ddedaf397b80fa1dabe5cd9c867500c30786ecab113a9b5002d @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml 5e3025f8e637f6d72504969736faf20483af6aab06f297dd7bc8ade2eab5855a @4:0-4:0",
+  "section0.xml 6 insert-middle": "Contents/section0.xml 4b45fd2d5b6900a9cbbecda03df8bbfc53409234cb517a8cd9a373eba1303dbc @7:0-7:0",
+  "section0.xml 6 insert-end": "Contents/section0.xml 569db374f368e6c830eee0e5159eee9c2338833e3fbbff4660e72b092d11136d @7:0-7:0",
+  "section0.xml 6 endnote-middle": "Contents/section0.xml af8d09c809daf67d2bbb7452718068ce31f87da39defb26fe1b8817dcd2557f0 @7:0-7:0"
  },
  "list-markers": {
   "section0.xml 0 insert-middle": "Contents/section0.xml f5324676eecab4fa3d42f49ec1a6f4378861e6e6f3eca092d182a503afe3c070 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml aef3618fa39d75bc6d47411d389f0aafc4141d0c1ad4e5802a2031a6909c530c @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 3205ab355f9263565e0c6a85325a10943f51dedfaa97e7e50bac5f7ce4be2467 @1:0-1:0",
   "section0.xml 1 insert-middle": "Contents/section0.xml c04144eba1e568118210c65520a7fc7b2236da0b8d8c25613577d7b98802a653 @2:0-2:0",
   "section0.xml 1 insert-end": "Contents/section0.xml 8b226bfde96e0768b790b0eb306443c16601a44959a59ef457ad84bb5bcf7fa5 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml d735613a56c82f37d3347f9b9958f414953db6c46a188cb0056a5d1cce84326a @2:0-2:0",
   "section0.xml 3 insert-middle": "Contents/section0.xml a7d1cee615657f6259bbe8428b90026a8ef479ad49749fdc183796abf166f1bd @4:0-4:0",
-  "section0.xml 3 insert-end": "Contents/section0.xml e71fd39aadd96705a64d549272819097b6876629a6cd42fcb6800d169e3a4739 @4:0-4:0"
+  "section0.xml 3 insert-end": "Contents/section0.xml e71fd39aadd96705a64d549272819097b6876629a6cd42fcb6800d169e3a4739 @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml 7fb26bc84972d5345258e450cf3d152fd0160a4a72b2d03f856f19de2e8b83ec @4:0-4:0"
  },
  "multi-column-layout": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 70f6214f51a273d4fac3037c750139125c2fa450dc131421bec1add0bfa59898 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml e4fb37b934b5f4e1a109953ad22269b1fed508797915d40389e00790dcd5ba19 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 9d45442b1e02a74d38b8e49d6a629f2fc20b11fcc3bac4f47437c733cb45579b @1:0-1:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml b71fd7ece1cf9ea3920edcddadc3c95e07a4dd61f0970ac53cdece712c5be924 @3:0-3:0",
   "section0.xml 2 insert-end": "Contents/section0.xml 2f29f15ac2ebb29981468dbf1b667382ce31ae014954bd8cce25f2bc3626926e @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml e95da78ae6b4c038f5a36beda33b898c9abd73c5b6de1e54be0ab01fa8b642a3 @3:0-3:0",
   "section0.xml 4 insert-middle": "Contents/section0.xml 63a925f81fbbeca2f0a7fd727efe140c5e619a92f37661b811618fe5b1b9393d @5:0-5:0",
-  "section0.xml 4 insert-end": "Contents/section0.xml 11b585987e4a2a0730d3ae49260c1062adebd3e00ea1200a603de9e1bf0e146d @5:0-5:0"
+  "section0.xml 4 insert-end": "Contents/section0.xml 11b585987e4a2a0730d3ae49260c1062adebd3e00ea1200a603de9e1bf0e146d @5:0-5:0",
+  "section0.xml 4 endnote-middle": "Contents/section0.xml f0e6f34eb56befb5e2815d8e7d5c9da40d52772ebc6407011ec03b8fab378d0a @5:0-5:0"
  },
  "round-trip-sentinels": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 3 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 6 insert-middle": "Contents/section0.xml b420fe99b87843c6357c812fdac980cb79679f5fb06d1814868ecaf3d930a9cb @7:0-7:0",
+  "section0.xml 6 insert-end": "Contents/section0.xml 4ab5a168ae52cb697732ab7b59c5216a4c76ee9f5985fb22e51df9b68bb26e85 @7:0-7:0",
+  "section0.xml 6 endnote-middle": "Contents/section0.xml bc4fe90be1c3e2212dd52e71c704322c2eaffbaeee78bac364df50da7a6da4d4 @7:0-7:0"
  },
  "report-toc": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 6c6cd63314548a553b0fc35dd0a7a09dc490825543395838e0741908e76a4f64 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml b8b79284539afb4f7212b2ef9b597bad7dc3c0332c0b9732e33151a14742fc80 @1:0-1:0",
-  "section0.xml 9 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 9 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 5d608c3a5b055394794073f69c03434db3ba0c34e1432baa51f1119698aec562 @1:0-1:0",
+  "section0.xml 9 insert-middle": "Contents/section0.xml c208c7a785bcece32af12b7383517a3babf0cadfd2a446423c9590ed241bcdb5 @10:0-10:0",
+  "section0.xml 9 insert-end": "Contents/section0.xml b206e00ef74e66dbcbefa772230810cae0fb8b170aa87b899b659c168e467649 @10:0-10:0",
+  "section0.xml 9 endnote-middle": "Contents/section0.xml 6fd3d00e0e6f930e1db839cb8e709a206f9d77e765046f3642e6fbae8ea68976 @10:0-10:0",
   "section0.xml 18 insert-middle": "Contents/section0.xml 105bd039890a55e622118a1b3f6c098ad502e6fe1df8133b6c733b3165047da9 @19:0-19:0",
-  "section0.xml 18 insert-end": "Contents/section0.xml b7ec0f85a55d6879086f33a93f8687a7da4a839fcb10d29cc73ed33cbb29cab3 @19:0-19:0"
+  "section0.xml 18 insert-end": "Contents/section0.xml b7ec0f85a55d6879086f33a93f8687a7da4a839fcb10d29cc73ed33cbb29cab3 @19:0-19:0",
+  "section0.xml 18 endnote-middle": "Contents/section0.xml a83396422a482eec4781dfa0b3369c3d24630b1cc4ebed040dbe55a5f7403484 @19:0-19:0"
  },
  "hanging-indent": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 879164e73da0eafa1b6c11327aa17737da606968823d81feaaf9c3bf48a31159 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 1cca8c2e137b89fc307323db90de397da505c88a5abe8018ae708211dc871d8d @1:0-1:0",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 9868441cdb385182ef63914189f31fedaeb7b6026f3a12a3600623781a0dc1e2 @1:0-1:0",
+  "section0.xml 3 insert-middle": "Contents/section0.xml d31ad67c051b49e00e773a77df5666e13f238ad531b6e4fdd6527dc9c1bcc7f7 @4:0-4:0",
+  "section0.xml 3 insert-end": "Contents/section0.xml 53cbb22529b0eb0c84e0903c3e08f623733df98d8f576ef6fdd96a40c5f49ec0 @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml 8a8be82a573a92f02d2c45688077ab69e585d68d2693a67e67b5ecfccdfdc4ab @4:0-4:0",
   "section0.xml 6 insert-middle": "Contents/section0.xml 25c1a3a5d182fa6cde79d1636cfe144f9037ec9f00ffbcea19176c353b521982 @7:0-7:0",
-  "section0.xml 6 insert-end": "Contents/section0.xml ca3dab9dc4ef50ecd93d2ba6d9d1baceadf74f09972b859c7fffff1b3e88a26e @7:0-7:0"
+  "section0.xml 6 insert-end": "Contents/section0.xml ca3dab9dc4ef50ecd93d2ba6d9d1baceadf74f09972b859c7fffff1b3e88a26e @7:0-7:0",
+  "section0.xml 6 endnote-middle": "Contents/section0.xml 08fc7fabec831b6d94dfa7be997c117493a91cffee7775f35c4d7d9894255212 @7:0-7:0"
  },
  "large-progressive": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
   "section27.xml 242 insert-middle": "Contents/section27.xml 68b4dba6e08b9df6e241a0fa69b7e31ae8cd68aa8efadaa4a54ec2551207676a @243:0-243:0",
   "section27.xml 242 insert-end": "Contents/section27.xml 5c02d3bdcded035f84fa39400b41e342fecaeeec74ba63bea173171e1ff32911 @243:0-243:0",
+  "section27.xml 242 endnote-middle": "Contents/section27.xml 32e9d28f42c1e305686b5723da876f7ae9a4f5fcf01ccfe92a31597ff1f60cdf @243:0-243:0",
   "section53.xml 246 insert-middle": "Contents/section53.xml f23e4f4ba199e4682084a6adce0832cc2c46de05d362fecdc24958fe37a48aa7 @247:0-247:0",
-  "section53.xml 246 insert-end": "Contents/section53.xml b67cf19c74ae2108c3290e9148c750b3726a1a2a8316de346922e6b8e240b2ad @247:0-247:0"
+  "section53.xml 246 insert-end": "Contents/section53.xml b67cf19c74ae2108c3290e9148c750b3726a1a2a8316de346922e6b8e240b2ad @247:0-247:0",
+  "section53.xml 246 endnote-middle": "Contents/section53.xml 5d4b6c5243c241f2f55f56c38a2e6afe11fd316cfc240b795c35c3565da258e1 @247:0-247:0"
  },
  "ext-hwpxlib-table-scores": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 9 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 9 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 18 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 18 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 endnote-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 9 insert-middle": "Contents/section0.xml 10bb3e45884a9aff21731908c7f8119dfcb04b3538352e0639cdfcd0d8e47843 @10:0-10:0",
+  "section0.xml 9 insert-end": "Contents/section0.xml c0a2c5bf25088cda024b06940e92d8ecc3cd727e2386d997dac63c09f52237d4 @10:0-10:0",
+  "section0.xml 9 endnote-middle": "Contents/section0.xml a6aafe096d43840b4b7c9f3bb04d0dfab8df35b64606d632d460f5d5e7ead501 @10:0-10:0",
+  "section0.xml 18 insert-middle": "Contents/section0.xml 6445fe67df1b81ee1bdd7a93e5a32a230ce57d62fb52abedcf81736206a1d258 @19:0-19:0",
+  "section0.xml 18 insert-end": "Contents/section0.xml 562cff12cab5617adcaf042bf186659941271d5a0c3edeec39f103979e157aa4 @19:0-19:0",
+  "section0.xml 18 endnote-middle": "Contents/section0.xml 59d861613379180efc633a39e478aea0616bc426c51c95ca00eb90f54028dd4c @19:0-19:0"
  },
  "ext-hwpxlib-para-heads": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 37505a00c82c2d051d60301f5b20861cf66ed3a26141eefd54a3a01a6a93a1b3 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 5f72cd1643bde9549f5dd740ac29aa023528ecf366b78aef36c2030d3b664113 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 98d8e9a09c2058eaac2345ce3835e14efbb2da620394e32d323a95af5140f927 @1:0-1:0",
   "section0.xml 7 insert-middle": "Contents/section0.xml 6b4c22de89c2d46d9877e66b5d4b16285d7e27bf53d0346db966cdcefe99be55 @8:0-8:0",
   "section0.xml 7 insert-end": "Contents/section0.xml 7c607613be1ffd21fa0f40156c75c1348501ff896eeebde1508ed722cc00b372 @8:0-8:0",
+  "section0.xml 7 endnote-middle": "Contents/section0.xml ebef07802c753f3872e7690dfada0a16d2305b37fd68eccaceb71348d9f506be @8:0-8:0",
   "section0.xml 14 insert-middle": "Contents/section0.xml 81f4e3414ab5def2ea7f3fccf5949b5868029560d66cbde78d46b7a93a28d207 @15:0-15:0",
-  "section0.xml 14 insert-end": "Contents/section0.xml 0ee56726d65acca58be23dd33c3194dce916c4136f02cc694663b76a813a701a @15:0-15:0"
+  "section0.xml 14 insert-end": "Contents/section0.xml 0ee56726d65acca58be23dd33c3194dce916c4136f02cc694663b76a813a701a @15:0-15:0",
+  "section0.xml 14 endnote-middle": "Contents/section0.xml 8c88cf915a134e55dd751d433cd02a9318828a88f2a6c150acf7c414c66c7382 @15:0-15:0"
  },
  "ext-hwpxlib-rect-in-para": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 3bfe2101b2bca3191f6aa0fe564a931cdbd86b8684ada463004f45258f8f0064 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml f361b10aedffc55598d184047d2d177133771f1cf9a2fc3a1fbe8a5de7c6e218 @1:0-1:0",
-  "section0.xml 2 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 2 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 4 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 4 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 32724ba668646db889a862801cc3c7bbafb9d43e1752aced49168af15edd9184 @1:0-1:0",
+  "section0.xml 2 insert-middle": "Contents/section0.xml b1d986b6c280db14dbcec25b4a35978d1a305e6215a7603d3278ea0c10910048 @3:0-3:0",
+  "section0.xml 2 insert-end": "Contents/section0.xml 37ccbbc37098dc5b167da2a3bc403489b8be5eca7befa5e401aea94c8b541642 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml be1ef2e7a117e3998e45ec97942562666f5b468b8278c9979dc3f7acd5581375 @3:0-3:0",
+  "section0.xml 4 insert-middle": "Contents/section0.xml bcf3d4d088254acd49303151fc9deefca621bcf23db6653114245726f908d434 @5:0-5:0",
+  "section0.xml 4 insert-end": "Contents/section0.xml 94aeba4a3de4eea70636b3992e44773fbaa141a349969c675e32709e585e5640 @5:0-5:0",
+  "section0.xml 4 endnote-middle": "Contents/section0.xml a67a031caded5dd69f8b198a6f6b2bde35daf29db5f1505d291ac377c8ad2bf5 @5:0-5:0"
  },
  "ext-hwpxlib-multi-column": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 55e30ec4e24d40512fd96209d9bac899037578c671d5fa338d18288678c67821 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml e6a4617003eb224d211e2cf423f2c091ad446edce2d26bd7e5ffd375e3d00af4 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml dfa0c394170bc705e49d3f7f0fa4502ab684b4657bee410f4cbad8129edf4d21 @1:0-1:0",
   "section0.xml 42 insert-middle": "Contents/section0.xml 9505bb77857dbd8bc99d707268c49924a701c10905383e725472e4bca91f505f @43:0-43:0",
   "section0.xml 42 insert-end": "Contents/section0.xml 832c4a285cb08c38a816fe16fe4dbab6bd0a9cef3b90dba1a8febfc5c6d83582 @43:0-43:0",
+  "section0.xml 42 endnote-middle": "Contents/section0.xml cdb31d14c6e1fda396508c7b93a0fb82bdadd862ddeb6c32920f09582bdb5fff @43:0-43:0",
   "section0.xml 84 insert-middle": "Contents/section0.xml 91994ffc615ff86d7aace16f8be51c3454db353b10e64f4cf46fc81397613fa3 @85:0-85:0",
-  "section0.xml 84 insert-end": "Contents/section0.xml 8033a2b813aaa329f404735382640af700295c7f9dca4c1ccac35272074dd42d @85:0-85:0"
+  "section0.xml 84 insert-end": "Contents/section0.xml 8033a2b813aaa329f404735382640af700295c7f9dca4c1ccac35272074dd42d @85:0-85:0",
+  "section0.xml 84 endnote-middle": "Contents/section0.xml f64dfe598b0b3de2e807db21d1ee0177b5cd09034abb6e87ecff491c9451a922 @85:0-85:0"
  },
  "ext-hwpxlib-header-footer": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 0 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 1 insert-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 1 insert-end": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
+  "section0.xml 1 endnote-middle": "! HwpxEditConflictError: 머리말·꼬리말에는 각주·미주를 넣을 수 없습니다(한/글도 같습니다).",
   "section0.xml 2 insert-middle": "Contents/section0.xml efefd0cb07d6f5def998e6a1d054bf7bec8f57045cb2d29ba6b22f7fdd0806d1 @3:0-3:0",
-  "section0.xml 2 insert-end": "Contents/section0.xml efefd0cb07d6f5def998e6a1d054bf7bec8f57045cb2d29ba6b22f7fdd0806d1 @3:0-3:0"
+  "section0.xml 2 insert-end": "Contents/section0.xml efefd0cb07d6f5def998e6a1d054bf7bec8f57045cb2d29ba6b22f7fdd0806d1 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml 38ddc9891401883d8ddebbe7c435681fc9030f07f41305cb40a1e9ab8826b3e3 @3:0-3:0"
  },
  "ext-hwpxlib-page-functions": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 8d2e3a1245784faeb1c9faa22b21dbd3abfc9c8c0ca8c2de87d94a8eb611736b @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 8d2e3a1245784faeb1c9faa22b21dbd3abfc9c8c0ca8c2de87d94a8eb611736b @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml ab895e0c48f98c9adc0d0c9005b6390a5adb0ba0d9b2c5ab66210dba6520106e @1:0-1:0",
   "section0.xml 1 insert-middle": "Contents/section0.xml 915a375f5a1755a42154142a0b35f62f6f9f4c99c3f61067dd1f2f5ad45841d5 @2:0-2:0",
   "section0.xml 1 insert-end": "Contents/section0.xml 7bf65049ff14089e1cc2fbe9b19c364197a4aa4ad55fb3c13991962dbff825f8 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml 26acaa661e5810ef9d472898988d82becac0746c611d9df902f3e4c44f621445 @2:0-2:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml 38320c7f39c958d583100f4eab25c7c8349d6edd4e5243f9093b2d8f13dfc7e4 @3:0-3:0",
-  "section0.xml 2 insert-end": "Contents/section0.xml 4497949b429598419d243b0bdbcab6cf20206a578713bc60af02c3ff9c199702 @3:0-3:0"
+  "section0.xml 2 insert-end": "Contents/section0.xml 4497949b429598419d243b0bdbcab6cf20206a578713bc60af02c3ff9c199702 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml d13ecbbf73216e61101826607ed9de8a11e8093483f21f3b73cb7056fb334d04 @3:0-3:0"
  },
  "ext-hwpxlib-sample1": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 3cc8b2745e8d67a8c7ae272777bce75d3c846086acc2319b8854b55162ccad68 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 14082c07e3a4b9677cf5f31de234c0565047c2b995e01be9ba6360c8fd691c16 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 67f988b42965db0065d989dda95f5bc43e7c2eb939af2f5bade8e7e6c3e3d62c @1:0-1:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml 878b342b05bf8a7902c79bd7262ae05a498f13886bc1f5026712789429456163 @3:0-3:0",
   "section0.xml 2 insert-end": "Contents/section0.xml 6a39191d1c599579940c7fd01d0aa9e0423999f125a6d8146353818458ca9939 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml bb3d82e0d2f16018f0e23b02482119be9dc044edc05f968a046a4c973a700de1 @3:0-3:0",
   "section0.xml 4 insert-middle": "Contents/section0.xml ceaad38c967f2f6e1492dcea52c068abdd0bb3f4b00b7c13b084338f5ece3419 @5:0-5:0",
-  "section0.xml 4 insert-end": "Contents/section0.xml 3206bc8d4e0f8c017f5763588d48c11e1170007b205af4210835bd4fe259ac77 @5:0-5:0"
+  "section0.xml 4 insert-end": "Contents/section0.xml 3206bc8d4e0f8c017f5763588d48c11e1170007b205af4210835bd4fe259ac77 @5:0-5:0",
+  "section0.xml 4 endnote-middle": "Contents/section0.xml c8bd2b90cfb5e71204c01819d860f99f4e8318db129277c9ffb03ba913bca8e4 @5:0-5:0"
  },
  "ext-hwpxlib-simple-table": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 2 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 2 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 4 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 4 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml b1b9daa9b3d41ff6425503351cf5c51f962c85375e2441b86f2027055fd96876 @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml 8f1aff8352b8d36348c1313a6b8b75ccc52efd3c79dd3371ee97fe71a9f91165 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml bb3ee08739ba4f7c79af4a479d9d12462892366c9c34d6648c02fdada0cac59d @1:0-1:0",
+  "section0.xml 2 insert-middle": "Contents/section0.xml cd8c170be324c5e301769337399ece7512ee6b191614fa1e5fac1f09a327eff5 @3:0-3:0",
+  "section0.xml 2 insert-end": "Contents/section0.xml d51e19ee06326d8c513a83a595a4a11a7b2edf6540096b3ac134ce5d2371ccef @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml 1acd34ef11dcd2adf5016165129bf485835ace690aae9a0924d79693afc4b006 @3:0-3:0",
+  "section0.xml 4 insert-middle": "Contents/section0.xml 8303258795d12409b16224cd198da34eaccaaeb4503179ed14643347201f1588 @5:0-5:0",
+  "section0.xml 4 insert-end": "Contents/section0.xml d5c7f5db8c26422303e69569210d63999e01c04f97869cde0cfdef037681fe93 @5:0-5:0",
+  "section0.xml 4 endnote-middle": "Contents/section0.xml d145a6f6a6033266214b89c304d31b5ca5245414779d89836f82ba07eac097aa @5:0-5:0"
  },
  "ext-hwpxlib-equation": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 3dd8fa1357116cb8cf6b4f069f754ae6e73227f2b6dddbb3055df3d56036f387 @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml 3dd8fa1357116cb8cf6b4f069f754ae6e73227f2b6dddbb3055df3d56036f387 @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml 3dd8fa1357116cb8cf6b4f069f754ae6e73227f2b6dddbb3055df3d56036f387 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml cf19ebf645a33c658849f50bcb314305dd73926cba8cbc44efc84ac8f49cde5e @1:0-1:0"
  },
  "ext-hwpxlib-picture": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 2869f077c9db501de78205f7a0aa6eba1a23127d24f86992cea56de8e62de0ee @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml 2869f077c9db501de78205f7a0aa6eba1a23127d24f86992cea56de8e62de0ee @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml 2869f077c9db501de78205f7a0aa6eba1a23127d24f86992cea56de8e62de0ee @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 3d64a40e899d827615cc0e358867941a5c48e5fe5a988c3337c5a93916cff5b9 @1:0-1:0"
  },
  "ext-hwpxlib-change-track": {},
  "ext-hwpxlib-dutmal": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 267e99d02530338991c12f482b171363c80c463d433420f1abb538c746e1526c @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml 267e99d02530338991c12f482b171363c80c463d433420f1abb538c746e1526c @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml 267e99d02530338991c12f482b171363c80c463d433420f1abb538c746e1526c @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 66fe727f75aa450d8cc224b99ea3392916adad0f909f1974e1b7919170e7cc20 @1:0-1:0"
  },
  "ext-hwpxlib-page-size": {
   "section0.xml 0 insert-middle": "Contents/section0.xml b582ef19aabab5b523a3c6360fee2a87ac876a6aef857aa129f7e3cb286de02b @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml b582ef19aabab5b523a3c6360fee2a87ac876a6aef857aa129f7e3cb286de02b @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml b582ef19aabab5b523a3c6360fee2a87ac876a6aef857aa129f7e3cb286de02b @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 7eda796350adc54be96d6ca75baee725345eb3a720596be3fee6adf87e2e9641 @1:0-1:0"
  },
  "ext-pyhwpx-table-page-break-cell": {
   "section0.xml 0 insert-middle": "Contents/section0.xml beba71e051bb9dd6317efaa7c35cfa1d8abdf2666d6ca676d7b4572d4ea7a53d @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml beba71e051bb9dd6317efaa7c35cfa1d8abdf2666d6ca676d7b4572d4ea7a53d @1:0-1:0",
-  "section0.xml 23 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 23 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 46 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 46 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 2a21e33a9490dbf493aec20fee36f999eff49cd5b670189c5ac7859402d8896e @1:0-1:0",
+  "section0.xml 23 insert-middle": "Contents/section0.xml 77328f0bfe9e23acedfb871489cb6c5b09343503715a64b76310b2f1f97989f2 @24:0-24:0",
+  "section0.xml 23 insert-end": "Contents/section0.xml 27e5d5a598340e3749e79f4bdd9845627577e85c9e34d00e0344383ad40472a2 @24:0-24:0",
+  "section0.xml 23 endnote-middle": "Contents/section0.xml 366123bec5f58ab9af30f74f9db5c59f9484efc02022c399194728db486e1a84 @24:0-24:0",
+  "section0.xml 46 insert-middle": "Contents/section0.xml ba3582dbe3575ff05f7240f8026ac2388fa191fb8ecdf2b1cc855f770da148af @47:0-47:0",
+  "section0.xml 46 insert-end": "Contents/section0.xml 94cb9a78506c784c1e2b13779d36412b993a6788a91c720ce71bf5722a1b1a73 @47:0-47:0",
+  "section0.xml 46 endnote-middle": "Contents/section0.xml 8bec4953e534f6b062790298f9c112ef01df9ceb0fdbf5b053a35e431be17fd2 @47:0-47:0"
  },
  "ext-pyhwpx-merge-3x3": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 6 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml f1e791baca080eec9f918206f3785a869daf6503afa6fc5f3d8b67e6619d7a90 @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml 770227c572344a6bcb7b9fc734856e4ac82faeacfe8e20b879c8f6315b3dc0ec @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 5b802f1e4b0450c6c27a8c408c7270b4b86b57333aa8b714fe39c2962172804e @1:0-1:0",
+  "section0.xml 3 insert-middle": "Contents/section0.xml db00612beecb593a318d20075b14165fb278abbeecf8ace84087c89320a8ace5 @4:0-4:0",
+  "section0.xml 3 insert-end": "Contents/section0.xml 90c51d2719228f3d1a027216c354ece4128c19fbfd7a2241a368d1918b4ed0d8 @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml df6b765073db129f3be8051b660c692795597b8907965e742b1b88beefb27858 @4:0-4:0",
+  "section0.xml 6 insert-middle": "Contents/section0.xml 2a8199772a83c1a1a524239ac53dae2eac535ce5c20a90f4a82aec7009776490 @7:0-7:0",
+  "section0.xml 6 insert-end": "Contents/section0.xml d706e4c9c2ee46f0de319bf1d6d490acd25f7632873d1ea05d30e6269f912f78 @7:0-7:0",
+  "section0.xml 6 endnote-middle": "Contents/section0.xml 095c58c23819f2ae5bad6f2bd790df53fa50759e65817d5563bf6a10414e6d33 @7:0-7:0"
  },
  "ext-pyhwpx-merge-2x2": {
-  "section0.xml 0 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 0 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 1 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 3 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 insert-middle": "Contents/section0.xml e8d01f644c1e8be6b012d73f55de6925126c00e174fec168fbece96d65ffc3d0 @1:0-1:0",
+  "section0.xml 0 insert-end": "Contents/section0.xml 07456a07b175499de300cec584414d2de83d6dc61907c3a8bf6500960df80dbb @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml a2884f4bd8c604af6864fa48db8e02dcb5323072967f616d317f7c4431205b4b @1:0-1:0",
+  "section0.xml 1 insert-middle": "Contents/section0.xml 0d67dce926aab68e65115c7240616d819a9448af27971123444fa3995ef533e5 @2:0-2:0",
+  "section0.xml 1 insert-end": "Contents/section0.xml ebbfafcd7b2ee7f90102595e9dcdb0e117f2e8f6828bb6fa447a6cbce27053b8 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml a5f51da52297b1b7e19255f87b4106a899ae80baa1943d29cc31bdeb83457aaa @2:0-2:0",
+  "section0.xml 3 insert-middle": "Contents/section0.xml a02280eaac0b3b49c5f6d98af9237737a73270e96fea3e699f1feec545734b38 @4:0-4:0",
+  "section0.xml 3 insert-end": "Contents/section0.xml 789bc5e395fb7b13c0e97aa72cb515bdee80a5ee07bfebfab5c06e5908728a9e @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml 5455b0468659995f20c1772959ac2ccbc8ea348299aaeaa8a03ecfec2acfeffb @4:0-4:0"
  },
  "ext-pyhwpx-list-bullet-l2": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 9bff4158725d87d07d9bb1b8c99e3c83d4932584aae7ff866af76d68d16a1e92 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml c43b62c47a63498c5cfa61c1aec361065d53b962f555adf7719120a797e5cabe @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 37832ca449caadfa37fa6d0d3e8526db167ef809d34529363389a759b370e2c3 @1:0-1:0",
   "section0.xml 1 insert-middle": "Contents/section0.xml b1c7d81682d627a2a168b36e4027a9662c505f1a873f89a28e7d8e9cebe5a532 @2:0-2:0",
   "section0.xml 1 insert-end": "Contents/section0.xml d4bd44a771f7c7b46539d6856cca94c35c8bd1177216cf9c255271a18441ef86 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml da9780de082047ca3fe120f9aa8c7e9dc7aab9bdeac5e092ed1a3522408348c2 @2:0-2:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml a563be19b1c2f7bdc9732b21366839636834cd24856a5fa329d822de125a94a9 @3:0-3:0",
-  "section0.xml 2 insert-end": "Contents/section0.xml c732e7ade04445eeb1fe4604355da7025ad37165adc53677dbb58c9c8af97ac6 @3:0-3:0"
+  "section0.xml 2 insert-end": "Contents/section0.xml c732e7ade04445eeb1fe4604355da7025ad37165adc53677dbb58c9c8af97ac6 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml 60bb2e94e0fd0bbc7bc60354005b1379ecd5aa1a97645af327a0a6a57e7fd394 @3:0-3:0"
  },
  "ext-pyhwpx-list-number-l3": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 9bff4158725d87d07d9bb1b8c99e3c83d4932584aae7ff866af76d68d16a1e92 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml c43b62c47a63498c5cfa61c1aec361065d53b962f555adf7719120a797e5cabe @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 37832ca449caadfa37fa6d0d3e8526db167ef809d34529363389a759b370e2c3 @1:0-1:0",
   "section0.xml 1 insert-middle": "Contents/section0.xml b1c7d81682d627a2a168b36e4027a9662c505f1a873f89a28e7d8e9cebe5a532 @2:0-2:0",
   "section0.xml 1 insert-end": "Contents/section0.xml d4bd44a771f7c7b46539d6856cca94c35c8bd1177216cf9c255271a18441ef86 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml da9780de082047ca3fe120f9aa8c7e9dc7aab9bdeac5e092ed1a3522408348c2 @2:0-2:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml a563be19b1c2f7bdc9732b21366839636834cd24856a5fa329d822de125a94a9 @3:0-3:0",
-  "section0.xml 2 insert-end": "Contents/section0.xml c732e7ade04445eeb1fe4604355da7025ad37165adc53677dbb58c9c8af97ac6 @3:0-3:0"
+  "section0.xml 2 insert-end": "Contents/section0.xml c732e7ade04445eeb1fe4604355da7025ad37165adc53677dbb58c9c8af97ac6 @3:0-3:0",
+  "section0.xml 2 endnote-middle": "Contents/section0.xml 60bb2e94e0fd0bbc7bc60354005b1379ecd5aa1a97645af327a0a6a57e7fd394 @3:0-3:0"
  },
  "ext-pyhwpx-memos": {
   "section0.xml 0 insert-middle": "Contents/section0.xml ee4947d92738b9918f8b47cb80aec2d25a9cde9827dd0d16e92ffc8044d9567d @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml ee4947d92738b9918f8b47cb80aec2d25a9cde9827dd0d16e92ffc8044d9567d @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml a50657ea41c86e486dab833a18484ead229e2b3a8b85c07c34c596b8af49bd2c @1:0-1:0",
   "section0.xml 2 insert-middle": "Contents/section0.xml 69f11e33abdb7d87ac73c789a01ec931960a0f77015affb9b5712e410221a676 @3:0-3:0",
   "section0.xml 2 insert-end": "Contents/section0.xml 8230610bd4880b945579278291a1957e01b88bc54c63effeaf524357e164c26a @3:0-3:0",
-  "section0.xml 4 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 4 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 2 endnote-middle": "Contents/section0.xml e9817e6ee979eaa70a038e9e471121ac3f9a16ec2bb251570d7bc52024c7e00b @3:0-3:0",
+  "section0.xml 4 insert-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 4 insert-end": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 4 endnote-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다."
  },
  "ext-pyhwpx-foot-endnotes": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 1f3625375c33e45b5857753a2169ca39db785d42c86bde626f4d4a12f4d13b49 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 1f3625375c33e45b5857753a2169ca39db785d42c86bde626f4d4a12f4d13b49 @1:0-1:0",
-  "section0.xml 2 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 2 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 6ee8763f0e19b187b2004d5acbba4504b70424f7885c9c83890c769642d0fd94 @1:0-1:0",
+  "section0.xml 2 insert-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 2 insert-end": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
+  "section0.xml 2 endnote-middle": "! HwpxEditConflictError: 각주·미주는 본문·표 셀·글상자 문단 글자 사이에만 넣을 수 있습니다.",
   "section0.xml 4 insert-middle": "Contents/section0.xml 68a6e2300e631500956313ad2b7d58dc6365fae0aad546e20637a2105ddb3921 @5:0-5:0",
   "section0.xml 4 insert-end": "Contents/section0.xml 68a6e2300e631500956313ad2b7d58dc6365fae0aad546e20637a2105ddb3921 @5:0-5:0",
-  "section0.xml delete-0": "Contents/section0.xml ebf3b94260e88442bbb90cc26584dd7c9d5d600eacc96b174031d550fbe05933 @1:13-1:13"
+  "section0.xml 4 endnote-middle": "Contents/section0.xml f1cea73358c9fbb6d229704bcf01323f0d1ad66f84488f27eb1452206f403ae9 @5:0-5:0",
+  "section0.xml delete-0": "Contents/section0.xml ebf3b94260e88442bbb90cc26584dd7c9d5d600eacc96b174031d550fbe05933 @1:13-1:13",
+  "section0.xml delete-endnote-0": "Contents/section0.xml 97bd43aecab04f7e0bf68931d062c569a580e2684b08ae552ed46723d950f743 @1:13-1:13",
+  "section0.xml footnote-number split-start": "Contents/section0.xml 9b0d7e14798d9a0fd998b0a12b105e31932d05842eec407150b54211a0f3fc6f @3:0-3:0",
+  "section0.xml footnote-number split-middle": "Contents/section0.xml d9dd6c91858b7042ad91cdc000ae77ebde8999d4907e8bb817039a679210b701 @3:0-3:0",
+  "section0.xml endnote-number split-start": "Contents/section0.xml 92bba158382c058d68bd72766811ceb53673284332d2caccfc48de29743c9add @4:0-4:0",
+  "section0.xml endnote-number split-middle": "Contents/section0.xml 1c446a8d9ccc4736cadace40fed5624292e2756315eb5b9ca1497bc07f7b9c06 @4:0-4:0"
  },
  "ext-pyhwpx-text-box-fields": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 8aaf8f6c892c7c4a4815bed1273d9edf8ecdc586ba469c2c63e6a2a73f86a80a @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 8aaf8f6c892c7c4a4815bed1273d9edf8ecdc586ba469c2c63e6a2a73f86a80a @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 60bd5c45ca9ea7aad07a28b33e88e3a29e0cd47d00d6f2f32b08cf787a05d9bd @1:0-1:0",
   "section0.xml 6 insert-middle": "Contents/section0.xml e735d3b355d07e915220d0ab28097674f436b91ed5c575a0efe2bc4ae48380e0 @7:0-7:0",
   "section0.xml 6 insert-end": "Contents/section0.xml e735d3b355d07e915220d0ab28097674f436b91ed5c575a0efe2bc4ae48380e0 @7:0-7:0",
-  "section0.xml 12 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 12 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 6 endnote-middle": "Contents/section0.xml 3a9a0dbe3b860e85c0edf85deac2133fb5b0f413533263fb62e8b992deca6d55 @7:0-7:0",
+  "section0.xml 12 insert-middle": "Contents/section0.xml 45b27c19bacf5822956d673c43799948d33fc970f86b88e0de6b88e4a03b6985 @13:0-13:0",
+  "section0.xml 12 insert-end": "Contents/section0.xml 48000350900e895656c8769ad30064c4269d4dc62b7a501dd5d13e3ce769e604 @13:0-13:0",
+  "section0.xml 12 endnote-middle": "Contents/section0.xml bd9b175558a698538bd532f546ffa97b86e2ac61d42048995aeb177276ede2a7 @13:0-13:0"
  },
  "ext-pyhwpx-cell-border-vmerge": {
   "section0.xml 0 insert-middle": "Contents/section0.xml f9a9228fb8b97aa0cacb8649dda808a0536e96ce5782cf44caa2d952731a73d2 @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml f9a9228fb8b97aa0cacb8649dda808a0536e96ce5782cf44caa2d952731a73d2 @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml f9a9228fb8b97aa0cacb8649dda808a0536e96ce5782cf44caa2d952731a73d2 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 3a49aea2fd19affa000693710d90654eceb38428cc258df0cab0055abffe2682 @1:0-1:0"
  },
  "ext-pyhwpx-fill-image": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 26008f8b7e34541caed64761267b56148f7d851a09f198ab80d9f4504a453d53 @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml 26008f8b7e34541caed64761267b56148f7d851a09f198ab80d9f4504a453d53 @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml 26008f8b7e34541caed64761267b56148f7d851a09f198ab80d9f4504a453d53 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 1f098056d5735ed93c1333d34e7640ee8010f1bb76d19140a5bc96a83f1e8168 @1:0-1:0"
  },
  "ext-pyhwpx-form-fields-spanning": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 1143f48a071892a7292e4b6f94b721d6ab87cb212a12f7fdc2b50f05f0d0d2ff @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 1143f48a071892a7292e4b6f94b721d6ab87cb212a12f7fdc2b50f05f0d0d2ff @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 6706d7115017e75575497660c1f99366998ddb0d8ce426d11620bceb6d96a184 @1:0-1:0",
   "section0.xml 7 insert-middle": "Contents/section0.xml ac5a61d030d42c2005bd7f7f0aedac1ae2e93eaaa6f9aabe0ab79050e99c791b @8:0-8:0",
   "section0.xml 7 insert-end": "Contents/section0.xml 588a654d8628e3e19cd40e35792ccd0cbdc4bf6369c96b6814ea1b10faaf820f @8:0-8:0",
+  "section0.xml 7 endnote-middle": "Contents/section0.xml 1601109f73f2beffe7e9366903109fd58386b06c82307e8bcd5451067edd5211 @8:0-8:0",
   "section0.xml 14 insert-middle": "Contents/section0.xml 4662b172885334719524eb64563974b41ff50b4f18878a0dafa39d647b7b90cf @15:0-15:0",
-  "section0.xml 14 insert-end": "Contents/section0.xml 4662b172885334719524eb64563974b41ff50b4f18878a0dafa39d647b7b90cf @15:0-15:0"
+  "section0.xml 14 insert-end": "Contents/section0.xml 4662b172885334719524eb64563974b41ff50b4f18878a0dafa39d647b7b90cf @15:0-15:0",
+  "section0.xml 14 endnote-middle": "Contents/section0.xml 67ead5530328e717662f8e7ac1088825776cc33a2d73a933645c0571185c7b7c @15:0-15:0"
  },
  "ext-pyhwpx-auto-grow-cell": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 2c45bfbd607f4d077c8ede884bf957b48cc73fca05270579ac69c52925a7f1c6 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 2c45bfbd607f4d077c8ede884bf957b48cc73fca05270579ac69c52925a7f1c6 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 53a21ff5ebc76114fd34f37f983bd60f92604c74f8fa4e11154fdf80094323f1 @1:0-1:0",
   "section0.xml 1 insert-middle": "Contents/section0.xml e064af63ec8e913f7d97b4ca258dcba062b58a2e39cc9d821c1ede6dc0bb9791 @2:0-2:0",
   "section0.xml 1 insert-end": "Contents/section0.xml e13833fd0f17961fe10e105b2f5b2e2191b4efdd0c8f18663d8a293b142f9928 @2:0-2:0",
+  "section0.xml 1 endnote-middle": "Contents/section0.xml 6445c5dc80bd818cd83ff9cf4d7cc795e68c6ad74669b4302673f1c7fb8d95e8 @2:0-2:0",
   "section0.xml 3 insert-middle": "Contents/section0.xml 15a688d3578e646158a5dd540ca64b7e4ea60eeadfdd18c4ded03977f7689efc @4:0-4:0",
-  "section0.xml 3 insert-end": "Contents/section0.xml 15a688d3578e646158a5dd540ca64b7e4ea60eeadfdd18c4ded03977f7689efc @4:0-4:0"
+  "section0.xml 3 insert-end": "Contents/section0.xml 15a688d3578e646158a5dd540ca64b7e4ea60eeadfdd18c4ded03977f7689efc @4:0-4:0",
+  "section0.xml 3 endnote-middle": "Contents/section0.xml deeb7eb05fb0b2d971aeebddef9f4702c6ffcc1d4fdfdaa981f9fa1abfb1a532 @4:0-4:0"
  },
  "ext-pyhwpx-paragraph-margins": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 8f6e4ab03474bc24653e44aba1851e269d25cb1cc9b09e22e373e54f86f26c27 @1:0-1:0",
   "section0.xml 0 insert-end": "Contents/section0.xml 8f6e4ab03474bc24653e44aba1851e269d25cb1cc9b09e22e373e54f86f26c27 @1:0-1:0",
-  "section0.xml 5 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 5 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 11 insert-middle": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다.",
-  "section0.xml 11 insert-end": "! HwpxEditConflictError: 각주는 본문 문단 글자 사이에만 넣을 수 있습니다."
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 5a8d3c2e61bc68aa62a453bc00c82b1385e364f3810d44770b37e2a2fc430cf9 @1:0-1:0",
+  "section0.xml 5 insert-middle": "Contents/section0.xml b15059133f0d9b39ab5adab77477cedd5a94b32a99209ee05ac299166cea2eb3 @6:0-6:0",
+  "section0.xml 5 insert-end": "Contents/section0.xml 0b9fd3704b5dbfdf47e8912f44ae8110a4b7230f8b96f169be5e612765f21dac @6:0-6:0",
+  "section0.xml 5 endnote-middle": "Contents/section0.xml f32c5fc855270309e9f71508b94b494b5c55f8741187bddd83d3aceb17a7bee5 @6:0-6:0",
+  "section0.xml 11 insert-middle": "Contents/section0.xml 6d24859d04c3c863f0a0a72f83bff28dae18564521d23e8204e20aeadcb9d9e1 @12:0-12:0",
+  "section0.xml 11 insert-end": "Contents/section0.xml 67a577ec2d57cc0091633a7a0b6b6657d3e7bd3fdf5d9d3ca91329c29a8bb47d @12:0-12:0",
+  "section0.xml 11 endnote-middle": "Contents/section0.xml 7147d1d717bd93024e4a9c4f13f24d89e77cafd797ddf20a4c85a9a98a2529e6 @12:0-12:0"
  },
  "ext-hwpxlib-ole": {
   "section0.xml 0 insert-middle": "Contents/section0.xml 4eb46131e74b19440fc885072971c0f3b1c5a3236411cefa846603e97270dc21 @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml 4eb46131e74b19440fc885072971c0f3b1c5a3236411cefa846603e97270dc21 @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml 4eb46131e74b19440fc885072971c0f3b1c5a3236411cefa846603e97270dc21 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml aef43da295b412d58b190b12e31da2bc186144ad489765c1bd89d2063352dbb6 @1:0-1:0"
  },
  "ext-hwpxlib-buttons": {
   "section0.xml 0 insert-middle": "Contents/section0.xml ef8dbe7a3c431e91d7cf6d51bab21cf59280be2a5fbe5a6b6a27e7e1bb653c24 @1:0-1:0",
-  "section0.xml 0 insert-end": "Contents/section0.xml ef8dbe7a3c431e91d7cf6d51bab21cf59280be2a5fbe5a6b6a27e7e1bb653c24 @1:0-1:0"
+  "section0.xml 0 insert-end": "Contents/section0.xml ef8dbe7a3c431e91d7cf6d51bab21cf59280be2a5fbe5a6b6a27e7e1bb653c24 @1:0-1:0",
+  "section0.xml 0 endnote-middle": "Contents/section0.xml 4540035df041fa3be53f52b69abbaf12add9122d73195dd71a578146852d2745 @1:0-1:0"
  }
 }

@@ -33,7 +33,15 @@ import {
   locateHwpxTextElement
 } from '../../src/core/editing/text_patch'
 import { EditCommand } from '../../src/core/editing/transaction'
-import { applyFootnoteCommand, footnotePath, planDeleteFootnote, planInsertFootnote } from '../../src/core/editing/footnote_patch'
+import {
+  applyFootnoteCommand,
+  endnotePath,
+  footnotePath,
+  planDeleteEndnote,
+  planDeleteFootnote,
+  planInsertEndnote,
+  planInsertFootnote
+} from '../../src/core/editing/footnote_patch'
 import { isSurrogateBoundarySafe } from '../../src/core/editing/xml_scan'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
@@ -98,6 +106,8 @@ export function applyCommand(sourcePackage: HwpxSourcePackage, command: EditComm
       return applyReplaceParagraphFragmentCommand(sourcePackage, command)
     case 'insert-footnote':
     case 'delete-footnote':
+    case 'insert-endnote':
+    case 'delete-endnote':
     case 'restore-footnote':
       return applyFootnoteCommand(sourcePackage, command)
   }
@@ -330,9 +340,17 @@ export function objectTextCases(sourcePackage: HwpxSourcePackage, sectionPaths: 
     const text = (from: number, to: number, insert: string): Case['build'] => () => ({
       command: { type: 'replace-text', sectionPath, textNodeId: anchor.textNodeId, from, to, insert }
     })
+    const base = { sectionPath, textNodeId: anchor.textNodeId }
     return [
       { label: `${kind} ${anchor.ordinal} insert`, build: text(middle, middle, '상자&<') },
-      { label: `${kind} ${anchor.ordinal} replace-all`, build: text(0, anchor.text.length, 'x\ty') }
+      { label: `${kind} ${anchor.ordinal} replace-all`, build: text(0, anchor.text.length, 'x\ty') },
+      // 메모 본문 글자·문단 모양(2026-10-20). 개체가 든 메모·글상자는 거부 기록으로 남는다.
+      ...(kind === 'memo'
+        ? [
+            { label: `${kind} ${anchor.ordinal} bold`, build: () => ({ command: { type: 'apply-character-style', ...base, bold: true } as EditCommand }) },
+            { label: `${kind} ${anchor.ordinal} align`, build: () => ({ command: { type: 'apply-paragraph-style', ...base, align: 'CENTER' } as EditCommand }) }
+          ]
+        : [])
     ]
   })
 }
@@ -375,9 +393,10 @@ export function sublistStructureCases(sourcePackage: HwpxSourcePackage, sectionP
 export const FOOTNOTE_SAMPLE = 3
 
 /**
- * 각주 만들기·지우기(2026-10-20 추가 family). 본문 anchor 가운데·끝에 각주를 넣고, 있는 각주를 지운다. `hp:t`를 나누고 각주
- * control을 넣거나 빼며 뒤 각주 번호(`number`·`autoNum num`, 이어 매기기면 뒤 section까지)만 바꾸는지, undo·redo가 정확한지 고정한다.
- * 본문 문단 밖 anchor·쪽마다 매기기 번호는 거부 기록으로 남는다.
+ * 각주·미주 만들기·지우기(2026-10-20 추가 family). 본문 anchor 가운데·끝에 각주를, 가운데에 미주를 넣고, 있는 각주·미주를 지운다.
+ * `hp:t`를 나누고 각주(미주) control을 넣거나 빼며 뒤 번호(`number`·`autoNum num`, 이어 매기기면 뒤 section까지)만 바꾸는지,
+ * undo·redo가 정확한지 고정한다. 머리말·꼬리말·각주·메모 안 anchor는 거부 기록으로 남는다(표 셀·글상자 안은 넣는다). 각주·미주 첫
+ * 문단(번호 control이 든 문단)의 맨 앞 나눔도 여기서 본다.
  */
 export function footnoteCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
   const located = sectionPaths.flatMap((sectionPath) => listHwpxTextAnchors(sourcePackage, sectionPath).map((anchor) => ({ sectionPath, anchor })))
@@ -386,20 +405,47 @@ export function footnoteCases(sourcePackage: HwpxSourcePackage, sectionPaths: re
     const label = `${sectionPath.replace(/^Contents\//, '')} ${anchor.ordinal}`
     return [
       { label: `${label} insert-middle`, build: (source) => planInsertFootnote(source, createEditorSelection(sectionPath, anchor.textNodeId, middle)) },
-      { label: `${label} insert-end`, build: (source) => planInsertFootnote(source, createEditorSelection(sectionPath, anchor.textNodeId, anchor.text.length)) }
+      { label: `${label} insert-end`, build: (source) => planInsertFootnote(source, createEditorSelection(sectionPath, anchor.textNodeId, anchor.text.length)) },
+      { label: `${label} endnote-middle`, build: (source) => planInsertEndnote(source, createEditorSelection(sectionPath, anchor.textNodeId, middle)) }
     ]
   })
   const deletes: Case[] = sectionPaths.flatMap((sectionPath) => {
-    const notes = findSourceElements(packageEntryTree(sourcePackage, sectionPath), 'hp:footNote')
+    const tree = packageEntryTree(sourcePackage, sectionPath)
     const first = listHwpxTextAnchors(sourcePackage, sectionPath)[0]
-    return first
-      ? notes.slice(0, 2).map((_note, index) => ({
-          label: `${sectionPath.replace(/^Contents\//, '')} delete-${index}`,
-          build: (source: HwpxSourcePackage) => planDeleteFootnote(source, createEditorSelection(sectionPath, first.textNodeId, 0), footnotePath(sectionPath, index))
-        }))
-      : []
+    if (!first) return []
+    const selection = createEditorSelection(sectionPath, first.textNodeId, 0)
+    const name = sectionPath.replace(/^Contents\//, '')
+    return [
+      ...findSourceElements(tree, 'hp:footNote').slice(0, 2).map((_note, index) => ({
+        label: `${name} delete-${index}`,
+        build: (source: HwpxSourcePackage) => planDeleteFootnote(source, selection, footnotePath(sectionPath, index))
+      })),
+      ...findSourceElements(tree, 'hp:endNote').slice(0, 2).map((_note, index) => ({
+        label: `${name} delete-endnote-${index}`,
+        build: (source: HwpxSourcePackage) => planDeleteEndnote(source, selection, endnotePath(sectionPath, index))
+      }))
+    ]
   })
-  return [...inserts, ...deletes]
+  // 번호 control이 든 각주·미주 첫 문단의 맨 앞·가운데 Enter(번호는 앞 문단에 남는다).
+  const numberSplits: Case[] = sectionPaths.flatMap((sectionPath) => {
+    const tree = packageEntryTree(sourcePackage, sectionPath)
+    return (['hp:footNote', 'hp:endNote'] as const).flatMap((name) => {
+      const note = findSourceElements(tree, name)[0]
+      const anchor = note && listHwpxTextAnchors(sourcePackage, sectionPath).find((candidate) => {
+        const element = locateHwpxTextElement(sourcePackage, sectionPath, candidate.textNodeId)!.element
+        const paragraph = nearestSourceAncestor(element, 'hp:p')
+        return paragraph?.parent?.parent === note
+      })
+      if (!anchor) return []
+      const label = `${sectionPath.replace(/^Contents\//, '')} ${name === 'hp:footNote' ? 'footnote' : 'endnote'}-number`
+      const middle = safeOffset(anchor.text, Math.floor(anchor.text.length / 2))
+      return [
+        { label: `${label} split-start`, build: (source: HwpxSourcePackage) => planSplitParagraph(source, createEditorSelection(sectionPath, anchor.textNodeId, 0)) },
+        { label: `${label} split-middle`, build: (source: HwpxSourcePackage) => planSplitParagraph(source, createEditorSelection(sectionPath, anchor.textNodeId, middle)) }
+      ]
+    })
+  })
+  return [...inserts, ...deletes, ...numberSplits]
 }
 
 export type Family = 'text' | 'style' | 'paragraph' | 'table' | 'table-caret' | 'sublist' | 'object-text' | 'sublist-structure' | 'footnote'

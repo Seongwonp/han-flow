@@ -133,14 +133,14 @@ describe('복구 기록 형식', () => {
       return { ...entry, transaction: { ...entry.transaction, commands: [command] } }
     }
     const v1 = { ...header(), version: 1 }
-    expect(header().version).toBe(4)
+    expect(header().version).toBe(5)
     const legacy = decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('replace-table-fragment'))]))
     expect(legacy.header.version).toBe(1)
     expect(legacy.entries).toHaveLength(1)
     expect(() => decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(v1), encodeRecoveryRecord(table('patch-table-fragment'))])))
       .toThrow(expect.objectContaining({ reason: 'malformed' }))
-    // version 2~4는 두 형식을 모두 읽는다(version 1 기록을 복구해 이어 쓴 기록에는 이전 형식 command가 남는다).
-    for (const version of [2, 3, 4]) {
+    // version 2~5는 두 형식을 모두 읽는다(version 1 기록을 복구해 이어 쓴 기록에는 이전 형식 command가 남는다).
+    for (const version of [2, 3, 4, 5]) {
       for (const type of ['replace-table-fragment', 'patch-table-fragment'] as const) {
         expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord({ ...header(), version }), encodeRecoveryRecord(table(type))])).entries)
           .toHaveLength(1)
@@ -193,8 +193,30 @@ describe('복구 기록 형식', () => {
       .toHaveLength(1)
   })
 
+  test('미주 만들기·지우기 command는 version 5 기록에서만 받는다', () => {
+    const entry = commit(1, '가') as Extract<RecoveryJournalEntry, { type: 'commit' }>
+    const base = { sectionPath: 'Contents/section0.xml', textNodeId: 'Contents/section0.xml#hp:t:0' }
+    const endnote = (command: Record<string, unknown>): RecoveryJournalEntry => ({ ...entry, transaction: { ...entry.transaction, commands: [command as never] } })
+    for (const command of [
+      { type: 'insert-endnote', ...base, offset: 1 },
+      { type: 'delete-endnote', ...base, notePath: 'Contents/section0.xml#hp:endNote:0' }
+    ]) {
+      expect(decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord(header()), encodeRecoveryRecord(endnote(command))])).entries)
+        .toHaveLength(1)
+      for (const version of [1, 2, 3, 4]) {
+        expect(() => decodeRecoveryJournal(Buffer.concat([encodeRecoveryRecord({ ...header(), version }), encodeRecoveryRecord(endnote(command))])))
+          .toThrow(expect.objectContaining({ reason: 'malformed' }))
+      }
+    }
+    // 각주 command는 version 4 기록에서도 그대로 읽는다.
+    expect(decodeRecoveryJournal(Buffer.concat([
+      encodeRecoveryRecord({ ...header(), version: 4 }),
+      encodeRecoveryRecord(endnote({ type: 'insert-footnote', ...base, offset: 1 }))
+    ])).entries).toHaveLength(1)
+  })
+
   test('다른 형식 version은 거부한다', () => {
-    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 5 }), encodeRecoveryRecord(commit(1, '가'))])
+    const bytes = Buffer.concat([encodeRecoveryRecord({ ...header(), version: 6 }), encodeRecoveryRecord(commit(1, '가'))])
     expect(() => decodeRecoveryJournal(bytes)).toThrow(expect.objectContaining({ reason: 'unsupported-version' }))
   })
 

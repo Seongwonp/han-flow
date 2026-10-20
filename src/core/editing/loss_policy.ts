@@ -54,7 +54,10 @@ function commandStructure(command: EditCommand): HwpxEditedStructure {
     return 'table-cell-style'
   }
   if (command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment') return 'table-structure'
-  if (command.type === 'insert-footnote' || command.type === 'delete-footnote' || command.type === 'restore-footnote') {
+  if (
+    command.type === 'insert-footnote' || command.type === 'delete-footnote' ||
+    command.type === 'insert-endnote' || command.type === 'delete-endnote' || command.type === 'restore-footnote'
+  ) {
     return 'note-structure'
   }
   if (command.type === 'restore-style') {

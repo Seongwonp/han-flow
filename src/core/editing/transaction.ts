@@ -31,8 +31,11 @@ import {
 } from './table_patch'
 import {
   applyFootnoteCommand,
+  DeleteEndnoteCommand,
   DeleteFootnoteCommand,
+  InsertEndnoteCommand,
   InsertFootnoteCommand,
+  isNoteCommand,
   RestoreFootnoteCommand
 } from './footnote_patch'
 import { buildLossReport } from './xml_scan'
@@ -61,6 +64,8 @@ export type EditCommand =
   | PatchTableFragmentCommand
   | InsertFootnoteCommand
   | DeleteFootnoteCommand
+  | InsertEndnoteCommand
+  | DeleteEndnoteCommand
   | RestoreFootnoteCommand
 
 export interface EditTransaction {
@@ -160,7 +165,7 @@ export function applyEditTransaction(
                     ? applyRestoreCellStyleCommand(currentPackage, command)
                     : command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment'
                       ? applyReplaceTableFragmentCommand(currentPackage, command)
-                      : command.type === 'insert-footnote' || command.type === 'delete-footnote' || command.type === 'restore-footnote'
+                      : isNoteCommand(command)
                         ? applyFootnoteCommand(currentPackage, command)
                         : applyReplaceParagraphFragmentCommand(currentPackage, command)
     if (command.type === 'replace-text' && result.package !== currentPackage) {

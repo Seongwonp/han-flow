@@ -112,6 +112,14 @@ interface ViewerToolbarProps {
   footnoteDeleteAvailable?: boolean
   onInsertFootnote?: () => void
   onDeleteFootnote?: () => void
+  /** caret 자리에 미주를 넣을 수 있는지(capability `endnote`). */
+  endnoteAvailable?: boolean
+  /** caret이 지울 수 있는 미주 본문에 있는지(capability focus의 `endnotePath`). */
+  endnoteDeleteAvailable?: boolean
+  onInsertEndnote?: () => void
+  onDeleteEndnote?: () => void
+  /** 각주·미주를 넣을 수 없는 이유 문구(편집 중 caret이 있을 때). */
+  noteUnavailableTitle?: string
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -170,7 +178,12 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     footnoteAvailable: footnoteState = false,
     footnoteDeleteAvailable: footnoteDeleteState = false,
     onInsertFootnote,
-    onDeleteFootnote
+    onDeleteFootnote,
+    endnoteAvailable: endnoteState = false,
+    endnoteDeleteAvailable: endnoteDeleteState = false,
+    onInsertEndnote,
+    onDeleteEndnote,
+    noteUnavailableTitle
   } = props
   const pending = Boolean(editingPending)
   // 입력 칸에 남은 글자나 응답을 기다리는 글자 commit. 실행 취소·저장은 이 글자를 먼저 반영한 뒤 돌므로 이때도 누를 수 있다.
@@ -184,6 +197,9 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
   const tableCellSelectionAvailable = isEditing && tableCellSelectionState
   const footnoteAvailable = isEditing && footnoteState
   const footnoteDeleteAvailable = isEditing && footnoteDeleteState
+  const endnoteAvailable = isEditing && endnoteState
+  const endnoteDeleteAvailable = isEditing && endnoteDeleteState
+  const noteInsertHint = noteUnavailableTitle ?? '본문·표 셀·글상자 문단 글자 사이에 caret을 두면 넣을 수 있습니다.'
   // caret이 표 안에 있으면 탭은 그대로 두고 `표` 탭에만 표시한다.
   const tableContextActive = cellStyleAvailable || tableCellSelectionAvailable
 
@@ -233,9 +249,11 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
         <button aria-label="실행 취소" title={`실행 취소 (${shortcutLabel('Z', shortcutPlatform)})`} onMouseDown={keepCaret} onClick={onUndoEditing} disabled={!(editing?.canUndo || inputPending)}>↶</button>
         <button aria-label="다시 실행" title={`다시 실행 (${shortcutLabel('Z', shortcutPlatform, { shift: true })})`} onMouseDown={keepCaret} onClick={onRedoEditing} disabled={!editing?.canRedo}>↷</button>
       </>)}
-      {!fixedDocument && group('각주', <>
-        <button aria-label="각주 넣기" title={footnoteAvailable ? 'caret 자리에 각주 넣기' : '본문 문단 글자 사이에 caret을 두면 각주를 넣을 수 있습니다.'} onMouseDown={keepCaret} onClick={onInsertFootnote} disabled={!footnoteAvailable || pending}>각주＋</button>
+      {!fixedDocument && group('각주·미주', <>
+        <button aria-label="각주 넣기" title={footnoteAvailable ? 'caret 자리에 각주 넣기' : noteInsertHint} onMouseDown={keepCaret} onClick={onInsertFootnote} disabled={!footnoteAvailable || pending}>각주＋</button>
         <button aria-label="각주 지우기" title={footnoteDeleteAvailable ? 'caret이 있는 각주 지우기' : '지울 각주 본문에 caret을 두면 각주를 지울 수 있습니다.'} onMouseDown={keepCaret} onClick={onDeleteFootnote} disabled={!footnoteDeleteAvailable || pending}>각주－</button>
+        <button aria-label="미주 넣기" title={endnoteAvailable ? 'caret 자리에 미주 넣기(구역·문서 끝에 모임)' : noteInsertHint} onMouseDown={keepCaret} onClick={onInsertEndnote} disabled={!endnoteAvailable || pending}>미주＋</button>
+        <button aria-label="미주 지우기" title={endnoteDeleteAvailable ? 'caret이 있는 미주 지우기' : '지울 미주 본문에 caret을 두면 미주를 지울 수 있습니다.'} onMouseDown={keepCaret} onClick={onDeleteEndnote} disabled={!endnoteDeleteAvailable || pending}>미주－</button>
       </>)}
       {fixedDocument && group('찾기', <button aria-label="검색" title={`찾기 (${shortcutLabel('F', shortcutPlatform)})`} className="viewer-ribbon-wide" onClick={onSearchOpen} disabled={searchOpen}><span className="viewer-ribbon-icon" aria-hidden="true">⌕</span><span>찾기</span></button>)}
     </>,

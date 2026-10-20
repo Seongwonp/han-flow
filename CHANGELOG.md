@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### 미주 만들기·지우기, 표 셀·글상자 안 각주, 쪽마다 매기는 각주, 번호 문단 Enter, 메모 모양
+
+- 리본 `편집` 탭 `각주·미주` group에 [미주 넣기]·[미주 지우기]를 더하고(`insert-endnote`·`delete-endnote`, 구역 미주 모양 번호·뒤 번호 다시 매기기, 미주 본문은 구역·문서 끝 목록), 각주·미주를 본문·표 셀·글상자 문단 caret에 넣을 수 있게 함(`noteHostViolation`). 머리말·꼬리말은 한/글처럼 막고 사유를 표시(`NOTE_IN_HEADER_FOOTER`). 글상자는 글자만 든 각주·미주를 품어도 계속 편집 가능(`isPlainSubList`)
+- 쪽마다 새로 매기는(`ON_PAGE`) 각주 구역의 각주 넣기·지우기: 새 각주에 앞 각주 번호 + 1을 임시로 쓰고 다른 번호는 그대로 둠(화면·한/글이 쪽마다 다시 매김)
+- 번호가 든 각주·미주 첫 문단의 Enter(번호는 앞 문단에 남김)와 그 문단으로의 Backspace 병합, 메모 본문 글자·문단 모양
+- 복구 기록 version 5(미주 command, version 1~4도 읽음), replay 검사가 번호 문단 fragment의 번호 control을 바꾸기 전 원문과 맞춰 봄. 편집 coverage에 각주·미주 넣기 지표(외부 325/399, 불일치 0)와 측정 `editing_coverage_2026-10-20-notes.json`, golden(미주·번호 문단 Enter·메모 모양 표본), 단위 test, verify:matrix 합성 fixture `createNoteEditHwpx` E2E(미주·표 셀·글상자·`ON_PAGE` 각주 넣기 → 입력 → 실행 취소·다시 실행 → 번호 문단 Enter → 지우기 → 실행 취소 → Save As → 재열기)와 메모 모양 E2E 추가
+
 ### 쪽 번호·머리말 자리, 개체 회전·쌓임 순서, 본문 줄 단위 쪽 나눔
 
 - 쪽 본문을 한/글 본문 영역(위쪽 여백 + 머리말 여백 ~ 아래쪽 여백 + 꼬리말 여백)으로 바꾸고(`viewerPageGeometry`), 쪽 번호(`hp:pageNum`)는 본문 밖 꼬리말 띠 아래 끝(위쪽 위치는 머리말 띠 위 끝, 띠가 0이면 여백 가운데, 안쪽·바깥쪽은 홀짝 쪽)에, 머리말·꼬리말은 각 띠 위 끝에 둠(`pageDecorationLayout`·`pageNumberAnchor`·`PageNumberView`). 사용자 문서 doc5-d04 1쪽 쪽 번호가 맨 아래 로고와 겹치던 문제를 고침. 용지 기준 개체를 머리말 여백만큼 올리던 보정은 없앰

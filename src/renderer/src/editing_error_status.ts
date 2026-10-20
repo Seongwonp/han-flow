@@ -83,9 +83,11 @@ export function editingCapabilityStatus(
     case 'TABLE_PARAGRAPH':
       return `표가 든 문단에는 ${action}을 적용할 수 없습니다. 표 앞·뒤 글자 입력·삭제는 그대로 할 수 있습니다.`
     case 'SUBLIST_TEXT':
-      return `메모 본문에는 아직 ${action}을 적용할 수 없습니다. 글자 입력·삭제는 그대로 할 수 있습니다.`
+      return `메모 본문에는 아직 ${action}을 적용할 수 없습니다. 글자 입력·삭제와 글자·문단 모양은 그대로 할 수 있습니다.`
     case 'FOOTNOTE_POSITION':
-      return `${action}은 본문 문단 글자 사이 caret 위치에서만 할 수 있습니다.`
+      return `${action}은 본문·표 셀·글상자 문단 글자 사이 caret 위치에서만 할 수 있습니다.`
+    case 'NOTE_IN_HEADER_FOOTER':
+      return `머리말·꼬리말에는 ${action}을 할 수 없습니다(한/글도 머리말·꼬리말에 각주·미주를 넣지 않습니다).`
     case 'PARAGRAPH_COMPLEX_RUN':
       return `이 문단의 글자 구조에는 아직 ${action}을 적용할 수 없습니다. 글자 입력·삭제는 그대로 할 수 있습니다.`
     default:

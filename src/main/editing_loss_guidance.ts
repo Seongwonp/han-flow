@@ -7,7 +7,7 @@ const editedStructureLabels = {
   'paragraph-structure': '문단 나누기·병합',
   'table-cell-style': '표 셀 모양',
   'table-structure': '표 행·열 구조',
-  'note-structure': '각주 만들기·지우기'
+  'note-structure': '각주·미주 만들기·지우기'
 } as const
 
 export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
@@ -34,7 +34,7 @@ export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
     ? ' 표 행·열 구조가 바뀌었으므로 저장 후 Han-Flow와 한/글에서 표 전체를 확인해 주세요.'
     : ''
   const noteStructureReview = policy.notices.includes('NOTE_STRUCTURE_CHANGED')
-    ? ' 각주를 넣거나 지운 뒤 각주 번호를 다시 매겼으므로 저장 후 Han-Flow와 한/글에서 각주 번호를 확인해 주세요.'
+    ? ' 각주·미주를 넣거나 지운 뒤 번호를 다시 매겼으므로 저장 후 Han-Flow와 한/글에서 각주·미주 번호를 확인해 주세요.'
     : ''
 
   return (

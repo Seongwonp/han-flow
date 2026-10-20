@@ -16,9 +16,12 @@ const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 // 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
 // column(2단 영역 둘째 단의 본문 문단), line-split(쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각), text-box(글자만 든 글상자 글), memo(메모 본문),
-// footnote(본문 caret에 각주 넣기 → 새 각주에 입력 → 실행 취소·다시 실행 → 각주 지우기·실행 취소). 없으면 본문 문단(또는 표 셀).
-const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'line-split', 'text-box', 'memo', 'footnote']
+// footnote(본문 caret에 각주 넣기 → 새 각주에 입력 → 실행 취소·다시 실행 → 번호 문단 Enter·실행 취소 → 각주 지우기·실행 취소),
+// endnote-insert(본문 caret에 미주), footnote-cell·footnote-text-box(표 셀·글상자 caret에 각주). 없으면 본문 문단(또는 표 셀).
+const NOTE_INSERT_TARGETS = ['footnote', 'endnote-insert', 'footnote-cell', 'footnote-text-box']
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'line-split', 'text-box', 'memo', ...NOTE_INSERT_TARGETS]
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
+const noteInsertTarget = NOTE_INSERT_TARGETS.includes(editTarget)
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
@@ -346,7 +349,7 @@ try {
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.immediateUndoMatches ? '입력 직후 첫 실행 취소가 마지막 입력을 되돌리지 않음' : undefined,
-    editTarget === 'footnote' && !state.editingProbe?.undoClickedBeforeCommit ? '각주 E2E 실행 취소를 입력 반영 전에 누르지 못함' : undefined,
+    noteInsertTarget && !state.editingProbe?.undoClickedBeforeCommit ? '각주·미주 E2E 실행 취소를 입력 반영 전에 누르지 못함' : undefined,
     editText && !state.editingUi?.ribbonVisible ? '편집 리본이 표시되지 않음' : undefined,
     (editText || tableStructureProbe) && JSON.stringify(state.editingUi?.tabs) !== JSON.stringify(RIBBON_TABS)
       ? `리본 탭 구성 불일치: ${JSON.stringify(state.editingUi?.tabs)}`
@@ -371,12 +374,17 @@ try {
     (editTarget === 'note' || editTarget === 'endnote') && state.editingProbe?.noteKind !== (editTarget === 'note' ? 'footnote' : 'endnote')
       ? `각주·미주 종류 불일치: ${state.editingProbe?.noteKind}`
       : undefined,
-    editTarget === 'footnote' && state.editingProbe?.insertedMarkers?.length !== (state.editingProbe?.originalMarkers?.length ?? -2) + 1
+    noteInsertTarget && state.editingProbe?.insertedMarkers?.length !== (state.editingProbe?.originalMarkers?.length ?? -2) + 1
       ? `각주 넣기 뒤 번호 표시 수 불일치: ${JSON.stringify(state.editingProbe?.originalMarkers)} → ${JSON.stringify(state.editingProbe?.insertedMarkers)}`
       : undefined,
-    editTarget === 'footnote' && !state.editingProbe?.insertUndone ? '각주 넣기 실행 취소 불일치' : undefined,
-    editTarget === 'footnote' && !state.editingProbe?.deleted ? '각주 지우기 결과 불일치' : undefined,
-    editTarget === 'footnote' && !state.editingProbe?.deleteUndone ? '각주 지우기 실행 취소 불일치' : undefined,
+    noteInsertTarget && !state.editingProbe?.insertUndone ? '각주·미주 넣기 실행 취소 불일치' : undefined,
+    noteInsertTarget && !state.editingProbe?.deleted ? '각주·미주 지우기 결과 불일치' : undefined,
+    noteInsertTarget && !state.editingProbe?.deleteUndone ? '각주·미주 지우기 실행 취소 불일치' : undefined,
+    noteInsertTarget && !state.editingProbe?.numberSplit ? '번호가 든 각주·미주 첫 문단 Enter 결과 불일치' : undefined,
+    noteInsertTarget && !state.editingProbe?.numberSplitUndone ? '번호가 든 각주·미주 첫 문단 Enter 실행 취소 불일치' : undefined,
+    noteInsertTarget && state.editingProbe?.noteKind !== (editTarget === 'endnote-insert' ? 'endnote' : 'footnote')
+      ? `넣은 각주·미주 종류 불일치: ${state.editingProbe?.noteKind}`
+      : undefined,
     (editTarget === 'text-box' || editTarget === 'memo') && state.editingProbe?.objectKind !== editTarget
       ? `글상자·메모 입력 칸이 그 개체 안에 있지 않음: ${state.editingProbe?.objectKind}`
       : undefined,
