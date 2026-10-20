@@ -90,16 +90,22 @@ describe('글상자·메모 글자 편집', () => {
       sectionPath, anchorTextNodeId: first.textNodeId, anchorOffset: 0, focusTextNodeId: second.textNodeId, focusOffset: 1
     }).selection).toEqual({ available: false, reason: 'CROSS_STRUCTURE_SELECTION' })
     const memo = contexts.find((context) => context.structure === 'MEMO_TEXT')!
+    // 메모 본문은 글자와 글자·문단 모양을 받고(2026-10-20) 문단 나눔·병합은 막는다. 각주·미주는 넣지 않는다.
     expect(editingCapabilities(document, caret(memo.textNodeId, 1))).toMatchObject({
       text: { available: true },
-      characterStyle: { available: false, reason: 'SUBLIST_TEXT' },
-      paragraphStyle: { available: false, reason: 'SUBLIST_TEXT' },
-      paragraphStructure: { available: false, reason: 'SUBLIST_TEXT' }
+      characterStyle: { available: true },
+      paragraphStyle: { available: true },
+      paragraphStructure: { available: false, reason: 'SUBLIST_TEXT' },
+      footnote: { available: false, reason: 'FOOTNOTE_POSITION' },
+      endnote: { available: false, reason: 'FOOTNOTE_POSITION' }
     })
-    // 각주 둘째 문단은 글자만 든 문단이라 Enter를 받고, 번호가 든 첫 문단과는 병합하지 않는다.
+    // 각주 둘째 문단은 글자만 든 문단이라 Enter를 받고, 번호가 든 첫 문단도(2026-10-20) Enter·병합 규칙에 든다.
     const secondNote = contexts.find((context) => context.text === SUBLIST_EDIT_TEXTS.footnoteSecond)!
-    expect(secondNote.structureGate).toEqual({ mergePrevious: 'PARAGRAPH_HAS_OBJECT' })
+    expect(secondNote.structureGate).toBeUndefined()
     expect(editingCapabilities(document, caret(secondNote.textNodeId, 1)).paragraphStructure).toEqual({ available: true })
+    const firstNote = contexts.find((context) => context.text === SUBLIST_EDIT_TEXTS.footnoteBody)!
+    expect(firstNote.structureGate).toBeUndefined()
+    expect(editingCapabilities(document, caret(firstNote.textNodeId, 2)).paragraphStructure).toEqual({ available: true })
   })
 
   test('글상자 글 입력은 hp:t만 고치고 증분 projection이 전체 해석과 같으며 undo·redo가 정확하다', async () => {
@@ -132,11 +138,7 @@ describe('글상자·메모 글자 편집', () => {
     const document = await decodeViewerDocument(result.package)
     expect(paragraphTexts(placeholders(document).find((item) => item.kind === 'memo')!.paragraphs)).toEqual([`${SUBLIST_EDIT_TEXTS.memo} 고침`])
     expect(section(applyEditTransaction(result.package, result.inverse!).package)).toBe(original)
-    // 메모 본문은 글자 모양·문단 모양·문단 나눔을 편집 코어에서도 거부한다.
-    expect(() => applyCharacterStyleCommand(source, { type: 'apply-character-style', sectionPath, textNodeId: memo.textNodeId, bold: true }))
-      .toThrow(HwpxEditConflictError)
-    expect(() => applyParagraphStyleCommand(source, { type: 'apply-paragraph-style', sectionPath, textNodeId: memo.textNodeId, align: 'CENTER' }))
-      .toThrow(HwpxEditConflictError)
+    // 메모 본문 문단 나눔은 편집 코어에서도 거부한다(글자·문단 모양은 아래 메모 모양 test).
     expect(() => planSplitParagraph(source, caret(memo.textNodeId, 1))).toThrow(HwpxEditConflictError)
   })
 
@@ -247,13 +249,93 @@ describe('각주·머리말·글상자 글자·문단 모양과 문단 나눔', 
     expect(paragraphTexts(mergedBox.paragraphs)).toEqual([`${SUBLIST_EDIT_TEXTS.textBox}${SUBLIST_EDIT_TEXTS.textBoxSecond}`])
     expect(section(applyEditTransaction(merged.package, merged.inverse!).package)).toBe(original)
 
-    // 각주 둘째 문단은 나눌 수 있지만 번호가 든 첫 문단과는 병합하지 않는다.
+    // 각주 둘째 문단을 나눈다.
     const secondNote = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteSecond)
     const noteSplit = planSplitParagraph(source, caret(secondNote.textNodeId, 2))
     const noteResult = applyEditTransaction(source, transaction(source, [noteSplit.command], caret(secondNote.textNodeId, 2), noteSplit.selectionAfter, 'insertParagraph'))
     const notes = (await decodeViewerDocument(noteResult.package)).sections[0].blocks.flatMap(paragraphFootnotes)
     expect(paragraphTexts(notes[0].paragraphs)).toEqual([SUBLIST_EDIT_TEXTS.footnoteBody, '각주', ' 둘째 문단'])
-    expect(() => planMergeParagraph(source, caret(secondNote.textNodeId, 0), 'previous')).toThrow(HwpxEditConflictError)
+    // 둘째 문단 맨 앞 Backspace는 번호가 든 첫 문단에 합친다(번호 control은 첫 문단 첫 run 맨 앞에 그대로 남는다).
+    const autoNum = '<hp:ctrl><hp:autoNum num="1" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl>'
+    const noteMerge = planMergeParagraph(source, caret(secondNote.textNodeId, 0), 'previous')
+    assertReplayableTransaction(transaction(source, [noteMerge.command], caret(secondNote.textNodeId, 0), noteMerge.selectionAfter, 'deleteContentBackward'), source)
+    const mergedNote = applyEditTransaction(source, transaction(source, [noteMerge.command], caret(secondNote.textNodeId, 0), noteMerge.selectionAfter, 'deleteContentBackward'))
+    expect(section(mergedNote.package)).toContain(`<hp:run charPrIDRef="0">${autoNum}<hp:t>${SUBLIST_EDIT_TEXTS.footnoteBody}</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>${SUBLIST_EDIT_TEXTS.footnoteSecond}</hp:t></hp:run>`)
+    const mergedNotes = (await decodeViewerDocument(mergedNote.package)).sections[0].blocks.flatMap(paragraphFootnotes)
+    expect(mergedNotes.map((note) => note.marker)).toEqual(['1)'])
+    expect(paragraphTexts(mergedNotes[0].paragraphs)).toEqual([`${SUBLIST_EDIT_TEXTS.footnoteBody}${SUBLIST_EDIT_TEXTS.footnoteSecond}`])
+    expect(section(applyEditTransaction(mergedNote.package, mergedNote.inverse!).package)).toBe(original)
+  })
+
+  test('번호가 든 각주 첫 문단의 Enter는 번호 control을 앞 문단에 남기고 뒤 글자만 새 문단으로 옮긴다', async () => {
+    const source = await HwpxSourcePackage.open(createSublistEditHwpx(directory, 'number-split.hwpx'))
+    const original = section(source)
+    const autoNum = '<hp:ctrl><hp:autoNum num="1" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl>'
+    const note = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteBody)
+    for (const offset of [0, 3, SUBLIST_EDIT_TEXTS.footnoteBody.length]) {
+      const plan = planSplitParagraph(source, caret(note.textNodeId, offset))
+      expect(plan.selectionAfter.focusTextNodeId).toBe(`${sectionPath}#hp:t:${note.ordinal + 1}`)
+      const before = SUBLIST_EDIT_TEXTS.footnoteBody.slice(0, offset)
+      const after = SUBLIST_EDIT_TEXTS.footnoteBody.slice(offset)
+      const text = (value: string) => `<hp:t>${value}</hp:t>`
+      // 복구 기록 replay 검사: 번호 control 원문이 바꾸기 전 fragment에 있으므로 받는다.
+      const split = transaction(source, [plan.command], caret(note.textNodeId, offset), plan.selectionAfter, 'insertParagraph')
+      assertReplayableTransaction(split, source)
+      const history = new HwpxEditHistory(source)
+      history.commit(split)
+      const edited = section(history.package)
+      expect(edited).toContain(`<hp:p id="0" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${autoNum}${text(before)}</hp:run></hp:p>` +
+        `<hp:p id="43" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${text(after)}</hp:run></hp:p>`)
+      const notes = (await decodeViewerDocument(history.package)).sections[0].blocks.flatMap(paragraphFootnotes)
+      expect(notes.map((item) => item.marker)).toEqual(['1)'])
+      expect(paragraphTexts(notes[0].paragraphs)).toEqual([before, after, SUBLIST_EDIT_TEXTS.footnoteSecond])
+      history.undo()
+      expect(section(history.package)).toBe(original)
+      history.redo()
+      expect(section(history.package)).toBe(edited)
+    }
+    // 번호 control을 새로 들이는(바꾸기 전 fragment에 없는) 문단 fragment는 replay 검사가 거부한다.
+    const second = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteSecond)
+    const forged = planSplitParagraph(source, caret(second.textNodeId, 1))
+    const injected = { ...forged.command, replacementFragment: forged.command.replacementFragment.replace('<hp:run charPrIDRef="0"><hp:t>', `<hp:run charPrIDRef="0">${autoNum.replace('num="1"', 'num="7"')}<hp:t>`) }
+    expect(() => assertReplayableTransaction(transaction(source, [injected], caret(second.textNodeId, 1), forged.selectionAfter, 'insertParagraph'), source))
+      .toThrow('복구 기록의 문단 fragment')
+    // 번호가 든 첫 문단 맨 앞 Backspace는 병합할 앞 문단이 없다.
+    expect(() => planMergeParagraph(source, caret(note.textNodeId, 0), 'previous')).toThrow('병합할 인접 문단이 없습니다.')
+  })
+
+  test('메모 본문 글자·문단 모양은 메모 문단의 run·문단 reference만 바꾸고 메모 범위는 byte 그대로다', async () => {
+    const source = await HwpxSourcePackage.open(createSublistEditHwpx(directory, 'memo-style.hwpx'))
+    const original = section(source)
+    const memo = anchorOf(source, SUBLIST_EDIT_TEXTS.memo)
+    const history = new HwpxEditHistory(source)
+    const selection = caret(memo.textNodeId, 0, 2)
+    const middle = `${sectionPath}#hp:t:${memo.ordinal}`
+    const styleTransaction = transaction(source, [
+      { type: 'apply-character-style', sectionPath, textNodeId: memo.textNodeId, bold: true, from: 0, to: 2 },
+      { type: 'apply-paragraph-style', sectionPath, textNodeId: memo.textNodeId, align: 'CENTER' }
+    ], selection, caret(middle, 0, 2), 'formatBold')
+    assertReplayableTransaction(styleTransaction, source)
+    history.commit(styleTransaction)
+    const edited = section(history.package)
+    expect(edited).toContain(`<hp:run charPrIDRef="1"><hp:t>메모</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t> 본문</hp:t></hp:run>`)
+    expect(edited).toContain(`<hp:p id="0" paraPrIDRef="4" styleIDRef="0"`)
+    // 메모 범위(fieldBegin 속성·fieldEnd)는 그대로다.
+    expect(edited.slice(edited.indexOf('<hp:ctrl><hp:fieldBegin'), edited.indexOf('<hp:subList', edited.indexOf('<hp:ctrl><hp:fieldBegin'))))
+      .toBe(original.slice(original.indexOf('<hp:ctrl><hp:fieldBegin'), original.indexOf('<hp:subList', original.indexOf('<hp:ctrl><hp:fieldBegin'))))
+    expect(edited).toContain('<hp:ctrl><hp:fieldEnd beginIDRef="9401" fieldid="9402"/></hp:ctrl>')
+    const document = await decodeViewerDocument(history.package)
+    const memoItem = placeholders(document).find((item) => item.kind === 'memo')!
+    expect(memoItem.paragraphs![0].content).toMatchObject([{ text: '메모', charStyleId: '1' }, { text: ' 본문', charStyleId: '0' }])
+    expect(document.paraStyles[memoItem.paragraphs![0].paraStyleId]).toMatchObject({ align: 'CENTER' })
+    // 나뉜 메모 run에도 계속 입력할 수 있다(MEMO_TEXT context, 같은 메모 범위 scope).
+    const contexts = listEditingAnchorContexts(document).filter((context) => context.structure === 'MEMO_TEXT')
+    expect(contexts.map((context) => context.text)).toEqual(['메모', ' 본문'])
+    expect(new Set(contexts.map((context) => context.rangeScope)).size).toBe(1)
+    history.undo()
+    expect(section(history.package)).toBe(original)
+    history.redo()
+    expect(section(history.package)).toBe(edited)
   })
 
   test('복구 기록 replay 검사는 글상자·메모 글자, subList 글자·문단 모양 command를 받는다', async () => {

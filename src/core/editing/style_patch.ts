@@ -44,6 +44,7 @@ import {
   writeTagAttribute
 } from './source_tree'
 import { buildLossReport, findTagEnd, isSurrogateBoundarySafe } from './xml_scan'
+import { isPlainSubList } from './paragraph_structure'
 
 /**
  * 글자·문단 모양 command.
@@ -173,7 +174,7 @@ function locateTextStyleContext(
     }
     const empty = locateHwpxEmptyParagraph(sourcePackage, sectionPath, textNodeId)
     if (!empty) throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
-    if (!isStyleEditableParagraph(empty.paragraph)) throw new HwpxEditConflictError(STYLE_SCOPE_MESSAGE)
+    if (!isStyleEditableParagraph(empty.tree, empty.paragraph)) throw new HwpxEditConflictError(STYLE_SCOPE_MESSAGE)
     return { tree: empty.tree, paragraph: empty.paragraph, run: empty.run }
   }
   const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
@@ -181,7 +182,7 @@ function locateTextStyleContext(
   const { tree, element: textNode } = located
   const run = nearestSourceAncestor(textNode, 'hp:run')
   const paragraph = nearestSourceAncestor(textNode, 'hp:p')
-  if (!run || !paragraph || run.parent !== paragraph || !isStyleEditableParagraph(paragraph)) {
+  if (!run || !paragraph || run.parent !== paragraph || !isStyleEditableParagraph(tree, paragraph)) {
     throw new HwpxEditConflictError(STYLE_SCOPE_MESSAGE)
   }
   let leadingNumber = false
@@ -195,7 +196,7 @@ function locateTextStyleContext(
 }
 
 const STYLE_SCOPE_MESSAGE =
-  '글자·문단 모양은 최상위 문단, 최상위 표 셀 직속 문단, 각주·미주·머리말·꼬리말·글자만 든 글상자 문단의 run만 편집할 수 있습니다.'
+  '글자·문단 모양은 최상위 문단, 최상위 표 셀 직속 문단, 각주·미주·머리말·꼬리말·글자만 든 글상자·메모 문단의 run만 편집할 수 있습니다.'
 
 /** 번호 control(`hp:ctrl` 안에 `hp:autoNum`·`hp:autoNumFormat`만)인지. */
 function isNumberControl(node: SourceNode): boolean {
@@ -221,8 +222,12 @@ function isLeadingNumberRun(tree: SourceTree, run: SourceElement, textNode: Sour
     findAllDescendantElements(textNode).length === 0
 }
 
-/** 글자만 든 subList가 가질 수 있는 element(viewer decoder의 `isPlainTextSubList`와 같은 규칙). */
-const PLAIN_SUBLIST_ELEMENTS: ReadonlySet<string> = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
+/** 글자만 든 subList 판정용 접근자(viewer decoder의 `isPlainTextSubList`와 같은 규칙 `isPlainSubList`). */
+const plainSubListAccess = (tree: SourceTree) => ({
+  elementName: (node: SourceNode) => node.kind === 'element' ? node.name : undefined,
+  children: (node: SourceNode) => node.kind === 'element' ? node.children : [],
+  attribute: (node: SourceNode, name: string) => node.kind === 'element' ? getSourceAttribute(tree, node, name) : undefined
+})
 
 /** 각주·미주·머리말·꼬리말 subList를 담는 element. 글상자(`hp:drawText`)는 글자만 든 subList일 때만 받는다. */
 const STYLE_SUBLIST_HOSTS: ReadonlySet<string> = new Set(['hp:footNote', 'hp:endNote', 'hp:header', 'hp:footer'])
@@ -230,15 +235,17 @@ const STYLE_SUBLIST_HOSTS: ReadonlySet<string> = new Set(['hp:footNote', 'hp:end
 /**
  * style command를 받는 문단 위치. `hs:sec` 직속 문단, 최상위 문단에 든 표(`hs:sec > hp:p > hp:run > hp:tbl`)의
  * 셀 `hp:subList` 직속 문단(병합·머리글 셀 포함), 각주·미주·머리말·꼬리말 `hp:subList` 직속 문단, 글자만 든 글상자
- * (`hp:drawText/hp:subList`) 직속 문단이다. 셀 안에 다시 든 표, 개체가 든 글상자, 메모·필드 subList는 제외한다.
+ * (`hp:drawText/hp:subList`, 글자만 든 각주·미주는 품어도 된다) 직속 문단, 글자만 든 메모(`hp:fieldBegin type="MEMO"`) 본문
+ * 직속 문단이다(2026-10-20). 셀 안에 다시 든 표, 개체가 든 글상자·메모, 그 밖의 필드 subList는 제외한다.
  */
-function isStyleEditableParagraph(paragraph: SourceElement): boolean {
+function isStyleEditableParagraph(tree: SourceTree, paragraph: SourceElement): boolean {
   const scope = paragraph.parent
   if (scope?.name === 'hs:sec') return true
   if (scope?.name !== 'hp:subList') return false
   if (scope.parent && STYLE_SUBLIST_HOSTS.has(scope.parent.name)) return true
-  if (scope.parent?.name === 'hp:drawText') {
-    return findAllDescendantElements(scope).every((element) => PLAIN_SUBLIST_ELEMENTS.has(element.name))
+  if (scope.parent?.name === 'hp:drawText') return isPlainSubList<SourceNode>(scope, plainSubListAccess(tree), true)
+  if (scope.parent?.name === 'hp:fieldBegin') {
+    return getSourceAttribute(tree, scope.parent, 'type') === 'MEMO' && isPlainSubList<SourceNode>(scope, plainSubListAccess(tree))
   }
   const cell = scope.parent
   const row = cell?.parent

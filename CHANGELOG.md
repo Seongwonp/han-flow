@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### 미주 만들기·지우기, 표 셀·글상자 안 각주, 쪽마다 매기는 각주, 번호 문단 Enter, 메모 모양
+
+- 리본 `편집` 탭 `각주·미주` group에 [미주 넣기]·[미주 지우기]를 더하고(`insert-endnote`·`delete-endnote`, 구역 미주 모양 번호·뒤 번호 다시 매기기, 미주 본문은 구역·문서 끝 목록), 각주·미주를 본문·표 셀·글상자 문단 caret에 넣을 수 있게 함(`noteHostViolation`). 머리말·꼬리말은 한/글처럼 막고 사유를 표시(`NOTE_IN_HEADER_FOOTER`). 글상자는 글자만 든 각주·미주를 품어도 계속 편집 가능(`isPlainSubList`)
+- 쪽마다 새로 매기는(`ON_PAGE`) 각주 구역의 각주 넣기·지우기: 새 각주에 앞 각주 번호 + 1을 임시로 쓰고 다른 번호는 그대로 둠(화면·한/글이 쪽마다 다시 매김)
+- 번호가 든 각주·미주 첫 문단의 Enter(번호는 앞 문단에 남김)와 그 문단으로의 Backspace 병합, 메모 본문 글자·문단 모양
+- 복구 기록 version 5(미주 command, version 1~4도 읽음), replay 검사가 번호 문단 fragment의 번호 control을 바꾸기 전 원문과 맞춰 봄. 편집 coverage에 각주·미주 넣기 지표(외부 325/399, 불일치 0)와 측정 `editing_coverage_2026-10-20-notes.json`, golden(미주·번호 문단 Enter·메모 모양 표본), 단위 test, verify:matrix 합성 fixture `createNoteEditHwpx` E2E(미주·표 셀·글상자·`ON_PAGE` 각주 넣기 → 입력 → 실행 취소·다시 실행 → 번호 문단 Enter → 지우기 → 실행 취소 → Save As → 재열기)와 메모 모양 E2E 추가
+
 ### 구역마다 다른 쪽 크기·방향·여백
 
 - 구역(`hp:secPr/hp:pagePr`)마다 쪽 설정을 따로 읽어(`sectionPageGeometries`, 없으면 앞 구역 것) 쪽 상자·본문·머리말·꼬리말 띠·쪽 번호·각주 영역·원본 위치 개체(용지·쪽 기준)·단·자리 표시 높이 한도를 그 구역 값으로 그림(`ViewerSection.page`·`viewerSectionPage`·`renderStylesForPage`). 가로 방향(`landscape="NARROWLY"`, 한/글은 세로 용지 크기를 씀)은 용지를 돌리고, 제본 여백은 왼쪽(`LEFT_ONLY`)·위쪽(`TOP_BOTTOM`)에 더하며 맞쪽(`LEFT_RIGHT`)은 짝수 쪽 왼쪽·오른쪽 여백을 바꿈(`viewerPageFrameAt`). 공개 corpus `ext-hwpxlib-page-size`(B4 가로)가 이제 가로로 나옴

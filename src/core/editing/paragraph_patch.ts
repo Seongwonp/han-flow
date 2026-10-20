@@ -13,7 +13,7 @@ import {
   splitHwpxTextContent
 } from './text_patch'
 import { buildLossReport } from './xml_scan'
-import { ParagraphStructureAccess, paragraphStructureViolation } from './paragraph_structure'
+import { isNoteNumberControl, isPlainSubList, ParagraphStructureAccess, paragraphStructureViolation } from './paragraph_structure'
 import { putPackageTrees, takePackageTrees, withSerializedTree } from './package_trees'
 import {
   elementCloseTag,
@@ -129,21 +129,29 @@ function locateParagraph(
   return { tree, textNode, run, paragraph, scope }
 }
 
-/** 글자만 든 subList가 가질 수 있는 element(viewer decoder의 `isPlainTextSubList`와 같은 규칙). */
-const PLAIN_SUBLIST_ELEMENTS: ReadonlySet<string> = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
-
 /**
- * 문단 구조 command를 받는 표 셀 밖 subList: 각주·미주·머리말·꼬리말, 글자만 든 글상자(`hp:drawText`). 메모·필드 subList는
- * 글자만 고친다.
+ * 문단 구조 command를 받는 표 셀 밖 subList: 각주·미주·머리말·꼬리말, 글자만 든 글상자(`hp:drawText`, 글자만 든 각주·미주는
+ * 품어도 된다 — viewer decoder의 `isPlainTextSubList`와 같은 규칙). 메모·필드 subList는 글자만 고친다.
  */
 function isStructureSubList(scope: SourceElement): boolean {
   const host = scope.parent?.name
   if (host === 'hp:footNote' || host === 'hp:endNote' || host === 'hp:header' || host === 'hp:footer') return true
   if (host !== 'hp:drawText') return false
-  const plain = (node: SourceElement): boolean => node.children.every(
-    (child) => child.kind !== 'element' || (PLAIN_SUBLIST_ELEMENTS.has(child.name) && plain(child))
-  )
-  return plain(scope)
+  return isPlainSubList<SourceNode>(scope, SOURCE_ELEMENT_ACCESS, true)
+}
+
+/** attribute 없이 이름·자식만 보는 접근자(글자만 든 subList 판정). 번호 control의 `numType`은 문단 구조 검사가 본다. */
+const SOURCE_ELEMENT_ACCESS = {
+  elementName: (node: SourceNode) => node.kind === 'element' ? node.name : undefined,
+  children: (node: SourceNode) => node.kind === 'element' ? node.children : []
+}
+
+/** 각주·미주 본문 첫 문단인지(번호 control이 든 첫 run을 문단 구조 command에 받는다). */
+export function isNoteNumberParagraph(paragraph: SourceElement): boolean {
+  const scope = paragraph.parent
+  const host = scope?.parent?.name
+  return scope?.name === 'hp:subList' && (host === 'hp:footNote' || host === 'hp:endNote') &&
+    scope.children.find((child) => child.kind === 'element' && child.name === 'hp:p') === paragraph
 }
 
 /** element가 아닌 형제(text·comment·CDATA·PI)가 공백 text뿐이면 true. */
@@ -156,7 +164,8 @@ export function sourceParagraphStructureAccess(tree: SourceTree): ParagraphStruc
   return {
     elementName: (node) => node.kind === 'element' ? node.name : undefined,
     children: (node) => node.kind === 'element' ? node.children : [],
-    isBlank: (node) => isBlankNode(tree, node)
+    isBlank: (node) => isBlankNode(tree, node),
+    attribute: (node, name) => node.kind === 'element' ? getSourceAttribute(tree, node, name) : undefined
   }
 }
 
@@ -166,7 +175,9 @@ export function sourceParagraphStructureAccess(tree: SourceTree): ParagraphStruc
  */
 function assertSimpleParagraph(context: ParagraphContext): SourceElement[] {
   const { tree, paragraph } = context
-  const violation = paragraphStructureViolation<SourceNode>(paragraph, sourceParagraphStructureAccess(tree))
+  const violation = paragraphStructureViolation<SourceNode>(paragraph, sourceParagraphStructureAccess(tree), {
+    numberRun: isNoteNumberParagraph(paragraph)
+  })
   if (violation) throw new HwpxEditConflictError(violation.message)
   return paragraph.children.filter(
     (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:run'
@@ -195,10 +206,17 @@ function nextParagraphOpenTag(tree: SourceTree, paragraph: SourceElement): strin
   return writeTagAttribute(openTag, 'id', String(nextId))
 }
 
-/** run 여는·닫는 tag 원문 사이에 `hp:t`를 주어진 원문 내용으로 다시 쓴 run(run 안 공백 text는 쓰지 않는다). */
-function changedTextRun(context: ParagraphContext, content: string): string {
+/**
+ * run 여는·닫는 tag 원문 사이에 `hp:t`를 주어진 원문 내용으로 다시 쓴 run(run 안 공백 text는 쓰지 않는다). `keepNumber`면
+ * `hp:t` 앞 각주·미주 번호 control을 원문 그대로 앞에 둔다(번호 문단을 나눈 앞 조각·범위 치환 시작 run).
+ */
+function changedTextRun(context: ParagraphContext, content: string, keepNumber = false): string {
   const { tree, run, textNode } = context
-  return elementOpenTag(tree, run) + hwpxTextElementSource(tree, textNode, content) + elementCloseTag(tree, run)
+  const access = sourceParagraphStructureAccess(tree)
+  const numbers = keepNumber
+    ? run.children.slice(0, run.children.indexOf(textNode)).filter((child) => isNoteNumberControl(child, access))
+    : []
+  return elementOpenTag(tree, run) + nodesSource(tree, numbers) + hwpxTextElementSource(tree, textNode, content) + elementCloseTag(tree, run)
 }
 
 /** 문단 안의 `hp:t`(깊이 무관, 문서 순서). */
@@ -281,7 +299,8 @@ export function planSplitParagraph(
   // 선택 범위 [start, end)를 지우고 앞·뒤 원문 조각을 두 run에 나눠 담는다.
   const left = splitHwpxTextContent(tree, context.textNode, normalized.start.offset).before
   const right = splitHwpxTextContent(tree, context.textNode, normalized.end.offset).after
-  const leftRun = changedTextRun(context, left)
+  // 각주·미주 첫 문단을 나누면 번호 control은 앞 문단에 남는다(한/글과 같음).
+  const leftRun = changedTextRun(context, left, true)
   const rightRun = changedTextRun(context, right)
   const paragraphClose = elementCloseTag(tree, paragraph)
   const firstParagraph = elementOpenTag(tree, paragraph) + beforeRuns + leftRun + paragraphClose
@@ -455,7 +474,8 @@ export function planReplaceParagraphSelection(
   // 시작 hp:t는 [0, start) 원문 조각 + 새 text, 끝 hp:t는 [end, …) 원문 조각만 남긴다.
   const changedStartRun = changedTextRun(
     start,
-    splitHwpxTextContent(tree, start.textNode, normalized.start.offset).before + encodeHwpxTextContent(insert)
+    splitHwpxTextContent(tree, start.textNode, normalized.start.offset).before + encodeHwpxTextContent(insert),
+    true
   )
   const changedEndRun = changedTextRun(end, splitHwpxTextContent(tree, end.textNode, normalized.end.offset).after)
   const replacementFragment =

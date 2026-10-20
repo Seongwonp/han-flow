@@ -19,7 +19,7 @@ import {
   emptyParagraphAnchorId,
   tableCaretAnchorId
 } from '../editing/empty_paragraph_anchor'
-import { ParagraphStructureAccess, paragraphStructureViolation } from '../editing/paragraph_structure'
+import { isPlainSubList, ParagraphStructureAccess, paragraphStructureViolation } from '../editing/paragraph_structure'
 import { TableCaretAccess, tableCaretTarget } from '../editing/table_caret'
 import { HwpxPackageIndex, HwpxReadablePackage } from './package_reader'
 import { ImageResourceBudget } from './resource_budget'
@@ -317,15 +317,13 @@ function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
 
 const readOnly = (context: DecodeContext): DecodeContext => ({ ...context, sectionPath: undefined })
 
-/** 글자만 든 subList가 가질 수 있는 element. */
-const PLAIN_SUBLIST_ELEMENTS = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
-
 /**
- * 글상자 글·메모 본문 subList가 글자만 든 문단으로 되어 있는지. 표·그림·도형·수식·각주·필드·제어 같은 개체가 하나라도 있으면
- * 글상자(메모) 전체를 읽기 전용으로 둔다(편집 anchor를 붙이지 않는다). 편집 코어는 같은 `hp:t` 순번 anchor로 글자를 고친다.
+ * 글상자 글·메모 본문 subList가 글자만 든 문단으로 되어 있는지(편집 코어와 같은 규칙 `isPlainSubList`). 표·그림·도형·수식·필드·
+ * 제어 같은 개체가 하나라도 있으면 글상자(메모) 전체를 읽기 전용으로 둔다(편집 anchor를 붙이지 않는다). 글상자 글은 글자만 든
+ * 각주·미주를 품어도 된다(`allowNotes`, 2026-10-20: 글상자 안 각주·미주 넣기). 편집 코어는 같은 `hp:t` 순번 anchor로 글자를 고친다.
  */
-export function isPlainTextSubList(subList: OrderedXmlNode | undefined): boolean {
-  return Boolean(subList) && walkOrderedXml(subList!.children).every((node) => node.name === '#text' || PLAIN_SUBLIST_ELEMENTS.has(node.name))
+export function isPlainTextSubList(subList: OrderedXmlNode | undefined, allowNotes = false): boolean {
+  return Boolean(subList) && isPlainSubList(subList!, orderedParagraphStructureAccess, allowNotes)
 }
 
 /**
@@ -336,11 +334,14 @@ function subListParagraphs(
   subList: OrderedXmlNode | undefined,
   id: string,
   context: DecodeContext,
-  editable = false
+  editable = false,
+  noteBody = false
 ): ViewerParagraph[] {
   const paragraphContext = editable ? context : readOnly(context)
+  // 각주·미주 본문 첫 문단은 번호 control이 든 run도 문단 나눔 규칙에 넣는다(`numberRun`).
   return subList
-    ? children(subList, 'hp:p').map((paragraph, index) => decodeParagraph(paragraph, `${id}:p${index}`, paragraphContext))
+    ? children(subList, 'hp:p').map((paragraph, index) =>
+        decodeParagraph(paragraph, `${id}:p${index}`, paragraphContext, false, noteBody && index === 0))
     : []
 }
 
@@ -349,7 +350,7 @@ function drawTextParagraphs(node: OrderedXmlNode, id: string, context: DecodeCon
   const drawText = child(node, 'hp:drawText')
   if (drawText) {
     const subList = child(drawText, 'hp:subList')
-    return subListParagraphs(subList, id, context, isPlainTextSubList(subList))
+    return subListParagraphs(subList, id, context, isPlainTextSubList(subList, true))
   }
   if (node.name !== 'hp:container') return []
   return node.children
@@ -478,7 +479,7 @@ function decodeControl(node: OrderedXmlNode, id: string, context: DecodeContext)
       : noteMarker(node, ordinal + 1)
     const sourcePath = objectSourcePath(node, context)
     // 각주·미주 본문은 section XML 안에 있어 같은 `hp:t` 순번으로 편집 anchor를 붙인다(쪽 아래 각주·구역 끝 미주에서 글자 편집).
-    const note: ViewerNote = { kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context, true) }
+    const note: ViewerNote = { kind, marker, sourcePath, paragraphs: subListParagraphs(child(node, 'hp:subList'), id, context, true, true) }
     context.notes.push(note)
     // 각주는 번호 표시가 놓인 쪽 아래에 그리도록 본문을 번호 표시에 함께 둔다. 미주는 구역 끝 목록에 모은다.
     return { type: 'object-placeholder', kind, element: node.name, sourcePath, flow: 'marker', label: OBJECT_KIND_LABELS[kind], marker, ...(kind === 'footnote' ? { note } : {}) }
@@ -600,7 +601,8 @@ function fittedHeightReduction(content: readonly ViewerContent[]): number {
 const orderedParagraphStructureAccess: ParagraphStructureAccess<OrderedXmlNode> = {
   elementName: (node) => node.name === '#text' ? undefined : node.name,
   children: (node) => node.children,
-  isBlank: (node) => node.name === '#text' && !(node.text ?? '').trim()
+  isBlank: (node) => node.name === '#text' && !(node.text ?? '').trim(),
+  attribute: (node, name) => node.attributes[name]
 }
 
 /** viewer ordered XML용 {@link TableCaretAccess}(편집 코어와 같은 표 앞·뒤 caret 규칙). */
@@ -614,7 +616,8 @@ function decodeParagraph(
   node: OrderedXmlNode,
   id: string,
   context: DecodeContext,
-  topLevel = false
+  topLevel = false,
+  numberRun = false
 ): ViewerParagraph {
   const { sectionPath, styleCharacterIds } = context
   const content: ViewerContent[] = []
@@ -677,7 +680,7 @@ function decodeParagraph(
   )
   const layoutTop = lineSegments.length ? starts[0] : undefined
   const layoutLastTop = lineSegments.length > 1 && starts[starts.length - 1] !== starts[0] ? starts[starts.length - 1] : undefined
-  const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess)?.block
+  const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess, { numberRun })?.block
   return {
     id,
     paraStyleId: node.attributes.paraPrIDRef ?? '0',

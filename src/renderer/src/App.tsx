@@ -3034,11 +3034,12 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
-  const insertFootnote = useCallback(async () => {
+  const insertNote = useCallback(async (noteKind: 'footnote' | 'endnote') => {
+    const label = noteKind === 'endnote' ? '미주' : '각주'
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.footnote.available
+      !editingCapabilityState[noteKind].available
     ) return
     const sessionId = editing.sessionId
     const requested = editingSelectionRef.current ?? editingSelection
@@ -3046,17 +3047,18 @@ export default function App() {
     await editingTransient.current.runAfterInput(async (waitedForInput) => {
       const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
       setEditingPending((current) => current + 1)
-      setEditingStatus('각주 넣는 중…')
+      setEditingStatus(`${label} 넣는 중…`)
       try {
         applyEditingResult(await api().insertFootnote({
           sessionId,
-          transactionId: editingTransient.current.nextTransactionId('ui-footnote-insert'),
+          transactionId: editingTransient.current.nextTransactionId(`ui-${noteKind}-insert`),
           selectionBefore: selection,
+          ...(noteKind === 'endnote' ? { noteKind } : {}),
           timestamp: performance.now()
         }) as EditingActionResult)
-        setEditingStatus('caret 자리에 각주를 넣고 각주 본문으로 이동')
+        setEditingStatus(`caret 자리에 ${label}를 넣고 ${label} 본문으로 이동`)
       } catch (reason) {
-        await recoverEditingFailure('각주 넣기', reason)
+        await recoverEditingFailure(`${label} 넣기`, reason)
       } finally {
         setEditingPending((current) => Math.max(0, current - 1))
       }
@@ -3065,11 +3067,13 @@ export default function App() {
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.footnote.available,
+    editingCapabilityState.endnote.available,
     applyEditingResult,
     recoverEditingFailure
   ])
-  const deleteFootnote = useCallback(async () => {
-    const notePath = editingCapabilityState.focus?.footnotePath
+  const deleteNote = useCallback(async (noteKind: 'footnote' | 'endnote') => {
+    const label = noteKind === 'endnote' ? '미주' : '각주'
+    const notePath = noteKind === 'endnote' ? editingCapabilityState.focus?.endnotePath : editingCapabilityState.focus?.footnotePath
     if (
       !editing ||
       !editingSelection ||
@@ -3081,18 +3085,18 @@ export default function App() {
     await editingTransient.current.runAfterInput(async (waitedForInput) => {
       const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
       setEditingPending((current) => current + 1)
-      setEditingStatus('각주 지우는 중…')
+      setEditingStatus(`${label} 지우는 중…`)
       try {
         applyEditingResult(await api().deleteFootnote({
           sessionId,
-          transactionId: editingTransient.current.nextTransactionId('ui-footnote-delete'),
+          transactionId: editingTransient.current.nextTransactionId(`ui-${noteKind}-delete`),
           selectionBefore: selection,
           notePath,
           timestamp: performance.now()
         }) as EditingActionResult)
-        setEditingStatus('각주를 지우고 뒤 각주 번호를 다시 매김')
+        setEditingStatus(`${label}를 지우고 뒤 ${label} 번호를 다시 매김`)
       } catch (reason) {
-        await recoverEditingFailure('각주 지우기', reason)
+        await recoverEditingFailure(`${label} 지우기`, reason)
       } finally {
         setEditingPending((current) => Math.max(0, current - 1))
       }
@@ -3101,6 +3105,7 @@ export default function App() {
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.focus?.footnotePath,
+    editingCapabilityState.focus?.endnotePath,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -3248,7 +3253,7 @@ export default function App() {
         'paragraph-structure': '문단 구조',
         'table-cell-style': '표 셀 모양',
         'table-structure': '표 구조',
-        'note-structure': '각주'
+        'note-structure': '각주·미주'
       } as const
       const savedStructures = result.lossPolicy.structures
         .map(({ structure }) => structureLabels[structure])
@@ -3481,8 +3486,15 @@ export default function App() {
       onSplitTableCell={() => void splitTableCell()}
       footnoteAvailable={editingCapabilityState.footnote.available}
       footnoteDeleteAvailable={Boolean(editingCapabilityState.focus?.footnotePath)}
-      onInsertFootnote={() => void insertFootnote()}
-      onDeleteFootnote={() => void deleteFootnote()}
+      onInsertFootnote={() => void insertNote('footnote')}
+      onDeleteFootnote={() => void deleteNote('footnote')}
+      endnoteAvailable={editingCapabilityState.endnote.available}
+      endnoteDeleteAvailable={Boolean(editingCapabilityState.focus?.endnotePath)}
+      onInsertEndnote={() => void insertNote('endnote')}
+      onDeleteEndnote={() => void deleteNote('endnote')}
+      noteUnavailableTitle={editingCapabilityState.footnote.reason && editingCapabilityState.footnote.reason !== 'NO_SELECTION'
+        ? editingCapabilityStatus('각주·미주 넣기', editingCapabilityState.footnote.reason)
+        : undefined}
     />
     {effectiveDocument && !loading && !objectNotice.dismissed && <ObjectPlaceholderBanner
       counts={objectPlaceholderCounts}

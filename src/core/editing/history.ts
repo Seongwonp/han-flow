@@ -105,8 +105,8 @@ function commandBytes(transaction: EditTransaction): number {
           0
         )
       }
-      if (command.type === 'insert-footnote') return sum + common + 16
-      if (command.type === 'delete-footnote') return sum + common + Buffer.byteLength(command.notePath, 'utf8')
+      if (command.type === 'insert-footnote' || command.type === 'insert-endnote') return sum + common + 16
+      if (command.type === 'delete-footnote' || command.type === 'delete-endnote') return sum + common + Buffer.byteLength(command.notePath, 'utf8')
       if (command.type === 'restore-footnote') {
         // 각주를 넣거나 지운 본문 문단 원문 두 벌과 다른 각주 번호(항목마다 경로·값 몫으로 64 bytes)를 든다.
         return sum + common +

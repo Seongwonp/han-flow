@@ -20,7 +20,8 @@ import { isSurrogateBoundarySafe } from './xml_scan'
  * - `TEXT_BOX_TEXT`: 글자만 든 글상자(도형 글 `hp:drawText`) 문단
  * - `MEMO_TEXT`: 글자만 든 메모 본문 문단
  * 각주·미주·머리말·꼬리말·글상자 문단은 글자 입력·삭제·치환, 글자·문단 모양, 문단 구조 규칙(`paragraph_structure.ts`)을 통과한
- * 문단의 Enter·경계 병합을 허용한다. 범위 선택은 문단 하나 안이다. 메모 본문은 글자 입력·삭제·치환만 허용한다.
+ * 문단의 Enter·경계 병합을 허용한다(각주·미주 첫 문단은 번호 control이 든 run도 나눈다). 범위 선택은 문단 하나 안이다. 메모 본문은
+ * 글자 입력·삭제·치환과 글자·문단 모양만 허용한다(문단 나눔·병합은 막는다).
  */
 export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT' | SublistStructure
 /** subList 문단 구조(각주·미주, 머리말·꼬리말, 글상자, 메모). 문단마다 범위 scope를 따로 둔다. */
@@ -39,10 +40,14 @@ export type EditingCapabilityReason =
   | 'PARAGRAPH_COMPLEX_RUN'
   /** 표가 든 본문 문단의 표 앞·뒤 글자. 글자 입력·삭제만 하고 글자 모양·문단 나눔은 막는다(표 앞·뒤 caret은 문단 모양도 막는다). */
   | 'TABLE_PARAGRAPH'
-  /** 메모 본문 문단. 글자 입력·삭제·치환만 한다(글자·문단 모양과 문단 나눔·병합은 막는다). */
+  /** 메모 본문 문단. 글자 입력·삭제·치환과 글자·문단 모양만 한다(문단 나눔·병합은 막는다). */
   | 'SUBLIST_TEXT'
-  /** 각주는 본문 문단(구역 직속, 표가 든 문단 제외) 글자 사이의 접힌 caret에만 넣는다. */
+  /**
+   * 각주·미주는 본문 문단(표가 든 문단 제외)·표 셀 문단·글상자 문단 글자 사이의 접힌 caret에만 넣는다(각주·미주·메모 본문 안은 막는다).
+   */
   | 'FOOTNOTE_POSITION'
+  /** 머리말·꼬리말(그 안 글상자 포함)에는 각주·미주를 넣지 않는다(한/글도 막는다). */
+  | 'NOTE_IN_HEADER_FOOTER'
 
 export interface EditingCapabilityState {
   available: boolean
@@ -71,8 +76,12 @@ export interface EditingAnchorContext {
   emptyParagraph?: boolean
   /** 표가 든 본문 문단(`table_caret.ts`)의 글자 anchor이면 true. */
   tableParagraph?: boolean
-  /** 쪽 아래 각주 본문 문단이면 그 각주 경로(`${sectionPath}#hp:footNote:K`). 각주 지우기 대상이다(미주는 없다). */
+  /** 쪽 아래 각주 본문 문단이면 그 각주 경로(`${sectionPath}#hp:footNote:K`). 각주 지우기 대상이다. */
   footnotePath?: string
+  /** 구역 끝 미주 본문 문단이면 그 미주 경로(`${sectionPath}#hp:endNote:K`). 미주 지우기 대상이다. */
+  endnotePath?: string
+  /** 이 문단 caret에 각주·미주를 넣을 수 없는 이유(subList 문단). 본문·표 셀 문단은 `editingCapabilities`가 정한다. */
+  noteBlock?: EditingCapabilityReason
   /** 그 가운데 글자가 아직 없는 표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`)이면 true. */
   tableCaret?: boolean
   /**
@@ -97,6 +106,8 @@ export interface EditingCapabilities {
   cellStyle: EditingCapabilityState
   /** caret 자리에 각주 만들기(`footnote_patch.ts`). 지우기는 `focus.footnotePath`가 있는 각주 본문이나 번호 표시를 품은 범위에서 한다. */
   footnote: EditingCapabilityState
+  /** caret 자리에 미주 만들기. 자리 규칙은 각주와 같고, 지우기는 `focus.endnotePath`가 있는 미주 본문에서 한다. */
+  endnote: EditingCapabilityState
   focus?: EditingAnchorContext
 }
 
@@ -175,24 +186,36 @@ interface SublistGroup {
   paragraphs: readonly ViewerParagraph[]
   /** 쪽 아래 각주면 그 각주 경로. */
   footnotePath?: string
+  /** 구역 끝 미주면 그 미주 경로. */
+  endnotePath?: string
+  /** 이 subList 문단에 각주·미주를 넣을 수 없는 이유. 없으면 넣을 수 있다(본문·표 셀 안 글상자). */
+  noteBlock?: EditingCapabilityReason
 }
 
 /**
- * 문단 목록 안의 subList 묶음을 문서 순서로 모은다: 각주 번호 표시의 본문, 글상자 글, 메모 본문. 표 셀(깊이 무관)과 각주 본문 안도
- * 본다. 글상자·메모 안은 다시 보지 않는다(글자만 든 글상자·메모에는 개체가 없고, 개체가 든 것은 decoder가 anchor를 붙이지 않는다).
- * 미주는 구역 끝 목록 block에 있어 따로 모은다(`sectionSublistGroups`).
+ * 문단 목록 안의 subList 묶음을 문서 순서로 모은다: 각주 번호 표시의 본문, 글상자 글, 메모 본문. 표 셀(깊이 무관)·각주 본문·글상자
+ * 글 안도 본다(글자만 든 글상자는 글자만 든 각주·미주를 품을 수 있다). 메모 안은 다시 보지 않는다(글자만 든 메모에는 개체가 없고,
+ * 개체가 든 것은 decoder가 anchor를 붙이지 않는다). 미주는 구역 끝 목록 block에 있어 따로 모은다(`sectionSublistGroups`).
+ * `noteBlock`은 이 문단들이 든 자리에서 물려받는 각주·미주 넣기 차단 이유(머리말·꼬리말·각주 안)다.
  */
-function embeddedSublistGroups(paragraphs: readonly ViewerParagraph[], groups: SublistGroup[] = []): SublistGroup[] {
+function embeddedSublistGroups(
+  paragraphs: readonly ViewerParagraph[],
+  groups: SublistGroup[] = [],
+  noteBlock?: EditingCapabilityReason
+): SublistGroup[] {
   for (const paragraph of paragraphs) {
     for (const item of paragraph.content) {
       if (item.type === 'table') {
-        for (const row of item.rows) for (const cell of row.cells) embeddedSublistGroups(cell.paragraphs, groups)
+        for (const row of item.rows) for (const cell of row.cells) embeddedSublistGroups(cell.paragraphs, groups, noteBlock)
       } else if (item.type === 'object-placeholder') {
         if (item.note) {
-          groups.push({ structure: 'NOTE_TEXT', paragraphs: item.note.paragraphs, footnotePath: item.note.sourcePath })
-          embeddedSublistGroups(item.note.paragraphs, groups)
-        } else if (item.paragraphs?.length && (item.kind === 'text-box' || item.kind === 'memo')) {
-          groups.push({ structure: item.kind === 'memo' ? 'MEMO_TEXT' : 'TEXT_BOX_TEXT', paragraphs: item.paragraphs })
+          groups.push({ structure: 'NOTE_TEXT', paragraphs: item.note.paragraphs, footnotePath: item.note.sourcePath, noteBlock: 'FOOTNOTE_POSITION' })
+          embeddedSublistGroups(item.note.paragraphs, groups, 'FOOTNOTE_POSITION')
+        } else if (item.paragraphs?.length && item.kind === 'memo') {
+          groups.push({ structure: 'MEMO_TEXT', paragraphs: item.paragraphs, noteBlock: 'FOOTNOTE_POSITION' })
+        } else if (item.paragraphs?.length && item.kind === 'text-box') {
+          groups.push({ structure: 'TEXT_BOX_TEXT', paragraphs: item.paragraphs, ...(noteBlock ? { noteBlock } : {}) })
+          embeddedSublistGroups(item.paragraphs, groups, noteBlock)
         }
       }
     }
@@ -216,16 +239,16 @@ function sectionSublistGroups(section: ViewerSection): SublistGroup[] {
         if (!paragraphs) {
           paragraphs = []
           endnotes.set(note.sourcePath, paragraphs)
-          groups.push({ structure: 'NOTE_TEXT', paragraphs })
+          groups.push({ structure: 'NOTE_TEXT', paragraphs, endnotePath: note.sourcePath, noteBlock: 'FOOTNOTE_POSITION' })
         }
         paragraphs.push(...note.paragraphs)
-        embeddedSublistGroups(note.paragraphs, groups)
+        embeddedSublistGroups(note.paragraphs, groups, 'FOOTNOTE_POSITION')
       }
     }
   }
   for (const control of [...section.headers, ...section.footers]) {
-    groups.push({ structure: 'HEADER_FOOTER_TEXT', paragraphs: control.paragraphs })
-    embeddedSublistGroups(control.paragraphs, groups)
+    groups.push({ structure: 'HEADER_FOOTER_TEXT', paragraphs: control.paragraphs, noteBlock: 'NOTE_IN_HEADER_FOOTER' })
+    embeddedSublistGroups(control.paragraphs, groups, 'NOTE_IN_HEADER_FOOTER')
   }
   return groups
 }
@@ -405,7 +428,12 @@ function sublistContexts(group: SublistGroup, sectionPath: string): EditingAncho
     const texts = editableTexts(paragraph)
     if (!texts) return []
     const contexts = paragraphContexts(paragraph, texts, group.structure, structure[index].rangeScope, undefined, structure[index].gate)
-    return group.footnotePath ? contexts.map((context) => ({ ...context, footnotePath: group.footnotePath })) : contexts
+    const extra = {
+      ...(group.footnotePath ? { footnotePath: group.footnotePath } : {}),
+      ...(group.endnotePath ? { endnotePath: group.endnotePath } : {}),
+      ...(group.noteBlock ? { noteBlock: group.noteBlock } : {})
+    }
+    return Object.keys(extra).length ? contexts.map((context) => ({ ...context, ...extra })) : contexts
   })
 }
 
@@ -560,7 +588,8 @@ export function editingCapabilities(
       paragraphStyle: state,
       paragraphStructure: state,
       cellStyle: state,
-      footnote: state
+      footnote: state,
+      endnote: state
     }
   }
   const contexts = listEditingAnchorContexts(document)
@@ -575,7 +604,8 @@ export function editingCapabilities(
       paragraphStyle: state,
       paragraphStructure: state,
       cellStyle: state,
-      footnote: state
+      footnote: state,
+      endnote: state
     }
   }
   if (anchor.rangeScope !== focus.rangeScope) {
@@ -588,6 +618,7 @@ export function editingCapabilities(
       paragraphStructure: state,
       cellStyle: state,
       footnote: state,
+      endnote: state,
       focus
     }
   }
@@ -602,6 +633,7 @@ export function editingCapabilities(
       paragraphStructure: state,
       cellStyle: state,
       footnote: state,
+      endnote: state,
       focus
     }
   }
@@ -618,18 +650,16 @@ export function editingCapabilities(
   const emptyParagraph = anchor.emptyParagraph === true || focus.emptyParagraph === true
   // 글자·문단 모양은 본문, 표 셀(병합·머리글 셀 포함), 각주·미주·머리말·꼬리말·글상자 문단 모두 같은 run·문단 조건만 본다.
   // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
-  // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다. 메모 본문은 글자만,
+  // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다. 메모 본문은 글자와 글자·문단 모양만,
   // 표가 든 본문 문단은 글자와(표 앞·뒤 caret이 아니면) 문단 모양만 연다.
   const characterStyle = (): EditingCapabilityState => {
-    if (memo) return unavailable('SUBLIST_TEXT')
-    if (!topLevel && !tableCell && !sublist) return unavailable('TABLE_CELL_STRUCTURE')
+    if (!topLevel && !tableCell && !sublist && !memo) return unavailable('TABLE_CELL_STRUCTURE')
     if (tableParagraph) return unavailable('TABLE_PARAGRAPH')
     if (emptyParagraph) return unavailable('EMPTY_PARAGRAPH')
     return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
   }
   const paragraphStyle = (): EditingCapabilityState => {
-    if (memo) return unavailable('SUBLIST_TEXT')
-    if (!topLevel && !tableCell && !sublist) return unavailable('TABLE_CELL_STRUCTURE')
+    if (!topLevel && !tableCell && !sublist && !memo) return unavailable('TABLE_CELL_STRUCTURE')
     if (tableCaret) return unavailable('TABLE_PARAGRAPH')
     return sameParagraph ? { available: true } : unavailable('MULTI_PARAGRAPH_SELECTION')
   }
@@ -641,6 +671,15 @@ export function editingCapabilities(
     if (focus.structureGate?.split) return unavailable(focus.structureGate.split)
     return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
   }
+  // 각주·미주는 본문·표 셀·글상자 문단 글자 사이의 접힌 caret에 넣는다(편집 코어 `noteHostViolation`과 같은 자리). 머리말·꼬리말과
+  // 각주·미주·메모 본문 안은 막는다.
+  const note = (): EditingCapabilityState => {
+    if (focus.noteBlock) return unavailable(focus.noteBlock)
+    if (!topLevel && !tableCell && anchor.structure !== 'TEXT_BOX_TEXT') return unavailable('FOOTNOTE_POSITION')
+    return sameRun && selection.anchorOffset === selection.focusOffset && !tableParagraph && !emptyParagraph
+      ? { available: true }
+      : unavailable('FOOTNOTE_POSITION')
+  }
   return {
     selection: { available: true },
     text: { available: true },
@@ -650,10 +689,8 @@ export function editingCapabilities(
     cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },
-    // 각주는 본문 문단 글자 사이의 접힌 caret에 넣는다. 구역 각주 번호가 쪽마다 새로 매기기면 편집 코어가 거부한다.
-    footnote: topLevel && sameRun && selection.anchorOffset === selection.focusOffset && !tableParagraph && !emptyParagraph
-      ? { available: true }
-      : unavailable('FOOTNOTE_POSITION'),
+    footnote: note(),
+    endnote: note(),
     focus
   }
 }

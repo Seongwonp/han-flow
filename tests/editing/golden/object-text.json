@@ -42,8 +42,12 @@
  "ext-pyhwpx-memos": {
   "memo 1 insert": "Contents/section0.xml 06b6fdcb1693c08f4da7f5a5d8815b57c6aa36c5bea4c8b7e0ef86cae1db523c",
   "memo 1 replace-all": "Contents/section0.xml 87f5e0a6d740b8299b81d1bb37a2a3ed427380eef349c5fe3c8f5df2b1e40fa2",
+  "memo 1 bold": "Contents/header.xml,Contents/section0.xml e713462c42e20e010b4a73a2524aff07608d1f477a75bcb9d3bb68710a8dd180",
+  "memo 1 align": "Contents/header.xml,Contents/section0.xml db10288470b3ccae9c4155fda5b9dc592818d398880c77a5aa6f537e4a55af72",
   "memo 4 insert": "Contents/section0.xml 7461fc9a01cdf0aa65bc7fb5b9408b383d4e14264ddd882cd344d7dc5ae9bfaf",
-  "memo 4 replace-all": "Contents/section0.xml 89e843f3b2b2bf7e4121f94723489569b3fc11d177161afda9bfcb8f00b0ece8"
+  "memo 4 replace-all": "Contents/section0.xml 89e843f3b2b2bf7e4121f94723489569b3fc11d177161afda9bfcb8f00b0ece8",
+  "memo 4 bold": "Contents/header.xml,Contents/section0.xml d38316282056ba1ffa745c4f0b1e8aab115498015df2469d4aa59e089641c58e",
+  "memo 4 align": "Contents/header.xml,Contents/section0.xml 777b3dfa1435cf863354288151b0e63c1f0eedc5e398728ce95fa76aac664f55"
  },
  "ext-pyhwpx-foot-endnotes": {},
  "ext-pyhwpx-text-box-fields": {

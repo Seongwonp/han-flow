@@ -143,7 +143,19 @@ const SUBLIST_EDIT_CASES = [
   { id: 'note-style', target: 'note', text: '각주모양', style: true },
   { id: 'text-box-style', target: 'text-box', text: '상자모양', style: true },
   // 제목 caret에 각주를 넣고(기존 각주 앞이라 새 각주가 1번, 기존 각주가 2번) 입력·되돌리기·지우기·되돌리기 뒤 저장한다.
-  { id: 'footnote', target: 'footnote', text: '새각주' }
+  { id: 'footnote', target: 'footnote', text: '새각주' },
+  // 메모 본문 글자·문단 모양(2026-10-20).
+  { id: 'memo-style', target: 'memo', text: '메모모양', style: true }
+]
+
+// 각주·미주 넣기 E2E(createNoteEditHwpx, 2쪽, 2026-10-20): 본문 caret에 미주, 표 셀·글상자 caret에 각주, 쪽마다 새로 매기는 각주
+// 구역 본문 caret에 각주를 넣고 입력 → 실행 취소·다시 실행 → 번호가 든 새 본문 첫 문단 Enter·실행 취소 → 지우기 → 실행 취소 →
+// Save As → 재열기까지 확인한다. 저장본의 각주·미주 수(`notes`)와 입력 글자를 본다.
+const NOTE_EDIT_CASES = [
+  { id: 'endnote', target: 'endnote-insert', text: '새미주', notes: { footnote: 2, endnote: 2 } },
+  { id: 'footnote-cell', target: 'footnote-cell', text: '셀각주', notes: { footnote: 3, endnote: 1 } },
+  { id: 'footnote-text-box', target: 'footnote-text-box', text: '상자각주', notes: { footnote: 3, endnote: 1 } },
+  { id: 'footnote-on-page', target: 'footnote', text: '쪽각주', numbering: 'ON_PAGE', notes: { footnote: 3, endnote: 1 } }
 ]
 
 // 원본 위치 개체 E2E(createFloatingObjectHwpx): 화면 개체 상자(용지 기준 CSS px)가 generator의 기대값(FLOATING_OBJECT_EXPECTED,
@@ -513,6 +525,19 @@ try {
       })
     })
   }
+  const noteEditResults = []
+  for (const scope of NOTE_EDIT_CASES) {
+    const notePath = generator.createNoteEditHwpx(directory, `han-flow-note-edit-${scope.id}.hwpx`, scope.numbering ? { numbering: scope.numbering } : {})
+    noteEditResults.push({
+      id: scope.id,
+      expectedNotes: scope.notes,
+      ...await verify(notePath, 500, false, {
+        HAN_FLOW_VERIFY_EDIT_TEXT: scope.text,
+        HAN_FLOW_VERIFY_EDIT_TARGET: scope.target,
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+      })
+    })
+  }
   const longFootnoteEdit = await verify(generator.createLongFootnoteHwpx(directory, 'han-flow-footnote-long-edit.hwpx'), 500, false, {
     HAN_FLOW_VERIFY_EDIT_TEXT: LONG_FOOTNOTE_EDIT_TEXT,
     HAN_FLOW_VERIFY_EDIT_TARGET: 'note',
@@ -645,6 +670,14 @@ try {
     ...sublistEditResults
       .filter(({ editingProbe }) => editingProbe?.editableCount !== undefined && editingProbe.editableCount < 1)
       .map(({ id }) => `sublist-edit ${id}: 입력 칸이 없음`),
+    ...noteEditResults.filter(({ passed }) => !passed).map(({ id, failures: noteFailures }) => `note-edit ${id}: ${noteFailures.join(', ')}`),
+    ...noteEditResults.filter(({ saveAs }) => !saveAs?.reopenedTextPresent).map(({ id }) => `note-edit ${id}: 저장본에 입력 글자가 없음`),
+    ...noteEditResults
+      .filter(({ saveAs, expectedNotes }) => {
+        const counts = saveAs?.reopenedPlaceholderCounts
+        return !(counts?.footnote === expectedNotes.footnote && counts?.endnote === expectedNotes.endnote && counts?.['text-box'] === 1)
+      })
+      .map(({ id, saveAs }) => `note-edit ${id}: 저장본의 각주·미주·글상자 수가 다름(${JSON.stringify(saveAs?.reopenedPlaceholderCounts)})`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -738,6 +771,17 @@ try {
       noteKind: editingProbe?.noteKind,
       reopenedTextPresent: saveAs?.reopenedTextPresent,
       reopenedTextPageCount: saveAs?.reopenedTextPageCount,
+      reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
+    })),
+    noteEdit: noteEditResults.map(({ id, passed, totalPages, editingProbe, saveAs }) => ({
+      id,
+      passed,
+      totalPages,
+      noteKind: editingProbe?.noteKind,
+      hostLabel: editingProbe?.hostLabel,
+      insertedMarkers: editingProbe?.insertedMarkers,
+      numberSplit: editingProbe?.numberSplit,
+      reopenedTextPresent: saveAs?.reopenedTextPresent,
       reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
     })),
     sublistEdit: sublistEditResults.map(({ id, passed, totalPages, editingProbe, saveAs }) => ({

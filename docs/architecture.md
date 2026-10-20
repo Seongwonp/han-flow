@@ -357,6 +357,42 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
   `#hp:footNote:K` 경로 모양을 본다). 글상자·메모 글자와 subList 모양·문단 나눔은 형식이 같지만 이전 앱이 replay하면 거부하므로 같은 때 올렸다.
   version 1~3 기록은 그대로 읽는다.
 
+### 미주·표 셀·글상자 안 각주, 쪽마다 매기는 각주, 번호 문단 Enter, 메모 모양 (2026-10-20 2차)
+
+위 절에서 막았던 것 가운데 다음을 열었다(같은 날 2차). 바뀐 점만 적는다.
+
+- **미주 만들기·지우기**: `footnote_patch.ts`가 종류(`NoteKind`: `hp:footNote`·`hp:footNotePr`·`FOOTNOTE`·`각주` style ↔ `hp:endNote`·
+  `hp:endNotePr`·`ENDNOTE`·`미주` style)를 받는다. `insert-endnote`·`delete-endnote`(`${sectionPath}#hp:endNote:K`)는 각주와 같은 계획·적용·
+  번호 다시 매기기(미주 모양의 이어 매기기·구역마다 새로 매기기)를 쓰고, inverse는 `restore-footnote`에 `noteKind: 'endnote'`를 붙여 미주 번호
+  목록을 되돌린다. `instId`는 각주·미주를 함께 센 section 최댓값 + 1이다. 미주 본문은 전처럼 decoder가 구역 끝 `note-list` block으로 모은다
+  (`hp:endNotePr` 위치). capability는 미주 목록 묶음에 `endnotePath`를 붙이고(`focus.endnotePath`), 새 capability `endnote`가 넣기를 연다.
+  IPC는 새 channel 없이 `editing:insertFootnote`의 `noteKind: 'endnote'`와 `editing:deleteFootnote`의 미주 경로로 받는다. 리본 group 이름은
+  `각주·미주`이고 [미주 넣기]·[미주 지우기]가 더해졌다.
+- **넣을 수 있는 자리**(`noteHostViolation`): 본문 문단, 표 셀 문단(깊이 무관), 글자만 든 글상자 문단이고, 셀·글상자를 거슬러 올라 `hs:sec`
+  직속 문단에 닿아야 한다. 머리말·꼬리말(그 안 글상자·표 포함)은 한/글도 각주·미주를 넣지 못하므로 거부하고 capability 사유는
+  `NOTE_IN_HEADER_FOOTER`다. 각주·미주·메모 본문과 캡션 등 그 밖의 subList는 `FOOTNOTE_POSITION`이다. capability는 subList 묶음이 든 자리의
+  차단 이유를 물려받아(`embeddedSublistGroups`의 `noteBlock`) 머리말 안 글상자도 막는다. 글상자 글은 이제 글자만 든 각주·미주를 품어도
+  "글자만 든 subList"로 본다(`isPlainSubList(…, allowNotes)`: `hp:ctrl` 안 `hp:footNote`·`hp:endNote`와 그 `hp:subList`(글자와 번호 control
+  뿐)). decoder·`style_patch`·`paragraph_patch`·`footnote_patch`가 이 규칙 하나(`paragraph_structure.ts`)를 같이 쓴다. 그래서 각주를 넣은
+  글상자도 계속 글자·모양·Enter를 받고 그 안 각주 본문도 anchor가 있다. capability는 글상자 문단 안 번호 표시의 각주도 묶음으로 모은다.
+  범위 삭제가 품는 번호 표시도 같은 자리 규칙으로 각주·미주 모두 지운다(`notesWithinSelection`, 종류마다 뒤에서부터).
+- **쪽마다 새로 매기기(`ON_PAGE`)**: 거부하지 않는다. 한/글은 저장된 `number`·`autoNum num`이 아니라 번호 매기기 종류로 열 때 번호를
+  다시 매기고(rhwp #6872 조사: 한/글이 모르는 번호 종류를 쓴 저장본은 저장 번호와 달리 이어 매긴 번호로 보였다), viewer도 쪽을 나눈 뒤
+  쪽마다 다시 매긴다. 그래서 새 각주에는 바로 앞 각주 번호 + 1(앞 각주가 다른 쪽이면 틀릴 수 있는 임시 값, 앞이 없으면 `newNum`)을 쓰고
+  다른 각주 번호는 넣을 때도 지울 때도 바꾸지 않는다(inverse 번호 목록이 빈다). Windows 한/글 재열기에서 번호가 쪽마다 다시 매겨지는지는
+  재열기 matrix에서 확인할 일이다.
+- **번호가 든 각주·미주 첫 문단의 Enter**: 문단 구조 규칙에 예외 `numberRun`을 더했다. 각주·미주 subList의 첫 `hp:p`(`isNoteNumberParagraph`,
+  decoder는 note 본문 첫 문단)에서만 첫 run의 `hp:t` 앞 번호 control(`isNoteNumberControl`: `hp:ctrl` 안 `hp:autoNum numType="FOOTNOTE|ENDNOTE"`
+  하나와 `hp:autoNumFormat`뿐)을 받는다. 나눔은 번호 control 원문을 앞 문단 run 맨 앞에 남기고(`changedTextRun(…, keepNumber)`) 뒤 글자만 새
+  문단으로 옮기며, 여러 문단 범위 치환도 시작 문단 번호를 남긴다. 다음 문단 맨 앞 Backspace는 번호 문단에 합치고, 번호 문단은 subList 첫
+  문단이라 앞으로 합칠 문단이 없다. 복구 기록 replay 검사는 교체 fragment 첫 문단의 번호 control 원문이 바꾸기 전 fragment에 그대로 있을
+  때만 이 예외를 준다(번호를 새로 들이는 fragment는 거부).
+- **메모 글자·문단 모양**: `isStyleEditableParagraph`가 글자만 든 메모(`hp:fieldBegin type="MEMO"`) 본문 직속 문단을 받고, capability는 메모
+  본문의 `characterStyle`·`paragraphStyle`을 연다(문단 나눔·병합은 계속 `SUBLIST_TEXT`). 메모 범위(`fieldBegin` 속성·`fieldEnd`)는 byte 그대로다.
+- **복구 기록 version 5**: `insert-endnote`·`delete-endnote`는 version 5 기록에서만 받는다(replay 검사는 각주와 같은 모양 + `#hp:endNote:K`).
+  표 셀·글상자 안 각주, `ON_PAGE` 각주, 번호 문단 Enter, 메모 모양은 형식이 같지만 이전 앱이 replay하면 거부하므로 함께 올렸다. version 1~4
+  기록은 그대로 읽고, version 1~4 기록에 미주 command가 있으면 구조 오류(격리)다.
+
 ## 프로세스 책임
 
 ### Electron main
@@ -752,7 +788,9 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   않도록 함께 올렸다. version 1·2 기록도 읽어 replay하되 그 기록에 표 앞·뒤 anchor가 있으면 구조 오류(격리)이고, 복구한 뒤 이어 쓰는
   기록은 그때 version 3이었다. version 2까지만 아는 앱은 version 3 기록을 손대지 않는다. version 4(2026-10-20)는 각주 만들기·지우기
   command(`insert-footnote`·`delete-footnote`)를 담을 수 있다. 글상자·메모 글자와 각주·머리말·글상자의 글자·문단 모양·문단 나눔은 형식이
-  같지만 이전 앱이 replay하면 거부하므로 함께 올렸다. version 1~3 기록도 읽어 replay하되 그 기록에 각주 command가 있으면 구조 오류(격리)이고,
+  같지만 이전 앱이 replay하면 거부하므로 함께 올렸다. version 5(2026-10-20 2차)는 미주 만들기·지우기 command(`insert-endnote`·`delete-endnote`)를
+  담을 수 있고, 표 셀·글상자 안 각주·쪽마다 매기는 각주·번호 문단 Enter·메모 모양을 함께 올렸다. version 1~4 기록에 미주 command가 있으면
+  구조 오류(격리)다. version 1~3 기록도 읽어 replay하되 그 기록에 각주 command가 있으면 구조 오류(격리)이고,
   복구한 뒤 이어 쓰는 기록은 version 4다. version 3까지만 아는 앱은 version 4 기록을 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
 - 쓰는 곳: main. worker의 `EditingEngine`이 commit·undo·redo·markSaved를 할 때 record를 쌓고 같은 응답 message에 실어 보내면
   (`EditingWorkerResponse.journal`, 실패 응답 포함) `EditingSessionManager`가 `RecoveryJournalWriter`에 넘긴다. main에 두는
@@ -1000,6 +1038,10 @@ Save As→재열기를 따로 실행한다. 각주 배치는 verify_app이 쪽�
 subList 편집 합성 fixture(`createSublistEditHwpx`, 1쪽, 2026-10-20)로는 글자만 든 글상자 글·메모 본문 입력, 번호와 같은 run의 각주 글자·글상자 글의
 글자·문단 모양 probe(부분 굵게 run 분할·정렬·크기·색·줄 간격·문단 간격·들여쓰기와 실행 취소·다시 실행), [각주 넣기]→새 각주 입력→실행 취소
 (입력·각주)·다시 실행→[각주 지우기]→실행 취소를 각각 Save As→재열기까지 실행하고 저장본의 글자와 글상자·메모·각주 수를 본다.
+메모 본문에는 같은 글자·문단 모양 probe도 돈다(2026-10-20 2차). 각주·미주 넣기 합성 fixture(`createNoteEditHwpx`, 2쪽, 이어 매기기와 `ON_PAGE`
+두 가지)로는 본문 caret의 [미주 넣기], 표 셀·글상자 caret의 [각주 넣기], `ON_PAGE` 구역 본문 caret의 [각주 넣기]를 각각 새 본문 입력→실행 취소·
+다시 실행→번호가 든 새 본문 첫 문단 Enter(번호 표시 수 그대로, 뒤 글자가 새 문단 입력 칸)·실행 취소→지우기→실행 취소→Save As→재열기까지
+실행하고 저장본의 각주·미주·글상자 수와 입력 글자를 본다.
 HWPX core와 production matrix, 고정 HWP matrix의 실행 대상은 상위 `fixture_catalog.json`에서
 동일한 fixture ID로 선택한다. 각 형식 manifest가 catalog와 어긋나면 GUI 실행 전에 실패한다.
 Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked/han-flow`, macOS는 `.app` 내부 실행 파일을

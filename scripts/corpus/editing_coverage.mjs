@@ -46,7 +46,8 @@ function loadEditingCore() {
     ...loadTypeScriptModule('src/core/editing/style_patch.ts'),
     applyCellStyleCommand: loadTypeScriptModule('src/core/editing/cell_style_patch.ts').applyCellStyleCommand,
     ...loadTypeScriptModule('src/core/editing/table_patch.ts'),
-    planSplitParagraph: loadTypeScriptModule('src/core/editing/paragraph_patch.ts').planSplitParagraph
+    planSplitParagraph: loadTypeScriptModule('src/core/editing/paragraph_patch.ts').planSplitParagraph,
+    planInsertFootnote: loadTypeScriptModule('src/core/editing/footnote_patch.ts').planInsertFootnote
   }
   return editingCore
 }
@@ -250,7 +251,7 @@ function anchoredIds(document) {
 }
 
 function emptyRejections() {
-  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, paragraphStructure: {}, tableCell: {}, tableStructure: {}, tableCaret: {} }
+  return { anchor: {}, text: {}, charStyle: {}, paraStyle: {}, paragraphStructure: {}, noteInsert: {}, tableCell: {}, tableStructure: {}, tableCaret: {} }
 }
 
 function count(histogram, key, amount = 1) {
@@ -320,6 +321,8 @@ export async function measureEditingCoverage(path) {
     paraStyleEditable: 0,
     paragraphStructureEditable: 0,
     paragraphStructureMismatch: 0,
+    noteInsertEditable: 0,
+    noteInsertMismatch: 0,
     noTextParagraphs: 0,
     noTextParagraphsEditable: 0,
     tableCells: structure.cells.length,
@@ -527,6 +530,16 @@ export async function measureEditingCoverage(path) {
         count(rejections.paragraphStructure, structureReason)
         if (capabilities.paragraphStructure.available) metrics.paragraphStructureMismatch += 1
       }
+      // 각주·미주 넣기(2026-10-20 추가): 문단 첫 편집 가능 run 맨 앞 caret에서 `footnote` capability가 열리고 footnote_patch plan도
+      // 만들어지면 넣을 수 있다(미주는 같은 자리 규칙). capability가 열었는데 코어가 거부하면 `noteInsertMismatch`로 따로 센다.
+      const noteReason = !capabilities.footnote.available
+        ? `capability: ${capabilities.footnote.reason}`
+        : attempt('footnote_patch', () => core.planInsertFootnote(sourcePackage, collapsed(target.sectionPath, target.textNodeId)))
+      if (!noteReason) metrics.noteInsertEditable += 1
+      else {
+        count(rejections.noteInsert, noteReason)
+        if (capabilities.footnote.available) metrics.noteInsertMismatch += 1
+      }
     }
   }
 
@@ -592,6 +605,7 @@ export async function measureEditingCoverage(path) {
 const SUM_KEYS = [
   'textRuns', 'anchored', 'textEditable', 'charStyleEditable', 'paragraphs', 'paraStyleEditable',
   'paragraphStructureEditable', 'paragraphStructureMismatch',
+  'noteInsertEditable', 'noteInsertMismatch',
   'noTextParagraphs', 'noTextParagraphsEditable',
   'tableCells', 'tableCellsEditable', 'tableCellStyleEditable', 'tables', 'tableStructureEditable',
   'tableCaretAnchors', 'tableCaretEditable',
@@ -609,6 +623,7 @@ function withRatios(metrics) {
       charStyleEditable: ratio(metrics.charStyleEditable, metrics.textRuns),
       paraStyleEditable: ratio(metrics.paraStyleEditable, metrics.paragraphs),
       paragraphStructureEditable: ratio(metrics.paragraphStructureEditable, metrics.paragraphs),
+      noteInsertEditable: ratio(metrics.noteInsertEditable, metrics.paragraphs),
       noTextParagraphsEditable: ratio(metrics.noTextParagraphsEditable, metrics.noTextParagraphs),
       tableCellsEditable: ratio(metrics.tableCellsEditable, metrics.tableCells),
       tableStructureEditable: ratio(metrics.tableStructureEditable, metrics.tables),

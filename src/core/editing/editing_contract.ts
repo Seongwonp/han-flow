@@ -100,15 +100,20 @@ export interface EditingMergeTableCellRightRequest {
   timestamp: number
 }
 
-/** caret 자리에 각주를 넣는다(`footnote_patch.ts`). */
+/** caret 자리에 각주(`noteKind: 'endnote'`면 미주)를 넣는다(`footnote_patch.ts`). */
 export interface EditingInsertFootnoteRequest {
   sessionId: string
   transactionId: string
   selectionBefore: EditorSelection
+  /** 없으면 각주. */
+  noteKind?: 'footnote' | 'endnote'
   timestamp: number
 }
 
-/** 각주 하나(`${sectionPath}#hp:footNote:K`)를 지운다. selection은 그 각주 본문이나 번호 표시가 든 본문 문단에 있다. */
+/**
+ * 각주 하나(`${sectionPath}#hp:footNote:K`) 또는 미주 하나(`${sectionPath}#hp:endNote:K`)를 지운다. selection은 그 각주(미주) 본문에
+ * 있다.
+ */
 export interface EditingDeleteFootnoteRequest {
   sessionId: string
   transactionId: string

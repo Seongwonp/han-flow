@@ -30,6 +30,10 @@ import { crc32 } from '../core/parser/source_package'
  *     글자·문단 모양·문단 나눔은 이전과 같은 command 형식이지만, 이전 앱이 그 편집을 replay하면 실패하므로 같은 때 함께 올렸다.
  *     version 1~3 기록도 그대로 읽어 replay하며, 그 기록에 각주 command가 있으면 구조 오류(격리)다. version 3까지만 아는 앱은
  *     version 4 기록을 `unsupported-version`으로 보고 손대지 않는다.
+ *   - 5(2026-10-20): 미주 만들기·지우기 command(`insert-endnote`·`delete-endnote`)를 담을 수 있다. 표 셀·글상자 안 각주 넣기,
+ *     쪽마다 새로 매기는(`ON_PAGE`) 구역의 각주 넣기·지우기, 번호가 든 각주·미주 첫 문단 나눔, 메모 본문 글자·문단 모양은 이전과
+ *     같은 command 형식이지만 이전 앱이 replay하면 거부하므로 함께 올렸다. version 1~4 기록도 그대로 읽어 replay하며, 그 기록에
+ *     미주 command가 있으면 구조 오류(격리)다. version 4까지만 아는 앱은 version 5 기록을 `unsupported-version`으로 보고 손대지 않는다.
  *
  * 읽는 곳
  *   - main process(앱 시작·문서 열기·편집 엔진 종료 뒤 제안)는 첫 record(header)만 읽는다(`readRecoveryJournalHeader`).
@@ -42,7 +46,7 @@ import { crc32 } from '../core/parser/source_package'
  */
 
 export const RECOVERY_JOURNAL_FORMAT = 'han-flow-recovery-journal'
-export const RECOVERY_JOURNAL_VERSION = 4
+export const RECOVERY_JOURNAL_VERSION = 5
 export const RECOVERY_JOURNAL_FILE = 'journal.hfj'
 export const RECOVERY_DIRECTORY_NAME = 'recovery'
 /** 빠르게 입력하는 동안 디스크에 내리는 최소 간격. 최악의 손실 구간은 이 간격 + fdatasync 시간이다. */
@@ -156,15 +160,17 @@ const NEWLINE = 0x0a
 /**
  * version별로 기록의 commit이 담을 수 있는 것. commit은 history가 replay하는 forward transaction이라 inverse 전용
  * `restore-*` command는 받지 않는다. version 1에는 표 변경 조각(`patch-table-fragment`)이, version 1·2에는 표 앞·뒤 합성
- * caret anchor가, version 1~3에는 각주 만들기·지우기 command가 없었다.
+ * caret anchor가, version 1~3에는 각주 만들기·지우기 command가, version 1~4에는 미주 만들기·지우기 command가 없었다.
  */
 interface RecoveryJournalVersionSpec {
   commandTypes: ReadonlySet<string>
   tableCaretAnchors: boolean
 }
 
+const ENDNOTE_COMMAND_TYPES: ReadonlySet<string> = new Set(['insert-endnote', 'delete-endnote'])
 const FOOTNOTE_COMMAND_TYPES: ReadonlySet<string> = new Set(['insert-footnote', 'delete-footnote'])
-const VERSION_3_COMMAND_TYPES: ReadonlySet<string> = new Set([...FORWARD_EDIT_COMMAND_TYPES].filter((type) => !FOOTNOTE_COMMAND_TYPES.has(type)))
+const VERSION_4_COMMAND_TYPES: ReadonlySet<string> = new Set([...FORWARD_EDIT_COMMAND_TYPES].filter((type) => !ENDNOTE_COMMAND_TYPES.has(type)))
+const VERSION_3_COMMAND_TYPES: ReadonlySet<string> = new Set([...VERSION_4_COMMAND_TYPES].filter((type) => !FOOTNOTE_COMMAND_TYPES.has(type)))
 
 const VERSION_SPECS: ReadonlyMap<number, RecoveryJournalVersionSpec> = new Map([
   [1, {
@@ -173,6 +179,7 @@ const VERSION_SPECS: ReadonlyMap<number, RecoveryJournalVersionSpec> = new Map([
   }],
   [2, { commandTypes: VERSION_3_COMMAND_TYPES, tableCaretAnchors: false }],
   [3, { commandTypes: VERSION_3_COMMAND_TYPES, tableCaretAnchors: true }],
+  [4, { commandTypes: VERSION_4_COMMAND_TYPES, tableCaretAnchors: true }],
   [RECOVERY_JOURNAL_VERSION, { commandTypes: FORWARD_EDIT_COMMAND_TYPES, tableCaretAnchors: true }]
 ])
 

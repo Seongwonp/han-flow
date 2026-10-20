@@ -689,6 +689,59 @@ export function createSublistEditHwpx(directory: string, fileName = 'han-flow-su
 }
 
 /**
+ * 각주·미주 넣기·지우기 검증용 합성 문서(직접 작성, 개인정보 없음, 2026-10-20). A4 두 쪽, 모든 문단에 숫자 id가 있다.
+ * - 구역 첫 문단: 구역 정의(각주·미주 번호 매기기 `numbering`, 기본 이어 매기기)·머리말·꼬리말, 제목
+ * - 각주 하나·미주 하나가 붙은 본문 문단(한/글 저장본처럼 번호와 첫 글자를 한 run에 둔다)
+ * - 표만 든 문단(1×2 표, 셀마다 글자 한 문단), 글자만 든 글상자가 놓인 문단
+ * - 쪽 나눔 뒤 각주가 붙은 둘째 쪽 문단
+ * verify:matrix가 본문·표 셀·글상자 caret에 [각주 넣기]·[미주 넣기] → 입력 → 실행 취소·다시 실행 → 번호 문단 Enter → 지우기 →
+ * 실행 취소 → Save As → 재열기까지 확인한다. `numbering: 'ON_PAGE'`면 쪽마다 새로 매기는 각주 구역이다.
+ */
+export const NOTE_EDIT_TEXTS = {
+  header: '각주 시험 머리말',
+  footer: '각주 시험 꼬리말',
+  title: '각주 미주 넣기 시험 문서',
+  lead: '각주와 미주가 붙는 본문',
+  footnoteBody: '기존 각주 본문',
+  endnoteBody: '기존 미주 본문',
+  cellLeft: '표 셀 왼쪽 글',
+  cellRight: '표 셀 오른쪽 글',
+  boxLead: '글상자가 놓인 문단',
+  textBox: '글상자 안 글',
+  secondPage: '둘째 쪽 본문',
+  secondFootnote: '둘째 쪽 각주'
+} as const
+const noteEditNote = (name: 'hp:footNote' | 'hp:endNote', number: number, instId: number, text: string) =>
+  `<hp:ctrl><${name} number="${number}" suffixChar="41" instId="${instId}"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${
+    sublistParagraph(0, `<hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="${number}" numType="${name === 'hp:footNote' ? 'FOOTNOTE' : 'ENDNOTE'}"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>${text}</hp:t></hp:run>`)
+  }</hp:subList></${name}></hp:ctrl>`
+const noteEditTable = `<hp:tbl id="9601" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" rowCnt="1" colCnt="2" pageBreak="CELL" repeatHeader="0"><hp:sz width="40000" widthRelTo="ABSOLUTE" height="2000" heightRelTo="ABSOLUTE" protect="0"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:tr>${
+  [NOTE_EDIT_TEXTS.cellLeft, NOTE_EDIT_TEXTS.cellRight].map((text, column) => `<hp:tc borderFillIDRef="1" header="0"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${sublistParagraph(50 + column, sublistRun(text))}</hp:subList><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="20000" height="2000"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>`).join('')
+}</hp:tr></hp:tbl>`
+const noteEditSection = (numbering: 'CONTINUOUS' | 'ON_PAGE') => `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="59528" height="84189"><hp:margin left="5669" right="5669" top="5669" bottom="5669" header="2835" footer="2835"/></hp:pagePr><hp:footNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="-1" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="283" belowLine="567" aboveLine="850"/><hp:numbering type="${numbering}" newNum="1"/><hp:placement place="EACH_COLUMN" beneathText="0"/></hp:footNotePr><hp:endNotePr><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/><hp:noteLine length="14692344" type="SOLID" width="0.12 mm" color="#000000"/><hp:noteSpacing betweenNotes="0" belowLine="567" aboveLine="850"/><hp:numbering type="CONTINUOUS" newNum="1"/><hp:placement place="END_OF_DOCUMENT" beneathText="0"/></hp:endNotePr></hp:secPr><hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP">${sublistParagraph(10, sublistRun(NOTE_EDIT_TEXTS.header), false)}</hp:subList></hp:header></hp:ctrl><hp:ctrl><hp:footer id="2" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="BOTTOM">${sublistParagraph(11, sublistRun(NOTE_EDIT_TEXTS.footer), false)}</hp:subList></hp:footer></hp:ctrl></hp:run>${sublistRun(NOTE_EDIT_TEXTS.title)}${sublistLine()}</hp:p>
+  ${sublistParagraph(2, `<hp:run charPrIDRef="0"><hp:t>${NOTE_EDIT_TEXTS.lead}</hp:t>${noteEditNote('hp:footNote', 1, 9701, NOTE_EDIT_TEXTS.footnoteBody)}<hp:t>와 그 뒤</hp:t>${noteEditNote('hp:endNote', 1, 9702, NOTE_EDIT_TEXTS.endnoteBody)}<hp:t/></hp:run>`)}
+  ${sublistParagraph(3, `<hp:run charPrIDRef="0">${noteEditTable}</hp:run>`)}
+  ${sublistParagraph(4, `<hp:run charPrIDRef="0"><hp:t>${NOTE_EDIT_TEXTS.boxLead}</hp:t>${sublistTextBox(9603, false, sublistParagraph(60, sublistRun(NOTE_EDIT_TEXTS.textBox)))}</hp:run>`)}
+  <hp:p id="5" paraPrIDRef="0" styleIDRef="0" pageBreak="1" columnBreak="0" merged="0"><hp:run charPrIDRef="0"><hp:t>${NOTE_EDIT_TEXTS.secondPage}</hp:t>${noteEditNote('hp:footNote', 2, 9703, NOTE_EDIT_TEXTS.secondFootnote)}<hp:t/></hp:run>${sublistLine()}</hp:p>
+</hs:sec>`
+
+export function createNoteEditHwpx(
+  directory: string,
+  fileName = 'han-flow-note-edit.hwpx',
+  options: { numbering?: 'CONTINUOUS' | 'ON_PAGE' } = {}
+): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header.replace('<hh:bold/>', '')))
+  zip.addFile('Contents/section0.xml', Buffer.from(noteEditSection(options.numbering ?? 'CONTINUOUS')))
+  zip.writeZip(path)
+  return path
+}
+
+/**
  * 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`) 합성 문서(직접 작성, 개인정보 없음). A4, 머리말·꼬리말 여백 2835.
  * - 1쪽: 용지 기준 글 앞 글상자(`textBox`), 쪽 아래·오른쪽 기준 자리 차지 그림(`picture`, 본문 아래 띠), 문단 기준 글 옆 그림,
  *   문단 기준 자리 차지 글상자(단 가운데), 쪽 가운데 글 뒤 사각형
