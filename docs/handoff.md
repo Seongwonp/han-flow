@@ -71,7 +71,7 @@ Windows·macOS용 HWP/HWPX 데스크톱 뷰어 + **제한적 HWPX 편집기**(El
 - `.github/workflows/linux-ci.yml`, `windows-ci.yml`. push마다 실행, 같은 ref의 이전 실행은 취소된다.
 - 순서: npm ci → test → typecheck → probe → corpus → build → package → 패키지 앱 E2E → PDF.
 - Windows CI는 서명 안 된 NSIS 설치본을 artifact(`han-flow-windows-installer`)로 올린다.
-- 작업 시간 한도 60분. matrix가 늘면 한도 근처에 갈 수 있다.
+- 작업 시간 한도 90분. matrix가 늘면 한도 근처에 갈 수 있다.
 
 ## 7. 현재 상태와 다음 작업
 
