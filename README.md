@@ -57,7 +57,8 @@ macOS 관문(물리 IME, 서명·공증, macOS 13+ 실행)은 기존 개발 Mac�
 - 최상위 여러 문단의 keyboard·pointer 선택, 구조적 치환과 exact Undo/Redo·Save As
 - 편집 충돌·지원 제한·세션 종료·기록 한도·저장 실패를 구분하는 오류 안내
 - 연속 음절 burst·스페이스바 조합 종료를 보존하는 한국어 IME commit과 앱 history 기반
-  undo/redo(macOS `⌘Z`·`⇧⌘Z`, Windows·Linux `Ctrl+Z`·`Ctrl+Y`·`Ctrl+Shift+Z`)
+  undo/redo(macOS `⌘Z`·`⇧⌘Z`, Windows·Linux `Ctrl+Z`·`Ctrl+Y`·`Ctrl+Shift+Z`). 입력 직후 누른 실행 취소·
+  모양·표·각주·저장·Enter도 입력 칸에 남은 글자를 먼저 반영한 뒤 차례로 처리(버리지 않음)
 - 원본을 보존하는 검증형 HWPX Save As(교체 확인이 없으면 기존 파일을 덮어쓰지 않음)와 저장 savepoint
 - 파일 교체·창 닫기·앱 종료의 저장/버리기/취소 dirty 보호
 - 단일 `hp:t` 전체 또는 부분 선택의 굵게·기울임·밑줄·취소선·글자 크기·글자색

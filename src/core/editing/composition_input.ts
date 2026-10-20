@@ -235,6 +235,26 @@ export class CompositionCommitBuffer {
   }
 }
 
+/**
+ * 입력 칸에 남은 조합 묶음을 지금 화면 글자(`snapshot`)로 끝내 commit intent 하나로 만든다. 음절 묶음 대기 시간이 지났을 때와
+ * 편집 command(실행 취소·모양·저장)가 남은 글자를 먼저 반영해야 할 때 같은 경로를 쓴다. IME가 아직 조합 중이었어도 지금 글자를
+ * 확정 글자로 보고 기준 글자를 그 글자로 옮기므로, 뒤늦게 온 compositionend가 같은 글자를 다시 commit하지 않는다.
+ */
+export function flushPendingComposition(
+  controller: CompositionInputController,
+  buffer: CompositionCommitBuffer,
+  snapshot: Omit<TextInputSnapshot, 'isComposing'>
+): TextCommitIntent | undefined {
+  buffer.update({ ...snapshot, isComposing: false })
+  const intent = buffer.pending
+    ? buffer.flush()
+    : controller.isComposing
+      ? controller.compositionEnd(snapshot)
+      : undefined
+  controller.reset(snapshot.text, snapshot.selection)
+  return intent
+}
+
 export function toEditorSelection(
   sectionPath: string,
   textNodeId: string,

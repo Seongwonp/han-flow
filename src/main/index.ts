@@ -860,19 +860,11 @@ function captureVisualState(window: BrowserWindow): void {
           const value = element && getSelection(element)
           return value?.anchorOffset === offset && value?.focusOffset === offset
         }
-        const clickAttempts = {}
+        // 버튼은 한 번만 누른다. 입력 직후 누른 첫 [실행 취소]도 남은 조합 글자를 먼저 반영한 뒤 그 글자를 되돌려야 한다.
         const click = async (label, nextPhase, predicate) => {
           setPhase(nextPhase)
-          for (let attempt = 1; ; attempt += 1) {
-            clickAttempts[nextPhase] = attempt
-            ;(await waitButton(label)).click()
-            try {
-              await waitFor(predicate, attempt < 3 ? 5000 : 30000)
-              return
-            } catch (error) {
-              if (attempt >= 3) throw error
-            }
-          }
+          ;(await waitButton(label)).click()
+          await waitFor(predicate)
         }
         const editButton = await waitFor(() => button('HWPX 편집 시작'))
         editButton.click()
@@ -910,11 +902,12 @@ function captureVisualState(window: BrowserWindow): void {
           target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
           target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
         }
-        await waitFor(() => surfaceById(noteId)?.textContent === expected && !button('실행 취소')?.disabled && status().includes('저장 안 됨'))
-        await waitFor(() => caretAt(surfaceById(noteId), expected.length))
+        // 마지막 음절의 compositionend 바로 뒤(음절 묶음이 아직 입력 칸에 머물러 commit 전) [실행 취소]를 한 번 누른다.
         const editedMatches = surfaceById(noteId)?.textContent === expected
-        const projectedSelectionMatches = caretAt(surfaceById(noteId), expected.length)
-        await click('실행 취소', 'undo-text', () => surfaceById(noteId)?.textContent === '')
+        // 각주 넣기 상태 문구가 그대로면 아직 글자 commit 결과가 오지 않았다(입력 반영 전에 누른 실행 취소).
+        const undoClickedBeforeCommit = status().includes('각주 본문으로 이동')
+        await click('실행 취소', 'undo-text', () => surfaceById(noteId)?.textContent === '' && !button('다시 실행')?.disabled)
+        const immediateUndoMatches = surfaceById(noteId)?.textContent === '' && markers().length === insertedMarkers.length
         await waitFor(() => caretAt(surfaceById(noteId), 0))
         const undoneMatches = surfaceById(noteId)?.textContent === ''
         const undoSelectionMatches = caretAt(surfaceById(noteId), 0)
@@ -925,6 +918,8 @@ function captureVisualState(window: BrowserWindow): void {
         await waitFor(() => caretAt(surfaceById(noteId), expected.length))
         const redoneMatches = surfaceById(noteId)?.textContent === expected && JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
         const redoSelectionMatches = caretAt(surfaceById(noteId), expected.length)
+        // 입력 직후 실행 취소로 projection 전에 되돌렸으므로, 입력 글자의 projection caret은 다시 실행 뒤 위치로 본다.
+        const projectedSelectionMatches = redoSelectionMatches
         setPhase('delete-caret')
         const redone = surfaceById(noteId)
         redone.focus()
@@ -967,7 +962,8 @@ function captureVisualState(window: BrowserWindow): void {
           saveStatusMatches,
           dirtyCleared,
           dirtyAtEnd: status().includes('저장 안 됨'),
-          clickAttempts,
+          undoClickedBeforeCommit,
+          immediateUndoMatches,
           editableCount: document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]').length
         }
       })()`).catch(async (reason) => ({
@@ -1135,6 +1131,27 @@ function captureVisualState(window: BrowserWindow): void {
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
         })
         const redoSelection = getSelection(redoneTarget)
+        // 입력 직후 실행 취소 단축키: 한 음절을 조합 입력하고 compositionend 바로 뒤(음절 묶음이 입력 칸에 머물러 commit 전)
+        // Ctrl+Z(macOS ⌘Z)를 한 번 누른다. 첫 실행 취소가 남은 글자를 먼저 반영한 뒤 그 글자만 되돌려야 한다(재시도 없음).
+        setPhase('immediate-undo-type')
+        const immediateTarget = surfaceById(editedAnchorId)
+        immediateTarget.focus()
+        setSelection(immediateTarget, expected.length, expected.length)
+        immediateTarget.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+        immediateTarget.textContent = expected + 'ㄱ'
+        setSelection(immediateTarget, expected.length + 1, expected.length + 1)
+        immediateTarget.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㄱ', isComposing: true }))
+        immediateTarget.textContent = expected + '가'
+        setSelection(immediateTarget, expected.length + 1, expected.length + 1)
+        immediateTarget.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: '가', isComposing: true }))
+        immediateTarget.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '가' }))
+        setPhase('immediate-undo-key')
+        const macShortcut = window.api?.platform === 'darwin'
+        immediateTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: !macShortcut, metaKey: macShortcut, bubbles: true, cancelable: true }))
+        await waitFor(() => surfaceById(editedAnchorId)?.textContent === expected &&
+          document.querySelector('[aria-label="다시 실행"]')?.disabled === false)
+        const immediateUndoMatches = surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
+          .every((element) => element.textContent === expected)
         // 머리말·꼬리말 끝·처음에서 방향 키: 쪽마다 되풀이된 같은 칸으로 건너가지 않고 그 쪽 칸 안에 caret이 남아야 한다.
         // 다른 쪽 칸으로 옮겨 가면 caret이 같은 글자의 처음(또는 끝)으로 튄다. 마지막 쪽(둘째 쪽) 칸에서 누른다.
         let navigationProbe
@@ -1355,6 +1372,7 @@ function captureVisualState(window: BrowserWindow): void {
           projectedSelectionMatches: selectionAfterProjection.anchorOffset === selectionAfter.anchorOffset && selectionAfterProjection.focusOffset === selectionAfter.focusOffset,
           undoSelectionMatches: undoSelection.anchorOffset === selectionBefore.anchorOffset && undoSelection.focusOffset === selectionBefore.focusOffset,
           redoSelectionMatches: redoSelection.anchorOffset === selectionAfter.anchorOffset && redoSelection.focusOffset === selectionAfter.focusOffset,
+          immediateUndoMatches,
           styleProbe,
           saveStatusMatches,
           dirtyCleared,

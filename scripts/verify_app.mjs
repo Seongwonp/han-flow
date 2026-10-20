@@ -312,6 +312,8 @@ try {
     editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
+    editText && !state.editingProbe?.immediateUndoMatches ? '입력 직후 첫 실행 취소가 마지막 입력을 되돌리지 않음' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.undoClickedBeforeCommit ? '각주 E2E 실행 취소를 입력 반영 전에 누르지 못함' : undefined,
     editText && !state.editingUi?.ribbonVisible ? '편집 리본이 표시되지 않음' : undefined,
     (editText || tableStructureProbe) && JSON.stringify(state.editingUi?.tabs) !== JSON.stringify(RIBBON_TABS)
       ? `리본 탭 구성 불일치: ${JSON.stringify(state.editingUi?.tabs)}`

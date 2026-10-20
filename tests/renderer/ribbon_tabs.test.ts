@@ -206,6 +206,22 @@ describe('리본 탭 markup', () => {
     expect(panelFor(markup, '표')).toContain('편집 시작을 누르면 사용할 수 있습니다.')
   })
 
+  test('입력 직후(남은 글자·응답 대기 commit) 실행 취소·저장은 눌러 둘 수 있다', () => {
+    // 깨끗한 session에 막 입력해 아직 commit 결과가 오지 않았다: canUndo·isDirty는 아직 false다.
+    const clean = { ...editingSession, revision: 1, savedRevision: 1, canUndo: false, isDirty: false }
+    const idle = render({ editing: clean, defaultRibbonTab: '편집' })
+    expect(control(idle, '실행 취소')).toMatch(/\sdisabled=/u)
+    const buffered = render({ editing: clean, editingInputPending: true, defaultRibbonTab: '편집' })
+    expect(control(buffered, '실행 취소')).not.toMatch(/\sdisabled=/u)
+    expect(control(buffered, 'HWPX 변경본 저장')).not.toMatch(/\sdisabled=/u)
+    // 응답을 기다리는 command가 있어도 실행 취소는 끄지 않는다(그 command 뒤에 차례로 돈다).
+    const inFlight = render({ editing: editingSession, editingPending: 1, editingInputPending: true, defaultRibbonTab: '편집' })
+    expect(control(inFlight, '실행 취소')).not.toMatch(/\sdisabled=/u)
+    expect(control(inFlight, 'HWPX 변경본 저장')).not.toMatch(/\sdisabled=/u)
+    // 편집 중이 아니면 남은 입력 표시가 있어도 켜지 않는다.
+    expect(control(render({ editingInputPending: true, defaultRibbonTab: '편집' }), '실행 취소')).toMatch(/\sdisabled=/u)
+  })
+
   test('표 안에 caret이 있으면 탭을 바꾸지 않고 표 탭에 표시만 한다', () => {
     const outside = render({ editing: editingSession })
     expect(tabs(outside).find(({ label }) => label === '표')?.context).toBeUndefined()
