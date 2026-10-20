@@ -44,6 +44,10 @@ class EquationParseError extends Error {}
 
 const MAX_DEPTH = 48
 const MAX_TOKENS = 4000
+/** script 글자 수 상한. 넘으면 토큰을 나누기 전에 script 상자로 대체한다(토큰 상한과 같은 대체 경로). */
+const MAX_SCRIPT_LENGTH = 16384
+/** 영문 단어 하나의 글자 수 상한. 넘으면 script 상자로 대체한다(붙여 쓴 명령 분리가 단어 길이에 비례하지 않게). */
+const MAX_WORD_LENGTH = 256
 
 // ---------------------------------------------------------------------------------------------------------------------
 // 토큰
@@ -85,6 +89,8 @@ const GLUE_SAFE = new Set([
   'hat', 'tilde', 'dot', 'ddot', 'acute', 'grave', 'check', 'leq', 'geq', 'neq', 'triangle', 'angle', 'cap', 'cup',
   'cdots', 'ldots', 'vdots', 'ddots'
 ])
+/** GLUE_SAFE에서 가장 긴 이름의 길이. 붙여 쓴 명령을 찾을 때 이보다 긴 앞부분은 보지 않는다. */
+const MAX_GLUE_LENGTH = Math.max(...Array.from(GLUE_SAFE, (name) => name.length))
 
 /** 단어 앞에 붙어 쓴 명령의 길이(나누지 않으면 undefined). `rmK`→`rm`, `over2`→`over`, `tanx`→`tan`. */
 function gluedPrefix(word: string): number | undefined {
@@ -101,13 +107,14 @@ function gluedPrefix(word: string): number | undefined {
     if (word.startsWith(keyword) && /^\d/.test(word.slice(keyword.length))) return keyword.length
   }
   if (word.length < 3 || isKeyword(word)) return undefined
-  for (let length = word.length - 1; length >= 2; length -= 1) {
+  for (let length = Math.min(word.length - 1, MAX_GLUE_LENGTH); length >= 2; length -= 1) {
     if (GLUE_SAFE.has(word.slice(0, length).toLowerCase())) return length
   }
   return undefined
 }
 
 export function tokenizeEquation(script: string): Token[] {
+  if (script.length > MAX_SCRIPT_LENGTH) throw new EquationParseError('script가 너무 깁니다')
   const characters = Array.from(script)
   const tokens: Token[] = []
   let index = 0
@@ -160,7 +167,10 @@ export function tokenizeEquation(script: string): Token[] {
     }
     if (/[A-Za-z]/.test(character)) {
       let end = index
-      while (end < characters.length && /[A-Za-z0-9]/.test(characters[end])) end += 1
+      while (end < characters.length && /[A-Za-z0-9]/.test(characters[end])) {
+        end += 1
+        if (end - index > MAX_WORD_LENGTH) throw new EquationParseError('단어가 너무 깁니다')
+      }
       const word = characters.slice(index, end).join('')
       const length = gluedPrefix(word) ?? word.length
       push('word', word.slice(0, length))

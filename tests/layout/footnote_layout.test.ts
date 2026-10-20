@@ -21,7 +21,7 @@ import {
   ViewerNoteMetrics,
   ViewerPageFootnote
 } from '../../src/core/layout/footnote_layout'
-import { LayoutMeasurements, paginateViewerSection, paginateViewerSectionsIncremental, ViewerPage } from '../../src/core/layout/pagination'
+import { LayoutMeasurements, paginateViewerSection, paginateViewerSectionsIncremental, renumberFootnotesByPage, ViewerPage } from '../../src/core/layout/pagination'
 import { parseOrderedXml } from '../../src/core/parser/ordered_xml'
 import { HwpxReadablePackage } from '../../src/core/parser/package_reader'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
@@ -200,6 +200,27 @@ describe('쪽 아래 각주 배치', () => {
     expect(bodyMarkers).toEqual([['①', '②'], ['①']])
     // 원본 section의 번호 표시는 바꾸지 않는다.
     expect((blocks[2].content[1] as ViewerObjectPlaceholder).marker).toBe('3)')
+  })
+
+  test('쪽마다 새로 매기는 번호는 글상자 안 각주 번호 표시도 쪽 아래 번호와 같게 바꾼다', () => {
+    const boxed = note(3)
+    const textBox: ViewerObjectPlaceholder = {
+      type: 'object-placeholder', kind: 'text-box', element: 'hp:rect', sourcePath: `${SECTION}#hp:rect:0`, flow: 'inline', label: '글상자',
+      paragraphs: [{ ...noteParagraph('box:p0', [text('상자 글', 'box')]), content: [text('상자 글', 'box'), marker(boxed)] }]
+    }
+    const page: ViewerPage = {
+      blocks: [{ ...block('b0'), content: [text('본문', 'b0'), textBox] }],
+      footnotes: [[{ note: boxed, marker: boxed.marker, continued: false, pieces: [] }]]
+    } as unknown as ViewerPage
+    const [out] = renumberFootnotesByPage([page], (value) => `${value})`)
+    const bottom = out.footnotes![0][0].marker
+    const box = out.blocks[0].content[1] as ViewerObjectPlaceholder
+    const inline = box.paragraphs![0].content[1] as ViewerObjectPlaceholder
+    expect(bottom).toBe('1)')
+    expect(inline.marker).toBe(bottom)
+    expect(inline.note!.marker).toBe(bottom)
+    // 원래 글상자는 바꾸지 않는다.
+    expect((textBox.paragraphs![0].content[1] as ViewerObjectPlaceholder).marker).toBe('3)')
   })
 
   test('각주가 든 section도 바뀌지 않으면 앞 pagination 결과를 그대로 쓴다', () => {

@@ -304,6 +304,60 @@ describe('각주·머리말·글상자 글자·문단 모양과 문단 나눔', 
     expect(() => planMergeParagraph(source, caret(note.textNodeId, 0), 'previous')).toThrow('병합할 인접 문단이 없습니다.')
   })
 
+  test('복구 기록 replay 검사는 각주 첫 문단을 가리키는 fragment의 번호 control 하나만 받는다', async () => {
+    const source = await HwpxSourcePackage.open(createSublistEditHwpx(directory, 'number-guard.hwpx'))
+    const autoNum = '<hp:ctrl><hp:autoNum num="1" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl>'
+    const note = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteBody)
+    const plan = planSplitParagraph(source, caret(note.textNodeId, 3))
+    const legit = transaction(source, [plan.command], caret(note.textNodeId, 3), plan.selectionAfter, 'insertParagraph')
+    expect(() => assertReplayableTransaction(legit, source)).not.toThrow()
+    expect(() => assertReplayableTransaction(legit, source, 5)).not.toThrow()
+    // 번호 control이 든 문단 fragment는 version 4까지의 기록에 없었다.
+    expect(() => assertReplayableTransaction(legit, source, 4)).toThrow('복구 기록의 문단 fragment')
+    // 문서 없이는 각주 첫 문단인지 알 수 없으므로 받지 않는다.
+    expect(() => assertReplayableTransaction(legit, undefined)).toThrow('복구 기록의 문단 fragment')
+
+    // 번호 control을 둘로 늘린 fragment.
+    const duplicated = { ...plan.command, replacementFragment: plan.command.replacementFragment.replace(autoNum, autoNum + autoNum) }
+    expect(duplicated.replacementFragment).not.toBe(plan.command.replacementFragment)
+    expect(() => assertReplayableTransaction({ ...legit, commands: [duplicated] }, source)).toThrow('복구 기록의 문단 fragment')
+
+    // 각주를 품은 본문 문단을 가리켜 그 각주의 번호 control을 본문 문단 run으로 옮기는 fragment(원문은 바꾸기 전 fragment에 있다).
+    const lead = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteLead)
+    const xmlText = section(source)
+    const start = xmlText.lastIndexOf('<hp:p ', xmlText.indexOf(`<hp:t>${SUBLIST_EDIT_TEXTS.footnoteLead}</hp:t>`))
+    const end = xmlText.indexOf('</hp:p>', xmlText.indexOf('</hp:footNote>')) + '</hp:p>'.length
+    const bodyParagraph = xmlText.slice(start, end)
+    expect(bodyParagraph).toContain(autoNum)
+    const moved: EditCommand = {
+      type: 'replace-paragraph-fragment',
+      sectionPath,
+      textNodeId: lead.textNodeId,
+      expectedFragment: bodyParagraph,
+      replacementFragment: `<hp:p id="2" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${autoNum}<hp:t>${SUBLIST_EDIT_TEXTS.footnoteLead}</hp:t></hp:run></hp:p>`
+    }
+    expect(() => assertReplayableTransaction({ ...legit, commands: [moved] }, source)).toThrow('복구 기록의 문단 fragment')
+
+    // 각주 둘째 문단을 가리키며 첫 문단 번호 control을 복제한 fragment.
+    const second = anchorOf(source, SUBLIST_EDIT_TEXTS.footnoteSecond)
+    const secondSplit = planSplitParagraph(source, caret(second.textNodeId, 1))
+    const copied = {
+      ...secondSplit.command,
+      expectedFragment: secondSplit.command.expectedFragment + autoNum,
+      replacementFragment: secondSplit.command.replacementFragment.replace('<hp:run charPrIDRef="0"><hp:t>', `<hp:run charPrIDRef="0">${autoNum}<hp:t>`)
+    }
+    expect(() => assertReplayableTransaction({ ...legit, commands: [copied] }, source)).toThrow('복구 기록의 문단 fragment')
+
+    // 미주 번호 종류(ENDNOTE)로 바꾼 control은 각주 첫 문단에서도 받지 않는다.
+    const endnoteNum = autoNum.replace('FOOTNOTE', 'ENDNOTE')
+    const retyped = {
+      ...plan.command,
+      expectedFragment: plan.command.expectedFragment + endnoteNum,
+      replacementFragment: plan.command.replacementFragment.replace(autoNum, endnoteNum)
+    }
+    expect(() => assertReplayableTransaction({ ...legit, commands: [retyped] }, source)).toThrow('복구 기록의 문단 fragment')
+  })
+
   test('메모 본문 글자·문단 모양은 메모 문단의 run·문단 reference만 바꾸고 메모 범위는 byte 그대로다', async () => {
     const source = await HwpxSourcePackage.open(createSublistEditHwpx(directory, 'memo-style.hwpx'))
     const original = section(source)

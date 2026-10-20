@@ -134,4 +134,26 @@ describe('한컴 수식 script 해석', () => {
   test('아주 긴 script는 해석하지 않는다', () => {
     expect(parseEquationScript('x + '.repeat(3000)).ok).toBe(false)
   })
+
+  test('악의적 script도 글자 수에 비례하는 시간 안에 끝난다', () => {
+    const cases = [
+      'sin'.repeat(2000) + 'qq',
+      'sin'.repeat(33000) + 'qq',
+      'x' + 'q'.repeat(100000),
+      'sin'.repeat(80) + 'qq ' + 'sin'.repeat(80) + 'qq',
+      'sinq '.repeat(3000),
+      '{'.repeat(10000) + 'x' + '}'.repeat(10000),
+      'left ( '.repeat(3000) + 'x' + ' right )'.repeat(3000)
+    ]
+    for (const script of cases) {
+      const started = performance.now()
+      parseEquationScript(script)
+      expect(performance.now() - started).toBeLessThan(200)
+    }
+    // 붙여 쓴 명령 분리는 그대로다.
+    expect(tokenizeEquation('sinsinx').map((token) => token.value)).toEqual(['sin', 'sin', 'x', ''])
+    expect(tokenizeEquation('underlinex').map((token) => token.value)).toEqual(['underline', 'x', ''])
+    expect(parseEquationScript('a'.repeat(256)).ok).toBe(true)
+    expect(parseEquationScript('a'.repeat(257)).ok).toBe(false)
+  })
 })

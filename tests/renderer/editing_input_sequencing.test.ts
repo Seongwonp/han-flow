@@ -417,11 +417,36 @@ describe('창 닫기 전 남은 입력 반영 요청(editing:flushInput)', () =>
     await answerInputFlushRequest(transient, () => { replies += 1 })
     expect(replies).toBe(1)
 
-    const failing = { runAfterInput: () => Promise.reject(new Error('commit 실패')) }
+    const failing = { runAfterInput: () => Promise.reject(new Error('commit 실패')), flushInput: () => undefined }
     const logged: unknown[] = []
     await answerInputFlushRequest(failing, () => { replies += 1 }, (reason) => logged.push(reason))
     expect(replies).toBe(2)
     expect(logged).toHaveLength(1)
+  })
+
+  test('앞선 편집 command가 막혀 있어도 대기 글자는 곧바로 commit해 main이 dirty를 본다', async () => {
+    const engine = new FakeEngine('')
+    const transient = new EditingImeTransientState()
+    transient.synchronize(session(engine), 0)
+    const surface = new FakeSurface(transient, engine)
+    const gate: { release?: () => void } = {}
+    const blocking = transient.runAfterInput(() => new Promise<void>((resolve) => { gate.release = resolve }))
+    while (!gate.release) await new Promise((resolve) => setTimeout(resolve, 1))
+    // 앞 command가 도는 동안 친 글자가 입력 칸에만 있다.
+    surface.typeSyllable('닫')
+    expect(engine.status().isDirty).toBe(false)
+    let replied = false
+    const answer = answerInputFlushRequest(transient, () => { replied = true })
+    for (let tries = 0; tries < 50 && !engine.log.length; tries += 1) await new Promise((resolve) => setTimeout(resolve, 2))
+    // 답은 앞 command 뒤지만, 글자 commit은 이미 main에 갔다.
+    expect(replied).toBe(false)
+    expect(engine.log).toEqual(['commit:닫'])
+    expect(engine.status().isDirty).toBe(true)
+    gate.release()
+    await blocking
+    await answer
+    expect(replied).toBe(true)
+    expect(engine.log).toEqual(['commit:닫'])
   })
 
   test('편집 상태가 reset되면(문서 교체) 남은 command를 버리고도 답한다', async () => {

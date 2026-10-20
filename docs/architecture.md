@@ -186,7 +186,8 @@ dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer
 열려 있으면 닫히는 그 창을 dialog 부모와 close 대상으로 사용한다. renderer는 마지막 한글 음절을 약 450ms 입력 칸에 묶어 두었다가
 commit하므로, `close` handler는 dirty를 보기 전에 `editing:flushInput`(`ipc_guard.ts`의 `createRendererRequest`, 1초 제한)으로
 남은 입력을 반영하게 하고 답(`editing:inputFlushed`, 보낸 그 webContents·같은 요청 id만 받음)이 온 뒤 dirty를 다시 본다
-(`window_close.ts`). renderer는 `runAfterInput`으로 남은 글자 commit과 앞선 편집 command가 끝난 뒤 답한다. 시간 초과·renderer
+(`window_close.ts`). renderer는 남은 글자를 곧바로 commit 요청으로 보내고(앞선 편집 command가 오래 걸려도 main이 제한 시간 안에
+dirty를 보게), `runAfterInput`으로 그 commit과 앞선 편집 command가 끝난 뒤 답한다. 시간 초과·renderer
 비정상 종료면 기다리지 않고 그때 상태로 이어 가며 경고를 남긴다. dirty면 반영한 commit까지 복구 기록을 내린 뒤 확인을 띄운다.
 문서 교체(`file:open`·drop·열기)는 renderer가 같은 `runAfterInput` 뒤에 `editing:resolveDirty`를 부른다. 선택지는
 Save As, discard, cancel이며 Save As는 위와 같은 검증 writer를 재사용한다.
@@ -346,7 +347,7 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
   `<hp:ctrl><hp:footNote number suffixChar instId><hp:subList>…<hp:autoNum num numType="FOOTNOTE">…</hp:autoNum>…<hp:t/>…</hp:footNote></hp:ctrl>`를
   넣는다. 문단·글자 모양은 같은 section 각주 첫 문단, 없으면 header의 `각주` style, 없으면 본문 값이고, 번호 모양은 구역 `hp:footNotePr`의
   `hp:autoNumFormat` 원문을 쓴다. 번호는 바로 앞 각주 + 1(앞 각주가 없으면 `newNum`, 이어 매기기면 앞 구역 마지막 각주)이고 뒤 각주의
-  `number`·`autoNum num`을 1씩 올린다(이어 매기기면 새로 매기는 구역 전까지 뒤 구역도). `instId`는 section의 가장 큰 값 + 1이라 같은 package에서
+  `number`·`autoNum num`을 1씩 올린다(뒤 구역이 이어 매기면 지금 구역 번호 매기기 종류와 상관없이 새로 매기는 구역 전까지 뒤 구역도). `instId`는 section의 가장 큰 값 + 1이라 같은 package에서
   언제나 같은 bytes가 나온다(replay·다시 실행). `delete-footnote`는 `${sectionPath}#hp:footNote:K` 각주를 지우고(번호 control만 든 `hp:ctrl`째)
   뒤 번호를 내린다. 둘 다 inverse는 `restore-footnote`(본문 문단 원문 두 벌 + 다른 각주 번호 attribute 목록, 문단은 section 안 `hp:p` 순번으로
   찾는다)라 실행 취소가 원래 bytes를 되살린다. 쪽마다 새로 매기기(`ON_PAGE`)는 번호가 쪽 배치에 달려 있어 거부한다. 지우기는 [각주 지우기]
@@ -379,14 +380,16 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 - **쪽마다 새로 매기기(`ON_PAGE`)**: 거부하지 않는다. 한/글은 저장된 `number`·`autoNum num`이 아니라 번호 매기기 종류로 열 때 번호를
   다시 매기고(rhwp #6872 조사: 한/글이 모르는 번호 종류를 쓴 저장본은 저장 번호와 달리 이어 매긴 번호로 보였다), viewer도 쪽을 나눈 뒤
   쪽마다 다시 매긴다. 그래서 새 각주에는 바로 앞 각주 번호 + 1(앞 각주가 다른 쪽이면 틀릴 수 있는 임시 값, 앞이 없으면 `newNum`)을 쓰고
-  다른 각주 번호는 넣을 때도 지울 때도 바꾸지 않는다(inverse 번호 목록이 빈다). Windows 한/글 재열기에서 번호가 쪽마다 다시 매겨지는지는
+  같은 구역 다른 각주 번호는 넣을 때도 지울 때도 바꾸지 않는다. 뒤 구역이 이어 매기면(`CONTINUOUS`) 그 구역 각주 번호는 앞 구역 각주가
+  하나 늘고 준 만큼 올리고 내린다(구역마다 새로 매기는 구역 뒤에서도 같다. 새 각주 번호가 앞 구역 마지막 각주에서 이어 가는 규칙과 맞춘다). Windows 한/글 재열기에서 번호가 쪽마다 다시 매겨지는지는
   재열기 matrix에서 확인할 일이다.
 - **번호가 든 각주·미주 첫 문단의 Enter**: 문단 구조 규칙에 예외 `numberRun`을 더했다. 각주·미주 subList의 첫 `hp:p`(`isNoteNumberParagraph`,
   decoder는 note 본문 첫 문단)에서만 첫 run의 `hp:t` 앞 번호 control(`isNoteNumberControl`: `hp:ctrl` 안 `hp:autoNum numType="FOOTNOTE|ENDNOTE"`
   하나와 `hp:autoNumFormat`뿐)을 받는다. 나눔은 번호 control 원문을 앞 문단 run 맨 앞에 남기고(`changedTextRun(…, keepNumber)`) 뒤 글자만 새
   문단으로 옮기며, 여러 문단 범위 치환도 시작 문단 번호를 남긴다. 다음 문단 맨 앞 Backspace는 번호 문단에 합치고, 번호 문단은 subList 첫
-  문단이라 앞으로 합칠 문단이 없다. 복구 기록 replay 검사는 교체 fragment 첫 문단의 번호 control 원문이 바꾸기 전 fragment에 그대로 있을
-  때만 이 예외를 준다(번호를 새로 들이는 fragment는 거부).
+  문단이라 앞으로 합칠 문단이 없다. 복구 기록 replay 검사는 command가 가리키는 현재 문단이 각주·미주 본문 첫 `hp:p`이고, 교체 fragment
+  첫 문단 첫 run의 번호 control이 정확히 하나이며 그 본문 종류와 같은 `numType`이고 원문이 바꾸기 전 fragment에 그대로 있을 때만,
+  그리고 version 5 이상 기록에서만 이 예외를 준다(번호를 새로 들이거나 본문 문단으로 옮기거나 늘리는 fragment는 거부).
 - **메모 글자·문단 모양**: `isStyleEditableParagraph`가 글자만 든 메모(`hp:fieldBegin type="MEMO"`) 본문 직속 문단을 받고, capability는 메모
   본문의 `characterStyle`·`paragraphStyle`을 연다(문단 나눔·병합은 계속 `SUBLIST_TEXT`). 메모 범위(`fieldBegin` 속성·`fieldEnd`)는 byte 그대로다.
 - **복구 기록 version 5**: `insert-endnote`·`delete-endnote`는 version 5 기록에서만 받는다(replay 검사는 각주와 같은 모양 + `#hp:endNote:K`).
@@ -470,8 +473,8 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   DOM(`footnote_measurement.ts`)이 각주마다 문단 경계와, 글자 run만 든 문단의 줄 경계(text node `getClientRects` 줄 조각에서 새 줄
   시작 글자를 이분 탐색하고 화면 PUA 대체 글자 offset을 원문 offset으로 되돌림)로 잰다. 측정 전에는 decoder 줄 배치 높이로 문단
   경계에서만 나눈다. 측정값은 section `LayoutMeasurements.noteMetrics`에 들어 section 단위 pagination cache와 함께 바뀐 section만
-  다시 잰다. `ON_PAGE` 번호는 쪽을 다 나눈 뒤 쪽 안 첫 조각 순서로 다시 매겨 쪽 object의 본문 번호 표시와 각주 조각을 함께 바꾼다
-  (원본 section은 그대로).
+  다시 잰다. `ON_PAGE` 번호는 쪽을 다 나눈 뒤 쪽 안 첫 조각 순서로 다시 매겨 쪽 object의 본문 번호 표시(표 셀·글상자 안 포함)와
+  각주 조각을 함께 바꾼다(원본 section은 그대로).
 - 각주 조각(`ViewerPageFootnote.pieces`)의 문단 조각은 `whole`(원본 문단, 편집 입력 칸), `head`(줄 경계에서 나눈 앞 줄: 보기·PDF는
   앞 줄 글자만, 편집 중에는 원본 문단 전체를 조각 높이로 잘라 그 자리에서 입력), `rest`(이어지는 줄: 편집 anchor를 지운 읽기 전용
   글자)다. 그래서 같은 `hp:t`의 입력 칸은 문서 전체에 하나뿐이다(머리말처럼 되풀이된 anchor가 생기지 않는다). 이어지는 조각은 번호
@@ -498,7 +501,7 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   `bmatrix`·`dmatrix`(`&`·`#`), `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`oint`·`lim`과 `from`·`to`(또는 `_`·`^`)
   한계, 그리스 문자·기호·화살표 이름(`equation_symbols.ts`), `rm`·`it`·`bold`(묶음 끝까지), `~`·`` ` `` 공백, 따옴표 글, 줄(`#`)을
   읽는다. 기호 표·대소문자 규칙·붙여 쓴 명령 나누기·첨자 operand 규칙은 rhwp `src/renderer/equation/`(MIT)를 참고했다.
-- 짝이 안 맞는 괄호, `ladder`·`longdiv`·`benzene` 같은 미지원 명령, LaTeX 명령, 깊은 중첩·아주 긴 script는 `ok: false`이고 decoder는
+- 짝이 안 맞는 괄호, `ladder`·`longdiv`·`benzene` 같은 미지원 명령, LaTeX 명령, 깊은 중첩·아주 긴 script(16,384자·토큰 4,000개 초과, 영문 단어 256자 초과)는 `ok: false`이고 decoder는
   `equation`을 붙이지 않는다. 이런 수식만 전처럼 script 글자 상자이고 안내 배너·진단(`HWPX_OBJECT_PLACEHOLDER_EQUATION`)에 남는다.
 - decoder는 해석 결과와 `baseUnit`(글자 크기)·`textColor`·`baseLine`을 `ViewerObjectPlaceholder.equation`에 둔다. renderer
   `EquationView`는 선언 크기(`hp:sz`) 상자 안에 `<math>`를 그리고 layout effect에서 (1) 늘일 괄호·근호를 옆 내용 높이에 맞춰 CSS
