@@ -6,7 +6,7 @@ import {
   TextCommitIntent
 } from '../../src/core/editing/composition_input'
 import type { EditorSelection } from '../../src/core/editing/transaction'
-import { selectionAfterInput, EditingImeTransientState } from '../../src/renderer/src/renderer_state'
+import { answerInputFlushRequest, selectionAfterInput, EditingImeTransientState } from '../../src/renderer/src/renderer_state'
 
 const caret = (offset: number) => ({ anchorOffset: offset, focusOffset: offset })
 
@@ -360,5 +360,84 @@ describe('입력 직후 편집 command 순서', () => {
     }, true)
     expect(waited).toBe(true)
     expect(engine.log.at(-1)).toBe('commit:나')
+  })
+})
+
+describe('창 닫기 전 남은 입력 반영 요청(editing:flushInput)', () => {
+  test('음절 묶음 대기 중인 마지막 글자를 commit하고 그 응답이 온 뒤에 답한다', async () => {
+    const engine = new FakeEngine('')
+    const transient = new EditingImeTransientState()
+    transient.synchronize(session(engine), 0)
+    const surface = new FakeSurface(transient, engine)
+    surface.typeSyllable('닫')
+    // 깨끗한 문서에 친 글자가 아직 입력 칸에만 있다. main(엔진)은 dirty가 아니다.
+    expect(engine.status().isDirty).toBe(false)
+
+    let repliedDirty: boolean | undefined
+    await answerInputFlushRequest(transient, () => { repliedDirty = engine.status().isDirty })
+
+    expect(engine.log).toEqual(['commit:닫'])
+    expect(repliedDirty).toBe(true)
+    expect(transient.hasPendingInput).toBe(false)
+  })
+
+  test('IME가 아직 조합 중인 글자도 확정해 commit한 뒤 답한다', async () => {
+    const engine = new FakeEngine('본문')
+    const transient = new EditingImeTransientState()
+    transient.synchronize(session(engine), 0)
+    const surface = new FakeSurface(transient, engine)
+    surface.typeSyllable('끝', false)
+    expect(surface.composing).toBe(true)
+
+    let replied = false
+    await answerInputFlushRequest(transient, () => { replied = engine.text === '본문끝' })
+    expect(replied).toBe(true)
+  })
+
+  test('앞서 줄 선 편집 command가 끝난 뒤에 답한다', async () => {
+    const engine = new FakeEngine('')
+    const transient = new EditingImeTransientState()
+    transient.synchronize(session(engine), 0)
+    const surface = new FakeSurface(transient, engine)
+    surface.typeSyllable('가')
+    const order: string[] = []
+    const style = transient.runAfterInput(async () => {
+      transient.noteHistory(await engine.style('굵게'))
+      order.push('style')
+    })
+    await answerInputFlushRequest(transient, () => order.push('reply'))
+    await style
+    expect(order).toEqual(['style', 'reply'])
+    expect(engine.log).toEqual(['commit:가', 'style:굵게:가'])
+  })
+
+  test('남은 입력이 없으면 바로 답하고, 반영이 실패해도 답한다', async () => {
+    const transient = new EditingImeTransientState()
+    let replies = 0
+    await answerInputFlushRequest(transient, () => { replies += 1 })
+    expect(replies).toBe(1)
+
+    const failing = { runAfterInput: () => Promise.reject(new Error('commit 실패')) }
+    const logged: unknown[] = []
+    await answerInputFlushRequest(failing, () => { replies += 1 }, (reason) => logged.push(reason))
+    expect(replies).toBe(2)
+    expect(logged).toHaveLength(1)
+  })
+
+  test('편집 상태가 reset되면(문서 교체) 남은 command를 버리고도 답한다', async () => {
+    const engine = new FakeEngine('')
+    const transient = new EditingImeTransientState()
+    transient.synchronize(session(engine), 0)
+    const gate: { release?: () => void } = {}
+    const blocking = transient.runAfterInput(() => new Promise<void>((resolve) => { gate.release = resolve }))
+    let replied = false
+    const answer = answerInputFlushRequest(transient, () => { replied = true })
+    while (!gate.release) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(replied).toBe(false)
+    transient.reset()
+    gate.release()
+    await blocking
+    await answer
+    expect(replied).toBe(true)
   })
 })

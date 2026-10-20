@@ -24,6 +24,9 @@ const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
+// 입력 직후 종료: 깨끗한 편집 문서의 문단 끝에 이 글자를 조합 입력하고 commit 전(음절 묶음 대기 중)에 바로 앱을 끝낸다.
+// 닫기 순서가 남은 입력을 먼저 반영해 dirty 확인(HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION)을 거쳐야 한다. save면 저장본에 글자가 있어야 한다.
+const closeAfterTyping = process.env.HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING
 // 편집 뒤 앱을 SIGKILL로 강제 종료하고 같은 user-data로 다시 띄워 복구 기록에서 편집을 되살린 뒤 Save As·재열기까지 확인한다.
 const crashRecovery = process.env.HAN_FLOW_VERIFY_CRASH_RECOVERY === '1'
 // 복구 기록 flush 간격(0.5초)보다 넉넉히 기다린 뒤 강제 종료한다.
@@ -53,6 +56,11 @@ if (editTarget && !EDIT_TARGETS.includes(editTarget)) {
 
 if (crashRecovery && !editText) {
   console.error('HAN_FLOW_VERIFY_CRASH_RECOVERY는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 합니다.')
+  process.exit(1)
+}
+
+if (closeAfterTyping && (!closeDirtyAction || editText || crashRecovery || editSave)) {
+  console.error('HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING는 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION과 함께, 다른 편집 probe 없이 실행해야 합니다.')
   process.exit(1)
 }
 
@@ -148,6 +156,7 @@ async function launch(output, userData, options = {}) {
         ...(interactive && tableStructureProbe ? { HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
         ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {}),
+        ...(interactive && closeAfterTyping ? { HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING: closeAfterTyping } : {}),
         ...(options.environment ?? {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
@@ -191,6 +200,11 @@ async function launch(output, userData, options = {}) {
     })
   })
   const state = JSON.parse(await readFile(output, 'utf8'))
+  // 입력 직후 종료 E2E: main이 닫기 순서에서 남긴 반영 전후 dirty(`HAN_FLOW_E2E_CLOSE {...}`).
+  const closeReports = standardError.split('\n')
+    .filter((line) => line.startsWith('HAN_FLOW_E2E_CLOSE '))
+    .map((line) => JSON.parse(line.slice('HAN_FLOW_E2E_CLOSE '.length)))
+  if (closeReports.length) state.closeReports = closeReports
   return crash ? { ...state, crashReport } : state
 }
 
@@ -232,7 +246,7 @@ try {
     : undefined
   const journalsAfterRecovery = crashRecovery ? await recoveryJournals(join(directory, 'user-data')) : undefined
   // 정상 종료(저장 또는 [저장하지 않음]) 뒤에는 복구 기록이 남으면 안 된다. 남으면 다음 실행이 버린 편집을 복구하겠느냐고 묻는다.
-  const journalsAfterQuit = !crashRecovery && (editText || tableStructureProbe)
+  const journalsAfterQuit = !crashRecovery && (editText || tableStructureProbe || closeAfterTyping)
     ? await recoveryJournals(join(directory, 'user-data'))
     : undefined
   const sourceUnchanged = verifiesSavedFile
@@ -251,7 +265,9 @@ try {
           fixture: saveDestination,
           interactive: false,
           // 강제 종료 복구와 편집 대상(표 앞·뒤·각주·머리말) 저장은 저장본을 다시 열어 입력 글자가 화면에 있는지 본다.
-          environment: crashRecovery || (editTarget && editText) ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText } : undefined
+          environment: crashRecovery || (editTarget && editText)
+            ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText }
+            : closeAfterTyping ? { HAN_FLOW_VISUAL_EXPECT_TEXT: closeAfterTyping } : undefined
         }
       )
     } catch {
@@ -405,6 +421,15 @@ try {
     journalsAfterQuit?.length ? `정상 종료 뒤 복구 기록이 남음: ${journalsAfterQuit.length}개` : undefined,
     closeDirtyAction && !crashRecovery && !editSave && editText && !state.editingProbe?.dirtyAtEnd ? '닫기 전 편집이 dirty가 아니어서 dirty 종료를 확인하지 못함' : undefined,
     crashRecovery && savedState && !savedState.expectedTextPresent ? '복구 뒤 저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
+    closeAfterTyping && !state.closeAfterTypingProbe ? '입력 직후 종료 probe 결과가 없음' : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.probeError ? `입력 직후 종료 probe 오류: ${state.closeAfterTypingProbe.probeError}` : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.dirtyBefore ? '입력 직후 종료 전 문서가 이미 dirty임' : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.dirtyAfterTyping ? '입력 직후 종료 전에 글자가 이미 commit됨(대기 중 입력을 확인하지 못함)' : undefined,
+    closeAfterTyping && state.closeReports?.length !== 1 ? `닫기 순서 기록 수 불일치: ${state.closeReports?.length ?? 0}` : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.flush !== 'replied' ? `닫기 전 입력 반영 요청에 renderer가 답하지 않음: ${state.closeReports?.[0]?.flush}` : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.dirtyBeforeFlush !== false ? '닫기 요청 때 main이 이미 dirty여서 대기 중 입력을 확인하지 못함' : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.dirtyAfterFlush !== true ? '닫기 전 입력 반영 뒤에도 dirty가 아님(마지막 글자 유실)' : undefined,
+    closeAfterTyping && closeDirtyAction === 'save' && savedState && !savedState.expectedTextPresent ? '입력 직후 종료 저장본에 마지막 글자가 없음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
     verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
@@ -478,6 +503,11 @@ try {
     journalsAfterQuit,
     dirtyClose: closeDirtyAction ? {
       action: closeDirtyAction,
+      closeAfterTyping: closeAfterTyping ? {
+        probe: state.closeAfterTypingProbe,
+        closeReports: state.closeReports,
+        reopenedTextPresent: savedState?.expectedTextPresent
+      } : undefined,
       dirtyAtEnd: state.editingProbe?.dirtyAtEnd,
       sourceUnchanged,
       savedFileExists,

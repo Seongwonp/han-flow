@@ -73,7 +73,7 @@ import {
   readParagraphEditorSelection,
   restoreParagraphEditorSelection
 } from './paragraph_selection'
-import { DocumentLayoutMeasurements, EditingImeTransientState, EditingInputFlusher, selectionAfterInput } from './renderer_state'
+import { answerInputFlushRequest, DocumentLayoutMeasurements, EditingImeTransientState, EditingInputFlusher, selectionAfterInput } from './renderer_state'
 import { MeasurementStylesTracker, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
@@ -2866,6 +2866,10 @@ export default function App() {
   useEffect(() => api().onRecoveryJournalStopped((notice: { sessionId: string; message: string }) => {
     setRecoveryJournalStopped(notice)
     if (editingTransient.current.currentSession?.sessionId === notice.sessionId) setEditingStatus(notice.message)
+  }), [])
+  // 창 닫기·앱 종료 전 main의 요청: 입력 칸에 남은 글자를 commit하고 끝나면 답한다. main은 답을 받은 뒤 dirty를 본다.
+  useEffect(() => api().onFlushEditingInput((requestId: string) => {
+    void answerInputFlushRequest(editingTransient.current, () => api().editingInputFlushed(requestId))
   }), [])
   useEffect(() => api().onRecoveryStart((request: { filePath: string; journalId: string }) => {
     // 엔진이 끝난 session을 renderer가 아직 모를 수 있다. 편집 상태를 먼저 정리한다.

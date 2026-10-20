@@ -114,6 +114,9 @@ const LAYOUT_STRESS_FIXTURES = [
   { id: 'footnote-long', create: 'createLongFootnoteHwpx' },
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
 ]
+// 입력 직후 종료 E2E에서 조합 입력할 글자(문서에 없는 음절).
+const CLOSE_AFTER_TYPING_TEXT = '닫뾱'
+
 // 긴 각주 편집 E2E: 쪽을 넘어 나뉜 첫 각주의 앞 조각(원본 문단 전체를 잘라 그린 입력 칸)에 입력하고 저장한 뒤 다시 연다.
 const LONG_FOOTNOTE_EDIT_TEXT = '긴각주고침'
 
@@ -303,6 +306,20 @@ try {
     HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION: 'discard'
   })
 
+  // 입력 직후 종료: 깨끗한 편집 문서에 음절을 조합 입력하고 commit 전(음절 묶음 대기 중)에 바로 앱을 끝낸다. 닫기 순서가
+  // renderer에 남은 입력을 먼저 반영하게 해 dirty 확인을 거쳐야 한다. [다른 이름으로 저장]이면 저장본을 다시 열어 마지막 글자까지
+  // 있는지, [저장하지 않음]이면 확인을 거친 뒤 복구 기록 없이 끝났는지 본다.
+  const closeAfterTypingResults = []
+  for (const action of ['save', 'discard']) {
+    closeAfterTypingResults.push({
+      action,
+      ...await verify(fixtures.find(({ id }) => id === 'hanging-indent').path, 500, false, {
+        HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING: CLOSE_AFTER_TYPING_TEXT,
+        HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION: action
+      })
+    })
+  }
+
   // 아주 긴 한글 파일 이름: 상단 막대는 한 줄 말줄임, 버튼·리본 control은 배율 1.25·1.5에서도 줄바꿈하지 않는다.
   const longNamePath = join(directory, `${LONG_KOREAN_FILE_STEM}.hwpx`)
   await copyFile(fixtures.find(({ id }) => id === 'hanging-indent').path, longNamePath)
@@ -406,6 +423,8 @@ try {
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     crashRecoveryResult.passed ? undefined : `baseline 강제 종료 복구 실패(${crashRecoveryResult.failures.join(', ')})`,
     dirtyDiscardResult.passed ? undefined : `hanging-indent [저장하지 않음] 종료 실패(${dirtyDiscardResult.failures.join(', ')})`,
+    ...closeAfterTypingResults.filter(({ passed }) => !passed)
+      .map(({ action, failures: closeFailures }) => `hanging-indent 입력 직후 종료(${action}) 실패(${closeFailures.join(', ')})`),
     ...objectResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: objectFailures }) => `${fixtureId}: 자리 표시 검증 실패(${objectFailures.join(', ')})`),
     ...objectResults.filter(({ recoveredObjectCharacters }) => !(recoveredObjectCharacters > 0)).map(({ fixtureId }) => `${fixtureId}: 수식 script·글상자 글·각주·메모·단추 이름·개체 설명이 화면에 없음`),
     ...objectResults.filter(({ sourceObjectComparison }) => sourceObjectComparison !== 'compared').map(({ fixtureId, sourceObjectComparison }) => `${fixtureId}: 원문 개체 비교 안 함(${sourceObjectComparison})`),
@@ -599,6 +618,9 @@ try {
     })),
     crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },
     dirtyDiscard: { passed: dirtyDiscardResult.passed, journalsAfterQuit: dirtyDiscardResult.journalsAfterQuit, ...dirtyDiscardResult.dirtyClose },
+    closeAfterTyping: closeAfterTypingResults.map(({ action, passed, journalsAfterQuit, dirtyClose }) => ({
+      action, passed, journalsAfterQuit, ...dirtyClose
+    })),
     longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({
       fixtureId, passed, screenPageTextCounts, pdfPageTextCounts: pageTextCounts, pdfTitle

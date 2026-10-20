@@ -44,7 +44,13 @@ import { PDF_OBJECT_WARNING_CONTINUE, pdfObjectPlaceholderConfirmation } from '.
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
-import { createGuardedIpc, rendererUrlMatcher } from './ipc_guard'
+import { createGuardedIpc, createRendererRequest, rendererUrlMatcher } from './ipc_guard'
+import {
+  EDITING_FLUSH_INPUT_CHANNEL,
+  EDITING_INPUT_FLUSHED_CHANNEL,
+  RENDERER_INPUT_FLUSH_TIMEOUT_MS,
+  resolveWindowClose
+} from './window_close'
 import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
@@ -87,6 +93,12 @@ const devRendererUrl = isDev ? process.env['ELECTRON_RENDERER_URL'] || undefined
 const ipc = createGuardedIpc(ipcMain, {
   isTrustedWebContents: (webContents) => windowsById.get(webContents.id)?.webContents === webContents,
   isTrustedUrl: rendererUrlMatcher({ rendererFile, devServerUrl: devRendererUrl })
+})
+// 창 닫기·앱 종료 전에 renderer 입력 칸에 남은 글자(음절 묶음 대기)를 commit하게 하고 답을 기다린다(`window_close.ts`).
+const rendererInputFlush = createRendererRequest(ipc, {
+  requestChannel: EDITING_FLUSH_INPUT_CHANNEL,
+  replyChannel: EDITING_INPUT_FLUSHED_CHANNEL,
+  timeoutMs: RENDERER_INPUT_FLUSH_TIMEOUT_MS
 })
 // PDF 내보내기 요청마다 renderer가 인쇄 준비를 마쳤다고 알릴 때까지 기다리는 대기열(requestId → 보낸 webContents·완료).
 const pendingPdfReady = new Map<string, { sender: Electron.WebContents; resolve: () => void }>()
@@ -363,6 +375,8 @@ function captureVisualState(window: BrowserWindow): void {
   const tableStructureProbeEnabled = testValue('HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE') === '1'
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
+  // 상태를 다 잰 뒤 이 글자를 조합 입력하고 commit 전에 바로 앱을 끝낸다(입력 직후 종료 E2E).
+  const closeAfterTypingText = testValue('HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING')
   // 강제 종료 뒤 다시 띄운 앱에서 복구한 편집 글자(HAN_FLOW_E2E_RECOVERY_ACTION=recover와 함께 쓴다).
   const recoveryText = testValue('HAN_FLOW_VISUAL_RECOVERY_TEXT')
   // 화면 글자에 있어야 하는 문자열(복구 뒤 저장본을 다시 열어 확인).
@@ -1776,6 +1790,73 @@ function captureVisualState(window: BrowserWindow): void {
     }
     visualState.windowTitle = window.getTitle()
     visualState.suggestedPdfPath = suggestedPdfExportPath(currentDocumentPaths.get(window.webContents.id), lastDialogDirectory)
+    if (closeAfterTypingText && exitWhenComplete) {
+      // 입력 직후 종료: 깨끗한 편집 문서의 문단 끝에 음절을 조합 입력하고, 음절 묶음이 아직 입력 칸에 머문(commit 전) 그 자리에서
+      // 바로 앱을 끝낸다. 닫기 순서가 남은 입력을 먼저 반영해 저장 확인(HAN_FLOW_DIRTY_ACTION)을 거쳐야 한다.
+      visualState.closeAfterTypingProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-start'
+        try {
+        const waitFor = async (predicate, timeout = 30000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('입력 직후 종료 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
+        // 글자가 있는 본문 문단을 먼저 고른다(없으면 첫 입력 칸).
+        const readySurface = () => {
+          const ready = Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+            .filter((element) => element.dataset.inputReady === 'true')
+          return ready.find((element) => (element.textContent ?? '').length > 0) ?? ready[0]
+        }
+        if (!document.querySelector('.viewer-editing-badge')) {
+          ;(await waitFor(() => document.querySelector('[aria-label="HWPX 편집 시작"]'))).click()
+          await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        }
+        phase = 'surface'
+        let target = await waitFor(readySurface)
+        phase = 'focus'
+        const anchorId = target.dataset.sourceTextNodeId
+        target.focus()
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        target = await waitFor(() => Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+          .find((element) => element.dataset.sourceTextNodeId === anchorId && element.dataset.inputReady === 'true'))
+        target.focus()
+        phase = 'type'
+        const dirtyBefore = status().includes('저장 안 됨')
+        const setCaret = (offset) => {
+          if (!target.firstChild) target.append(document.createTextNode(''))
+          window.getSelection().setBaseAndExtent(target.firstChild, offset, target.firstChild, offset)
+        }
+        let text = target.textContent ?? ''
+        setCaret(text.length)
+        for (const character of Array.from(${JSON.stringify(closeAfterTypingText)})) {
+          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+          text += character
+          target.textContent = text
+          setCaret(text.length)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
+          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
+        }
+        // 이 시점에 글자는 입력 칸에만 있다(음절 묶음 대기). 상태 막대도 아직 깨끗하다고 보여야 한다.
+        return { dirtyBefore, dirtyAfterTyping: status().includes('저장 안 됨'), typedAt: Date.now() }
+        } catch (error) {
+          return {
+            probeError: String(error?.message ?? error),
+            phase,
+            surfaces: Array.from(document.querySelectorAll('[contenteditable]')).map((element) => [element.getAttribute('aria-label'), element.dataset.inputReady, (element.textContent ?? '').length]).slice(0, 10),
+            status: document.querySelector('.viewer-status')?.textContent ?? ''
+          }
+        }
+      })()`).catch((reason) => ({ probeError: String(reason) }))
+      // 상태 파일을 쓰는 동안에도 commit 대기 시간(450ms)이 지나지 않도록 바로 끝낸다.
+      if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState))
+      app.quit()
+      return
+    }
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
@@ -2033,7 +2114,10 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   })
   // 창을 떠나면 아직 내리지 않은 편집 기록을 바로 디스크에 쓴다.
   window.on('blur', () => void editingSessions.flushJournal(senderId))
+  // renderer가 비정상 종료하면 남은 입력 반영 요청을 기다리지 않고 지금 상태로 닫기 확인을 이어 간다.
+  window.webContents.on('render-process-gone', () => rendererInputFlush.cancel(senderId))
   window.webContents.once('destroyed', () => {
+    rendererInputFlush.cancel(senderId)
     documentImporter.cancel(senderId)
     // 닫기 확인을 거친 창은 이미 끝냈다. 그 밖의 경우(renderer 비정상 종료 등)는 window-all-closed가 정리를 기다린다.
     void editingSessions.stop(senderId)
@@ -2045,27 +2129,46 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   })
   window.on('close', (event) => {
     if (closeApproved) return
-    const sessionId = editingSessions.currentSessionId(senderId)
-    if (!sessionId) return
-    const dirty = editingSessions.isDirty(senderId)
-    // 확인 대화상자를 띄우기 전에 기록을 내린다. 대화상자 중 OS가 앱을 끝내도 편집이 남는다.
-    if (dirty) void editingSessions.flushJournal(senderId)
+    if (!editingSessions.currentSessionId(senderId)) return
+    // 지금 dirty이면 renderer 답을 기다리기 전에 먼저 기록을 내린다(반영한 입력은 아래 순서가 다시 내린다).
+    if (editingSessions.isDirty(senderId)) void editingSessions.flushJournal(senderId)
     // 편집 session이 있는 창은 session을 끝내고(복구 기록 삭제까지) 나서 닫는다. 닫힌 뒤에 지우면 앱이 먼저 끝나
     // 다음 실행에서 버린(또는 방금 저장한) 편집을 복구하겠느냐고 묻는다.
     event.preventDefault()
     if (resolvingClose) return
     resolvingClose = true
     void (async () => {
-      if (dirty) {
+      // renderer 입력 칸에 남은 글자를 먼저 commit하게 한 뒤 dirty를 본다(`window_close.ts`). 입력 직후 닫아도 저장 확인을 거친다.
+      const decision = await resolveWindowClose({
+        currentSessionId: () => editingSessions.currentSessionId(senderId),
+        flushRendererInput: async () => {
+          const dirtyBeforeFlush = editingSessions.isDirty(senderId)
+          const outcome = window.isDestroyed()
+            ? 'unavailable' as const
+            : await rendererInputFlush.request(window.webContents)
+          // 입력 직후 종료 E2E: 반영 전후 dirty를 verify_app이 읽는다(stderr).
+          if (testValue('HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING')) {
+            console.error('HAN_FLOW_E2E_CLOSE ' + JSON.stringify({
+              flush: outcome,
+              dirtyBeforeFlush,
+              dirtyAfterFlush: editingSessions.isDirty(senderId)
+            }))
+          }
+          return outcome
+        },
+        isDirty: (currentSessionId) => editingSessions.isDirty(senderId, currentSessionId),
+        flushJournal: () => editingSessions.flushJournal(senderId),
         // 닫히는 바로 그 창을 dialog 부모와 close 대상으로 쓴다.
-        const result = await resolveDirtyEditing(senderId, sessionId, window)
-        if (result.outcome === 'cancelled') {
-          applicationQuitRequested = false
-          return
-        }
+        resolveDirty: (currentSessionId) => resolveDirtyEditing(senderId, currentSessionId, window),
+        windowDestroyed: () => window.isDestroyed(),
+        stopSession: () => editingSessions.stop(senderId),
+        log: (message) => console.warn(message)
+      })
+      if (decision === 'cancelled') {
+        applicationQuitRequested = false
+        return
       }
-      if (window.isDestroyed()) return
-      await editingSessions.stop(senderId)
+      if (decision === 'gone') return
       closeApproved = true
       const resumeApplicationQuit = applicationQuitRequested
       if (window.isDestroyed()) {

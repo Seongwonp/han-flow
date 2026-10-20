@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### 입력 직후 창 닫기·앱 종료
+
+- 깨끗한 문서에 한글을 입력하고 약 450ms(음절 묶음 대기) 안에 창을 닫거나 앱을 끝내면 main이 깨끗하다고 보고 저장 확인 없이 닫아 마지막 글자를 잃던 문제를 고침. 닫기 순서가 dirty를 보기 전에 renderer에 남은 입력 반영을 요청하고(`editing:flushInput`, `createRendererRequest` 1초 제한, 보낸 창·같은 요청 id의 답만 받음) 답이 온 뒤 dirty를 다시 봄(`window_close.ts`). renderer는 `runAfterInput`으로 남은 글자 commit 뒤 답함. 시간 초과·renderer 비정상 종료면 그때 상태로 이어 가고 경고를 남김. dirty면 반영한 commit까지 복구 기록을 내린 뒤 확인을 띄움
+- 단위 test(`window_close`: 가짜 renderer 반영 → 확인 표시·취소·버리기·시간 초과·비정상 종료, renderer 반영 응답 순서)와 verify:matrix 입력 직후 종료 E2E(조합 직후 종료 → 반영 전 깨끗·반영 뒤 dirty → [다른 이름으로 저장] 저장본에 글자 있음, [저장하지 않음] 뒤 복구 기록 0개)
+
 ### HWPX 수식 조판(MathML)
 
 - 한컴 수식 script(`hp:equation/hp:script`)를 해석해 MathML로 그림: `over`·`atop`·`choose`, `sqrt`·`root … of`, `^`·`_`·`sup`·`sub`, `left … right`, `matrix`·`pmatrix`·`bmatrix`·`dmatrix`, `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`lim`의 `from`·`to`, 그리스 문자·기호·화살표, `rm`·`it`·`bold`, `~`·`` ` ``, 따옴표 글, `COLOR`. 기호 표·토큰 규칙은 rhwp(MIT) 참고(THIRD_PARTY_NOTICES.md)

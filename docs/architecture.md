@@ -183,7 +183,12 @@ family 문자열은 command에 들어가지 않으므로 renderer가 임의 pack
 dirty 문서 교체와 종료도 동일한 main 경계를 사용한다. renderer의 dialog·drop·Finder
 `file:open` 경로는 새 import 전에 `editing:resolveDirty`를 호출하고, main의 BrowserWindow
 `close` handler는 renderer가 응답할 수 없는 앱 종료(macOS `⌘Q`)와 창 닫기를 직접 보호한다. 여러 창이
-열려 있으면 닫히는 그 창을 dialog 부모와 close 대상으로 사용한다. 선택지는
+열려 있으면 닫히는 그 창을 dialog 부모와 close 대상으로 사용한다. renderer는 마지막 한글 음절을 약 450ms 입력 칸에 묶어 두었다가
+commit하므로, `close` handler는 dirty를 보기 전에 `editing:flushInput`(`ipc_guard.ts`의 `createRendererRequest`, 1초 제한)으로
+남은 입력을 반영하게 하고 답(`editing:inputFlushed`, 보낸 그 webContents·같은 요청 id만 받음)이 온 뒤 dirty를 다시 본다
+(`window_close.ts`). renderer는 `runAfterInput`으로 남은 글자 commit과 앞선 편집 command가 끝난 뒤 답한다. 시간 초과·renderer
+비정상 종료면 기다리지 않고 그때 상태로 이어 가며 경고를 남긴다. dirty면 반영한 commit까지 복구 기록을 내린 뒤 확인을 띄운다.
+문서 교체(`file:open`·drop·열기)는 renderer가 같은 `runAfterInput` 뒤에 `editing:resolveDirty`를 부른다. 선택지는
 Save As, discard, cancel이며 Save As는 위와 같은 검증 writer를 재사용한다.
 
 비동기 결정을 기다리는 동안 반복 close는 `resolvingClose`로 막지만, 결정 후 호출하는 두
@@ -666,7 +671,7 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   쓰기는 비동기 fs라 main event loop를 막지 않는다.
 - 지우는 때: 정상 종료(`stop`: 편집 끝내기·창 닫기·다른 문서 열기는 모두 저장 또는 [저장하지 않음]을 거친다), Save As 뒤 dirty가
   아니게 됐을 때(위 규칙), 복구 대화상자의 [버리기]. worker 중단·앱 강제 종료에서는 남긴다(`retain`). 편집 session이 있는 창의
-  `close`는 한 번 막고, dirty면 닫기 확인([저장]·[저장하지 않음])을 거친 뒤, `stop`(기록 삭제·worker 종료)이 끝나고 나서 창을
+  `close`는 한 번 막고, renderer에 남은 입력을 반영하게 한 뒤(위 문서 교체·종료 절) dirty면 닫기 확인([저장]·[저장하지 않음])을 거친 뒤, `stop`(기록 삭제·worker 종료)이 끝나고 나서 창을
   닫고 앱 종료를 이어 간다. 창이 다 닫힌 뒤 `will-quit`에서 종료를 미루면 Electron 44가 끝나지 않으므로 창 단계에서 기다린다.
   닫기 확인 없이 사라진 창(renderer 비정상 종료 등)은 `window-all-closed`가 `whenStopped`를 기다린다. 그래서 버린 편집이
   다음 실행에서 복구 제안으로 돌아오지 않는다

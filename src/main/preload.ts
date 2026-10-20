@@ -18,6 +18,7 @@ import type {
   EditingStartRequest
 } from '../core/editing/editing_contract'
 import { EditingIpcResult, unwrapEditingIpcResult } from '../core/editing/editing_error'
+import { EDITING_FLUSH_INPUT_CHANNEL, EDITING_INPUT_FLUSHED_CHANNEL } from './window_close'
 
 const invokeEditing = <T>(channel: string, ...args: unknown[]): Promise<T> =>
   ipcRenderer.invoke(channel, ...args).then((result: EditingIpcResult<T>) =>
@@ -83,6 +84,13 @@ const api = {
     ipcRenderer.on('editing:recoveryJournalStopped', handler)
     return () => ipcRenderer.removeListener('editing:recoveryJournalStopped', handler)
   },
+  // 창 닫기·앱 종료 전에 main이 입력 칸에 남은 글자를 commit하라고 묻는다. 반영이 끝나면 같은 요청 id로 답한다.
+  onFlushEditingInput: (listener: (requestId: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, requestId: string) => listener(requestId)
+    ipcRenderer.on(EDITING_FLUSH_INPUT_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(EDITING_FLUSH_INPUT_CHANNEL, handler)
+  },
+  editingInputFlushed: (requestId: string) => ipcRenderer.send(EDITING_INPUT_FLUSHED_CHANNEL, requestId),
   commitEditing: (request: EditingCommitRequest) => invokeEditing('editing:commit', request),
   commitRangeEditing: (request: EditingRangeCommitRequest) =>
     invokeEditing('editing:commitRange', request),

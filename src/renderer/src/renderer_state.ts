@@ -342,6 +342,25 @@ export class EditingImeTransientState {
 }
 
 /**
+ * main의 남은 입력 반영 요청(창 닫기·앱 종료 전, `editing:flushInput`)에 답한다. 입력 칸의 대기 글자(음절 묶음·조합 중 글자)를
+ * commit 요청으로 보내고, 그 commit과 앞서 줄 선 편집 command가 모두 끝난 뒤({@link EditingImeTransientState.runAfterInput})
+ * `reply`를 부른다. main은 답을 받은 뒤 dirty를 다시 보고 저장 확인을 띄운다. 반영이 실패해도 답한다(main은 그때 상태로 이어 간다).
+ */
+export async function answerInputFlushRequest(
+  transient: Pick<EditingImeTransientState, 'runAfterInput'>,
+  reply: () => void,
+  log: (reason: unknown) => void = (reason) => console.warn('닫기 전 입력 반영 실패:', reason)
+): Promise<void> {
+  try {
+    await transient.runAfterInput(() => undefined)
+  } catch (reason) {
+    log(reason)
+  } finally {
+    reply()
+  }
+}
+
+/**
  * 입력 반영을 기다린 뒤 보낼 편집 command(문단 나눔·병합, 글자·문단 모양, 각주 등)의 selection.
  *
  * command를 누른 때의 selection(`requested`)을 기본으로 쓴다. 다만 그 selection이 caret이고, 방금 기다린 글자 commit의 결과
