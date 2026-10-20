@@ -105,6 +105,17 @@ button { font: inherit; }
 .viewer-float-band-spacer { pointer-events: none; }
 .viewer-image-positioned { display: block; max-width: none; object-fit: fill; }
 .viewer-shape { display: block; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-shape-inline { display: inline-block; vertical-align: top; line-height: 0; }
+/* 자른 그림(hp:imgClip): 그림 자리(frame) 밖을 숨기고 보이는 부분이 그 자리를 채우게 그림 전체를 늘여 옮긴다. */
+.viewer-image-crop { position: relative; display: inline-block; overflow: hidden; vertical-align: middle; line-height: 0; }
+.viewer-image-crop.viewer-image-positioned { display: block; }
+.viewer-image-crop-frame { position: absolute; display: block; overflow: hidden; }
+.viewer-image-cropped { position: absolute; display: block; max-width: none; max-height: none; object-fit: fill; }
+.viewer-image-holder { position: relative; display: inline-block; vertical-align: middle; line-height: 0; }
+.viewer-image-holder-positioned { display: block; }
+.viewer-image-holder > .viewer-image { display: block; max-width: none; object-fit: fill; }
+.viewer-image-border { position: absolute; inset: 0; display: block; pointer-events: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-text-box-shape { position: absolute; left: 0; top: 0; pointer-events: none; }
 .viewer-text-box { box-sizing: border-box; display: flex; flex-direction: column; width: 100%; color: #111; font-size: initial; user-select: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .viewer-text-box > .viewer-object-body { user-select: text; }
 .viewer-warning { color: #a23; border: 1px dashed #a23; padding: 2px; font-size: 10px; }

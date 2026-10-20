@@ -1598,6 +1598,78 @@ function captureVisualState(window: BrowserWindow): void {
           footer: content(page.querySelector('.viewer-footer'))
         }
       }),
+      // SVG로 그린 도형(쪽, element, 원본 위치 상자의 용지 기준 위치(CSS px, 배율 제외), path마다 getBBox(HWPUNIT, 개체 상자 기준), 화살표 수,
+      // 채우기 종류(gradient·hatch), 점선 여부)와 자른 그림(상자와 그 안 그림의 상자 기준 위치·크기, CSS px), 그림 회전 안 함 그림(그림과
+      // 테두리 상자), 줄 간격 종류 문단의 줄 높이(줄 위 끝 사이 평균, CSS px).
+      vectorShapes: (() => {
+        const round = (value) => Math.round(value * 10) / 10
+        const pageOf = (element) => element.closest('.viewer-page')
+        const relative = (element, page) => {
+          const pageBox = page.getBoundingClientRect()
+          const scale = pageBox.width / (page.offsetWidth || pageBox.width || 1) || 1
+          const box = element.getBoundingClientRect()
+          return { x: round((box.left - pageBox.left) / scale), y: round((box.top - pageBox.top) / scale), width: round(box.width / scale), height: round(box.height / scale) }
+        }
+        const shapes = Array.from(document.querySelectorAll('.viewer-page svg.viewer-shape')).map((svg) => {
+          const page = pageOf(svg)
+          const holder = svg.closest('[data-object-placement]')
+          const parts = svg.querySelectorAll('g[data-shape-part]').length
+            ? Array.from(svg.querySelectorAll('g[data-shape-part]')).map((group) => group.querySelector('path'))
+            : Array.from(svg.children).filter((child) => child.tagName !== 'defs' && child.tagName !== 'g')
+          return {
+            page: Number(page.dataset.pageIndex) + 1,
+            element: svg.dataset.shapeElement,
+            placement: holder?.dataset.objectPlacement,
+            box: holder ? relative(holder, page) : relative(svg, page),
+            parts: parts.filter(Boolean).map((part) => {
+              const bbox = part.getBBox()
+              return { x: round(bbox.x), y: round(bbox.y), width: round(bbox.width), height: round(bbox.height) }
+            }),
+            arrows: svg.querySelectorAll('[data-arrow]').length,
+            fills: Array.from(svg.querySelectorAll('[data-fill-kind]')).map((item) => item.dataset.fillKind),
+            dashed: Array.from(svg.querySelectorAll('[stroke-dasharray]')).length > 0
+          }
+        })
+        const clippedImages = Array.from(document.querySelectorAll('.viewer-page .viewer-image-crop')).map((crop) => {
+          const page = pageOf(crop)
+          const box = relative(crop, page)
+          const image = relative(crop.querySelector('img'), page)
+          return { page: Number(page.dataset.pageIndex) + 1, box, image: { x: round(image.x - box.x), y: round(image.y - box.y), width: image.width, height: image.height }, overflow: getComputedStyle(crop).overflow }
+        })
+        const uprightImages = Array.from(document.querySelectorAll('.viewer-page [data-rotate-image="0"]')).map((holder) => {
+          const page = pageOf(holder)
+          const picture = holder.querySelector('.viewer-image-crop, img')
+          const border = holder.querySelector('.viewer-image-border')
+          return { page: Number(page.dataset.pageIndex) + 1, picture: picture ? relative(picture, page) : null, border: border ? relative(border, page) : null }
+        })
+        const lineSpacings = Array.from(document.querySelectorAll('.viewer-page [data-line-spacing]')).map((paragraph) => {
+          const page = pageOf(paragraph)
+          const pageBox = page.getBoundingClientRect()
+          const scale = pageBox.width / (page.offsetWidth || pageBox.width || 1) || 1
+          const range = document.createRange()
+          const tops = []
+          const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT)
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            range.selectNodeContents(node)
+            for (const rect of range.getClientRects()) {
+              if (!(rect.width > 0)) continue
+              const top = round((rect.top - pageBox.top) / scale)
+              if (!tops.some((value) => Math.abs(value - top) < 2)) tops.push(top)
+            }
+          }
+          tops.sort((left, right) => left - right)
+          return {
+            page: Number(page.dataset.pageIndex) + 1,
+            spacing: paragraph.dataset.lineSpacing,
+            lines: tops.length,
+            pitch: tops.length > 1 ? round((tops[tops.length - 1] - tops[0]) / (tops.length - 1)) : null
+          }
+        })
+        const nudged = Array.from(document.querySelectorAll('.viewer-page [data-object-nudged]')).map((element) => ({ page: Number(pageOf(element).dataset.pageIndex) + 1, nudge: Number(element.dataset.objectNudged), ...relative(element, pageOf(element)) }))
+        return shapes.length || clippedImages.length || uprightImages.length || lineSpacings.length || nudged.length
+          ? { shapes, clippedImages, uprightImages, lineSpacings, nudged }
+          : undefined
+      })(),
       // MathML로 그린 수식(수식 script를 해석한 것): 원본 개체 수에는 들고 안내 배너 개수에서는 빠진다.
       renderedEquations: document.querySelectorAll('.viewer-page [data-equation-rendered]').length,
       recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby, .viewer-page .viewer-equation-math'))

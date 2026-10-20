@@ -14,7 +14,7 @@ import {
   ViewerNoteMetrics,
   ViewerPageFootnote
 } from './footnote_layout'
-import { blockBandFlowKind, blockObjectBands, flowBlockEnd, mergePageBands, PageBand, pageBandsHeight, PageFrame, tableInFlow } from './object_position'
+import { blockAvoidsOverlap, blockBandFlowKind, blockObjectBands, flowBlockEnd, mergePageBands, PageBand, pageBandsHeight, PageFrame, PlacedObjectRect, tableInFlow } from './object_position'
 
 /**
  * 쪽 안 다단 영역 하나. 구역 중간에서 다단 정의가 바뀌면(`ViewerParagraph.columnLayout`) 한 쪽에 영역이 위에서부터 여럿 놓인다.
@@ -385,6 +385,8 @@ export function paginateViewerSection(
   // 이 쪽에 놓인 용지·쪽 기준 개체의 띠와 그 높이(겹친 부분은 한 번). 단마다 본문이 이만큼 줄어든다.
   let pageBands: PageBand[] = []
   let bandsHeight = 0
+  // 이 쪽에 놓인 겹침 허용 안 함 개체 자리(`resolveObjectY`). 뒤 개체가 겹치면 아래로 민다(화면 `PageObjectLayer`와 같은 순서).
+  let pagePlaced: PlacedObjectRect[] = []
   // 다단이 없는 구역은 쪽 위 block 흐름(`flowBlockEnd`)으로 띠를 지난다. 띠는 글이 닿을 때만 자리를 쓰고, 글 옆 배치 띠(`wrap`)는
   // 개체 옆 남은 폭으로 글을 흘린다. 다단 구역은 띠 높이만큼 모든 단 본문을 줄인다(띠 폭 전체).
   const simpleFlow = Boolean(page) && !flowLayout(section.columnLayout) && !section.blocks.some((block) => flowLayout(block.columnLayout))
@@ -493,6 +495,7 @@ export function paginateViewerSection(
   }
   const resetPage = (layout: ViewerColumnLayout | undefined) => {
     pageBands = []
+    pagePlaced = []
     bandsHeight = 0
     pageFlow = []
     mergedBands = []
@@ -701,11 +704,23 @@ export function paginateViewerSection(
       const metrics = notes.map(metricsOf)
       const notesTotal = metrics.reduce((sum, item) => sum + item.height, 0)
       // 용지·쪽 기준 개체(자리 차지·글 옆 배치)는 그 block이 놓이는 쪽 본문에서 개체 띠만큼 자리를 더 쓴다.
-      const blockBands = page ? blockObjectBands(block, page, simpleFlow) : []
-      const bandsExtra = () => blockBands.length ? pageBandsHeight([...pageBands, ...blockBands]) - bandsHeight : 0
+      // 겹침 허용 안 함 개체는 놓일 쪽의 앞 개체 자리에 따라 밀리므로 쪽이 바뀌면 띠를 다시 잡는다(자리는 놓을 때만 더한다).
+      const avoidsOverlap = Boolean(page) && blockAvoidsOverlap(block)
+      let bandsPage = pagePlaced
+      let blockBands = page ? blockObjectBands(block, page, simpleFlow, avoidsOverlap ? [...pagePlaced] : undefined) : []
+      const refreshBands = () => {
+        if (!avoidsOverlap || bandsPage === pagePlaced) return
+        bandsPage = pagePlaced
+        blockBands = blockObjectBands(block, page!, simpleFlow, [...pagePlaced])
+      }
+      const bandsExtra = () => {
+        refreshBands()
+        return blockBands.length ? pageBandsHeight([...pageBands, ...blockBands]) - bandsHeight : 0
+      }
       const flowKind = simpleFlow ? blockBandFlowKind(block) : 'text'
       // 한 단 흐름: 이 block(과 그 띠)을 지금 쪽에 더했을 때 쪽 본문 흐름이 끝나는 위치. 띠가 새로 생기면 앞 block도 다시 흘린다.
       const flowEndWith = () => {
+        refreshBands()
         const height = blockHeight(block)
         if (!blockBands.length) return flowBlockEnd(usedHeight, height, flowKind, mergedBands, bodyWidth ?? 0)
         const bands = mergePageBands([...pageBands, ...blockBands])
@@ -760,6 +775,8 @@ export function paginateViewerSection(
         }
         usedHeight += height + extra
       }
+      // 이 block의 겹침 허용 안 함 개체 자리를 쪽에 더한다(뒤 block의 개체가 겹치면 그 아래로 민다).
+      if (avoidsOverlap) blockObjectBands(block, page!, simpleFlow, pagePlaced)
       notes.forEach((note, index) => {
         placedNotes.add(note.sourcePath)
         pending.push({ note, metrics: metrics[index], cursor: -1 })
