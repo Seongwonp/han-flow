@@ -929,3 +929,54 @@ export function createObjectLayoutHwpx(directory: string, fileName = 'han-flow-o
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 수식 여러 개가 든 A4 합성 문서(직접 작성, 개인정보 없음). 분수·근호·첨자·큰 연산자(from/to)·적분·lim·행렬·cases·그리스 문자·
+ * 기호·괄호(left/right)·글꼴(rm/it)·색·글자 크기가 다른 글자처럼 취급한 수식과 원본 위치 수식(자리 차지) 하나, 그리고 이 해석기가
+ * 그리지 못하는 명령(`longdiv`)이 든 수식 하나(script 글자 상자로 대체)를 둔다. verify:matrix가 그려 낸 수식 수, 안내 배너(대체한
+ * 수식 1개만), 화면과 PDF 글자 수, PDF에서 수식 기호가 추출되는지 확인한다.
+ */
+export const EQUATION_FIXTURE_SCRIPTS = [
+  { lead: '근의 공식: ', script: 'x = {-b pm sqrt {b^2 - 4ac}} over {2a}', width: 9200, height: 3600, baseLine: 64 },
+  { lead: '합: ', script: 'sum from {k=1} to {n} k^2 = {n(n+1)(2n+1)} over 6', width: 14000, height: 4600, baseLine: 62 },
+  { lead: '적분: ', script: 'int _{0} ^{1} x^2 dx = 1 over 3', width: 9000, height: 3800, baseLine: 64 },
+  { lead: '극한: ', script: 'lim from {x -> 0} {sin x} over x = 1', width: 9000, height: 3600, baseLine: 58 },
+  { lead: '행렬: ', script: 'A = pmatrix{1 & 2 # 3 & 4} TIMES bmatrix{x # y}', width: 11000, height: 3600, baseLine: 58 },
+  { lead: '조건: ', script: 'f(x) = cases{x & (x >= 0) # -x & (x < 0)}', width: 11000, height: 3600, baseLine: 58 },
+  { lead: '기호: ', script: 'alpha + beta ~ != ~ gamma cdot delta , ~ theta <= inf', width: 10000, height: 1400, baseLine: 80, color: '#C00000', baseUnit: 1200 },
+  { lead: '거듭제곱근: ', script: 'root 3 of {x+1} + left ( a over b right )^2 + rm sin it theta', width: 13000, height: 3800, baseLine: 64 },
+  { lead: '대체: ', script: 'longdiv {3} {12} {4}', width: 4000, height: 2000, baseLine: 70 }
+] as const
+export const EQUATION_FIXTURE_TEXTS = { title: '수식 시험 문서', block: '원본 위치 수식 뒤 문단', after: '끝 문단' } as const
+/** 원본 위치(자리 차지) 수식의 script. */
+export const EQUATION_FIXTURE_BLOCK_SCRIPT = 'E = mc^2 ~~ rm and it ~~ a_n = a_1 + (n-1)d'
+/** 해석기가 그리지 못해 script 글자 상자로 남는 수식 수. */
+export const EQUATION_FIXTURE_FALLBACKS = 1
+
+const escapeXmlText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const equationXml = (
+  id: number,
+  script: string,
+  options: { width: number; height: number; baseLine: number; color?: string; baseUnit?: number; inline: boolean }
+) =>
+  `<hp:equation id="${id}" zOrder="${id}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" version="Equation Version 60" baseLine="${options.baseLine}" textColor="${options.color ?? '#000000'}" baseUnit="${options.baseUnit ?? 1000}" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${options.width}" widthRelTo="ABSOLUTE" height="${options.height}" heightRelTo="ABSOLUTE" protect="0"/>${objectPos(options.inline)}<hp:outMargin left="56" right="56" top="0" bottom="0"/><hp:shapeComment>수식입니다.</hp:shapeComment><hp:script>${escapeXmlText(script)}</hp:script></hp:equation>`
+const equationSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>${EQUATION_FIXTURE_TEXTS.title}</hp:t></hp:run></hp:p>
+  ${EQUATION_FIXTURE_SCRIPTS.map((item, index) =>
+    `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${item.lead}</hp:t>${equationXml(9100 + index, item.script, { ...item, inline: true })}<hp:t> 입니다.</hp:t></hp:run></hp:p>`
+  ).join('\n  ')}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${equationXml(9199, EQUATION_FIXTURE_BLOCK_SCRIPT, { width: 16000, height: 1600, baseLine: 80, inline: false })}</hp:run></hp:p>
+  ${plainParagraph(EQUATION_FIXTURE_TEXTS.block)}
+  ${plainParagraph(EQUATION_FIXTURE_TEXTS.after)}
+</hs:sec>`
+
+export function createEquationHwpx(directory: string, fileName = 'han-flow-equations.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(equationSection))
+  zip.writeZip(path)
+  return path
+}

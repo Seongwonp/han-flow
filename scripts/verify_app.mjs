@@ -87,6 +87,12 @@ function objectCensusRequested(path) {
   return /\.hwpx$/iu.test(path) && !expectedError
 }
 
+/** 기대 자리 표시 가운데 MathML로 그려 내지 못한 개체 수(모든 쪽이 mount된 작은 fixture에서 쓴다). */
+function incompletePlaceholders(expected, state) {
+  const total = Object.values(expected).reduce((sum, count) => sum + count, 0)
+  return total - (state.renderedEquations ?? 0)
+}
+
 function placeholderKey(counts = {}) {
   return Object.keys(counts).sort().map((kind) => `${kind}=${counts[kind]}`).join(',') || '없음'
 }
@@ -293,8 +299,13 @@ try {
     expectedPlaceholders && placeholderKey(expectedPlaceholders) !== placeholderKey(state.placeholderCounts)
       ? `자리 표시 불일치: 기대 ${placeholderKey(expectedPlaceholders)}, 실제 ${placeholderKey(state.placeholderCounts)}`
       : undefined,
-    expectedPlaceholders && Object.keys(expectedPlaceholders).length && !state.objectNotice
+    // MathML로 그려 낸 수식은 안내 배너("화면에 완전히 표시되지 않는 개체")에서 빠진다. 그 밖의 자리 표시가 있으면 배너가 있어야 하고,
+    // 그려 낸 수식만 있으면 배너가 없어야 한다.
+    expectedPlaceholders && incompletePlaceholders(expectedPlaceholders, state) > 0 && !state.objectNotice
       ? '자리 표시 개체 안내 배너가 표시되지 않음'
+      : undefined,
+    expectedPlaceholders && Object.keys(expectedPlaceholders).length && incompletePlaceholders(expectedPlaceholders, state) <= 0 && state.objectNotice
+      ? `그려 낸 수식만 있는데 안내 배너가 표시됨: ${state.objectNotice}`
       : undefined,
     searchQuery && !state.search?.open ? '검색 UI가 열리지 않음' : undefined,
     searchQuery && state.search?.occurrences < 1 ? '검색 결과가 없음' : undefined,
@@ -432,6 +443,7 @@ try {
     objectShortfalls: shortfalls,
     placeholderCounts: state.placeholderCounts,
     recoveredObjectCharacters: state.recoveredObjectCharacters,
+    renderedEquations: state.renderedEquations,
     objectNotice: state.objectNotice,
     fittedObjects: state.fittedObjects,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,

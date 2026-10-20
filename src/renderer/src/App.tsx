@@ -77,9 +77,10 @@ import { DocumentLayoutMeasurements, EditingImeTransientState, EditingInputFlush
 import { MeasurementStylesTracker, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
-import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
+import { countIncompleteObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
+import { EquationView } from './EquationView'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
@@ -274,6 +275,7 @@ export function ObjectPlaceholderView({ item, document, positioned = false, edit
   if (item.kind === 'footnote' || item.kind === 'endnote') {
     return <sup {...common} className="viewer-note-marker" title={`${item.label} ${item.marker ?? ''}`.trim()}>{item.marker}</sup>
   }
+  if (item.kind === 'equation' && item.equation) return <EquationView item={item} positioned={positioned} common={common} />
   if (item.kind === 'ruby' && item.ruby) {
     return <ruby {...common} className={`viewer-ruby viewer-ruby-${item.ruby.position}`} title="덧말">{item.fallbackText}<rt>{item.ruby.text}</rt></ruby>
   }
@@ -1838,7 +1840,7 @@ export default function App() {
     const top = event.currentTarget.getBoundingClientRect().top
     changeZoomAt(pinchZoom(zoom, event.deltaY), event.clientY - top)
   }
-  const objectPlaceholderCounts = useMemo(() => document ? countObjectPlaceholders(document) : {}, [document])
+  const objectPlaceholderCounts = useMemo(() => document ? countIncompleteObjectPlaceholders(document) : {}, [document])
   const objectPlaceholderTotal = totalObjectPlaceholders(objectPlaceholderCounts)
   const [objectNotice, setObjectNotice] = useState({ dismissed: false, expanded: false })
   useEffect(() => setObjectNotice({ dismissed: false, expanded: false }), [openedPath])

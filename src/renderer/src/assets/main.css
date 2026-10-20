@@ -126,6 +126,26 @@ button { font: inherit; }
 .viewer-memo-body { display: inline-flex; flex-wrap: wrap; gap: 4px; user-select: text; }
 .viewer-memo-body > .viewer-paragraph { display: inline; min-height: 0; margin: 0 !important; padding: 0 !important; text-indent: 0 !important; line-height: inherit !important; }
 .viewer-memo-body .viewer-editable-text { font-size: inherit !important; }
+/*
+ * 해석한 수식(MathML). 글꼴 MATH 표가 있는 글꼴(Cambria Math 등)을 일부러 쓰지 않는다: Chromium이 근호·늘인 괄호를 DOM 글자에 없는
+ * glyph로 그려 PDF 글자 수가 화면과 어긋나고 OS마다 모양이 달라진다. 괄호·근호는 renderer가 CSS transform으로 늘인다.
+ */
+.viewer-equation { box-sizing: border-box; display: inline-block; position: relative; overflow: hidden; vertical-align: top; text-indent: 0; text-align: left; white-space: nowrap; line-height: normal; font-style: normal; font-weight: normal; letter-spacing: normal; user-select: none; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.viewer-equation.viewer-object-block { display: block; }
+.viewer-equation-fit > .viewer-equation-position { position: absolute; left: 0; top: 0; }
+.viewer-equation-scale { display: inline-block; }
+.viewer-equation-probe { display: inline-block; width: 0; height: 0; }
+.viewer-equation-math { math-style: normal; font-family: "Times New Roman", "Liberation Serif", "Noto Serif", "DejaVu Serif", "Noto Serif CJK KR", "Batang", serif; font-style: normal; font-weight: normal; }
+.viewer-equation-math .eq-it { font-style: italic; }
+.viewer-equation-math .eq-bold { font-weight: bold; }
+.viewer-equation-math .eq-large, .viewer-equation-math .eq-integral { font-size: 140%; }
+.viewer-equation-math .eq-radicand { border-top: 0.05em solid currentColor; padding-top: 0.08em; padding-left: 0.03em; }
+.viewer-equation-math .eq-radical-sign, .viewer-equation-math [data-eq-stretch] { transform-origin: center; }
+.viewer-equation-math mtd { padding: 0.1em 0.35em; }
+.viewer-equation-math .eq-cases mtd, .viewer-equation-math .eq-lines mtd { padding: 0.05em 0.25em; }
+.viewer-equation-math .eq-left { text-align: left; }
+.viewer-equation-math .eq-right { text-align: right; }
+.viewer-equation-math .eq-center { text-align: center; }
 .viewer-object-script { font-family: "D2Coding", "Consolas", "Menlo", "Noto Sans Mono CJK KR", monospace; font-size: 8pt; }
 .viewer-object-body { display: block; align-self: stretch; min-width: 0; color: #111; font-size: initial; user-select: text; }
 .viewer-note-marker { font-size: .7em; line-height: 0; vertical-align: super; color: inherit; }

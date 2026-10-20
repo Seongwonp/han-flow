@@ -1,6 +1,7 @@
 import { paragraphFootnotes, ViewerDocument, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph } from '../../src/core/document/viewer_document'
 import {
   collectObjectPlaceholders,
+  countIncompleteObjectPlaceholders,
   countObjectPlaceholders,
   formatObjectPlaceholderCounts,
   objectPlaceholderNotice,
@@ -61,9 +62,25 @@ describe('원본 개체 자리 표시 decoder', () => {
       flow: 'inline',
       size: { width: 3825, height: 3311 },
       label: '수식',
-      fallbackText: '{a} over {b}'
+      fallbackText: '{a} over {b}',
+      equation: { math: expect.objectContaining({ tag: 'math' }) }
     })
-    expect(document.diagnostics).toEqual([expect.objectContaining({ source: SECTION, code: 'HWPX_OBJECT_PLACEHOLDER_EQUATION' })])
+    // 해석해 그리는 수식은 "자리 표시로 보여 준다"는 진단을 남기지 않는다.
+    expect(document.diagnostics).toEqual([])
+  })
+
+  test('수식 속성(baseUnit·textColor·baseLine)을 읽고, 해석하지 못한 script는 자리 표시와 진단으로 남긴다', async () => {
+    const document = await decode(paragraph(
+      `<hp:equation baseLine="61" textColor="#C00000" baseUnit="1200"><hp:sz width="3825" height="3311"/>${inlinePos}<hp:script>x^2</hp:script></hp:equation>` +
+      `<hp:equation baseLine="70"><hp:sz width="3825" height="3311"/>${inlinePos}<hp:script>longdiv {3} {12} {4}</hp:script></hp:equation><hp:t/>`
+    ))
+    const [rendered, fallback] = placeholders(document)
+    expect(rendered.equation).toMatchObject({ baseUnit: 1200, color: '#C00000', baseLine: 61 })
+    expect(fallback).toMatchObject({ kind: 'equation', fallbackText: 'longdiv {3} {12} {4}' })
+    expect(fallback.equation).toBeUndefined()
+    expect(countIncompleteObjectPlaceholders(document)).toEqual({ equation: 1 })
+    expect(countObjectPlaceholders(document)).toEqual({ equation: 2 })
+    expect(document.diagnostics).toEqual([expect.objectContaining({ source: SECTION, code: 'HWPX_OBJECT_PLACEHOLDER_EQUATION', message: expect.stringContaining('수식 1개') })])
   })
 
   test('자리 표시는 같은 문단 글자 run의 편집 가능 여부를 바꾸지 않는다', async () => {

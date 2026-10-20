@@ -92,11 +92,27 @@ export function collectObjectPlaceholders(document: Pick<ViewerDocument, 'sectio
   return document.sections.flatMap((section) => placeholdersOf(section))
 }
 
-/** 종류별 자리 표시 개수. 0개인 종류는 넣지 않고 key는 `OBJECT_KIND_ORDER` 순서다. */
-export function countObjectPlaceholders(document: Pick<ViewerDocument, 'sections'>): ObjectPlaceholderCounts {
+/** 수식 script를 해석해 MathML로 그리는 수식인지. 이런 수식은 원본처럼 그리므로 "완전히 표시되지 않는 개체"에 넣지 않는다. */
+export function isRenderedEquation(item: ViewerObjectPlaceholder): boolean {
+  return item.kind === 'equation' && item.equation !== undefined
+}
+
+function countItems(items: readonly ViewerObjectPlaceholder[]): ObjectPlaceholderCounts {
   const counts: ObjectPlaceholderCounts = {}
-  for (const item of collectObjectPlaceholders(document)) counts[item.kind] = (counts[item.kind] ?? 0) + 1
+  for (const item of items) counts[item.kind] = (counts[item.kind] ?? 0) + 1
   return Object.fromEntries(OBJECT_KIND_ORDER.filter((kind) => counts[kind]).map((kind) => [kind, counts[kind]]))
+}
+
+/** 종류별 원본 개체(자리 표시와 그려 낸 수식) 개수. 0개인 종류는 넣지 않고 key는 `OBJECT_KIND_ORDER` 순서다. */
+export function countObjectPlaceholders(document: Pick<ViewerDocument, 'sections'>): ObjectPlaceholderCounts {
+  return countItems(collectObjectPlaceholders(document))
+}
+
+/**
+ * 화면에 완전히 표시되지 않는 개체의 종류별 개수(안내 배너·PDF 확인 대화상자·진단). MathML로 그려 낸 수식은 뺀다.
+ */
+export function countIncompleteObjectPlaceholders(document: Pick<ViewerDocument, 'sections'>): ObjectPlaceholderCounts {
+  return countItems(collectObjectPlaceholders(document).filter((item) => !isRenderedEquation(item)))
 }
 
 export function totalObjectPlaceholders(counts: ObjectPlaceholderCounts): number {
@@ -133,7 +149,7 @@ export function objectPlaceholderNotice(counts: ObjectPlaceholderCounts): string
 /** 종류별 설명 줄(배너 자세히 보기·PDF 확인 대화상자 detail). */
 export function objectPlaceholderDetailLines(counts: ObjectPlaceholderCounts): string[] {
   const notes: Partial<Record<ViewerObjectKind, string>> = {
-    equation: '수식 원문(script)을 상자 안에 글자로 보여 줍니다.',
+    equation: '해석하지 못한 수식 원문(script)을 상자 안에 글자로 보여 줍니다.',
     'text-box': '본문의 글상자는 원본 위치·선·면 색으로 그리고 글은 읽기 전용으로 보여 줍니다. 표 셀·머리말 안 글상자는 줄 안 상자로 보여 줍니다.',
     shape: '본문의 사각형·타원·선·다각형은 원본 위치에 선·면 색으로 그리고, 그 밖의 도형과 표 셀 안 도형은 크기만 맞춘 상자로 보여 줍니다.',
     footnote: '각주 내용은 번호가 놓인 쪽 아래에 보여 줍니다. 각주 모양(번호 모양·구분선·간격)은 구역 설정을 따르고 위치는 원본과 조금 다를 수 있습니다.',

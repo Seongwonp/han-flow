@@ -381,12 +381,12 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 
 viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
 그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 content 위치에 남긴다.
-글자처럼 취급하지 않는 본문 개체는 원본 위치에 그린다(아래 "원본 위치 개체"). 회전과 개체 자체의 그림(수식 조판, 차트·OLE 그리기)은
+글자처럼 취급하지 않는 본문 개체는 원본 위치에 그린다(아래 "원본 위치 개체"). 수식은 script를 MathML로 조판한다(아래 "수식 조판"). 회전과 개체 자체의 그림(차트·OLE 그리기)은
 재현하지 않으며, 상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
 
 | 원본 element | kind | 화면 |
 | --- | --- | --- |
-| `hp:equation` | `equation` | "수식" 상자 + `hp:script` 원문(고정폭) |
+| `hp:equation` | `equation` | script를 해석하면 MathML 수식(아래 "수식 조판"), 못 하면 "수식" 상자 + `hp:script` 원문(고정폭) |
 | `hp:chart`(`hp:switch` 안 차트, OLE 대체본 크기 사용) | `chart` | "차트" 상자 |
 | `hp:ole` | `ole` | "OLE 개체" 상자 + `hp:shapeComment` |
 | `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 문단(글자만 든 글상자는 편집 가능, 본문 원본 위치 개체는 원본 선·면 색 상자) |
@@ -444,9 +444,29 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   같은 문단 글자 run의 편집 가능 여부는 자리 표시를 넣기 전과 같다(편집 coverage 수치 불변).
 - 누름틀·하이퍼링크 등 본문 run에 글이 그대로 있는 필드는 자리 표시를 만들지 않는다.
 - 구역마다 종류별 개수를 `HWPX_OBJECT_PLACEHOLDER_<KIND>` 진단으로 남기고, corpus 요약은 `placeholders`(종류별 개수)를
-  manifest 기대값과 정확히 비교한다. renderer는 `countObjectPlaceholders`로 안내 배너("이 문서에는 화면에 완전히 표시되지
+  manifest 기대값과 정확히 비교한다(그려 낸 수식도 원본 개체라 센다). renderer는 `countIncompleteObjectPlaceholders`(MathML로 그린
+  수식을 뺀 개수)로 안내 배너("이 문서에는 화면에 완전히 표시되지
   않는 개체가 N개 있습니다 (…)")·상태 막대를 만들고, PDF 내보내기 요청에 개수를 실어 보내면 main이 저장 위치를 묻기 전에
   `dialog.showMessageBox`(창에 연결)로 [그래도 내보내기]/[취소]를 묻는다. E2E 경로(`HAN_FLOW_PDF_EXPORT_PATH`)는 묻지 않는다.
+
+### 수식 조판 (MathML)
+
+- `src/core/document/equation_script.ts`가 `hp:script`(한컴 수식 script, eqn 계열)를 토큰 → MathML 나무(`MathElement`)로 바꾼다.
+  `over`·`atop`·`choose`(중위, 바로 앞·뒤 요소), `sqrt`·`root … of …`, `^`·`_`·`sup`·`sub`, `left … right …`, `matrix`·`pmatrix`·
+  `bmatrix`·`dmatrix`(`&`·`#`), `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`oint`·`lim`과 `from`·`to`(또는 `_`·`^`)
+  한계, 그리스 문자·기호·화살표 이름(`equation_symbols.ts`), `rm`·`it`·`bold`(묶음 끝까지), `~`·`` ` `` 공백, 따옴표 글, 줄(`#`)을
+  읽는다. 기호 표·대소문자 규칙·붙여 쓴 명령 나누기·첨자 operand 규칙은 rhwp `src/renderer/equation/`(MIT)를 참고했다.
+- 짝이 안 맞는 괄호, `ladder`·`longdiv`·`benzene` 같은 미지원 명령, LaTeX 명령, 깊은 중첩·아주 긴 script는 `ok: false`이고 decoder는
+  `equation`을 붙이지 않는다. 이런 수식만 전처럼 script 글자 상자이고 안내 배너·진단(`HWPX_OBJECT_PLACEHOLDER_EQUATION`)에 남는다.
+- decoder는 해석 결과와 `baseUnit`(글자 크기)·`textColor`·`baseLine`을 `ViewerObjectPlaceholder.equation`에 둔다. renderer
+  `EquationView`는 선언 크기(`hp:sz`) 상자 안에 `<math>`를 그리고 layout effect에서 (1) 늘일 괄호·근호를 옆 내용 높이에 맞춰 CSS
+  transform으로 늘이고 (2) 수식 전체를 상자에 맞춰 `zoom`(0.2~1.5배)하고 기준선이 상자의 `baseLine`% 높이에 오게 놓는다. 글자처럼
+  취급한 수식 상자는 아래 `100 - baseLine`%를 본문 기준선 아래에 둔다. `data-object-kind="equation"`은 그대로라 원문 개체 census가 같다.
+- 글꼴 MATH 표(Cambria Math 등)를 일부러 쓰지 않는다(`Times New Roman`·`Liberation Serif`·`DejaVu Serif`…). Chromium MathML은 MATH 표가
+  있으면 근호·늘인 괄호·큰 연산자를 DOM 글자에 없는 glyph로 그려 PDF 추출 글자 수가 화면과 어긋나고 OS마다 모양이 달라진다. 그래서
+  근호는 `√` 글자(`mo`)와 윗줄 상자, 괄호는 `stretchy="false"` `mo`를 transform으로 늘이고, 변수는 `mathvariant="normal"` + CSS 기울임(수학
+  기울임 글자 U+1D44E… 대신 보통 글자)이다. 화면 글자와 PDF 추출 글자가 같아 verify_pdf의 쪽별 글자 수 비교가 그대로 통과한다.
+- HWP 5.0 수식은 `@rhwp/core` SVG가 그린다(이 경로와 무관).
 
 ### 원본 위치 개체
 

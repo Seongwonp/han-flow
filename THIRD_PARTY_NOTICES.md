@@ -27,6 +27,16 @@ MIT 라이선스 원문은 macOS 앱의
 - 저작권: Copyright (c) 2025–2026 Edward Kim
 - 라이선스: MIT(위 `@rhwp/core`와 같은 원문 `rhwp-MIT.txt`)
 
+### rhwp 수식 기호 표와 수식 script 문법
+
+- 역할: HWPX 수식(`hp:equation/hp:script`)을 MathML로 그릴 때 명령 이름 → Unicode 기호 표와 대소문자 규칙
+  (`src/core/document/equation_symbols.ts`), 토큰 나누기·붙여 쓴 명령 분리·첨자 operand 규칙(`src/core/document/equation_script.ts`)
+- 출처: rhwp `src/renderer/equation/symbols.rs`·`tokenizer.rs`·`parser.rs`
+  (https://github.com/edwardkim/rhwp, commit `1a76570e833917d15817415a53c09ad61ab3203f`, v0.8.7). 표는 옮겨 적고 일부 이름을 더했으며,
+  해석기·MathML 생성은 TypeScript로 새로 작성
+- 저작권: Copyright (c) 2025–2026 Edward Kim
+- 라이선스: MIT(위 `@rhwp/core`와 같은 원문 `rhwp-MIT.txt`)
+
 ### rhwp 기호 글꼴(Wingdings) PUA 표시 대체 표
 
 - 역할: HWP 쪽 글자 층과 HWPX 화면에서 기호 글꼴 사설 영역 글자(U+F020–U+F0FF, 예: U+F0E8)를 rhwp가 HWP 쪽 SVG에

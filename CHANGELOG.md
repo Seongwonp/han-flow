@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### HWPX 수식 조판(MathML)
+
+- 한컴 수식 script(`hp:equation/hp:script`)를 해석해 MathML로 그림: `over`·`atop`·`choose`, `sqrt`·`root … of`, `^`·`_`·`sup`·`sub`, `left … right`, `matrix`·`pmatrix`·`bmatrix`·`dmatrix`, `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`lim`의 `from`·`to`, 그리스 문자·기호·화살표, `rm`·`it`·`bold`, `~`·`` ` ``, 따옴표 글, `COLOR`. 기호 표·토큰 규칙은 rhwp(MIT) 참고(THIRD_PARTY_NOTICES.md)
+- 선언 상자(`hp:sz`)에 맞춰 배율을 정하고 `baseUnit`·`textColor`·`baseLine`을 씀. 근호·늘인 괄호는 글꼴 MATH 표 없이 글자를 CSS transform으로 늘여 화면과 PDF 추출 글자가 같음(pdftotext로 수식 기호 확인)
+- 해석하지 못한 수식(`ladder`·`longdiv` 등, 짝 안 맞는 괄호)만 전처럼 script 글자 상자로 남고, 그려 낸 수식은 "화면에 완전히 표시되지 않는 개체" 배너·PDF 확인·진단 개수에서 빠짐(원문 개체 census에는 그대로 셈)
+- 해석 단위 test·renderer test, 수식 합성 fixture(`createEquationHwpx`)와 verify:matrix 검사(그린 수식 수·배너·PDF 기호), `ext-hwpxlib-equation`은 배너 없음·corpus manifest 진단 0개로 기대값 변경
+
 ### 입력 직후 실행 취소·편집 command
 
 - 한글 조합 직후 누른 첫 [실행 취소]·`Ctrl+Z`(macOS `⌘Z`)가 무시되던 문제를 고침. 연속 음절은 compositionend 뒤 약 450ms 입력 칸에 묶여 있다가 commit하는데, 그동안 renderer가 조합 중으로 보고 실행 취소를 버렸고 commit 응답을 기다리는 동안에도 버튼을 끄거나 command를 버렸음. 이제 입력 칸이 남은 글자를 내보내는 손잡이를 등록하고, 실행 취소·다시 실행·글자/문단/셀 모양·표 행·열·병합·각주 넣기/지우기·다른 이름으로 저장·다른 문서 열기는 남은 글자를 먼저 commit하고 그 응답 뒤에 차례로 돎(`runAfterInput`). IME가 아직 조합 중이면 조합을 확정한 뒤 반영. 본문·표 셀·각주·머리말·꼬리말·글상자·메모 입력 칸이 같은 경로
