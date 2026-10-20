@@ -8,6 +8,7 @@ export type HwpxEditedStructure =
   | 'paragraph-structure'
   | 'table-cell-style'
   | 'table-structure'
+  | 'note-structure'
 
 export type HwpxPreviewStatus = 'current' | 'stale' | 'omitted'
 
@@ -17,6 +18,7 @@ export type HwpxLossPolicyNotice =
   | 'PARAGRAPH_STRUCTURE_CHANGED'
   | 'TABLE_CELL_STYLE_CHANGED'
   | 'TABLE_STRUCTURE_CHANGED'
+  | 'NOTE_STRUCTURE_CHANGED'
 
 export interface HwpxStructureLossPolicy {
   structure: HwpxEditedStructure
@@ -38,7 +40,8 @@ const STRUCTURE_ORDER: HwpxEditedStructure[] = [
   'paragraph-style',
   'paragraph-structure',
   'table-cell-style',
-  'table-structure'
+  'table-structure',
+  'note-structure'
 ]
 
 function commandStructure(command: EditCommand): HwpxEditedStructure {
@@ -51,6 +54,9 @@ function commandStructure(command: EditCommand): HwpxEditedStructure {
     return 'table-cell-style'
   }
   if (command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment') return 'table-structure'
+  if (command.type === 'insert-footnote' || command.type === 'delete-footnote' || command.type === 'restore-footnote') {
+    return 'note-structure'
+  }
   if (command.type === 'restore-style') {
     return command.target === 'character' ? 'character-style' : 'paragraph-style'
   }
@@ -91,6 +97,7 @@ export function createSaveLossPolicy(
   }
   if (structures.includes('table-cell-style')) notices.push('TABLE_CELL_STYLE_CHANGED')
   if (structures.includes('table-structure')) notices.push('TABLE_STRUCTURE_CHANGED')
+  if (structures.includes('note-structure')) notices.push('NOTE_STRUCTURE_CHANGED')
 
   return {
     structures: structures.map((structure) => ({
@@ -99,7 +106,8 @@ export function createSaveLossPolicy(
       compatibilityRisk:
         structure === 'paragraph-structure' ||
         structure === 'table-cell-style' ||
-        structure === 'table-structure' ? 'review' : 'low'
+        structure === 'table-structure' ||
+        structure === 'note-structure' ? 'review' : 'low'
     })),
     untouchedContent: 'preserved',
     previewStatus,
@@ -107,6 +115,7 @@ export function createSaveLossPolicy(
     reviewRecommended: notices.includes('PREVIEW_STALE') ||
       notices.includes('PARAGRAPH_STRUCTURE_CHANGED') ||
       notices.includes('TABLE_CELL_STYLE_CHANGED') ||
-      notices.includes('TABLE_STRUCTURE_CHANGED')
+      notices.includes('TABLE_STRUCTURE_CHANGED') ||
+      notices.includes('NOTE_STRUCTURE_CHANGED')
   }
 }

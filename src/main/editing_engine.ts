@@ -11,6 +11,8 @@ import {
   EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
+  EditingInsertFootnoteRequest,
+  EditingDeleteFootnoteRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
@@ -24,6 +26,7 @@ import { editingCapabilities } from '../core/editing/editing_capability'
 import { HwpxEditHistory } from '../core/editing/history'
 import type { HwpxSaveLossPolicy } from '../core/editing/loss_policy'
 import { planMergeParagraph, planSplitParagraph } from '../core/editing/paragraph_patch'
+import { planDeleteFootnote, planInsertFootnote } from '../core/editing/footnote_patch'
 import { saveHwpxAs } from '../core/editing/save_as'
 import { planReplaceSelection } from '../core/editing/range_edit'
 import {
@@ -514,6 +517,56 @@ export class EditingEngine {
       timestamp: request.timestamp
     }
     this.commitTransaction(transaction)
+    return {
+      ...(await this.project()),
+      selection: this.history.selection,
+      ...this.status()
+    }
+  }
+
+  async insertFootnote(request: EditingInsertFootnoteRequest): Promise<EditingActionResult> {
+    const capabilities = editingCapabilities(
+      await this.projection.documentFor(this.history.package),
+      request.selectionBefore
+    )
+    if (!capabilities.footnote.available) {
+      throw new EditingOperationError('EDITING_UNSUPPORTED', '각주는 본문 문단 글자 사이 caret 위치에만 넣을 수 있습니다.')
+    }
+    const plan = planInsertFootnote(this.history.package, request.selectionBefore)
+    this.commitTransaction({
+      id: request.transactionId,
+      baseRevision: this.history.package.revision,
+      commands: [plan.command],
+      selectionBefore: { ...request.selectionBefore },
+      selectionAfter: plan.selectionAfter,
+      inputType: 'insertFootnote',
+      timestamp: request.timestamp
+    })
+    return {
+      ...(await this.project()),
+      selection: this.history.selection,
+      ...this.status()
+    }
+  }
+
+  async deleteFootnote(request: EditingDeleteFootnoteRequest): Promise<EditingActionResult> {
+    const capabilities = editingCapabilities(
+      await this.projection.documentFor(this.history.package),
+      request.selectionBefore
+    )
+    if (!capabilities.selection.available || capabilities.focus?.footnotePath !== request.notePath) {
+      throw new EditingOperationError('EDITING_UNSUPPORTED', '지울 각주의 본문에 caret을 두고 각주를 지울 수 있습니다.')
+    }
+    const plan = planDeleteFootnote(this.history.package, request.selectionBefore, request.notePath)
+    this.commitTransaction({
+      id: request.transactionId,
+      baseRevision: this.history.package.revision,
+      commands: [plan.command],
+      selectionBefore: { ...request.selectionBefore },
+      selectionAfter: plan.selectionAfter,
+      inputType: 'deleteFootnote',
+      timestamp: request.timestamp
+    })
     return {
       ...(await this.project()),
       selection: this.history.selection,

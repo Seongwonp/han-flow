@@ -46,15 +46,15 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
     const list = await measureEditingCoverage(listPath)
 
     // 머리글 셀(4자)은 text·글자·문단 모양만 편집할 수 있다: 셀 style·표 구조 대상은 아니다.
-    // 표 셀 4개의 run·문단은 모두 글자·문단 모양 대상이다. 머리말·꼬리말 글자 문단 5개는 글자만 고칠 수 있어
-    // text에는 들고 글자·문단 모양에는 들지 않는다(그림이 든 꼬리말 첫 문단은 읽기 전용).
+    // 표 셀 4개의 run·문단은 모두 글자·문단 모양 대상이다. 머리말·꼬리말 글자 문단 5개도 글자·문단 모양 대상이다
+    // (2026-10-20부터, 그림이 든 꼬리말 첫 문단은 읽기 전용).
     assert.deepEqual(pick(baseline), {
       textRuns: 11,
       anchored: 11,
       textEditable: 9,
-      charStyleEditable: 4,
+      charStyleEditable: 9,
       paragraphs: 12,
-      paraStyleEditable: 4,
+      paraStyleEditable: 9,
       // 표만 든 첫 문단은 hp:t가 없고, 표 앞·뒤 합성 caret이 첫 입력을 받는다(문단 모양은 글자를 넣은 뒤).
       noTextParagraphs: 1,
       noTextParagraphsEditable: 1,
@@ -73,7 +73,7 @@ test('편집 coverage는 합성 fixture 2종의 개수와 거부 사유를 정�
       NOT_LISTED_HEADER_FOOTER_PARAGRAPH_HAS_IMAGE: 1,
       NOT_LISTED_PARAGRAPH_HAS_IMAGE: 1
     })
-    assert.deepEqual(baseline.rejectionReasons.charStyle, { 'capability: SUBLIST_TEXT': 5 })
+    assert.deepEqual(baseline.rejectionReasons.charStyle, {})
     assert.equal(baseline.rejectionReasons.paraStyle['capability: TABLE_PARAGRAPH'], 1)
     assert.deepEqual(baseline.rejectionReasons.tableCaret, {})
     assert.deepEqual(baseline.nonEditableCharactersByReason, {

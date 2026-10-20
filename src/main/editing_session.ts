@@ -7,8 +7,10 @@ import {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
   EditingCommitRequest,
+  EditingDeleteFootnoteRequest,
   EditingDeleteTableRowRequest,
   EditingDeleteTableColumnRequest,
+  EditingInsertFootnoteRequest,
   EditingHistoryStatus,
   EditingInsertTableColumnRequest,
   EditingMergeTableCellRightRequest,
@@ -162,6 +164,8 @@ const TIMEOUT_KIND: Record<EditingWorkerMethod, keyof EditingEngineTimeouts> = {
   deleteTableColumn: 'command',
   mergeTableCellRight: 'command',
   splitTableCell: 'command',
+  insertFootnote: 'command',
+  deleteFootnote: 'command',
   refresh: 'command',
   lossPolicy: 'command',
   undo: 'history',
@@ -676,6 +680,14 @@ export class EditingSessionManager {
     request: EditingInsertTableRowRequest
   ): Promise<EditingActionResult> {
     return this.action(senderId, request.sessionId, 'insertTableRowAfter', request)
+  }
+
+  insertFootnote(senderId: number, request: EditingInsertFootnoteRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'insertFootnote', request)
+  }
+
+  deleteFootnote(senderId: number, request: EditingDeleteFootnoteRequest): Promise<EditingActionResult> {
+    return this.action(senderId, request.sessionId, 'deleteFootnote', request)
   }
 
   deleteTableRow(senderId: number, request: EditingDeleteTableRowRequest): Promise<EditingActionResult> {

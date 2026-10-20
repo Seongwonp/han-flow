@@ -132,6 +132,11 @@ interface TextStyleContext {
   textNode?: SourceElement
   run?: SourceElement
   paragraph: SourceElement
+  /**
+   * 글자 모양 대상 run이 `hp:t` 앞에 번호 control(각주·미주 본문 첫 run의 `hp:ctrl/hp:autoNum`)을 함께 가지면 true.
+   * 글자 모양은 번호 control을 원래 모양의 run에 남기고 `hp:t`만 새 run으로 나누어 바꾼다.
+   */
+  leadingNumber?: boolean
 }
 
 interface StyleDefinition {
@@ -168,9 +173,7 @@ function locateTextStyleContext(
     }
     const empty = locateHwpxEmptyParagraph(sourcePackage, sectionPath, textNodeId)
     if (!empty) throw new HwpxEditConflictError(`style anchor를 찾을 수 없습니다: ${textNodeId}`)
-    if (!isStyleEditableParagraph(empty.paragraph)) {
-      throw new HwpxEditConflictError('글자·문단 모양은 최상위 문단과 최상위 표 셀 직속 문단의 run만 편집할 수 있습니다.')
-    }
+    if (!isStyleEditableParagraph(empty.paragraph)) throw new HwpxEditConflictError(STYLE_SCOPE_MESSAGE)
     return { tree: empty.tree, paragraph: empty.paragraph, run: empty.run }
   }
   const located = locateHwpxTextElement(sourcePackage, sectionPath, textNodeId)
@@ -179,25 +182,64 @@ function locateTextStyleContext(
   const run = nearestSourceAncestor(textNode, 'hp:run')
   const paragraph = nearestSourceAncestor(textNode, 'hp:p')
   if (!run || !paragraph || run.parent !== paragraph || !isStyleEditableParagraph(paragraph)) {
-    throw new HwpxEditConflictError('글자·문단 모양은 최상위 문단과 최상위 표 셀 직속 문단의 run만 편집할 수 있습니다.')
+    throw new HwpxEditConflictError(STYLE_SCOPE_MESSAGE)
   }
+  let leadingNumber = false
   if (target === 'character') {
     const descendants = findAllDescendantElements(run)
-    if (descendants.filter((element) => element.name === 'hp:t').length !== 1 || descendants.some((element) => element.name !== 'hp:t')) {
-      throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
-    }
+    const simple = descendants.filter((element) => element.name === 'hp:t').length === 1 && descendants.every((element) => element.name === 'hp:t')
+    leadingNumber = !simple && isLeadingNumberRun(tree, run, textNode)
+    if (!simple && !leadingNumber) throw new HwpxEditConflictError('복합 run은 아직 style을 편집할 수 없습니다.')
   }
-  return { tree, textNode, run, paragraph }
+  return { tree, textNode, run, paragraph, ...(leadingNumber ? { leadingNumber } : {}) }
+}
+
+const STYLE_SCOPE_MESSAGE =
+  '글자·문단 모양은 최상위 문단, 최상위 표 셀 직속 문단, 각주·미주·머리말·꼬리말·글자만 든 글상자 문단의 run만 편집할 수 있습니다.'
+
+/** 번호 control(`hp:ctrl` 안에 `hp:autoNum`·`hp:autoNumFormat`만)인지. */
+function isNumberControl(node: SourceNode): boolean {
+  if (node.kind !== 'element' || node.name !== 'hp:ctrl') return false
+  const descendants = findAllDescendantElements(node)
+  return descendants.some((element) => element.name === 'hp:autoNum') &&
+    descendants.every((element) => element.name === 'hp:autoNum' || element.name === 'hp:autoNumFormat')
 }
 
 /**
- * style command를 받는 문단 위치. `hs:sec` 직속 문단, 또는 최상위 문단에 든 표(`hs:sec > hp:p > hp:run > hp:tbl`)의
- * 셀 `hp:subList` 직속 문단이다. 병합·머리글 셀도 포함한다. 셀 안에 다시 든 표, 글상자·머리말 같은 다른 subList는 제외한다.
+ * run 자식이 번호 control 하나 이상(과 공백 text) 뒤에 `hp:t` 하나뿐인지. 한/글은 각주·미주 본문 첫 문단의 번호와 글자를 한 run에
+ * 저장한다. 번호 control이 없는 run과 같이 `hp:t`는 글자만 가져야 한다(`hp:lineBreak`·`hp:tab`이 든 run은 복합 run이다).
+ */
+function isLeadingNumberRun(tree: SourceTree, run: SourceElement, textNode: SourceElement): boolean {
+  const index = run.children.indexOf(textNode)
+  if (index <= 0) return false
+  const blank = (node: SourceNode) => node.kind === 'text' && !textRaw(tree, node).trim()
+  const before = run.children.slice(0, index)
+  const after = run.children.slice(index + 1)
+  return before.some(isNumberControl) &&
+    before.every((node) => isNumberControl(node) || blank(node)) &&
+    after.every(blank) &&
+    findAllDescendantElements(textNode).length === 0
+}
+
+/** 글자만 든 subList가 가질 수 있는 element(viewer decoder의 `isPlainTextSubList`와 같은 규칙). */
+const PLAIN_SUBLIST_ELEMENTS: ReadonlySet<string> = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
+
+/** 각주·미주·머리말·꼬리말 subList를 담는 element. 글상자(`hp:drawText`)는 글자만 든 subList일 때만 받는다. */
+const STYLE_SUBLIST_HOSTS: ReadonlySet<string> = new Set(['hp:footNote', 'hp:endNote', 'hp:header', 'hp:footer'])
+
+/**
+ * style command를 받는 문단 위치. `hs:sec` 직속 문단, 최상위 문단에 든 표(`hs:sec > hp:p > hp:run > hp:tbl`)의
+ * 셀 `hp:subList` 직속 문단(병합·머리글 셀 포함), 각주·미주·머리말·꼬리말 `hp:subList` 직속 문단, 글자만 든 글상자
+ * (`hp:drawText/hp:subList`) 직속 문단이다. 셀 안에 다시 든 표, 개체가 든 글상자, 메모·필드 subList는 제외한다.
  */
 function isStyleEditableParagraph(paragraph: SourceElement): boolean {
   const scope = paragraph.parent
   if (scope?.name === 'hs:sec') return true
   if (scope?.name !== 'hp:subList') return false
+  if (scope.parent && STYLE_SUBLIST_HOSTS.has(scope.parent.name)) return true
+  if (scope.parent?.name === 'hp:drawText') {
+    return findAllDescendantElements(scope).every((element) => PLAIN_SUBLIST_ELEMENTS.has(element.name))
+  }
   const cell = scope.parent
   const row = cell?.parent
   const table = row?.parent
@@ -696,7 +738,8 @@ export function applyCharacterStyleCommand(
   const { context, trees } = staged
   const sectionTree = context.tree
   const partial = from !== to && !(from === 0 && to === anchor.text.length)
-  if (!partial) {
+  const leadingNumber = context.leadingNumber === true
+  if (!partial && !leadingNumber) {
     const committed = commitTrees(sourcePackage, trees, command.sectionPath, sectionTree, staged.headerTree)
     return {
       package: committed.package,
@@ -716,6 +759,9 @@ export function applyCharacterStyleCommand(
 
   // 부분 선택: reference를 바꾼 run을 좌·선택·우 run으로 나눈다. 전환 전 경로와 같게 reference 변경과 분할을
   // 서로 다른 revision으로 쓴다(header → section reference → section 분할).
+  // 번호 control이 앞에 든 run(각주·미주 첫 run)은 선택과 관계없이 번호 control을 원래 모양의 run 하나로 떼어 앞에 두고,
+  // 글자 조각만 나눈다. 선택이 없거나 글자 전체면 글자 전체가 새 모양 run 하나다.
+  const [pieceFrom, pieceTo] = partial ? [from, to] : [0, anchor.text.length]
   const run = referenceElementOf(context, 'character')
   const textNode = context.textNode!
   const styledRun = serializeSourceNode(sectionTree, run)
@@ -723,7 +769,10 @@ export function applyCharacterStyleCommand(
   const index = run.children.indexOf(textNode)
   const serializeNodes = (nodes: readonly SourceNode[]): string =>
     nodes.map((node) => serializeSourceNode(sectionTree, node)).join('')
-  const beforeText = serializeNodes(run.children.slice(0, index)) + elementOpenTag(sectionTree, textNode)
+  const leadingRun = leadingNumber
+    ? staged.referenceTag + serializeNodes(run.children.slice(0, index)) + elementCloseTag(sectionTree, run)
+    : ''
+  const beforeText = (leadingNumber ? '' : serializeNodes(run.children.slice(0, index))) + elementOpenTag(sectionTree, textNode)
   const afterText = elementCloseTag(sectionTree, textNode) + serializeNodes(run.children.slice(index + 1)) +
     elementCloseTag(sectionTree, run)
   // 자른 조각은 원문 표기(entity 포함)를 그대로 쓴다. 선택 경계는 surrogate 검사를 통과했으므로 entity 경계다.
@@ -733,13 +782,13 @@ export function applyCharacterStyleCommand(
       return textRaw(sectionTree, node)
     })
     .join('')
-  const cutFrom = rawTextOffset(raw, from)
-  const cutTo = rawTextOffset(raw, to)
+  const cutFrom = rawTextOffset(raw, pieceFrom)
+  const cutTo = rawTextOffset(raw, pieceTo)
   const withText = (piece: string, openTag: string): string => openTag + beforeText + piece + afterText
-  const fragments: string[] = []
-  if (from > 0) fragments.push(withText(raw.slice(0, cutFrom), staged.referenceTag))
+  const fragments: string[] = leadingRun ? [leadingRun] : []
+  if (pieceFrom > 0) fragments.push(withText(raw.slice(0, cutFrom), staged.referenceTag))
   fragments.push(withText(raw.slice(cutFrom, cutTo), staged.nextReferenceTag))
-  if (to < anchor.text.length) fragments.push(withText(raw.slice(cutTo), staged.referenceTag))
+  if (pieceTo < anchor.text.length) fragments.push(withText(raw.slice(cutTo), staged.referenceTag))
   const splitFragment = fragments.join('')
 
   let nextPackage = sourcePackage
@@ -939,18 +988,25 @@ export function applyRestoreCharacterRunCommand(
     'character'
   )
   // anchor run부터 이어지는 형제의 원문이 `expectedFragment`로 시작해야 한다(분할된 run 셋 또는 원래 run 하나).
+  // 번호 control을 떼어 낸 분할(각주·미주 첫 run)은 anchor run 바로 앞의 번호 control run부터 시작한다.
   const siblings = context.paragraph.children
-  const start = siblings.indexOf(referenceElementOf(context, 'character'))
-  let actual = ''
-  let end = start
-  while (end < siblings.length && actual.length < command.expectedFragment.length) {
-    actual += serializeSourceNode(context.tree, siblings[end])
-    end += 1
+  const anchorRun = siblings.indexOf(referenceElementOf(context, 'character'))
+  const collect = (start: number) => {
+    let actual = ''
+    let end = start
+    while (end < siblings.length && actual.length < command.expectedFragment.length) {
+      actual += serializeSourceNode(context.tree, siblings[end])
+      end += 1
+    }
+    const excess = actual.length - command.expectedFragment.length
+    const matches = actual.startsWith(command.expectedFragment) && excess >= 0 && !(excess > 0 && siblings[end - 1].kind !== 'text')
+    return { start, end, actual, excess, matches }
   }
-  const excess = actual.length - command.expectedFragment.length
-  if (!actual.startsWith(command.expectedFragment) || excess < 0 || (excess > 0 && siblings[end - 1].kind !== 'text')) {
-    throw new HwpxEditConflictError('분할된 글자 run이 변경되어 안전하게 복원할 수 없습니다.')
-  }
+  const candidates = [collect(anchorRun)]
+  if (!candidates[0].matches && anchorRun > 0 && siblings[anchorRun - 1].kind === 'element') candidates.push(collect(anchorRun - 1))
+  const match = candidates.find((candidate) => candidate.matches)
+  if (!match) throw new HwpxEditConflictError('분할된 글자 run이 변경되어 안전하게 복원할 수 없습니다.')
+  const { start, end, actual, excess } = match
   const replacement = parseSourceFragment(
     command.replacementFragment + (excess > 0 ? actual.slice(actual.length - excess) : '')
   )

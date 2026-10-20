@@ -3,8 +3,10 @@ import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
   EditingCommitRequest,
+  EditingDeleteFootnoteRequest,
   EditingDeleteTableRowRequest,
   EditingDeleteTableColumnRequest,
+  EditingInsertFootnoteRequest,
   EditingInsertTableColumnRequest,
   EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
@@ -106,6 +108,10 @@ const api = {
     invokeEditing('editing:mergeTableCellRight', request),
   splitTableCell: (request: EditingSplitTableCellRequest) =>
     invokeEditing('editing:splitTableCell', request),
+  insertFootnote: (request: EditingInsertFootnoteRequest) =>
+    invokeEditing('editing:insertFootnote', request),
+  deleteFootnote: (request: EditingDeleteFootnoteRequest) =>
+    invokeEditing('editing:deleteFootnote', request),
   undoEditing: (sessionId: string) => invokeEditing('editing:undo', sessionId),
   redoEditing: (sessionId: string) => invokeEditing('editing:redo', sessionId),
   refreshEditing: (sessionId: string) => invokeEditing('editing:refresh', sessionId),

@@ -55,6 +55,8 @@ import type {
   EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
+  EditingInsertFootnoteRequest,
+  EditingDeleteFootnoteRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
@@ -329,7 +331,7 @@ function captureVisualState(window: BrowserWindow): void {
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
-  // column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단·표 셀.
+  // column(2단 영역 둘째 단의 본문 문단), text-box(글상자 글), memo(메모 본문). 없으면 본문 문단·표 셀.
   const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
   const editTargetLabels: Record<string, string> = {
     'table-caret': 'HWPX 표 앞뒤 글자 편집',
@@ -338,7 +340,9 @@ function captureVisualState(window: BrowserWindow): void {
     endnote: 'HWPX 각주·미주 편집',
     header: 'HWPX 머리말 편집',
     footer: 'HWPX 꼬리말 편집',
-    column: 'HWPX 문단 편집'
+    column: 'HWPX 문단 편집',
+    'text-box': 'HWPX 글상자 편집',
+    memo: 'HWPX 메모 편집'
   }
   // 같은 입력 칸 이름을 쓰는 대상 가운데 고를 칸(표 앞·뒤 caret, 각주·미주 목록)의 조상 selector.
   const editTargetScopes: Record<string, string> = {
@@ -346,7 +350,9 @@ function captureVisualState(window: BrowserWindow): void {
     'table-caret-after': '.viewer-table-caret-after',
     note: '[data-note-kind="footnote"]',
     endnote: '[data-note-kind="endnote"]',
-    column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]'
+    column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]',
+    'text-box': '[data-object-kind="text-box"]',
+    memo: '[data-object-kind="memo"]'
   }
   const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
   const decorationTarget = editTarget === 'header' || editTarget === 'footer'
@@ -795,6 +801,188 @@ function captureVisualState(window: BrowserWindow): void {
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
+    if (!editTriggered && editText && editTarget === 'footnote') {
+      // 각주 만들기·지우기 E2E: 본문 caret에 [각주 넣기] → 새 각주 본문에 조합 입력 → 실행 취소(입력·각주)·다시 실행 →
+      // 새 각주 본문 caret에서 [각주 지우기] → 실행 취소 → (저장). 번호 표시는 쪽 화면의 각주 번호 표시로 센다.
+      editTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      editProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-button'
+        const setPhase = (value) => {
+          phase = value
+          console.error('HAN_FLOW_E2E_PHASE ' + value)
+        }
+        const waitFor = async (predicate, timeout = 30000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('각주 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        ${RIBBON_E2E_HELPERS}
+        const expected = ${JSON.stringify(editText)}
+        const button = (label) => document.querySelector('[aria-label="' + label + '"]')
+        const waitButton = async (label) => {
+          await revealRibbonControl(label)
+          return waitFor(() => {
+            const candidate = button(label)
+            return candidate && !candidate.disabled && !candidate.closest('[role="tabpanel"]')?.hidden ? candidate : undefined
+          })
+        }
+        const markers = () => Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker[data-object-kind="footnote"]')).map((marker) => marker.textContent)
+        const surfaceById = (id) => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]'))
+          .find((element) => element.dataset.sourceTextNodeId === id)
+        const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
+        const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        const textNode = (element) => {
+          if (!element.firstChild) element.append(document.createTextNode(''))
+          return element.firstChild
+        }
+        const setSelection = (element, anchorOffset, focusOffset) => {
+          const node = textNode(element)
+          window.getSelection().setBaseAndExtent(node, anchorOffset, node, focusOffset)
+        }
+        const getSelection = (element) => {
+          const selection = window.getSelection()
+          const offset = (node, nodeOffset) => {
+            if (!element.contains(node)) return -1
+            const range = document.createRange()
+            range.selectNodeContents(element)
+            range.setEnd(node, nodeOffset)
+            return range.toString().length
+          }
+          return selection?.anchorNode ? { anchorOffset: offset(selection.anchorNode, selection.anchorOffset), focusOffset: offset(selection.focusNode, selection.focusOffset) } : undefined
+        }
+        const caretAt = (element, offset) => {
+          const value = element && getSelection(element)
+          return value?.anchorOffset === offset && value?.focusOffset === offset
+        }
+        const clickAttempts = {}
+        const click = async (label, nextPhase, predicate) => {
+          setPhase(nextPhase)
+          for (let attempt = 1; ; attempt += 1) {
+            clickAttempts[nextPhase] = attempt
+            ;(await waitButton(label)).click()
+            try {
+              await waitFor(predicate, attempt < 3 ? 5000 : 30000)
+              return
+            } catch (error) {
+              if (attempt >= 3) throw error
+            }
+          }
+        }
+        const editButton = await waitFor(() => button('HWPX 편집 시작'))
+        editButton.click()
+        setPhase('body-surface')
+        await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        const activeTabAfterStart = selectedRibbonTab()
+        const body = await waitFor(() => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 문단 편집"]'))
+          .find((element) => element.dataset.inputReady === 'true' && (element.textContent ?? '').length >= 4))
+        body.focus()
+        await settle()
+        setSelection(body, 2, 2)
+        body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        await settle()
+        const originalMarkers = markers()
+        await click('각주 넣기', 'insert-footnote', () => markers().length === originalMarkers.length + 1)
+        const insertedMarkers = markers()
+        setPhase('new-footnote-caret')
+        const noteSurface = await waitFor(() => {
+          const active = document.activeElement
+          return active?.getAttribute('aria-label') === 'HWPX 각주·미주 편집' && active.dataset.inputReady === 'true' && (active.textContent ?? '') === '' ? active : undefined
+        })
+        const noteId = noteSurface.dataset.sourceTextNodeId
+        setPhase('type-footnote')
+        // 실제 IME처럼 한 입력 칸에 조합 event를 이어 보낸다(편집 E2E 기본 probe와 같은 순서).
+        let composed = ''
+        const target = surfaceById(noteId)
+        for (const character of Array.from(expected)) {
+          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+          target.textContent = composed + 'ㅎ'
+          setSelection(target, composed.length + 1, composed.length + 1)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
+          composed += character
+          target.textContent = composed
+          setSelection(target, composed.length, composed.length)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
+          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
+        }
+        await waitFor(() => surfaceById(noteId)?.textContent === expected && !button('실행 취소')?.disabled && status().includes('저장 안 됨'))
+        await waitFor(() => caretAt(surfaceById(noteId), expected.length))
+        const editedMatches = surfaceById(noteId)?.textContent === expected
+        const projectedSelectionMatches = caretAt(surfaceById(noteId), expected.length)
+        await click('실행 취소', 'undo-text', () => surfaceById(noteId)?.textContent === '')
+        await waitFor(() => caretAt(surfaceById(noteId), 0))
+        const undoneMatches = surfaceById(noteId)?.textContent === ''
+        const undoSelectionMatches = caretAt(surfaceById(noteId), 0)
+        await click('실행 취소', 'undo-insert', () => markers().length === originalMarkers.length)
+        const insertUndone = JSON.stringify(markers()) === JSON.stringify(originalMarkers)
+        await click('다시 실행', 'redo-insert', () => markers().length === originalMarkers.length + 1)
+        await click('다시 실행', 'redo-text', () => surfaceById(noteId)?.textContent === expected)
+        await waitFor(() => caretAt(surfaceById(noteId), expected.length))
+        const redoneMatches = surfaceById(noteId)?.textContent === expected && JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
+        const redoSelectionMatches = caretAt(surfaceById(noteId), expected.length)
+        setPhase('delete-caret')
+        const redone = surfaceById(noteId)
+        redone.focus()
+        await settle()
+        setSelection(redone, 1, 1)
+        redone.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        await settle()
+        await click('각주 지우기', 'delete-footnote', () => markers().length === originalMarkers.length)
+        const deleted = JSON.stringify(markers()) === JSON.stringify(originalMarkers) &&
+          !(document.querySelector('.viewer-pages')?.innerText ?? '').includes(expected)
+        await click('실행 취소', 'delete-undo', () => markers().length === originalMarkers.length + 1 && surfaceById(noteId)?.textContent === expected)
+        const deleteUndone = JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
+        let saveStatusMatches
+        let dirtyCleared
+        if (${autoSaveEdit}) {
+          setPhase('save-button')
+          const saveButton = await waitButton('HWPX 변경본 저장')
+          saveButton.click()
+          setPhase('save-complete')
+          await waitFor(() => status().includes('저장 완료'))
+          saveStatusMatches = status().includes('각주') && /Preview (?:갱신 안 됨|없음)/.test(status())
+          dirtyCleared = !status().includes('저장 안 됨') && saveButton.disabled
+        }
+        return {
+          mode: 'footnote',
+          surface: 'footnote',
+          noteKind: 'footnote',
+          activeTabAfterStart,
+          originalMarkers,
+          insertedMarkers,
+          editedMatches,
+          undoneMatches,
+          redoneMatches,
+          projectedSelectionMatches,
+          undoSelectionMatches,
+          redoSelectionMatches,
+          insertUndone,
+          deleted,
+          deleteUndone,
+          saveStatusMatches,
+          dirtyCleared,
+          dirtyAtEnd: status().includes('저장 안 됨'),
+          clickAttempts,
+          editableCount: document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]').length
+        }
+      })()`).catch(async (reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason),
+        diagnostics: await window.webContents.executeJavaScript(`({
+          status: document.querySelector('.viewer-status')?.textContent,
+          markers: Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker')).map((marker) => marker.textContent),
+          enabledButtons: Array.from(document.querySelectorAll('.viewer-ribbon-controls button:not(:disabled)')).map((button) => button.getAttribute('aria-label')),
+          activeLabel: document.activeElement?.getAttribute('aria-label'),
+          activeText: document.activeElement?.textContent
+        })`)
+      }))
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
     if (!editTriggered && editText) {
       editTriggered = true
       stableSamples = 0
@@ -910,6 +1098,9 @@ function captureVisualState(window: BrowserWindow): void {
         // 빈 문단 합성 anchor(#hp:p:N:empty)는 첫 입력 뒤 새 #hp:t:M anchor로 바뀐다. caret을 가진 새 surface를 따라간다.
         const editedTarget = await waitFor(() => findProjectedSurface(surfaces(), anchorId, expected, window.getSelection()?.focusNode))
         const editedAnchorId = editedTarget.dataset.sourceTextNodeId
+        // 글자·문단 모양 probe가 run을 나누면 입력 칸 element가 바뀌므로 각주·개체 종류는 편집 직후에 읽어 둔다.
+        const editedNoteKind = editedTarget.closest('[data-note-kind]')?.dataset.noteKind
+        const editedObjectKind = editedTarget.closest('[data-object-kind]')?.dataset.objectKind
         await waitFor(() => {
           const value = getSelection(editedTarget)
           return value.anchorOffset === selectionAfter.anchorOffset &&
@@ -1153,7 +1344,8 @@ function captureVisualState(window: BrowserWindow): void {
           decorationSynced: surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
             .every((element) => element.textContent === expected),
           anchorTransition: anchorId === editedAnchorId ? undefined : { from: anchorId, to: editedAnchorId },
-          noteKind: editedTarget.closest('[data-note-kind]')?.dataset.noteKind,
+          noteKind: editedNoteKind,
+          objectKind: editedObjectKind,
           navigationProbe,
           activeTabAfterStart,
           originalLength: original.length,
@@ -2481,6 +2673,36 @@ app.whenReady().then(() => {
       event.sender.id,
       request as EditingMergeTableCellRightRequest
     )
+  }))
+
+  ipc.handle('editing:insertFootnote', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 넣기 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.insertFootnote(event.sender.id, request as EditingInsertFootnoteRequest)
+  }))
+
+  ipc.handle('editing:deleteFootnote', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId', 'notePath'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 지우기 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.deleteFootnote(event.sender.id, request as EditingDeleteFootnoteRequest)
   }))
 
   ipc.handle('editing:splitTableCell', editingIpcHandler(async (event, request: unknown) => {

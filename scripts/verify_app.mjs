@@ -15,8 +15,9 @@ const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 // 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
-// column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단(또는 표 셀).
-const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column']
+// column(2단 영역 둘째 단의 본문 문단), text-box(글자만 든 글상자 글), memo(메모 본문),
+// footnote(본문 caret에 각주 넣기 → 새 각주에 입력 → 실행 취소·다시 실행 → 각주 지우기·실행 취소). 없으면 본문 문단(또는 표 셀).
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'text-box', 'memo', 'footnote']
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
@@ -334,6 +335,15 @@ try {
       : undefined,
     (editTarget === 'note' || editTarget === 'endnote') && state.editingProbe?.noteKind !== (editTarget === 'note' ? 'footnote' : 'endnote')
       ? `각주·미주 종류 불일치: ${state.editingProbe?.noteKind}`
+      : undefined,
+    editTarget === 'footnote' && state.editingProbe?.insertedMarkers?.length !== (state.editingProbe?.originalMarkers?.length ?? -2) + 1
+      ? `각주 넣기 뒤 번호 표시 수 불일치: ${JSON.stringify(state.editingProbe?.originalMarkers)} → ${JSON.stringify(state.editingProbe?.insertedMarkers)}`
+      : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.insertUndone ? '각주 넣기 실행 취소 불일치' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.deleted ? '각주 지우기 결과 불일치' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.deleteUndone ? '각주 지우기 실행 취소 불일치' : undefined,
+    (editTarget === 'text-box' || editTarget === 'memo') && state.editingProbe?.objectKind !== editTarget
+      ? `글상자·메모 입력 칸이 그 개체 안에 있지 않음: ${state.editingProbe?.objectKind}`
       : undefined,
     editTarget && editSave && savedState && !savedState.expectedTextPresent ? '저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,

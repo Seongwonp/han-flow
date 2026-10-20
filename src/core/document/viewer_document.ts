@@ -200,7 +200,10 @@ export interface ViewerObjectPlaceholder {
   fallbackText?: string
   /** 덧말(`hp:dutmal`)의 덧말 text와 위치. */
   ruby?: { text: string; position: 'top' | 'bottom' }
-  /** 글상자·도형 글(`hp:drawText/hp:subList`)이나 메모 본문에서 되살린 읽기 전용 문단. */
+  /**
+   * 글상자·도형 글(`hp:drawText/hp:subList`)이나 메모 본문에서 되살린 문단. 글자만 든 subList는 편집 anchor가 있고
+   * (capability의 `TEXT_BOX_TEXT`·`MEMO_TEXT`), 개체가 든 subList는 anchor 없는 읽기 전용이다.
+   */
   paragraphs?: ViewerParagraph[]
   /** 각주·미주 번호 표시(예: "1)"). */
   marker?: string

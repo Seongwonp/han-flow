@@ -6,7 +6,8 @@ const editedStructureLabels = {
   'paragraph-style': '문단 모양',
   'paragraph-structure': '문단 나누기·병합',
   'table-cell-style': '표 셀 모양',
-  'table-structure': '표 행·열 구조'
+  'table-structure': '표 행·열 구조',
+  'note-structure': '각주 만들기·지우기'
 } as const
 
 export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
@@ -32,10 +33,13 @@ export function editingLossPolicyDetail(policy: HwpxSaveLossPolicy): string {
   const tableStructureReview = policy.notices.includes('TABLE_STRUCTURE_CHANGED')
     ? ' 표 행·열 구조가 바뀌었으므로 저장 후 Han-Flow와 한/글에서 표 전체를 확인해 주세요.'
     : ''
+  const noteStructureReview = policy.notices.includes('NOTE_STRUCTURE_CHANGED')
+    ? ' 각주를 넣거나 지운 뒤 각주 번호를 다시 매겼으므로 저장 후 Han-Flow와 한/글에서 각주 번호를 확인해 주세요.'
+    : ''
 
   return (
     `현재 변경 구조: ${structures || '없음'}. ` +
     '선택한 구조만 원본 XML에서 수정하며, 손대지 않은 XML·이미지·package 항목은 보존합니다. ' +
-    preview + paragraphStylePreservation + structureReview + cellStyleReview + tableStructureReview
+    preview + paragraphStylePreservation + structureReview + cellStyleReview + tableStructureReview + noteStructureReview
   )
 }

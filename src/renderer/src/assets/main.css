@@ -122,6 +122,10 @@ button { font: inherit; }
 .viewer-object-label { flex: none; color: #8a6d3b; font-size: 8pt; font-weight: 600; line-height: 1.2; }
 .viewer-object-marker { margin: 0 2px; }
 .viewer-object-fallback { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+/* 편집 중인 메모 본문: 보기 모드의 줄 안 글과 같은 크기·자리에 입력 칸을 둔다. */
+.viewer-memo-body { display: inline-flex; flex-wrap: wrap; gap: 4px; user-select: text; }
+.viewer-memo-body > .viewer-paragraph { display: inline; min-height: 0; margin: 0 !important; padding: 0 !important; text-indent: 0 !important; line-height: inherit !important; }
+.viewer-memo-body .viewer-editable-text { font-size: inherit !important; }
 .viewer-object-script { font-family: "D2Coding", "Consolas", "Menlo", "Noto Sans Mono CJK KR", monospace; font-size: 8pt; }
 .viewer-object-body { display: block; align-self: stretch; min-width: 0; color: #111; font-size: initial; user-select: text; }
 .viewer-note-marker { font-size: .7em; line-height: 0; vertical-align: super; color: inherit; }

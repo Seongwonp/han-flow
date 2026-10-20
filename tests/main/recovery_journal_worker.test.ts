@@ -373,7 +373,7 @@ describe('편집 복구 기록(실제 편집 worker)', () => {
     expect(existsSync(join(recoveryDirectory, journalId))).toBe(false)
   }, 90_000)
 
-  test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 지금 형식(version 3) header로 쓴다', async () => {
+  test('version 1 기록(표 원문 command)을 복구하면 이어 쓰는 기록은 지금 형식(version 4) header로 쓴다', async () => {
     const source = join(directory, 'legacy-table.hwpx')
     copyFileSync(createLargeTableHwpx(directory, { rows: 5, columns: 2, fileName: 'legacy-table-generated.hwpx' }), source)
     const original = await HwpxSourcePackage.open(source)

@@ -106,8 +106,8 @@ export function emptyParagraphCaret(
 
 /**
  * 한 section을 해석하는 동안 공유하는 상태.
- * - `sectionPath`: 편집 anchor를 붙일 section. 글상자·메모 본문처럼 읽기 전용으로 되살리는 문단은 undefined다.
- *   각주·미주 본문과 머리말·꼬리말 문단은 anchor를 붙인다(편집 노출 여부는 capability가 정한다).
+ * - `sectionPath`: 편집 anchor를 붙일 section. 개체가 든 글상자·메모 본문, 필드 subList처럼 읽기 전용으로 되살리는 문단은
+ *   undefined다. 각주·미주 본문, 머리말·꼬리말 문단, 글자만 든 글상자·메모 본문은 anchor를 붙인다(편집 노출 여부는 capability가 정한다).
  * - `sourceSection`: 자리 표시 `sourcePath`에 쓰는 section 경로(읽기 전용 문단에서도 유지한다).
  */
 interface DecodeContext {
@@ -288,7 +288,21 @@ function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
 
 const readOnly = (context: DecodeContext): DecodeContext => ({ ...context, sectionPath: undefined })
 
-/** subList 문단. `editable`이 아니면(글상자·메모 본문) source anchor 없이 읽기 전용으로 해석한다. */
+/** 글자만 든 subList가 가질 수 있는 element. */
+const PLAIN_SUBLIST_ELEMENTS = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
+
+/**
+ * 글상자 글·메모 본문 subList가 글자만 든 문단으로 되어 있는지. 표·그림·도형·수식·각주·필드·제어 같은 개체가 하나라도 있으면
+ * 글상자(메모) 전체를 읽기 전용으로 둔다(편집 anchor를 붙이지 않는다). 편집 코어는 같은 `hp:t` 순번 anchor로 글자를 고친다.
+ */
+export function isPlainTextSubList(subList: OrderedXmlNode | undefined): boolean {
+  return Boolean(subList) && walkOrderedXml(subList!.children).every((node) => node.name === '#text' || PLAIN_SUBLIST_ELEMENTS.has(node.name))
+}
+
+/**
+ * subList 문단. `editable`이 아니면 source anchor 없이 읽기 전용으로 해석한다. 각주·미주와 글자만 든 글상자·메모 본문은
+ * 편집 anchor를 붙인다(읽기 전용 문단 안의 subList는 바깥 context가 이미 읽기 전용이라 계속 읽기 전용이다).
+ */
 function subListParagraphs(
   subList: OrderedXmlNode | undefined,
   id: string,
@@ -304,7 +318,10 @@ function subListParagraphs(
 /** 도형 글(`hp:drawText/hp:subList`) 문단. 묶음(`hp:container`)은 안쪽 도형의 글을 순서대로 모은다. */
 function drawTextParagraphs(node: OrderedXmlNode, id: string, context: DecodeContext): ViewerParagraph[] {
   const drawText = child(node, 'hp:drawText')
-  if (drawText) return subListParagraphs(child(drawText, 'hp:subList'), id, context)
+  if (drawText) {
+    const subList = child(drawText, 'hp:subList')
+    return subListParagraphs(subList, id, context, isPlainTextSubList(subList))
+  }
   if (node.name !== 'hp:container') return []
   return node.children
     .filter((item) => SHAPE_ELEMENTS.has(item.name))
@@ -430,7 +447,8 @@ function decodeControl(node: OrderedXmlNode, id: string, context: DecodeContext)
       sourcePath: objectSourcePath(node, context),
       flow: 'marker',
       label: OBJECT_KIND_LABELS[kind],
-      paragraphs: subListParagraphs(subList, id, context)
+      // 메모 본문은 글자만 든 경우 글자를 고칠 수 있게 anchor를 붙인다. 그 밖의 필드 subList는 읽기 전용이다.
+      paragraphs: subListParagraphs(subList, id, context, kind === 'memo' && isPlainTextSubList(subList))
     }
   }
   return undefined

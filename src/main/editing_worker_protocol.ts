@@ -31,6 +31,8 @@ export type EditingWorkerMethod =
   | 'deleteTableColumn'
   | 'mergeTableCellRight'
   | 'splitTableCell'
+  | 'insertFootnote'
+  | 'deleteFootnote'
   | 'undo'
   | 'redo'
   | 'refresh'

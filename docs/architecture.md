@@ -315,6 +315,43 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 복원은 focus가 있는 쪽의 칸을 고른다. 편집은 그 section만 다시 해석하고, 쪽마다의 머리말 상속은 renderer가 매번 다시 정하므로 같은 머리말을 쓰는
 모든 쪽(다음 구역이 이어 쓰는 쪽 포함)에 반영된다.
 
+(2026-10-20 갱신) 위 "문단 나눔·병합·글자/문단 모양은 `SUBLIST_TEXT`로 막는다"는 아래 절로 바뀌었다. `SUBLIST_TEXT`는 이제 메모 본문에만 쓴다.
+
+### 글상자·메모 글자, subList 모양·문단 구조, 각주 만들기·지우기 (2026-10-20)
+
+- **글상자·메모 글자**: decoder(`viewer_decoder.ts`)는 도형 글(`hp:drawText/hp:subList`)과 메모(`hp:fieldBegin type="MEMO"`의 `hp:subList`)가
+  글자만 든 subList(`isPlainTextSubList`: 자손이 `hp:p`·`hp:run`·`hp:t`·`hp:lineBreak`·`hp:tab`·`hp:linesegarray`·`hp:lineseg`뿐)이면 section 안
+  `hp:t` 순번 anchor를 붙인다. 표·그림·도형·수식·각주·필드·제어가 하나라도 있으면 그 글상자(메모) 전체가 전처럼 읽기 전용이다. 편집 코어는 같은
+  `#hp:t:N` anchor라 `replace-text`를 그대로 쓴다. capability(`editing_capability.ts`)는 section의 subList 묶음(`sectionSublistGroups`: 각주
+  번호 표시의 본문·글상자·메모(표 셀·각주 안 포함)·구역 끝 미주(같은 미주 문단을 다시 모은다)·머리말·꼬리말)을 모아 `TEXT_BOX_TEXT`·`MEMO_TEXT`·
+  `NOTE_TEXT`·`HEADER_FOOTER_TEXT` context를 문단마다 범위 scope(`…:text-box:…`·`…:memo:…`)로 연다.
+- **화면**: `TextBoxView`(원본 위치 글상자)와 `ObjectPlaceholderView`(줄 안 글상자 상자)는 편집 중 글상자 문단을 `HWPX 글상자 편집` 입력 칸으로
+  그린다(`objectTextEditing`). 글 앞·뒤 원본 위치 글상자는 편집 중에만 누를 수 있다(`positionedPointerEvents`). 메모는 보기 모드처럼 줄 안
+  "메모: …" 자리에 같은 크기의 `HWPX 메모 편집` 입력 칸을 둔다(`.viewer-memo-body`). 측정 DOM·보기·PDF는 그대로 읽기 전용 문단이다.
+- **subList 글자·문단 모양**: `style_patch.ts`의 위치 검사(`isStyleEditableParagraph`)가 각주·미주·머리말·꼬리말 subList 직속 문단과 글자만 든
+  글상자 문단을 받는다. 한/글 저장본은 각주·미주 첫 문단의 번호 control(`hp:ctrl/hp:autoNum`)과 글자를 한 run에 두므로, 그런 run의 글자 모양은
+  번호 control을 원래 모양 run에 남기고 글자만 새 run으로 나눈다(`leadingNumber`, 선택이 없거나 글자 전체여도 나눈다). inverse는
+  `restore-character-run`이고, 원래 run 복원은 anchor run 바로 앞 번호 run부터 원문을 맞춰 본다. 메모 본문은 막는다(`SUBLIST_TEXT`).
+- **subList 문단 구조(Enter·경계 병합)**: `paragraph_patch.ts`의 locator가 각주·미주·머리말·꼬리말·글자만 든 글상자 subList를 받고, 같은
+  subList 안 문단끼리만 나누고 합친다. 문단 구조 규칙(`paragraph_structure.ts`)·복구 기록 replay 검사는 본문과 같아서, 번호 control이 든 각주
+  첫 문단은 계속 `PARAGRAPH_HAS_OBJECT`로 막히고(그 문단과의 병합도) 글자만 든 둘째 문단부터 Enter를 받는다. 여러 문단 범위 치환은 열지
+  않는다(문단마다 범위 scope). renderer는 subList 문단 gate를 문서 단위 `topLevelParagraphStructure`(subList 문단 포함)로 받아
+  (`documentStructureOf`) 표 셀·머리말 안 글상자도 capability와 같은 gate를 쓴다.
+- **각주 만들기·지우기**(`footnote_patch.ts`): `insert-footnote`는 본문 문단(`hs:sec` 직속) `hp:t`를 caret에서 둘로 나누고 사이에 한/글 모양의
+  `<hp:ctrl><hp:footNote number suffixChar instId><hp:subList>…<hp:autoNum num numType="FOOTNOTE">…</hp:autoNum>…<hp:t/>…</hp:footNote></hp:ctrl>`를
+  넣는다. 문단·글자 모양은 같은 section 각주 첫 문단, 없으면 header의 `각주` style, 없으면 본문 값이고, 번호 모양은 구역 `hp:footNotePr`의
+  `hp:autoNumFormat` 원문을 쓴다. 번호는 바로 앞 각주 + 1(앞 각주가 없으면 `newNum`, 이어 매기기면 앞 구역 마지막 각주)이고 뒤 각주의
+  `number`·`autoNum num`을 1씩 올린다(이어 매기기면 새로 매기는 구역 전까지 뒤 구역도). `instId`는 section의 가장 큰 값 + 1이라 같은 package에서
+  언제나 같은 bytes가 나온다(replay·다시 실행). `delete-footnote`는 `${sectionPath}#hp:footNote:K` 각주를 지우고(번호 control만 든 `hp:ctrl`째)
+  뒤 번호를 내린다. 둘 다 inverse는 `restore-footnote`(본문 문단 원문 두 벌 + 다른 각주 번호 attribute 목록, 문단은 section 안 `hp:p` 순번으로
+  찾는다)라 실행 취소가 원래 bytes를 되살린다. 쪽마다 새로 매기기(`ON_PAGE`)는 번호가 쪽 배치에 달려 있어 거부한다. 지우기는 [각주 지우기]
+  (caret이 그 각주 본문에 있을 때, capability focus의 `footnotePath`)와, 본문 문단 범위가 번호 표시를 품을 때(`planReplaceSelection`이 글자
+  command 뒤에 뒤 각주부터 `delete-footnote`를 붙인다)다. 리본 `편집` 탭의 `각주` group이 넣기·지우기 단추이고 capability `footnote`
+  (본문 문단 글자 사이 접힌 caret, `FOOTNOTE_POSITION`)가 넣기를 연다. 저장 정책은 `note-structure`(`NOTE_STRUCTURE_CHANGED`, 재열기 권장)다.
+- **복구 기록 version 4**: `insert-footnote`·`delete-footnote`는 version 4 기록에서만 받는다(replay 검사는 실제 `#hp:t:N` anchor·0 이상 offset,
+  `#hp:footNote:K` 경로 모양을 본다). 글상자·메모 글자와 subList 모양·문단 나눔은 형식이 같지만 이전 앱이 replay하면 거부하므로 같은 때 올렸다.
+  version 1~3 기록은 그대로 읽는다.
+
 ## 프로세스 책임
 
 ### Electron main
@@ -352,12 +389,12 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
 | `hp:equation` | `equation` | "수식" 상자 + `hp:script` 원문(고정폭) |
 | `hp:chart`(`hp:switch` 안 차트, OLE 대체본 크기 사용) | `chart` | "차트" 상자 |
 | `hp:ole` | `ole` | "OLE 개체" 상자 + `hp:shapeComment` |
-| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 읽기 전용 문단(본문 원본 위치 개체는 원본 선·면 색 상자) |
+| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 문단(글자만 든 글상자는 편집 가능, 본문 원본 위치 개체는 원본 선·면 색 상자) |
 | 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자(본문 원본 위치의 사각형·타원·선·다각형은 SVG) |
 | `hp:btn`·`hp:radioBtn`·`hp:checkBtn`·`hp:comboBox`·`hp:edit`·`hp:listBox`·`hp:scrollBar` | `form-control` | "양식 컨트롤" 상자 + caption·값 |
 | `hp:video` | `video` | "동영상" 상자 |
 | `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 각주 본문은 쪽(단) 아래 각주 영역, 미주 본문은 구역 끝 `note-list` |
-| `hp:ctrl/hp:fieldBegin type="MEMO"` | `memo` | 줄 안 "메모: …" 표시 |
+| `hp:ctrl/hp:fieldBegin type="MEMO"` | `memo` | 줄 안 "메모: …" 표시(글자만 든 메모는 편집 중 입력 칸) |
 | `hp:dutmal` | `ruby` | HTML ruby(본말 + 덧말) |
 | 그 밖의 run 자식 `hp:*`(`hp:compose` 포함) | `unknown` | "알 수 없는 개체" 상자 |
 
@@ -400,8 +437,9 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   절대 위치로, 다단이면 단마다(다단 영역이 여럿이면 마지막 영역의 단마다) 단 아래 끝에, `beneathText`면 본문 바로 뒤에 그린다. 구분선 길이 `-1`은 단 너비의 1/3, 양수는 그 길이다.
   `MERGED_COLUMN`·`RIGHT_MOST_COLUMN`도 단마다 둔다.
 - `sourcePath`는 `${sectionPath}#${element}:${section 안 같은 이름 element의 문서 순서 번호}`다.
-- 글상자·메모 본문 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 각주·미주 본문은 2026-10-14부터 section 안
-  `hp:t` 순번 anchor를 받아 쪽 아래 각주·구역 끝 미주 목록에서 글자를 고칠 수 있다(위 "표 앞·뒤 caret과 subList 글자"). 자리 표시는
+- 개체가 든 글상자·메모 본문과 필드 subList 문단은 `sectionPath` 없이 해석하므로 source anchor가 없다(읽기 전용). 글자만 든 글상자·메모
+  본문은 2026-10-20부터, 각주·미주 본문은 2026-10-14부터 section 안 `hp:t` 순번 anchor를 받아 그 자리에서 글자를 고칠 수 있다(위 "표 앞·뒤
+  caret과 subList 글자"·"글상자·메모 글자, subList 모양·문단 구조, 각주 만들기·지우기"). 자리 표시는
   `isObjectPlaceholder`로 편집 capability(`editing_capability.ts`)와 renderer `isEditableTextParagraph`에서 건너뛰므로
   같은 문단 글자 run의 편집 가능 여부는 자리 표시를 넣기 전과 같다(편집 coverage 수치 불변).
 - 누름틀·하이퍼링크 등 본문 run에 글이 그대로 있는 필드는 자리 표시를 만들지 않는다.
@@ -545,7 +583,7 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
 
 - 위치·권한: `app.getPath('userData')/recovery/<sessionId>/journal.hfj`. 폴더 0o700, 파일 0o600. session id는 소문자 UUID만
   받고 경로가 복구 폴더 바로 아래인지 확인한다(`recoveryJournalDirectory`). 폴더·파일이 링크이거나 일반 파일이 아니면 열지 않는다.
-- 형식(version 3): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
+- 형식(version 4): 한 줄에 record 하나, `<JSON byte 길이>:<CRC-32 8자리 hex>:<JSON>\n`(CRC는 ZIP과 같은 `crc32` helper).
   첫 record는 header(형식·version, 앱 version, 원본 절대 경로, 원본 크기·수정 시각·SHA-256, session 시작 시각)다. 원본 지문은
   worker가 원본을 한 번 읽은 bytes로 계산하고 package도 그 bytes에서 연다(`readFileWithFingerprint`, 2026-10-18). 열린 handle의
   크기·수정 시각이 읽기 전후로 다르면 편집을 시작하지 않는다. 예전에는 package와 SHA-256이 파일을 따로 읽어 그 사이 바뀐 파일이면
@@ -558,7 +596,10 @@ projection은 session 시작·refresh·fallback이면 전체 `ViewerDocument`(`p
   보고 손대지 않는다. version 3(2026-10-14)은 글자 command·selection이 표 앞·뒤 합성 caret anchor(`#hp:p:N:table-before|after`)를
   가리킬 수 있다. 각주·미주·머리말·꼬리말 글자는 일반 `#hp:t:N` anchor라 형식이 같지만, 같은 때 넓힌 편집 범위를 이전 앱이 replay하지
   않도록 함께 올렸다. version 1·2 기록도 읽어 replay하되 그 기록에 표 앞·뒤 anchor가 있으면 구조 오류(격리)이고, 복구한 뒤 이어 쓰는
-  기록은 version 3이다. version 2까지만 아는 앱은 version 3 기록을 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
+  기록은 그때 version 3이었다. version 2까지만 아는 앱은 version 3 기록을 손대지 않는다. version 4(2026-10-20)는 각주 만들기·지우기
+  command(`insert-footnote`·`delete-footnote`)를 담을 수 있다. 글상자·메모 글자와 각주·머리말·글상자의 글자·문단 모양·문단 나눔은 형식이
+  같지만 이전 앱이 replay하면 거부하므로 함께 올렸다. version 1~3 기록도 읽어 replay하되 그 기록에 각주 command가 있으면 구조 오류(격리)이고,
+  복구한 뒤 이어 쓰는 기록은 version 4다. version 3까지만 아는 앱은 version 4 기록을 손대지 않는다. 같은 200 KiB 표 행 추가·실행 취소 반복은 전에는 약 146번째 편집에서 64 MiB 한도에 닿았고, 지금은 약 1.1만 번이 든다.
 - 쓰는 곳: main. worker의 `EditingEngine`이 commit·undo·redo·markSaved를 할 때 record를 쌓고 같은 응답 message에 실어 보내면
   (`EditingWorkerResponse.journal`, 실패 응답 포함) `EditingSessionManager`가 `RecoveryJournalWriter`에 넘긴다. main에 두는
   이유는 worker가 timeout·OOM으로 강제 종료돼도 이미 응답한 편집은 main에 있어 하나도 잃지 않기 때문이다(worker 안에서 쓰면 마지막
@@ -795,6 +836,9 @@ Save As→재열기를 따로 실행한다. 각주 배치는 verify_app이 쪽�
 (`footnotePlacement`), 긴 각주 합성 fixture(`createLongFootnoteHwpx`)로 쪽을 넘어 이어지는 각주의 overflow 0·화면/PDF 글자 수와
 나뉜 각주 앞 조각 입력→Save As→재열기를 확인한다. 머리말·꼬리말은 저장본의 두 쪽 모두에 글자가 있어야 하고, 칸 끝·처음의 방향 키(Shift 포함)가 다른 쪽의
 같은 칸으로 caret을 옮기지 않아야 한다.
+subList 편집 합성 fixture(`createSublistEditHwpx`, 1쪽, 2026-10-20)로는 글자만 든 글상자 글·메모 본문 입력, 번호와 같은 run의 각주 글자·글상자 글의
+글자·문단 모양 probe(부분 굵게 run 분할·정렬·크기·색·줄 간격·문단 간격·들여쓰기와 실행 취소·다시 실행), [각주 넣기]→새 각주 입력→실행 취소
+(입력·각주)·다시 실행→[각주 지우기]→실행 취소를 각각 Save As→재열기까지 실행하고 저장본의 글자와 글상자·메모·각주 수를 본다.
 HWPX core와 production matrix, 고정 HWP matrix의 실행 대상은 상위 `fixture_catalog.json`에서
 동일한 fixture ID로 선택한다. 각 형식 manifest가 catalog와 어긋나면 GUI 실행 전에 실패한다.
 Windows는 `release/win-unpacked/Han-Flow.exe`, Linux는 `release/linux-unpacked/han-flow`, macOS는 `.app` 내부 실행 파일을
