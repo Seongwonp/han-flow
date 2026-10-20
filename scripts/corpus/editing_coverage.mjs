@@ -184,6 +184,14 @@ function listingExclusions(document) {
         reasons.set(item.sourceAnchor.textNodeId, reason)
       }
       if (item.type === 'table') markTable(item, reason === 'HEADER_FOOTER' ? reason : 'NESTED_TABLE')
+      // 각주 번호 표시의 본문과 글상자 글·메모 본문(2026-10-20부터 글자만 든 것은 anchor가 있다).
+      if (item.type === 'object-placeholder') {
+        if (item.note) for (const nested of item.note.paragraphs) mark(nested, paragraphExclusion(nested, 'NOTE_') ?? 'NOTE')
+        else if (item.paragraphs) {
+          const prefix = item.kind === 'memo' ? 'MEMO' : item.kind === 'text-box' ? 'TEXT_BOX' : 'OBJECT'
+          for (const nested of item.paragraphs) mark(nested, paragraphExclusion(nested, `${prefix}_`) ?? prefix)
+        }
+      }
     }
   }
   const markTable = (table, reason) => {
@@ -226,6 +234,11 @@ function anchoredIds(document) {
     for (const item of value.content) {
       if (item.type === 'text' && item.sourceAnchor) ids.add(item.sourceAnchor.textNodeId)
       if (item.type === 'table') for (const row of item.rows) for (const cell of row.cells) cell.paragraphs.forEach(paragraph)
+      // 쪽 아래 각주 본문(번호 표시에 든다)과 글상자 글·메모 본문.
+      if (item.type === 'object-placeholder') {
+        item.note?.paragraphs.forEach(paragraph)
+        item.paragraphs?.forEach(paragraph)
+      }
     }
   }
   for (const section of document.sections) {

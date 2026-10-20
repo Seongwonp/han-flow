@@ -1,4 +1,5 @@
 import type { ParagraphStructureBlock } from '../editing/paragraph_structure'
+import type { MathElement } from './equation_script'
 export type HwpUnit = number
 
 export interface ViewerDocument {
@@ -244,7 +245,10 @@ export interface ViewerObjectPlaceholder {
   fallbackText?: string
   /** 덧말(`hp:dutmal`)의 덧말 text와 위치. */
   ruby?: { text: string; position: 'top' | 'bottom' }
-  /** 글상자·도형 글(`hp:drawText/hp:subList`)이나 메모 본문에서 되살린 읽기 전용 문단. */
+  /**
+   * 글상자·도형 글(`hp:drawText/hp:subList`)이나 메모 본문에서 되살린 문단. 글자만 든 subList는 편집 anchor가 있고
+   * (capability의 `TEXT_BOX_TEXT`·`MEMO_TEXT`), 개체가 든 subList는 anchor 없는 읽기 전용이다.
+   */
   paragraphs?: ViewerParagraph[]
   /** 각주·미주 번호 표시(예: "1)"). */
   marker?: string
@@ -262,6 +266,21 @@ export interface ViewerObjectPlaceholder {
   position?: ViewerObjectPosition
   /** 도형(사각형·타원·선·다각형)과 글상자 테두리를 그릴 선·채우기와 꼭짓점(개체 왼쪽 위 기준 HWPUNIT). */
   shape?: ViewerShapeStyle
+  /**
+   * 수식 script를 해석해 그릴 수 있으면 MathML 나무와 `hp:equation` 속성. 있으면 renderer는 자리 표시 대신 수식을 선언 상자에 맞춰
+   * 그리고, 안내 배너의 "완전히 표시되지 않는 개체"에서 뺀다. 해석하지 못한 수식은 없고 script 글자 상자로 보여 준다.
+   */
+  equation?: ViewerEquation
+}
+
+export interface ViewerEquation {
+  math: MathElement
+  /** 기본 글자 크기(`baseUnit`, HWPUNIT: 1000 = 10pt). */
+  baseUnit?: number
+  /** 글자 색(`textColor`, `#RRGGBB`). */
+  color?: string
+  /** 상자 위에서 기준선까지 높이의 백분율(`baseLine`). */
+  baseLine?: number
 }
 
 export interface ViewerShapeStyle {

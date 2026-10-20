@@ -71,7 +71,7 @@ describe('각주·미주 본문 글자 편집', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-note-text-'))
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-  test('쪽 아래 각주와 구역 끝 미주 본문에 anchor와 NOTE_TEXT context가 있고 글자 입력만 연다', async () => {
+  test('쪽 아래 각주와 구역 끝 미주 본문에 anchor와 NOTE_TEXT context가 있고 글자·문단 모양을 연다(번호 control이 든 문단은 문단 나눔을 막는다)', async () => {
     const source = await HwpxSourcePackage.open(createEditScopeHwpx(directory))
     const document = await decodeViewerDocument(source)
     const footnote = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteBody)
@@ -85,11 +85,12 @@ describe('각주·미주 본문 글자 편집', () => {
     expect(contexts[0].rangeScope).not.toBe(contexts[1].rangeScope)
     const capability = editingCapabilities(document, caret(footnote.textNodeId, 2))
     expect(capability.text).toEqual({ available: true })
-    expect(capability.characterStyle).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
-    expect(capability.paragraphStyle).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
-    expect(capability.paragraphStructure).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
+    expect(capability.characterStyle).toEqual({ available: true })
+    expect(capability.paragraphStyle).toEqual({ available: true })
+    // 각주 첫 문단은 번호(`hp:autoNum`) control이 글자와 같은 run에 있어 본문과 같은 규칙으로 문단 나눔·병합을 막는다.
+    expect(capability.paragraphStructure).toEqual({ available: false, reason: 'PARAGRAPH_HAS_OBJECT' })
     expect(capability.cellStyle.available).toBe(false)
-    expect(capability.focus?.structureGate).toEqual({ split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' })
+    expect(capability.focus?.structureGate).toEqual({ split: 'PARAGRAPH_HAS_OBJECT', mergePrevious: 'PARAGRAPH_HAS_OBJECT', mergeNext: 'PARAGRAPH_HAS_OBJECT' })
     // 본문과 각주를 함께 고른 선택은 서로 다른 구조다.
     const lead = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteLead)
     expect(editingCapabilities(document, {
@@ -120,18 +121,16 @@ describe('각주·미주 본문 글자 편집', () => {
     expect(history.package.readEntry(sectionPath).toString('utf8')).toBe(edited)
   })
 
-  test('각주·미주 문단은 문단 나눔·병합·글자/문단 모양을 편집 코어에서도 거부한다', async () => {
+  test('번호 control이 든 각주 문단은 편집 코어도 문단 나눔·병합을 거부하고 글자·문단 모양은 받는다', async () => {
     const source = await HwpxSourcePackage.open(createEditScopeHwpx(directory, 'note-reject.hwpx'))
     const footnote = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteBody)
     expect(() => planSplitParagraph(source, caret(footnote.textNodeId, 1))).toThrow(HwpxEditConflictError)
     expect(() => planMergeParagraph(source, caret(footnote.textNodeId, 0), 'previous')).toThrow(HwpxEditConflictError)
-    expect(() => applyCharacterStyleCommand(source, { type: 'apply-character-style', sectionPath, textNodeId: footnote.textNodeId, bold: true }))
-      .toThrow(HwpxEditConflictError)
-    expect(() => applyParagraphStyleCommand(source, { type: 'apply-paragraph-style', sectionPath, textNodeId: footnote.textNodeId, align: 'CENTER' }))
-      .toThrow(HwpxEditConflictError)
+    expect(applyCharacterStyleCommand(source, { type: 'apply-character-style', sectionPath, textNodeId: footnote.textNodeId, bold: false }).changed).toBe(true)
+    expect(applyParagraphStyleCommand(source, { type: 'apply-paragraph-style', sectionPath, textNodeId: footnote.textNodeId, align: 'CENTER' }).changed).toBe(true)
   })
 
-  test('각주가 든 본문 문단의 여러 run 범위 치환은 사이의 각주 본문 글자를 지우지 않는다', async () => {
+  test('각주 번호 표시를 품은 본문 문단 범위 치환은 각주 본문 글자를 글자 command로 지우지 않고 각주를 통째로 지운다', async () => {
     const source = await HwpxSourcePackage.open(createEditScopeHwpx(directory, 'note-range.hwpx'))
     const original = source.readEntry(sectionPath).toString('utf8')
     const lead = anchorOf(source, EDIT_SCOPE_TEXTS.footnoteLead)
@@ -142,12 +141,15 @@ describe('각주·미주 본문 글자 편집', () => {
     const selection: EditorSelection = { sectionPath, anchorTextNodeId: lead.textNodeId, anchorOffset: 2, focusTextNodeId: trailing.textNodeId, focusOffset: 0 }
     const plan = planReplaceSelection(source, selection, '바뀜')
     expect(plan.affectedTextNodeIds).toEqual([lead.textNodeId, trailing.textNodeId])
+    expect(plan.commands.map((command) => command.type)).toEqual(['replace-text', 'replace-text', 'delete-footnote'])
     const result = applyEditTransaction(source, {
       id: 'range', baseRevision: source.revision, commands: plan.commands, selectionBefore: selection, selectionAfter: plan.selectionAfter, inputType: 'insertText', timestamp: 1
     })
     const edited = result.package.readEntry(sectionPath).toString('utf8')
-    expect(edited).toContain(`<hp:t>각주바뀜</hp:t>`)
-    expect(edited).toContain(`<hp:t>${EDIT_SCOPE_TEXTS.footnoteBody}</hp:t>`)
+    expect(edited).toContain(`<hp:t>각주바뀜</hp:t><hp:t/></hp:run>`)
+    expect(edited).not.toContain(EDIT_SCOPE_TEXTS.footnoteBody)
+    // 미주는 그대로다.
+    expect(edited).toContain(`<hp:t>${EDIT_SCOPE_TEXTS.endnoteBody}</hp:t>`)
     expect(applyEditTransaction(result.package, result.inverse!).package.readEntry(sectionPath).toString('utf8')).toBe(original)
   })
 
@@ -180,7 +182,7 @@ describe('머리말·꼬리말 글자 편집', () => {
   const directory = mkdtempSync(join(tmpdir(), 'han-flow-header-text-'))
   afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
-  test('글자만 든 머리말·꼬리말 문단에 HEADER_FOOTER_TEXT context를 열고 그림 문단·머리말 안 표는 읽기 전용으로 둔다', async () => {
+  test('글자만 든 머리말·꼬리말 문단에 HEADER_FOOTER_TEXT context(글자·문단 모양·문단 구조)를 열고 그림 문단·머리말 안 표는 읽기 전용으로 둔다', async () => {
     const source = await HwpxSourcePackage.open(createSyntheticHwpx(directory))
     const document = await decodeViewerDocument(source)
     const contexts = listEditingAnchorContexts(document).filter((context) => context.structure === 'HEADER_FOOTER_TEXT')
@@ -189,9 +191,11 @@ describe('머리말·꼬리말 글자 편집', () => {
     expect(contexts.map((context) => context.sectionPath)).toEqual([sectionPath, sectionPath, sectionPath, sectionPath, 'Contents/section1.xml'])
     const capability = editingCapabilities(document, caret(contexts[0].textNodeId, 1))
     expect(capability.text).toEqual({ available: true })
-    expect(capability.characterStyle).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
-    expect(capability.paragraphStyle).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
-    expect(capability.paragraphStructure).toEqual({ available: false, reason: 'SUBLIST_TEXT' })
+    expect(capability.characterStyle).toEqual({ available: true })
+    expect(capability.paragraphStyle).toEqual({ available: true })
+    expect(capability.paragraphStructure).toEqual({ available: true })
+    // 그림이 든 꼬리말 첫 문단 뒤의 목록 첫 항목은 앞 문단과 병합할 수 없다.
+    expect(contexts[2].structureGate).toEqual({ mergePrevious: 'PARAGRAPH_HAS_OBJECT' })
 
     const tableHeader = withSection(directory, 'header-table', (xml) => xml.replace(
       `<hp:t>${EDIT_SCOPE_TEXTS.header}</hp:t>`,
@@ -227,7 +231,7 @@ describe('머리말·꼬리말 글자 편집', () => {
     expect(applyEditTransaction(applied.package, applied.inverse!).package.readEntry(sectionPath).toString('utf8')).toBe(original)
   })
 
-  test('머리말 문단 안 여러 run 범위 치환은 text command로 처리하고 문단을 넘는 범위·문단 나눔은 거부한다', async () => {
+  test('머리말 문단 안 여러 run 범위 치환은 text command로 처리하고 머리말·꼬리말을 넘는 범위는 거부한다', async () => {
     const path = withSection(directory, 'header-runs', (xml) => xml.replace(
       `<hp:run charPrIDRef="0"><hp:t>${EDIT_SCOPE_TEXTS.header}</hp:t></hp:run>`,
       '<hp:run charPrIDRef="0"><hp:t>앞 run</hp:t></hp:run><hp:run charPrIDRef="0"><hp:t>뒤 run</hp:t></hp:run>'
@@ -247,7 +251,6 @@ describe('머리말·꼬리말 글자 편집', () => {
     // 머리말과 꼬리말을 가로지르는 범위는 문단 범위 계획이 거부한다.
     const footer = anchorOf(source, EDIT_SCOPE_TEXTS.footer)
     expect(() => planReplaceSelection(source, { ...selection, focusTextNodeId: footer.textNodeId, focusOffset: 1 }, '-')).toThrow(HwpxEditConflictError)
-    expect(() => planSplitParagraph(source, caret(first.textNodeId, 1))).toThrow(HwpxEditConflictError)
   })
 
   test('복구 기록 replay 검사는 머리말·각주 글자 command를 받는다', async () => {

@@ -1,6 +1,7 @@
 import { paragraphFootnotes, ViewerDocument, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph } from '../../src/core/document/viewer_document'
 import {
   collectObjectPlaceholders,
+  countIncompleteObjectPlaceholders,
   countObjectPlaceholders,
   formatObjectPlaceholderCounts,
   objectPlaceholderNotice,
@@ -61,9 +62,25 @@ describe('원본 개체 자리 표시 decoder', () => {
       flow: 'inline',
       size: { width: 3825, height: 3311 },
       label: '수식',
-      fallbackText: '{a} over {b}'
+      fallbackText: '{a} over {b}',
+      equation: { math: expect.objectContaining({ tag: 'math' }) }
     })
-    expect(document.diagnostics).toEqual([expect.objectContaining({ source: SECTION, code: 'HWPX_OBJECT_PLACEHOLDER_EQUATION' })])
+    // 해석해 그리는 수식은 "자리 표시로 보여 준다"는 진단을 남기지 않는다.
+    expect(document.diagnostics).toEqual([])
+  })
+
+  test('수식 속성(baseUnit·textColor·baseLine)을 읽고, 해석하지 못한 script는 자리 표시와 진단으로 남긴다', async () => {
+    const document = await decode(paragraph(
+      `<hp:equation baseLine="61" textColor="#C00000" baseUnit="1200"><hp:sz width="3825" height="3311"/>${inlinePos}<hp:script>x^2</hp:script></hp:equation>` +
+      `<hp:equation baseLine="70"><hp:sz width="3825" height="3311"/>${inlinePos}<hp:script>longdiv {3} {12} {4}</hp:script></hp:equation><hp:t/>`
+    ))
+    const [rendered, fallback] = placeholders(document)
+    expect(rendered.equation).toMatchObject({ baseUnit: 1200, color: '#C00000', baseLine: 61 })
+    expect(fallback).toMatchObject({ kind: 'equation', fallbackText: 'longdiv {3} {12} {4}' })
+    expect(fallback.equation).toBeUndefined()
+    expect(countIncompleteObjectPlaceholders(document)).toEqual({ equation: 1 })
+    expect(countObjectPlaceholders(document)).toEqual({ equation: 2 })
+    expect(document.diagnostics).toEqual([expect.objectContaining({ source: SECTION, code: 'HWPX_OBJECT_PLACEHOLDER_EQUATION', message: expect.stringContaining('수식 1개') })])
   })
 
   test('자리 표시는 같은 문단 글자 run의 편집 가능 여부를 바꾸지 않는다', async () => {
@@ -72,7 +89,7 @@ describe('원본 개체 자리 표시 decoder', () => {
     expect(contexts.map((context) => context.text)).toEqual(['앞', '뒤'])
   })
 
-  test('글상자 글은 읽기 전용 문단으로 되살리고, 글 없는 도형은 도형 자리 표시로 둔다', async () => {
+  test('글자만 든 글상자 글은 편집 anchor가 있는 문단으로 되살리고, 글 없는 도형은 도형 자리 표시로 둔다', async () => {
     const document = await decode(
       paragraph(`<hp:rect textWrap="SQUARE"><hp:curSz width="0" height="0"/>${drawText('상자 글')}<hp:sz width="8000" height="3000"/>${inlinePos}</hp:rect><hp:t/>`) +
       paragraph('<hp:ellipse textWrap="IN_FRONT_OF_TEXT"><hp:curSz width="0" height="3165"/><hp:sz width="8000" height="3000"/><hp:pos treatAsChar="0"/></hp:ellipse><hp:t/>') +
@@ -81,12 +98,24 @@ describe('원본 개체 자리 표시 decoder', () => {
     const [box, ellipse, line] = placeholders(document)
     expect(box).toMatchObject({ kind: 'text-box', label: '글상자', flow: 'inline', size: { width: 8000, height: 3000 } })
     expect(box.paragraphs).toHaveLength(1)
-    expect(box.paragraphs![0].content).toEqual([{ type: 'text', text: '상자 글', charStyleId: '0', sourceAnchor: undefined }])
+    expect(box.paragraphs![0].content).toEqual([{ type: 'text', text: '상자 글', charStyleId: '0', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:0` } }])
     // 글 앞 개체는 본문 자리를 차지하지 않는다.
     expect(ellipse).toMatchObject({ kind: 'shape', label: '도형', flow: 'floating', size: { width: 8000, height: 3000 } })
     expect(line).toMatchObject({ kind: 'shape', flow: 'block', size: { width: 4000, height: 1 } })
-    // 글상자 안 hp:t는 편집 anchor가 없다(읽기 전용).
-    expect(listEditingAnchorContexts(document).some((context) => context.text === '상자 글')).toBe(false)
+    // 글자만 든 글상자 hp:t는 TEXT_BOX_TEXT로 편집할 수 있다.
+    expect(listEditingAnchorContexts(document).filter((context) => context.text === '상자 글').map((context) => context.structure)).toEqual(['TEXT_BOX_TEXT'])
+  })
+
+  test('표·수식 같은 개체가 든 글상자는 글상자 전체를 읽기 전용으로 둔다', async () => {
+    const document = await decode(paragraph(
+      `<hp:rect textWrap="SQUARE"><hp:drawText><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>개체 앞 글</hp:t></hp:run></hp:p>` +
+      `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:equation><hp:sz width="10" height="10"/>${inlinePos}<hp:script>x</hp:script></hp:equation><hp:t>수식 옆 글</hp:t></hp:run></hp:p></hp:subList></hp:drawText>` +
+      `<hp:sz width="8000" height="3000"/>${inlinePos}</hp:rect><hp:t/>`
+    ))
+    const [box] = placeholders(document)
+    expect(box.kind).toBe('text-box')
+    expect(box.paragraphs!.flatMap((item) => item.content).filter((item) => item.type === 'text').map((item) => item.type === 'text' && item.sourceAnchor)).toEqual([undefined, undefined])
+    expect(listEditingAnchorContexts(document).some((context) => context.structure === 'TEXT_BOX_TEXT')).toBe(false)
   })
 
   test('묶음 개체는 안쪽 도형의 글을 순서대로 모은다', async () => {
@@ -183,7 +212,9 @@ describe('원본 개체 자리 표시 decoder', () => {
       '<hp:ctrl><hp:fieldBegin type="CLICK_HERE" name="누름"/></hp:ctrl><hp:t>누름</hp:t><hp:ctrl><hp:fieldEnd/></hp:ctrl>'
     ))
     expect(placeholders(document)).toEqual([expect.objectContaining({ kind: 'memo', label: '메모', flow: 'marker', sourcePath: `${SECTION}#hp:fieldBegin:0` })])
-    expect(placeholders(document)[0].paragraphs![0].content[0]).toMatchObject({ text: '메모 1', sourceAnchor: undefined })
+    // 글자만 든 메모 본문은 MEMO_TEXT로 글자를 고칠 수 있다(누름틀 필드 subList는 읽기 전용이다).
+    expect(placeholders(document)[0].paragraphs![0].content[0]).toMatchObject({ text: '메모 1', sourceAnchor: { sectionPath: SECTION, textNodeId: `${SECTION}#hp:t:0` } })
+    expect(listEditingAnchorContexts(document).filter((context) => context.structure === 'MEMO_TEXT').map((context) => context.text)).toEqual(['메모 1'])
   })
 
   test('모르는 run 자식은 알 수 없는 개체로 표시하고 머리말·구역 정의 같은 control은 표시하지 않는다', async () => {

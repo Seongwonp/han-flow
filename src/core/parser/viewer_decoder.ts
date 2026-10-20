@@ -1,6 +1,7 @@
-import { ViewerBorder, ViewerBreakSetting, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerObjectTransform, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerBreakSetting, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerObjectTransform, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell, ViewerEquation } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
-import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
+import { parseEquationScript } from '../document/equation_script'
+import { countIncompleteObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
   ParagraphMetricAncestor,
   ParagraphMetricCandidate,
@@ -106,8 +107,8 @@ export function emptyParagraphCaret(
 
 /**
  * 한 section을 해석하는 동안 공유하는 상태.
- * - `sectionPath`: 편집 anchor를 붙일 section. 글상자·메모 본문처럼 읽기 전용으로 되살리는 문단은 undefined다.
- *   각주·미주 본문과 머리말·꼬리말 문단은 anchor를 붙인다(편집 노출 여부는 capability가 정한다).
+ * - `sectionPath`: 편집 anchor를 붙일 section. 개체가 든 글상자·메모 본문, 필드 subList처럼 읽기 전용으로 되살리는 문단은
+ *   undefined다. 각주·미주 본문, 머리말·꼬리말 문단, 글자만 든 글상자·메모 본문은 anchor를 붙인다(편집 노출 여부는 capability가 정한다).
  * - `sourceSection`: 자리 표시 `sourcePath`에 쓰는 section 경로(읽기 전용 문단에서도 유지한다).
  */
 interface DecodeContext {
@@ -316,7 +317,21 @@ function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
 
 const readOnly = (context: DecodeContext): DecodeContext => ({ ...context, sectionPath: undefined })
 
-/** subList 문단. `editable`이 아니면(글상자·메모 본문) source anchor 없이 읽기 전용으로 해석한다. */
+/** 글자만 든 subList가 가질 수 있는 element. */
+const PLAIN_SUBLIST_ELEMENTS = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
+
+/**
+ * 글상자 글·메모 본문 subList가 글자만 든 문단으로 되어 있는지. 표·그림·도형·수식·각주·필드·제어 같은 개체가 하나라도 있으면
+ * 글상자(메모) 전체를 읽기 전용으로 둔다(편집 anchor를 붙이지 않는다). 편집 코어는 같은 `hp:t` 순번 anchor로 글자를 고친다.
+ */
+export function isPlainTextSubList(subList: OrderedXmlNode | undefined): boolean {
+  return Boolean(subList) && walkOrderedXml(subList!.children).every((node) => node.name === '#text' || PLAIN_SUBLIST_ELEMENTS.has(node.name))
+}
+
+/**
+ * subList 문단. `editable`이 아니면 source anchor 없이 읽기 전용으로 해석한다. 각주·미주와 글자만 든 글상자·메모 본문은
+ * 편집 anchor를 붙인다(읽기 전용 문단 안의 subList는 바깥 context가 이미 읽기 전용이라 계속 읽기 전용이다).
+ */
 function subListParagraphs(
   subList: OrderedXmlNode | undefined,
   id: string,
@@ -332,7 +347,10 @@ function subListParagraphs(
 /** 도형 글(`hp:drawText/hp:subList`) 문단. 묶음(`hp:container`)은 안쪽 도형의 글을 순서대로 모은다. */
 function drawTextParagraphs(node: OrderedXmlNode, id: string, context: DecodeContext): ViewerParagraph[] {
   const drawText = child(node, 'hp:drawText')
-  if (drawText) return subListParagraphs(child(drawText, 'hp:subList'), id, context)
+  if (drawText) {
+    const subList = child(drawText, 'hp:subList')
+    return subListParagraphs(subList, id, context, isPlainTextSubList(subList))
+  }
   if (node.name !== 'hp:container') return []
   return node.children
     .filter((item) => SHAPE_ELEMENTS.has(item.name))
@@ -388,11 +406,28 @@ function noteMarker(note: OrderedXmlNode, fallbackNumber: number): string {
   return `${format?.attributes.prefixChar ?? ''}${number}${suffix}`
 }
 
+/** 수식 script를 MathML 나무로 해석하고 글자 크기·색·기준선을 읽는다. 해석하지 못하면 undefined(script 글자 상자). */
+function decodeEquation(node: OrderedXmlNode, script: string): ViewerEquation | undefined {
+  const parsed = parseEquationScript(script)
+  if (!parsed.ok) return undefined
+  const baseUnit = Number(node.attributes.baseUnit)
+  const baseLine = Number(node.attributes.baseLine)
+  const color = node.attributes.textColor
+  return {
+    math: parsed.math,
+    ...(Number.isFinite(baseUnit) && baseUnit >= 100 && baseUnit <= 100000 ? { baseUnit } : {}),
+    ...(/^#[0-9a-f]{6}$/i.test(color ?? '') ? { color } : {}),
+    ...(Number.isFinite(baseLine) && baseLine >= 0 && baseLine <= 100 ? { baseLine } : {})
+  }
+}
+
 /** run 안 개체 하나를 자리 표시로 바꾼다. 개체가 아니면 undefined. */
 function decodeObject(node: OrderedXmlNode, id: string, context: DecodeContext): ViewerObjectPlaceholder | undefined {
   if (node.name === 'hp:equation') {
     const script = child(node, 'hp:script')
-    return placeholder(node, context, 'equation', script && textOf(script).trim() ? { fallbackText: textOf(script).trim() } : {})
+    const text = script ? textOf(script).trim() : ''
+    const equation = text ? decodeEquation(node, text) : undefined
+    return placeholder(node, context, 'equation', { ...(text ? { fallbackText: text } : {}), ...(equation ? { equation } : {}) })
   }
   if (node.name === 'hp:chart') return placeholder(node, context, 'chart')
   if (node.name === 'hp:ole') {
@@ -460,7 +495,8 @@ function decodeControl(node: OrderedXmlNode, id: string, context: DecodeContext)
       sourcePath: objectSourcePath(node, context),
       flow: 'marker',
       label: OBJECT_KIND_LABELS[kind],
-      paragraphs: subListParagraphs(subList, id, context)
+      // 메모 본문은 글자만 든 경우 글자를 고칠 수 있게 anchor를 붙인다. 그 밖의 필드 subList는 읽기 전용이다.
+      paragraphs: subListParagraphs(subList, id, context, kind === 'memo' && isPlainTextSubList(subList))
     }
   }
   return undefined
@@ -1001,7 +1037,7 @@ function noteListBlocks(notes: ViewerNote[], id: string): ViewerParagraph[] {
 
 /** 구역마다 자리 표시 종류별 개수를 진단으로 남긴다. */
 function objectPlaceholderDiagnostics(section: ViewerSection, source: string): ViewerDiagnostic[] {
-  const counts = countObjectPlaceholders({ sections: [section] })
+  const counts = countIncompleteObjectPlaceholders({ sections: [section] })
   return OBJECT_KIND_ORDER.filter((kind) => counts[kind]).map((kind) => ({
     source,
     code: `HWPX_OBJECT_PLACEHOLDER_${kind.toUpperCase().replace(/-/g, '_')}`,

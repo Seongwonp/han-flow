@@ -13,6 +13,33 @@
 - 줄 경계는 pagination이 나누려 한 문단만 재고(`wantedLineBreaks`·`measureWantedLineBreaks`) 측정 style 표지별 cache로 글자가 그대로인 문단은 다시 찾지 않으며, 편집 중 앞 조각은 원본 문단과 같은 key·같은 요소를 잘라 그려 입력 칸을 다시 만들지 않음. 되풀이 머리글이 있는 표의 쪽보다 높은 선언 셀 높이는 (쪽 본문 - 머리글)의 90%로 줄임(`cellHeightLimit`). 꼬리말은 용지 아래 끝에 붙인 최소 높이 상자라 긴 꼬리말이 용지 밖으로 나가지 않음
 - 사용자 문서 5종 verify_app·verify_pdf·편집 저장 통과, 쪽 수(2·3·1·1·2)·화면/PDF 글자 수 변경 없음. doc5-d04 1쪽 쪽 번호가 로고 아래 꼬리말 자리로 내려가 겹치지 않고(`pageDecorations` 겹침 없음), doc2 1쪽 빨간 타원이 계속 작성자 줄과 그 아래 줄을 감쌈. 공개 합성 large-progressive는 줄 높이(10pt 160% 줄이 16px 바탕보다 작아짐)·줄 단위 쪽 나눔으로 15,004 → 12,414쪽. 한 글자 입력 input→DOM p50/p95(같은 컨테이너 번갈아): large-progressive 변경 전 40.8/78.8ms → 변경 뒤 53.7/105.9ms(이 문서는 쪽 본문이 줄 4개 남짓이라 모든 쪽 끝에서 문단이 나뉘어 입력으로 줄이 늘 때마다 뒤 쪽이 모두 다시 흐름), 실제 문서 doc5-d04 26.9/38.7 → 27.1/36.3ms(변화 없음)
 
+### 입력 직후 창 닫기·앱 종료
+
+- 깨끗한 문서에 한글을 입력하고 약 450ms(음절 묶음 대기) 안에 창을 닫거나 앱을 끝내면 main이 깨끗하다고 보고 저장 확인 없이 닫아 마지막 글자를 잃던 문제를 고침. 닫기 순서가 dirty를 보기 전에 renderer에 남은 입력 반영을 요청하고(`editing:flushInput`, `createRendererRequest` 1초 제한, 보낸 창·같은 요청 id의 답만 받음) 답이 온 뒤 dirty를 다시 봄(`window_close.ts`). renderer는 `runAfterInput`으로 남은 글자 commit 뒤 답함. 시간 초과·renderer 비정상 종료면 그때 상태로 이어 가고 경고를 남김. dirty면 반영한 commit까지 복구 기록을 내린 뒤 확인을 띄움
+- 단위 test(`window_close`: 가짜 renderer 반영 → 확인 표시·취소·버리기·시간 초과·비정상 종료, renderer 반영 응답 순서)와 verify:matrix 입력 직후 종료 E2E(조합 직후 종료 → 반영 전 깨끗·반영 뒤 dirty → [다른 이름으로 저장] 저장본에 글자 있음, [저장하지 않음] 뒤 복구 기록 0개)
+
+### HWPX 수식 조판(MathML)
+
+- 한컴 수식 script(`hp:equation/hp:script`)를 해석해 MathML로 그림: `over`·`atop`·`choose`, `sqrt`·`root … of`, `^`·`_`·`sup`·`sub`, `left … right`, `matrix`·`pmatrix`·`bmatrix`·`dmatrix`, `cases`, `pile`·`lpile`·`rpile`, `eqalign`, `sum`·`prod`·`int`·`lim`의 `from`·`to`, 그리스 문자·기호·화살표, `rm`·`it`·`bold`, `~`·`` ` ``, 따옴표 글, `COLOR`. 기호 표·토큰 규칙은 rhwp(MIT) 참고(THIRD_PARTY_NOTICES.md)
+- 선언 상자(`hp:sz`)에 맞춰 배율을 정하고 `baseUnit`·`textColor`·`baseLine`을 씀. 근호·늘인 괄호는 글꼴 MATH 표 없이 글자를 CSS transform으로 늘여 화면과 PDF 추출 글자가 같음(pdftotext로 수식 기호 확인)
+- 해석하지 못한 수식(`ladder`·`longdiv` 등, 짝 안 맞는 괄호)만 전처럼 script 글자 상자로 남고, 그려 낸 수식은 "화면에 완전히 표시되지 않는 개체" 배너·PDF 확인·진단 개수에서 빠짐(원문 개체 census에는 그대로 셈)
+- 해석 단위 test·renderer test, 수식 합성 fixture(`createEquationHwpx`)와 verify:matrix 검사(그린 수식 수·배너·PDF 기호), `ext-hwpxlib-equation`은 배너 없음·corpus manifest 진단 0개로 기대값 변경
+
+### 입력 직후 실행 취소·편집 command
+
+- 한글 조합 직후 누른 첫 [실행 취소]·`Ctrl+Z`(macOS `⌘Z`)가 무시되던 문제를 고침. 연속 음절은 compositionend 뒤 약 450ms 입력 칸에 묶여 있다가 commit하는데, 그동안 renderer가 조합 중으로 보고 실행 취소를 버렸고 commit 응답을 기다리는 동안에도 버튼을 끄거나 command를 버렸음. 이제 입력 칸이 남은 글자를 내보내는 손잡이를 등록하고, 실행 취소·다시 실행·글자/문단/셀 모양·표 행·열·병합·각주 넣기/지우기·다른 이름으로 저장·다른 문서 열기는 남은 글자를 먼저 commit하고 그 응답 뒤에 차례로 돎(`runAfterInput`). IME가 아직 조합 중이면 조합을 확정한 뒤 반영. 본문·표 셀·각주·머리말·꼬리말·글상자·메모 입력 칸이 같은 경로
+- 같은 원인으로 버려지던 입력 직후 Enter 문단 나눔·경계 Backspace 병합·여러 문단 범위 입력·브라우저 기본 undo도 고침(남은 글자 commit을 먼저 보내고 바로 보냄, 빈 문단 첫 입력이면 그 결과 caret에서). 붙여넣기·줄바꿈은 남은 조합 글자 뒤에 보내 순서를 지킴. 깨끗한 문서에 막 입력해 commit 결과가 오기 전에도 [실행 취소]·[다른 이름으로 저장]을 켜고 저장본에 마지막 글자까지 담음
+- verify:matrix 각주 E2E의 [실행 취소] 재시도를 없애고 입력 반영 전에 한 번 누른 실행 취소가 바로 되돌리는지 검사(`undoClickedBeforeCommit`). 모든 편집 E2E에 한 음절 조합 직후 `Ctrl+Z` 한 번으로 그 글자만 되돌리는 검사(`immediateUndoMatches`)를 추가. 단위 test(`editing_input_sequencing`·`composition_input`의 `flushPendingComposition`·리본 실행 취소/저장 활성)
+
+### 편집 범위: 글상자·메모 글자, subList 모양·문단 나눔, 각주 만들기·지우기
+
+- 글자만 든 글상자(도형 글 `hp:drawText`)와 메모 본문(`hp:fieldBegin type="MEMO"`)의 글자 입력·삭제·치환. decoder가 글자만 든 subList에 section `hp:t` 순번 anchor를 붙이고(표·그림·도형·수식·각주·필드가 하나라도 든 글상자·메모는 전체 읽기 전용) capability가 `TEXT_BOX_TEXT`·`MEMO_TEXT`로 연다. 원본 위치 글상자는 편집 중 그 자리에서 입력 칸이 되고(글 앞·뒤 글상자도 편집 중에는 누를 수 있음), 메모는 줄 안 "메모: …" 자리에 입력 칸을 둔다
+- 각주·미주·머리말·꼬리말·글상자 문단의 글자·문단 모양과 Enter 분할·경계 병합(`SUBLIST_TEXT` 차단은 메모 본문에만 남음). 한/글 저장본처럼 번호(`hp:autoNum`)와 글자가 한 run에 든 각주 첫 문단의 글자 모양은 번호를 원래 모양 run에 남기고 글자만 새 run으로 나눔(실행 취소는 원래 run bytes 복원). 문단 구조 규칙은 본문과 같아 번호가 든 각주 첫 문단은 Enter·병합을 막음
+- 리본 `편집` 탭 `각주` group: [각주 넣기]는 본문 문단 글자 사이 caret에 한/글 모양 각주(번호 control + 빈 본문)를 넣고 새 각주로 caret을 옮김. 번호는 앞 각주 + 1, 뒤 각주 `number`·`autoNum num`을 올림(이어 매기기면 뒤 구역까지). [각주 지우기]와 번호 표시를 품은 본문 범위 삭제는 각주를 통째로 지우고 뒤 번호를 내림. 실행 취소는 본문 문단 원문과 번호 attribute를 되돌려 원래 bytes를 복원하고, `instId`까지 package 상태로 정해 다시 실행·복구 replay가 같은 bytes를 만듦. 쪽마다 새로 매기기(`ON_PAGE`) 구역·표 셀·글상자·머리말 안 각주 넣기와 미주는 지원하지 않음
+- 저장 정책에 `note-structure`(`NOTE_STRUCTURE_CHANGED`, 재열기 권장)를 더함. 복구 기록 형식 version 4: `insert-footnote`·`delete-footnote`는 version 4 기록에서만 받고(replay 검사는 실제 `#hp:t:N` anchor·offset, `#hp:footNote:K` 모양), version 1~3 기록은 그대로 읽음
+- golden family 3개(`object-text`·`sublist-structure`·`footnote`)와 단위 test(`object_text`·`footnote_patch`·subList 복구 기록 replay), renderer test를 추가하고 기존 style·paragraph golden은 위치 거부였던 subList 표본만 바뀜. verify:matrix에 subList 편집 합성 fixture(`createSublistEditHwpx`)의 글상자·메모 입력, 각주·글상자 글자·문단 모양 probe, 각주 넣기→입력→실행 취소·다시 실행→지우기→실행 취소를 각각 Save As→재열기까지 확인하는 검사를 추가
+- 편집 coverage 측정이 쪽 아래 각주 본문(번호 표시 자리 표시 안)을 anchor 없음으로 세던 문제를 고침. 외부 한/글 28종: anchor 96.3% → 99.2%, text 편집 96.0% → 98.9%, 글자 가중 94.3% → 98.9%, 글자 모양 77.7% → 81.2%, 문단 모양 95.0% → 98.7%, 문단 나눔 270 → 281/399(불일치 0), 글자 칸 없는 문단 45/46 → 46/46
+
 ### 표 셀 선언 높이·글 옆 배치·칸 안 원본 위치 개체
 
 - HWPX 표 셀을 한/글처럼 선언 높이(`hp:cellSz height`, 안쪽 여백 포함)를 최소 높이로 그림. 예전 `td`의 `min-height`는 표 칸에 듣지 않아 내용 높이로 그려졌음. `td` `height` + `border-box`(행 최소 높이)로 바꾸고 내용이 길면 늘어남. 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄이고 쪽을 넘어 나뉜 조각 셀은 내용 높이(`cellMinimumHeight`). 사용자 문서 doc2 1쪽의 용지 기준 빨간 타원이 표 아래 빈 곳이 아니라 표 안 작성자 줄을 감쌈(PDF 그림 비교)

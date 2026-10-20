@@ -56,12 +56,12 @@ async function verify(fixture, delayMs, expectedError = false, environment = {})
   return JSON.parse(resultLine.slice('HAN_FLOW_APP_VERIFY '.length))
 }
 
-async function verifyPdf(fixture) {
+async function verifyPdf(fixture, environment = {}) {
   let standardOutput = ''
   let standardError = ''
   const exitCode = await new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, [resolve(root, 'scripts/verify_pdf.mjs'), fixture, appBinary], {
-      env: process.env,
+      env: { ...process.env, ...environment },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     // UTF-8 글자가 chunk 경계에서 잘려 U+FFFD로 바뀌지 않도록 stream decoder로 읽는다.
@@ -93,6 +93,10 @@ const OBJECT_FIXTURE_IDS = [
   'ext-hwpxlib-buttons',
   'ext-hwpxlib-ole'
 ]
+// 수식 합성 fixture(createEquationHwpx): 해석한 수식은 MathML로 그려(renderedEquations) 안내 배너 개수에서 빠지고, 그리지 못한
+// 수식(EQUATION_FIXTURE_FALLBACKS)만 배너에 남는다. 화면과 PDF 글자 수가 같고 PDF에서 수식 기호·글자가 추출돼야 한다.
+// ext-hwpxlib-equation의 수식 1개도 그려 내므로 그 fixture에는 배너가 없어야 한다.
+const EQUATION_PDF_TEXT = ['∑', '∫', '√', '∞', 'α', 'β', '≠', '≤', '±', '×', 'θ', 'lim', 'sin', 'longdiv']
 // 원문 개체 종류가 matrix에 하나 이상 있어야 하는 종류.
 const REQUIRED_OBJECT_KINDS = ['equation', 'text-box', 'footnote', 'endnote', 'memo', 'form-control', 'ole']
 
@@ -110,6 +114,9 @@ const LAYOUT_STRESS_FIXTURES = [
   { id: 'footnote-long', create: 'createLongFootnoteHwpx' },
   { id: 'inline-objects', create: 'createInlineObjectHwpx' }
 ]
+// 입력 직후 종료 E2E에서 조합 입력할 글자(문서에 없는 음절).
+const CLOSE_AFTER_TYPING_TEXT = '닫뾱'
+
 // 긴 각주 편집 E2E: 쪽을 넘어 나뉜 첫 각주의 앞 조각(원본 문단 전체를 잘라 그린 입력 칸)에 입력하고 저장한 뒤 다시 연다.
 const LONG_FOOTNOTE_EDIT_TEXT = '긴각주고침'
 
@@ -125,6 +132,19 @@ const EDIT_SCOPE_CASES = [
   { target: 'footer', text: '꼬리말고침' }
 ]
 const DECORATION_TARGETS = ['header', 'footer']
+
+// subList 편집 E2E(createSublistEditHwpx, 1쪽): 글자만 든 글상자 글·메모 본문에 입력하고, 번호와 같은 run의 각주 글자·글상자 글에는
+// 글자·문단 모양 probe(부분 굵게 run 분할·정렬·크기·색·줄 간격·문단 간격·들여쓰기와 실행 취소·다시 실행)까지 한 뒤 Save As하고
+// 저장본을 다시 열어 글자와 글상자·메모·각주 개수를 확인한다. 표가 든 글상자는 읽기 전용이라 입력 칸이 없어야 한다.
+// footnote는 [각주 넣기]·[각주 지우기]와 그 실행 취소·다시 실행을 거친 뒤 저장해 각주가 하나 늘었는지 본다.
+const SUBLIST_EDIT_CASES = [
+  { id: 'text-box', target: 'text-box', text: '상자고침' },
+  { id: 'memo', target: 'memo', text: '메모고침' },
+  { id: 'note-style', target: 'note', text: '각주모양', style: true },
+  { id: 'text-box-style', target: 'text-box', text: '상자모양', style: true },
+  // 제목 caret에 각주를 넣고(기존 각주 앞이라 새 각주가 1번, 기존 각주가 2번) 입력·되돌리기·지우기·되돌리기 뒤 저장한다.
+  { id: 'footnote', target: 'footnote', text: '새각주' }
+]
 
 // 원본 위치 개체 E2E(createFloatingObjectHwpx): 화면 개체 상자(용지 기준 CSS px)가 generator의 기대값(FLOATING_OBJECT_EXPECTED,
 // HWPUNIT)과 이 오차 안에서 같아야 하고, 자리 차지·글 옆 배치 개체와 본문 글이 겹치지 않아야 한다(verify_app이 실패로 본다).
@@ -329,6 +349,20 @@ try {
     HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION: 'discard'
   })
 
+  // 입력 직후 종료: 깨끗한 편집 문서에 음절을 조합 입력하고 commit 전(음절 묶음 대기 중)에 바로 앱을 끝낸다. 닫기 순서가
+  // renderer에 남은 입력을 먼저 반영하게 해 dirty 확인을 거쳐야 한다. [다른 이름으로 저장]이면 저장본을 다시 열어 마지막 글자까지
+  // 있는지, [저장하지 않음]이면 확인을 거친 뒤 복구 기록 없이 끝났는지 본다.
+  const closeAfterTypingResults = []
+  for (const action of ['save', 'discard']) {
+    closeAfterTypingResults.push({
+      action,
+      ...await verify(fixtures.find(({ id }) => id === 'hanging-indent').path, 500, false, {
+        HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING: CLOSE_AFTER_TYPING_TEXT,
+        HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION: action
+      })
+    })
+  }
+
   // 아주 긴 한글 파일 이름: 상단 막대는 한 줄 말줄임, 버튼·리본 control은 배율 1.25·1.5에서도 줄바꿈하지 않는다.
   const longNamePath = join(directory, `${LONG_KOREAN_FILE_STEM}.hwpx`)
   await copyFile(fixtures.find(({ id }) => id === 'hanging-indent').path, longNamePath)
@@ -354,6 +388,12 @@ try {
     })
     pdfResults.push({ fixtureId: id, ...await verifyPdf(path) })
   }
+
+  const equationPath = generator.createEquationHwpx(directory, 'han-flow-equations.hwpx')
+  const equationCount = generator.EQUATION_FIXTURE_SCRIPTS.length + 1
+  const equationView = await verify(equationPath, 500, false, { HAN_FLOW_VERIFY_EXPECT_PLACEHOLDERS: JSON.stringify({ equation: equationCount }) })
+  pdfResults.push({ fixtureId: 'equations', ...await verifyPdf(equationPath, { HAN_FLOW_PDF_REQUIRED_TEXT: JSON.stringify(EQUATION_PDF_TEXT) }) })
+  const publicEquation = objectResults.find(({ fixtureId }) => fixtureId === 'ext-hwpxlib-equation')
 
   const stressResults = []
   for (const stress of LAYOUT_STRESS_FIXTURES) {
@@ -405,6 +445,19 @@ try {
     })
   }
   const editScope = (target) => editScopeResults.find((result) => result.target === target)
+  const sublistEditPath = generator.createSublistEditHwpx(directory, 'han-flow-sublist-edit.hwpx')
+  const sublistEditResults = []
+  for (const scope of SUBLIST_EDIT_CASES) {
+    sublistEditResults.push({
+      id: scope.id,
+      ...await verify(sublistEditPath, 500, false, {
+        HAN_FLOW_VERIFY_EDIT_TEXT: scope.text,
+        HAN_FLOW_VERIFY_EDIT_TARGET: scope.target,
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1',
+        ...(scope.style ? { HAN_FLOW_VERIFY_STYLE: '1' } : {})
+      })
+    })
+  }
   const longFootnoteEdit = await verify(generator.createLongFootnoteHwpx(directory, 'han-flow-footnote-long-edit.hwpx'), 500, false, {
     HAN_FLOW_VERIFY_EDIT_TEXT: LONG_FOOTNOTE_EDIT_TEXT,
     HAN_FLOW_VERIFY_EDIT_TARGET: 'note',
@@ -422,12 +475,24 @@ try {
     ...results.filter(({ passed }) => !passed).map(({ fixtureId }) => `${fixtureId}: verify 실패`),
     crashRecoveryResult.passed ? undefined : `baseline 강제 종료 복구 실패(${crashRecoveryResult.failures.join(', ')})`,
     dirtyDiscardResult.passed ? undefined : `hanging-indent [저장하지 않음] 종료 실패(${dirtyDiscardResult.failures.join(', ')})`,
+    ...closeAfterTypingResults.filter(({ passed }) => !passed)
+      .map(({ action, failures: closeFailures }) => `hanging-indent 입력 직후 종료(${action}) 실패(${closeFailures.join(', ')})`),
     ...objectResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: objectFailures }) => `${fixtureId}: 자리 표시 검증 실패(${objectFailures.join(', ')})`),
     ...objectResults.filter(({ recoveredObjectCharacters }) => !(recoveredObjectCharacters > 0)).map(({ fixtureId }) => `${fixtureId}: 수식 script·글상자 글·각주·메모·단추 이름·개체 설명이 화면에 없음`),
     ...objectResults.filter(({ sourceObjectComparison }) => sourceObjectComparison !== 'compared').map(({ fixtureId, sourceObjectComparison }) => `${fixtureId}: 원문 개체 비교 안 함(${sourceObjectComparison})`),
     ...REQUIRED_OBJECT_KINDS
       .filter((kind) => !objectResults.some(({ sourceObjects }) => sourceObjects?.[kind] > 0))
       .map((kind) => `개체 matrix에 ${kind} 원문 fixture가 없음`),
+    equationView.passed ? undefined : `equations: ${equationView.failures.join(', ')}`,
+    equationView.renderedEquations === equationCount - generator.EQUATION_FIXTURE_FALLBACKS
+      ? undefined
+      : `equations: MathML로 그린 수식 ${equationView.renderedEquations}개(기대 ${equationCount - generator.EQUATION_FIXTURE_FALLBACKS})`,
+    equationView.objectNotice?.includes(`(수식 ${generator.EQUATION_FIXTURE_FALLBACKS})`)
+      ? undefined
+      : `equations: 안내 배너가 그리지 못한 수식만 세지 않음(${equationView.objectNotice})`,
+    publicEquation?.renderedEquations === 1 && !publicEquation.objectNotice
+      ? undefined
+      : `ext-hwpxlib-equation: 수식을 MathML로 그리지 않았거나 안내 배너가 남음(${publicEquation?.renderedEquations}, ${publicEquation?.objectNotice})`,
     ...stressResults.filter(({ passed }) => !passed).map(({ fixtureId, failures: stressFailures }) => `${fixtureId}: 쪽 나눔 검증 실패(${stressFailures.join(', ')})`),
     stress('long-objects')?.fittedObjects?.declared >= 2 && stress('long-objects')?.fittedObjects?.body >= 1
       ? undefined
@@ -505,6 +570,17 @@ try {
       editScope(target)?.saveAs?.reopenedPlaceholderCounts?.footnote === 1 && editScope(target)?.saveAs?.reopenedPlaceholderCounts?.endnote === 1
         ? undefined
         : `edit-scope ${target}: 저장본의 각주·미주 번호 표시가 1개씩이 아님`),
+    ...sublistEditResults.filter(({ passed }) => !passed).map(({ id, failures: sublistFailures }) => `sublist-edit ${id}: ${sublistFailures.join(', ')}`),
+    ...sublistEditResults.filter(({ saveAs }) => !saveAs?.reopenedTextPresent).map(({ id }) => `sublist-edit ${id}: 저장본에 입력 글자가 없음`),
+    ...sublistEditResults
+      .filter(({ id, saveAs }) => {
+        const counts = saveAs?.reopenedPlaceholderCounts
+        return !(counts?.['text-box'] === 3 && counts?.memo === 1 && counts?.footnote === (id === 'footnote' ? 2 : 1))
+      })
+      .map(({ id, saveAs }) => `sublist-edit ${id}: 저장본의 글상자·메모·각주 수가 다름(${JSON.stringify(saveAs?.reopenedPlaceholderCounts)})`),
+    ...sublistEditResults
+      .filter(({ editingProbe }) => editingProbe?.editableCount !== undefined && editingProbe.editableCount < 1)
+      .map(({ id }) => `sublist-edit ${id}: 입력 칸이 없음`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -540,9 +616,17 @@ try {
     fixtures: results.map(({ fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts }) => ({
       fixtureId, name, totalPages, mountedPages, imageCount, overflowPages, columnCounts, columnTextCounts
     })),
-    objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice }) => ({
-      fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, objectNotice
+    objects: objectResults.map(({ fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, renderedEquations, objectNotice }) => ({
+      fixtureId, passed, totalPages, sourceObjects, placeholderCounts, objectShortfalls, recoveredObjectCharacters, renderedEquations, objectNotice
     })),
+    equations: {
+      passed: equationView.passed,
+      totalPages: equationView.totalPages,
+      placeholderCounts: equationView.placeholderCounts,
+      renderedEquations: equationView.renderedEquations,
+      objectNotice: equationView.objectNotice,
+      pageTextCounts: equationView.pageTextCounts
+    },
     layoutStress: stressResults.map(({ fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement }) => ({
       fixtureId, passed, totalPages, overflowPages, placeholderCounts, sourceObjects, fittedObjects, pageTextCounts, footnotePlacement
     })),
@@ -585,8 +669,23 @@ try {
       reopenedTextPageCount: saveAs?.reopenedTextPageCount,
       reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
     })),
+    sublistEdit: sublistEditResults.map(({ id, passed, totalPages, editingProbe, saveAs }) => ({
+      id,
+      passed,
+      totalPages,
+      objectKind: editingProbe?.objectKind,
+      noteKind: editingProbe?.noteKind,
+      editableCount: editingProbe?.editableCount,
+      styleProbe: editingProbe?.styleProbe,
+      footnoteMarkers: editingProbe?.insertedMarkers,
+      reopenedTextPresent: saveAs?.reopenedTextPresent,
+      reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
+    })),
     crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },
     dirtyDiscard: { passed: dirtyDiscardResult.passed, journalsAfterQuit: dirtyDiscardResult.journalsAfterQuit, ...dirtyDiscardResult.dirtyClose },
+    closeAfterTyping: closeAfterTypingResults.map(({ action, passed, journalsAfterQuit, dirtyClose }) => ({
+      action, passed, journalsAfterQuit, ...dirtyClose
+    })),
     longFileName: longNameResults.map(({ scale, passed, toolbarLayout }) => ({ scale, passed, toolbarLayout })),
     pdf: pdfResults.map(({ fixtureId, passed, screenPageTextCounts, pageTextCounts, pdfTitle }) => ({
       fixtureId, passed, screenPageTextCounts, pdfPageTextCounts: pageTextCounts, pdfTitle

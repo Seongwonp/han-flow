@@ -15,14 +15,18 @@ const editText = process.env.HAN_FLOW_VERIFY_EDIT_TEXT
 const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 // 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
-// column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단(또는 표 셀).
-const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'line-split']
+// column(2단 영역 둘째 단의 본문 문단), line-split(쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각), text-box(글자만 든 글상자 글), memo(메모 본문),
+// footnote(본문 caret에 각주 넣기 → 새 각주에 입력 → 실행 취소·다시 실행 → 각주 지우기·실행 취소). 없으면 본문 문단(또는 표 셀).
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'line-split', 'text-box', 'memo', 'footnote']
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
 const editSave = process.env.HAN_FLOW_VERIFY_EDIT_SAVE === '1'
 const configuredSaveDestination = process.env.HAN_FLOW_VERIFY_SAVE_DESTINATION
 const closeDirtyAction = process.env.HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION
+// 입력 직후 종료: 깨끗한 편집 문서의 문단 끝에 이 글자를 조합 입력하고 commit 전(음절 묶음 대기 중)에 바로 앱을 끝낸다.
+// 닫기 순서가 남은 입력을 먼저 반영해 dirty 확인(HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION)을 거쳐야 한다. save면 저장본에 글자가 있어야 한다.
+const closeAfterTyping = process.env.HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING
 // 편집 뒤 앱을 SIGKILL로 강제 종료하고 같은 user-data로 다시 띄워 복구 기록에서 편집을 되살린 뒤 Save As·재열기까지 확인한다.
 const crashRecovery = process.env.HAN_FLOW_VERIFY_CRASH_RECOVERY === '1'
 // 복구 기록 flush 간격(0.5초)보다 넉넉히 기다린 뒤 강제 종료한다.
@@ -52,6 +56,11 @@ if (editTarget && !EDIT_TARGETS.includes(editTarget)) {
 
 if (crashRecovery && !editText) {
   console.error('HAN_FLOW_VERIFY_CRASH_RECOVERY는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 합니다.')
+  process.exit(1)
+}
+
+if (closeAfterTyping && (!closeDirtyAction || editText || crashRecovery || editSave)) {
+  console.error('HAN_FLOW_VERIFY_CLOSE_AFTER_TYPING는 HAN_FLOW_VERIFY_CLOSE_DIRTY_ACTION과 함께, 다른 편집 probe 없이 실행해야 합니다.')
   process.exit(1)
 }
 
@@ -89,6 +98,12 @@ const OBJECT_CENSUS_TIMEOUT_MS = Number(process.env.HAN_FLOW_VERIFY_OBJECT_CENSU
 /** 원문 개체 비교가 필요한 실행(HWPX, 열기 오류를 기대하지 않음)인지. 쪽 virtualization 문서면 앱이 쪽을 넘기며 센다. */
 function objectCensusRequested(path) {
   return /\.hwpx$/iu.test(path) && !expectedError
+}
+
+/** 기대 자리 표시 가운데 MathML로 그려 내지 못한 개체 수(모든 쪽이 mount된 작은 fixture에서 쓴다). */
+function incompletePlaceholders(expected, state) {
+  const total = Object.values(expected).reduce((sum, count) => sum + count, 0)
+  return total - (state.renderedEquations ?? 0)
 }
 
 function placeholderKey(counts = {}) {
@@ -146,6 +161,7 @@ async function launch(output, userData, options = {}) {
         ...(interactive && tableStructureProbe ? { HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE: '1' } : {}),
         ...(interactive && options.saveDestination ? { HAN_FLOW_EDIT_SAVE_PATH: options.saveDestination } : {}),
         ...(interactive && options.autoSave ? { HAN_FLOW_VISUAL_AUTO_SAVE: '1' } : {}),
+        ...(interactive && closeAfterTyping ? { HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING: closeAfterTyping } : {}),
         ...(options.environment ?? {})
       },
       stdio: ['ignore', 'ignore', 'pipe']
@@ -189,6 +205,11 @@ async function launch(output, userData, options = {}) {
     })
   })
   const state = JSON.parse(await readFile(output, 'utf8'))
+  // 입력 직후 종료 E2E: main이 닫기 순서에서 남긴 반영 전후 dirty(`HAN_FLOW_E2E_CLOSE {...}`).
+  const closeReports = standardError.split('\n')
+    .filter((line) => line.startsWith('HAN_FLOW_E2E_CLOSE '))
+    .map((line) => JSON.parse(line.slice('HAN_FLOW_E2E_CLOSE '.length)))
+  if (closeReports.length) state.closeReports = closeReports
   return crash ? { ...state, crashReport } : state
 }
 
@@ -230,7 +251,7 @@ try {
     : undefined
   const journalsAfterRecovery = crashRecovery ? await recoveryJournals(join(directory, 'user-data')) : undefined
   // 정상 종료(저장 또는 [저장하지 않음]) 뒤에는 복구 기록이 남으면 안 된다. 남으면 다음 실행이 버린 편집을 복구하겠느냐고 묻는다.
-  const journalsAfterQuit = !crashRecovery && (editText || tableStructureProbe)
+  const journalsAfterQuit = !crashRecovery && (editText || tableStructureProbe || closeAfterTyping)
     ? await recoveryJournals(join(directory, 'user-data'))
     : undefined
   const sourceUnchanged = verifiesSavedFile
@@ -249,7 +270,9 @@ try {
           fixture: saveDestination,
           interactive: false,
           // 강제 종료 복구와 편집 대상(표 앞·뒤·각주·머리말) 저장은 저장본을 다시 열어 입력 글자가 화면에 있는지 본다.
-          environment: crashRecovery || (editTarget && editText) ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText } : undefined
+          environment: crashRecovery || (editTarget && editText)
+            ? { HAN_FLOW_VISUAL_EXPECT_TEXT: editText }
+            : closeAfterTyping ? { HAN_FLOW_VISUAL_EXPECT_TEXT: closeAfterTyping } : undefined
         }
       )
     } catch {
@@ -298,8 +321,13 @@ try {
     expectedPlaceholders && placeholderKey(expectedPlaceholders) !== placeholderKey(state.placeholderCounts)
       ? `자리 표시 불일치: 기대 ${placeholderKey(expectedPlaceholders)}, 실제 ${placeholderKey(state.placeholderCounts)}`
       : undefined,
-    expectedPlaceholders && Object.keys(expectedPlaceholders).length && !state.objectNotice
+    // MathML로 그려 낸 수식은 안내 배너("화면에 완전히 표시되지 않는 개체")에서 빠진다. 그 밖의 자리 표시가 있으면 배너가 있어야 하고,
+    // 그려 낸 수식만 있으면 배너가 없어야 한다.
+    expectedPlaceholders && incompletePlaceholders(expectedPlaceholders, state) > 0 && !state.objectNotice
       ? '자리 표시 개체 안내 배너가 표시되지 않음'
+      : undefined,
+    expectedPlaceholders && Object.keys(expectedPlaceholders).length && incompletePlaceholders(expectedPlaceholders, state) <= 0 && state.objectNotice
+      ? `그려 낸 수식만 있는데 안내 배너가 표시됨: ${state.objectNotice}`
       : undefined,
     searchQuery && !state.search?.open ? '검색 UI가 열리지 않음' : undefined,
     searchQuery && state.search?.occurrences < 1 ? '검색 결과가 없음' : undefined,
@@ -317,6 +345,8 @@ try {
     editText && !state.editingProbe?.projectedSelectionMatches ? 'projection 후 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.undoSelectionMatches ? '실행 취소 selection 복원 불일치' : undefined,
     editText && !state.editingProbe?.redoSelectionMatches ? '다시 실행 selection 복원 불일치' : undefined,
+    editText && !state.editingProbe?.immediateUndoMatches ? '입력 직후 첫 실행 취소가 마지막 입력을 되돌리지 않음' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.undoClickedBeforeCommit ? '각주 E2E 실행 취소를 입력 반영 전에 누르지 못함' : undefined,
     editText && !state.editingUi?.ribbonVisible ? '편집 리본이 표시되지 않음' : undefined,
     (editText || tableStructureProbe) && JSON.stringify(state.editingUi?.tabs) !== JSON.stringify(RIBBON_TABS)
       ? `리본 탭 구성 불일치: ${JSON.stringify(state.editingUi?.tabs)}`
@@ -340,6 +370,15 @@ try {
       : undefined,
     (editTarget === 'note' || editTarget === 'endnote') && state.editingProbe?.noteKind !== (editTarget === 'note' ? 'footnote' : 'endnote')
       ? `각주·미주 종류 불일치: ${state.editingProbe?.noteKind}`
+      : undefined,
+    editTarget === 'footnote' && state.editingProbe?.insertedMarkers?.length !== (state.editingProbe?.originalMarkers?.length ?? -2) + 1
+      ? `각주 넣기 뒤 번호 표시 수 불일치: ${JSON.stringify(state.editingProbe?.originalMarkers)} → ${JSON.stringify(state.editingProbe?.insertedMarkers)}`
+      : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.insertUndone ? '각주 넣기 실행 취소 불일치' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.deleted ? '각주 지우기 결과 불일치' : undefined,
+    editTarget === 'footnote' && !state.editingProbe?.deleteUndone ? '각주 지우기 실행 취소 불일치' : undefined,
+    (editTarget === 'text-box' || editTarget === 'memo') && state.editingProbe?.objectKind !== editTarget
+      ? `글상자·메모 입력 칸이 그 개체 안에 있지 않음: ${state.editingProbe?.objectKind}`
       : undefined,
     editTarget && editSave && savedState && !savedState.expectedTextPresent ? '저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
     styleProbe && !editText ? 'style probe는 HAN_FLOW_VERIFY_EDIT_TEXT와 함께 실행해야 함' : undefined,
@@ -388,6 +427,15 @@ try {
     journalsAfterQuit?.length ? `정상 종료 뒤 복구 기록이 남음: ${journalsAfterQuit.length}개` : undefined,
     closeDirtyAction && !crashRecovery && !editSave && editText && !state.editingProbe?.dirtyAtEnd ? '닫기 전 편집이 dirty가 아니어서 dirty 종료를 확인하지 못함' : undefined,
     crashRecovery && savedState && !savedState.expectedTextPresent ? '복구 뒤 저장본을 다시 열었을 때 입력 글자가 없음' : undefined,
+    closeAfterTyping && !state.closeAfterTypingProbe ? '입력 직후 종료 probe 결과가 없음' : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.probeError ? `입력 직후 종료 probe 오류: ${state.closeAfterTypingProbe.probeError}` : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.dirtyBefore ? '입력 직후 종료 전 문서가 이미 dirty임' : undefined,
+    closeAfterTyping && state.closeAfterTypingProbe?.dirtyAfterTyping ? '입력 직후 종료 전에 글자가 이미 commit됨(대기 중 입력을 확인하지 못함)' : undefined,
+    closeAfterTyping && state.closeReports?.length !== 1 ? `닫기 순서 기록 수 불일치: ${state.closeReports?.length ?? 0}` : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.flush !== 'replied' ? `닫기 전 입력 반영 요청에 renderer가 답하지 않음: ${state.closeReports?.[0]?.flush}` : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.dirtyBeforeFlush !== false ? '닫기 요청 때 main이 이미 dirty여서 대기 중 입력을 확인하지 못함' : undefined,
+    closeAfterTyping && state.closeReports?.[0]?.dirtyAfterFlush !== true ? '닫기 전 입력 반영 뒤에도 dirty가 아님(마지막 글자 유실)' : undefined,
+    closeAfterTyping && closeDirtyAction === 'save' && savedState && !savedState.expectedTextPresent ? '입력 직후 종료 저장본에 마지막 글자가 없음' : undefined,
     verifiesSavedFile && !sourceUnchanged ? 'Save As가 원본 파일을 변경함' : undefined,
     verifiesSavedFile && !savedFileExists ? 'Save As 목적지 파일이 생성되지 않음' : undefined,
     verifiesSavedFile && savedState?.errorVisible ? 'Save As 결과 재열기 실패' : undefined,
@@ -428,6 +476,7 @@ try {
     objectShortfalls: shortfalls,
     placeholderCounts: state.placeholderCounts,
     recoveredObjectCharacters: state.recoveredObjectCharacters,
+    renderedEquations: state.renderedEquations,
     objectNotice: state.objectNotice,
     fittedObjects: state.fittedObjects,
     editingUi: editText || tableStructureProbe ? state.editingUi : undefined,
@@ -464,6 +513,11 @@ try {
     journalsAfterQuit,
     dirtyClose: closeDirtyAction ? {
       action: closeDirtyAction,
+      closeAfterTyping: closeAfterTyping ? {
+        probe: state.closeAfterTypingProbe,
+        closeReports: state.closeReports,
+        reopenedTextPresent: savedState?.expectedTextPresent
+      } : undefined,
       dirtyAtEnd: state.editingProbe?.dirtyAtEnd,
       sourceUnchanged,
       savedFileExists,

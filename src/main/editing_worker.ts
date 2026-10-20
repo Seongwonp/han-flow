@@ -3,8 +3,10 @@ import type {
   EditingCellStyleRequest,
   EditingCharacterStyleRequest,
   EditingCommitRequest,
+  EditingDeleteFootnoteRequest,
   EditingDeleteTableColumnRequest,
   EditingDeleteTableRowRequest,
+  EditingInsertFootnoteRequest,
   EditingInsertTableColumnRequest,
   EditingInsertTableRowRequest,
   EditingMergeParagraphRequest,
@@ -88,6 +90,10 @@ async function dispatch(request: EditingWorkerRequest): Promise<unknown> {
       return requireEngine().mergeTableCellRight(payload as EditingMergeTableCellRightRequest)
     case 'splitTableCell':
       return requireEngine().splitTableCell(payload as EditingSplitTableCellRequest)
+    case 'insertFootnote':
+      return requireEngine().insertFootnote(payload as EditingInsertFootnoteRequest)
+    case 'deleteFootnote':
+      return requireEngine().deleteFootnote(payload as EditingDeleteFootnoteRequest)
     case 'undo':
       return requireEngine().undo()
     case 'redo':

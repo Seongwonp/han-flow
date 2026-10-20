@@ -630,6 +630,65 @@ export function createEditScopeHwpx(directory: string, fileName = 'han-flow-edit
 }
 
 /**
+ * subList 편집 검증용 합성 문서(직접 작성, 개인정보 없음). A4 한 쪽, 모든 문단에 숫자 id가 있다(한/글 저장본과 같다).
+ * - 구역 첫 문단: 구역 정의와 머리말·꼬리말, 제목
+ * - 한/글 저장본처럼 번호(`hp:autoNum`)와 첫 글자를 한 run에 둔 각주(둘째 문단은 글자만 든 문단)
+ * - 문단 기준 자리 차지 글상자(두 문단), 글자처럼 취급하는 글상자(한 문단), 메모가 붙은 문단, 표가 든 글상자(읽기 전용)
+ * verify:matrix가 글상자·메모·각주에 입력(각주·글상자는 글자·문단 모양 probe 포함)·실행 취소·다시 실행한 뒤 저장하고 다시 열어 확인한다.
+ */
+export const SUBLIST_EDIT_TEXTS = {
+  header: '하위 목록 머리말',
+  footer: '하위 목록 꼬리말',
+  title: '하위 목록 편집 시험 문서',
+  footnoteLead: '각주가 붙는 본문',
+  footnoteBody: '번호와 같은 run의 각주',
+  footnoteSecond: '각주 둘째 문단',
+  boxLead: '글상자가 놓인 문단',
+  textBox: '글상자 첫 문단',
+  textBoxSecond: '글상자 둘째 문단',
+  inlineLead: '줄 안 글상자 앞 글',
+  inlineTextBox: '줄 안 글상자',
+  memoLead: '메모가 붙는 문단',
+  memo: '메모 본문',
+  objectBoxLead: '표가 든 글상자 문단',
+  objectBoxText: '표 옆 상자 글',
+  objectBoxCell: '상자 안 표'
+} as const
+const sublistLine = (top = 0) => `<hp:linesegarray><hp:lineseg vertpos="${top}" vertsize="1000"/></hp:linesegarray>`
+const sublistParagraph = (id: number, runs: string, lineseg = true) =>
+  `<hp:p id="${id}" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">${runs}${lineseg ? sublistLine() : ''}</hp:p>`
+const sublistRun = (text: string) => `<hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run>`
+const sublistTextBox = (id: number, inline: boolean, body: string) =>
+  `<hp:rect id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="24000" height="5000"/><hp:curSz width="24000" height="5000"/><hp:lineShape color="#1F4E79" width="57" style="SOLID"/><hc:fillBrush><hc:winBrush faceColor="#EAF1FB" hatchColor="#000000" alpha="0"/></hc:fillBrush><hp:drawText lastWidth="24000" name="" editable="0"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${body}</hp:subList><hp:textMargin left="283" right="283" top="283" bottom="283"/></hp:drawText><hp:sz width="24000" widthRelTo="ABSOLUTE" height="5000" heightRelTo="ABSOLUTE" protect="0"/>${inline ? '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>' : '<hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'}<hp:outMargin left="0" right="0" top="0" bottom="283"/></hp:rect>`
+const sublistFootnote = `<hp:ctrl><hp:footNote number="1" suffixChar="41" instId="9301"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${
+  sublistParagraph(0, `<hp:run charPrIDRef="0"><hp:ctrl><hp:autoNum num="1" numType="FOOTNOTE"><hp:autoNumFormat type="DIGIT" userChar="" prefixChar="" suffixChar=")" supscript="0"/></hp:autoNum></hp:ctrl><hp:t>${SUBLIST_EDIT_TEXTS.footnoteBody}</hp:t></hp:run>`)
+}${sublistParagraph(1, sublistRun(SUBLIST_EDIT_TEXTS.footnoteSecond))}</hp:subList></hp:footNote></hp:ctrl>`
+const sublistMemo = `<hp:ctrl><hp:fieldBegin id="9401" type="MEMO" name="" editable="1" dirty="0" zorder="1" fieldid="9402"><hp:parameters cnt="2" name=""><hp:stringParam name="ID">memo1</hp:stringParam><hp:integerParam name="Number">1</hp:integerParam></hp:parameters><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">${
+  sublistParagraph(0, sublistRun(SUBLIST_EDIT_TEXTS.memo), false)
+}</hp:subList></hp:fieldBegin></hp:ctrl>`
+const sublistObjectBox = sublistTextBox(9504, false, `${sublistParagraph(40, sublistRun(SUBLIST_EDIT_TEXTS.objectBoxText))}${sublistParagraph(41, `<hp:run charPrIDRef="0"><hp:tbl id="9505" rowCnt="1" colCnt="1" pageBreak="CELL" repeatHeader="0"><hp:sz width="10000" height="1500"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:tr><hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="10000" height="1500"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="CENTER">${sublistParagraph(42, sublistRun(SUBLIST_EDIT_TEXTS.objectBoxCell))}</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run>`)}`)
+const sublistEditSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p id="1" paraPrIDRef="0" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="0">${a4SecPr}<hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP">${sublistParagraph(10, sublistRun(SUBLIST_EDIT_TEXTS.header), false)}</hp:subList></hp:header></hp:ctrl><hp:ctrl><hp:footer id="2" applyPageType="BOTH"><hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="BOTTOM">${sublistParagraph(11, sublistRun(SUBLIST_EDIT_TEXTS.footer), false)}</hp:subList></hp:footer></hp:ctrl></hp:run>${sublistRun(SUBLIST_EDIT_TEXTS.title)}${sublistLine()}</hp:p>
+  ${sublistParagraph(2, `<hp:run charPrIDRef="0"><hp:t>${SUBLIST_EDIT_TEXTS.footnoteLead}</hp:t>${sublistFootnote}<hp:t/></hp:run>`)}
+  ${sublistParagraph(3, `<hp:run charPrIDRef="0"><hp:t>${SUBLIST_EDIT_TEXTS.boxLead}</hp:t>${sublistTextBox(9501, false, `${sublistParagraph(20, sublistRun(SUBLIST_EDIT_TEXTS.textBox))}${sublistParagraph(21, sublistRun(SUBLIST_EDIT_TEXTS.textBoxSecond))}`)}</hp:run>`)}
+  ${sublistParagraph(4, `<hp:run charPrIDRef="0"><hp:t>${SUBLIST_EDIT_TEXTS.inlineLead}</hp:t>${sublistTextBox(9502, true, sublistParagraph(30, sublistRun(SUBLIST_EDIT_TEXTS.inlineTextBox)))}<hp:t/></hp:run>`)}
+  ${sublistParagraph(5, `<hp:run charPrIDRef="0">${sublistMemo}<hp:t>${SUBLIST_EDIT_TEXTS.memoLead}</hp:t><hp:ctrl><hp:fieldEnd beginIDRef="9401" fieldid="9402"/></hp:ctrl><hp:t/></hp:run>`)}
+  ${sublistParagraph(6, `<hp:run charPrIDRef="0"><hp:t>${SUBLIST_EDIT_TEXTS.objectBoxLead}</hp:t>${sublistObjectBox}</hp:run>`)}
+</hs:sec>`
+
+export function createSublistEditHwpx(directory: string, fileName = 'han-flow-sublist-edit.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  // 각주·글상자 글자 모양 probe가 굵게를 켜고 끄는 것이 보이도록 굵지 않은 글자 모양을 쓴다.
+  zip.addFile('Contents/header.xml', Buffer.from(header.replace('<hh:bold/>', '')))
+  zip.addFile('Contents/section0.xml', Buffer.from(sublistEditSection))
+  zip.writeZip(path)
+  return path
+}
+
+/**
  * 글자처럼 취급하지 않는 개체(`hp:pos treatAsChar="0"`) 합성 문서(직접 작성, 개인정보 없음). A4, 머리말·꼬리말 여백 2835.
  * - 1쪽: 용지 기준 글 앞 글상자(`textBox`), 쪽 아래·오른쪽 기준 자리 차지 그림(`picture`, 본문 아래 띠), 문단 기준 글 옆 그림,
  *   문단 기준 자리 차지 글상자(단 가운데), 쪽 가운데 글 뒤 사각형
@@ -933,6 +992,57 @@ export function createPageFlowHwpx(directory: string, fileName = 'han-flow-page-
   zip.addFile('Contents/header.xml', Buffer.from(header))
   pageFlowSections.forEach((section, index) => zip.addFile(`Contents/section${index}.xml`, Buffer.from(section)))
   zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}
+
+/**
+ * 수식 여러 개가 든 A4 합성 문서(직접 작성, 개인정보 없음). 분수·근호·첨자·큰 연산자(from/to)·적분·lim·행렬·cases·그리스 문자·
+ * 기호·괄호(left/right)·글꼴(rm/it)·색·글자 크기가 다른 글자처럼 취급한 수식과 원본 위치 수식(자리 차지) 하나, 그리고 이 해석기가
+ * 그리지 못하는 명령(`longdiv`)이 든 수식 하나(script 글자 상자로 대체)를 둔다. verify:matrix가 그려 낸 수식 수, 안내 배너(대체한
+ * 수식 1개만), 화면과 PDF 글자 수, PDF에서 수식 기호가 추출되는지 확인한다.
+ */
+export const EQUATION_FIXTURE_SCRIPTS = [
+  { lead: '근의 공식: ', script: 'x = {-b pm sqrt {b^2 - 4ac}} over {2a}', width: 9200, height: 3600, baseLine: 64 },
+  { lead: '합: ', script: 'sum from {k=1} to {n} k^2 = {n(n+1)(2n+1)} over 6', width: 14000, height: 4600, baseLine: 62 },
+  { lead: '적분: ', script: 'int _{0} ^{1} x^2 dx = 1 over 3', width: 9000, height: 3800, baseLine: 64 },
+  { lead: '극한: ', script: 'lim from {x -> 0} {sin x} over x = 1', width: 9000, height: 3600, baseLine: 58 },
+  { lead: '행렬: ', script: 'A = pmatrix{1 & 2 # 3 & 4} TIMES bmatrix{x # y}', width: 11000, height: 3600, baseLine: 58 },
+  { lead: '조건: ', script: 'f(x) = cases{x & (x >= 0) # -x & (x < 0)}', width: 11000, height: 3600, baseLine: 58 },
+  { lead: '기호: ', script: 'alpha + beta ~ != ~ gamma cdot delta , ~ theta <= inf', width: 10000, height: 1400, baseLine: 80, color: '#C00000', baseUnit: 1200 },
+  { lead: '거듭제곱근: ', script: 'root 3 of {x+1} + left ( a over b right )^2 + rm sin it theta', width: 13000, height: 3800, baseLine: 64 },
+  { lead: '대체: ', script: 'longdiv {3} {12} {4}', width: 4000, height: 2000, baseLine: 70 }
+] as const
+export const EQUATION_FIXTURE_TEXTS = { title: '수식 시험 문서', block: '원본 위치 수식 뒤 문단', after: '끝 문단' } as const
+/** 원본 위치(자리 차지) 수식의 script. */
+export const EQUATION_FIXTURE_BLOCK_SCRIPT = 'E = mc^2 ~~ rm and it ~~ a_n = a_1 + (n-1)d'
+/** 해석기가 그리지 못해 script 글자 상자로 남는 수식 수. */
+export const EQUATION_FIXTURE_FALLBACKS = 1
+
+const escapeXmlText = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const equationXml = (
+  id: number,
+  script: string,
+  options: { width: number; height: number; baseLine: number; color?: string; baseUnit?: number; inline: boolean }
+) =>
+  `<hp:equation id="${id}" zOrder="${id}" numberingType="EQUATION" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" version="Equation Version 60" baseLine="${options.baseLine}" textColor="${options.color ?? '#000000'}" baseUnit="${options.baseUnit ?? 1000}" lineMode="CHAR" font="HYhwpEQ"><hp:sz width="${options.width}" widthRelTo="ABSOLUTE" height="${options.height}" heightRelTo="ABSOLUTE" protect="0"/>${objectPos(options.inline)}<hp:outMargin left="56" right="56" top="0" bottom="0"/><hp:shapeComment>수식입니다.</hp:shapeComment><hp:script>${escapeXmlText(script)}</hp:script></hp:equation>`
+const equationSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${a4SecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>${EQUATION_FIXTURE_TEXTS.title}</hp:t></hp:run></hp:p>
+  ${EQUATION_FIXTURE_SCRIPTS.map((item, index) =>
+    `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${item.lead}</hp:t>${equationXml(9100 + index, item.script, { ...item, inline: true })}<hp:t> 입니다.</hp:t></hp:run></hp:p>`
+  ).join('\n  ')}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${equationXml(9199, EQUATION_FIXTURE_BLOCK_SCRIPT, { width: 16000, height: 1600, baseLine: 80, inline: false })}</hp:run></hp:p>
+  ${plainParagraph(EQUATION_FIXTURE_TEXTS.block)}
+  ${plainParagraph(EQUATION_FIXTURE_TEXTS.after)}
+</hs:sec>`
+
+export function createEquationHwpx(directory: string, fileName = 'han-flow-equations.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(equationSection))
   zip.writeZip(path)
   return path
 }

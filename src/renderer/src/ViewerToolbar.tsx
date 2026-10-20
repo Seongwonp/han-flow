@@ -40,6 +40,8 @@ interface ViewerToolbarProps {
   shortcutPlatform?: string
   editing: RendererEditingSession | null
   editingPending: number
+  /** 입력 칸에 남은 글자나 응답을 기다리는 글자 commit이 있는지. 있으면 실행 취소·저장을 켠다. */
+  editingInputPending?: boolean
   documentLoading: boolean
   loading: boolean
   hasDocument: boolean
@@ -104,6 +106,12 @@ interface ViewerToolbarProps {
   onDeleteTableColumn: () => void
   onMergeTableCellRight: () => void
   onSplitTableCell: () => void
+  /** caret 자리에 각주를 넣을 수 있는지(capability `footnote`). */
+  footnoteAvailable?: boolean
+  /** caret이 지울 수 있는 각주 본문에 있는지(capability focus의 `footnotePath`). */
+  footnoteDeleteAvailable?: boolean
+  onInsertFootnote?: () => void
+  onDeleteFootnote?: () => void
 }
 
 export function ViewerToolbar(props: ViewerToolbarProps) {
@@ -113,6 +121,7 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     shortcutPlatform = rendererPlatform(),
     editing,
     editingPending,
+    editingInputPending: isEditingInputPending = false,
     documentLoading,
     loading,
     hasDocument,
@@ -157,15 +166,24 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
     onInsertTableColumnAfter,
     onDeleteTableColumn,
     onMergeTableCellRight,
-    onSplitTableCell
+    onSplitTableCell,
+    footnoteAvailable: footnoteState = false,
+    footnoteDeleteAvailable: footnoteDeleteState = false,
+    onInsertFootnote,
+    onDeleteFootnote
   } = props
   const pending = Boolean(editingPending)
+  // 입력 칸에 남은 글자나 응답을 기다리는 글자 commit. 실행 취소·저장은 이 글자를 먼저 반영한 뒤 돌므로 이때도 누를 수 있다.
+  // 실행 취소·다시 실행·저장은 진행 중인 command 뒤에 차례로 돌아 pending으로 끄지 않는다.
+  const inputPending = Boolean(editing) && isEditingInputPending
   const isEditing = Boolean(editing)
   // 편집 중이 아니면 서식·표 control은 모두 끈다.
   const characterStyleAvailable = isEditing && characterStyleState
   const paragraphStyleAvailable = isEditing && paragraphStyleState
   const cellStyleAvailable = isEditing && cellStyleState
   const tableCellSelectionAvailable = isEditing && tableCellSelectionState
+  const footnoteAvailable = isEditing && footnoteState
+  const footnoteDeleteAvailable = isEditing && footnoteDeleteState
   // caret이 표 안에 있으면 탭은 그대로 두고 `표` 탭에만 표시한다.
   const tableContextActive = cellStyleAvailable || tableCellSelectionAvailable
 
@@ -207,13 +225,17 @@ export function ViewerToolbar(props: ViewerToolbarProps) {
         <button aria-label="문서 열기" title="문서 열기" className="viewer-ribbon-wide" onClick={onChooseFile}><span className="viewer-ribbon-icon" aria-hidden="true">📂</span><span>열기</span></button>
         <button aria-label="새 창" title="새 창 열기" className="viewer-ribbon-wide" onClick={onOpenNewWindow}><span className="viewer-ribbon-icon" aria-hidden="true">❐</span><span>새 창</span></button>
       </>)}
-      {group('저장', <button aria-label="HWPX 변경본 저장" title={`다른 이름으로 저장 (${shortcutLabel('S', shortcutPlatform)})`} className="viewer-ribbon-save" onMouseDown={keepCaret} onClick={onSaveEditing} disabled={!editing?.isDirty || pending}><span className="viewer-ribbon-icon" aria-hidden="true">⇩</span><span>다른 이름으로 저장</span></button>, { className: 'viewer-ribbon-file-group' })}
+      {group('저장', <button aria-label="HWPX 변경본 저장" title={`다른 이름으로 저장 (${shortcutLabel('S', shortcutPlatform)})`} className="viewer-ribbon-save" onMouseDown={keepCaret} onClick={onSaveEditing} disabled={!(editing?.isDirty || inputPending)}><span className="viewer-ribbon-icon" aria-hidden="true">⇩</span><span>다른 이름으로 저장</span></button>, { className: 'viewer-ribbon-file-group' })}
       {group('내보내기', <button aria-label="PDF로 내보내기" title="PDF로 내보내기" className="viewer-ribbon-wide" onClick={onExportPdf} disabled={!hasDocument || printing || documentLoading}><span className="viewer-ribbon-icon" aria-hidden="true">⎙</span><span>PDF로 내보내기</span></button>)}
     </>,
     편집: <>
       {group('기록', <>
-        <button aria-label="실행 취소" title={`실행 취소 (${shortcutLabel('Z', shortcutPlatform)})`} onMouseDown={keepCaret} onClick={onUndoEditing} disabled={!editing?.canUndo || pending}>↶</button>
-        <button aria-label="다시 실행" title={`다시 실행 (${shortcutLabel('Z', shortcutPlatform, { shift: true })})`} onMouseDown={keepCaret} onClick={onRedoEditing} disabled={!editing?.canRedo || pending}>↷</button>
+        <button aria-label="실행 취소" title={`실행 취소 (${shortcutLabel('Z', shortcutPlatform)})`} onMouseDown={keepCaret} onClick={onUndoEditing} disabled={!(editing?.canUndo || inputPending)}>↶</button>
+        <button aria-label="다시 실행" title={`다시 실행 (${shortcutLabel('Z', shortcutPlatform, { shift: true })})`} onMouseDown={keepCaret} onClick={onRedoEditing} disabled={!editing?.canRedo}>↷</button>
+      </>)}
+      {!fixedDocument && group('각주', <>
+        <button aria-label="각주 넣기" title={footnoteAvailable ? 'caret 자리에 각주 넣기' : '본문 문단 글자 사이에 caret을 두면 각주를 넣을 수 있습니다.'} onMouseDown={keepCaret} onClick={onInsertFootnote} disabled={!footnoteAvailable || pending}>각주＋</button>
+        <button aria-label="각주 지우기" title={footnoteDeleteAvailable ? 'caret이 있는 각주 지우기' : '지울 각주 본문에 caret을 두면 각주를 지울 수 있습니다.'} onMouseDown={keepCaret} onClick={onDeleteFootnote} disabled={!footnoteDeleteAvailable || pending}>각주－</button>
       </>)}
       {fixedDocument && group('찾기', <button aria-label="검색" title={`찾기 (${shortcutLabel('F', shortcutPlatform)})`} className="viewer-ribbon-wide" onClick={onSearchOpen} disabled={searchOpen}><span className="viewer-ribbon-icon" aria-hidden="true">⌕</span><span>찾기</span></button>)}
     </>,

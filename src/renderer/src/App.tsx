@@ -13,12 +13,13 @@ import {
   ParagraphStructureGate,
   reconcileEditingSelection,
   sublistParagraphRangeScope,
+  SublistStructure,
   tableParagraphRangeScope,
   tableParagraphTexts,
   topLevelParagraphStructure
 } from '../../core/editing/editing_capability'
 import { EditorSelection } from '../../core/editing/transaction'
-import { isEmptyParagraphAnchorId } from '../../core/editing/empty_paragraph_anchor'
+import { isEmptyParagraphAnchorId, isSyntheticCaretAnchorId } from '../../core/editing/empty_paragraph_anchor'
 import {
   equalTableCellSelections,
   reconcileTableCellSelection,
@@ -72,13 +73,14 @@ import {
   readParagraphEditorSelection,
   restoreParagraphEditorSelection
 } from './paragraph_selection'
-import { DocumentLayoutMeasurements, EditingImeTransientState } from './renderer_state'
+import { answerInputFlushRequest, DocumentLayoutMeasurements, EditingImeTransientState, EditingInputFlusher, selectionAfterInput } from './renderer_state'
 import { MeasurementStylesTracker, resolveCharStyles, type ViewerRenderStyles } from './measurement_styles'
 import { useRendererState } from './use_renderer_state'
 import { ObjectPlaceholderBanner, ViewerColumnFlow, ViewerColumnRule, ViewerPageStack, ViewerStage, ViewerStatusBar } from './ViewerShell'
-import { countObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
+import { countIncompleteObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjectPlaceholders } from '../../core/document/object_placeholder'
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
+import { EquationView } from './EquationView'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
@@ -224,7 +226,7 @@ export function Content({
       style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined, ...objectTransformCss(item.transform) }}
     />
   }
-  if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
+  if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} editing={measurable ? undefined : editing} />
   if (item.type === 'note-list') return <NoteListView item={item} document={document} editing={measurable ? undefined : editing} />
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
 }
@@ -275,11 +277,13 @@ function useFitBodyHeight(limitPx: number | undefined) {
   return bodyRef
 }
 
-export function ObjectPlaceholderView({ item, document, positioned = false }: {
+export function ObjectPlaceholderView({ item, document, positioned = false, editing }: {
   item: ViewerObjectPlaceholder
   document: ViewerRenderStyles
   /** 원본 위치로 그리는 개체 상자(`PositionedObjectBody`) 안을 채운다. */
   positioned?: boolean
+  /** 편집 중이면 글자만 든 글상자 글·메모 본문을 입력 칸으로 그린다(`objectTextEditing`). */
+  editing?: ParagraphEditingProps
 }) {
   // 일부 단위 테스트는 쪽 설정 없는 문서 조각을 넘긴다.
   const page = document.page as ViewerDocument['page'] | undefined
@@ -294,6 +298,7 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
   if (item.kind === 'footnote' || item.kind === 'endnote') {
     return <sup {...common} className="viewer-note-marker" title={`${item.label} ${item.marker ?? ''}`.trim()}>{item.marker}</sup>
   }
+  if (item.kind === 'equation' && item.equation) return <EquationView item={item} positioned={positioned} common={common} />
   if (item.kind === 'ruby' && item.ruby) {
     return <ruby {...common} className={`viewer-ruby viewer-ruby-${item.ruby.position}`} title="덧말">{item.fallbackText}<rt>{item.ruby.text}</rt></ruby>
   }
@@ -311,6 +316,7 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
   const markerText = item.flow === 'marker' && item.paragraphs ? paragraphsPlainText(item.paragraphs) : ''
   // 글상자처럼 되살린 문단이 있으면 이름표를 모서리에 겹쳐 두어 상자가 선언 크기보다 커지지 않게 한다.
   const hasBody = item.flow !== 'marker' && Boolean(item.paragraphs?.length)
+  const bodyEditing = objectTextEditing(item, editing)
   return <span
     {...common}
     className={`viewer-object-placeholder viewer-object-${positioned ? 'block' : item.flow}${hasBody ? ' viewer-object-with-body' : ''}${item.fitted ? ' viewer-object-fitted' : ''}`}
@@ -323,8 +329,13 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
     {/* 줄 안 표시의 쌍점은 CSS ::after가 아니라 글자로 둔다. ::after 글은 화면 innerText에 없지만 PDF에는 추출돼 글자 수가 어긋난다. */}
     <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}{item.flow === 'marker' && (item.fallbackText || markerText) ? ':' : ''}</span>
     {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
-    {markerText && <span className="viewer-object-fallback">{markerText}</span>}
-    {hasBody && <ContainerBody item={item} document={document} bodyRef={bodyRef} />}
+    {/* 편집 중인 메모는 줄 안 본문 글 자리에 같은 글을 입력 칸으로 그린다(보기 모드와 같은 글이라 줄 배치가 거의 같다). */}
+    {markerText && (item.kind === 'memo' && bodyEditing
+      ? <span className="viewer-object-fallback viewer-memo-body">
+          {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={bodyEditing} />)}
+        </span>
+      : <span className="viewer-object-fallback">{markerText}</span>)}
+    {hasBody && <ContainerBody item={item} document={document} bodyRef={bodyRef} editing={bodyEditing} />}
   </span>
 }
 
@@ -389,9 +400,13 @@ function positionedBoxSize(item: PositionedContent): CSSProperties {
   return { width, height: hwpUnitToCssPx(item.position.height) }
 }
 
-/** 표 셀처럼 편집하는 개체가 아니면 글 앞·뒤 개체가 밑의 본문 글 선택·caret을 가리지 않게 한다. */
-function positionedPointerEvents(item: PositionedContent, placement: ObjectPlacement): CSSProperties['pointerEvents'] {
-  return item.type !== 'table' && (placement === 'overlay' || placement === 'page') ? 'none' : undefined
+/**
+ * 표 셀처럼 편집하는 개체가 아니면 글 앞·뒤 개체가 밑의 본문 글 선택·caret을 가리지 않게 한다. 편집 중인 글상자(글자만 든
+ * 글상자)는 그 글을 누를 수 있게 둔다.
+ */
+function positionedPointerEvents(item: PositionedContent, placement: ObjectPlacement, editing?: ParagraphEditingProps): CSSProperties['pointerEvents'] {
+  if (item.type === 'table' || (item.type === 'object-placeholder' && objectTextEditing(item, editing))) return undefined
+  return placement === 'overlay' || placement === 'page' ? 'none' : undefined
 }
 
 const SHAPE_SVG_ELEMENTS = new Set(['hp:rect', 'hp:ellipse', 'hp:line', 'hp:polygon'])
@@ -435,13 +450,14 @@ export function ShapeView({ item }: { item: ViewerObjectPlaceholder & { position
  * 원본 위치에 그리는 글상자. 원본 선·채우기·안쪽 여백·세로 맞춤으로 상자를 그리고 글은 읽기 전용 문단으로 안에 둔다. 글이 쪽 본문
  * 높이 한도(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 자리 표시처럼 같은 비율로 줄인다.
  */
-export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerRenderStyles }) {
+export function TextBoxView({ item, document, editing }: { item: ViewerObjectPlaceholder; document: ViewerRenderStyles; editing?: ParagraphEditingProps }) {
   const page = document.page as ViewerDocument['page'] | undefined
   const pageBodyHeight = page ? page.height - page.margin.top - page.margin.bottom : 0
   const bodyRef = useFitBodyHeight(pageBodyHeight > 0 ? hwpUnitToCssPx(pageBodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined)
   const shape = item.shape
   const margin = shape?.textMargin
   const align = shape?.textVerticalAlign
+  const bodyEditing = objectTextEditing(item, editing)
   return <div
     className={`viewer-text-box${item.fitted ? ' viewer-object-fitted' : ''}`}
     data-object-kind={item.kind}
@@ -459,7 +475,7 @@ export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder;
       justifyContent: align === 'CENTER' ? 'center' : align === 'BOTTOM' ? 'flex-end' : 'flex-start'
     }}
   >
-    <ContainerBody item={item} document={document} bodyRef={bodyRef} />
+    <ContainerBody item={item} document={document} bodyRef={bodyRef} editing={bodyEditing} />
   </div>
 }
 
@@ -467,10 +483,11 @@ export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder;
  * 글상자 글(되살린 읽기 전용 문단). 안쪽 여백 안 글 영역을 칸으로 보고 그 안 글자처럼 취급하지 않는 개체를 칸 기준 원본 위치에
  * 그린다(`containerObjectFrame`). 크기를 모르는 상자는 개체를 줄 흐름 안에 둔다.
  */
-function ContainerBody({ item, document, bodyRef }: {
+function ContainerBody({ item, document, bodyRef, editing }: {
   item: ViewerObjectPlaceholder
   document: ViewerRenderStyles
   bodyRef: RefObject<HTMLSpanElement>
+  editing?: ParagraphEditingProps
 }) {
   const size = item.position ?? item.size
   const margin = item.shape?.textMargin
@@ -485,7 +502,7 @@ function ContainerBody({ item, document, bodyRef }: {
   // 칸 기준 개체가 있으면 글 영역 전체를 기준 상자로 쓰도록 본문을 글 영역 높이로 늘린다(이때 글은 위에 맞춘다).
   return <span className="viewer-object-body" ref={bodyRef} style={layered ? { position: 'relative', minHeight: hwpUnitToCssPx(frame!.page.height) } : undefined}>
     {frame && <ContainerObjectLayer paragraphs={paragraphs} frame={frame} container="text-box" document={document} />}
-    {paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} objectFrame={frame} />)}
+    {paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} objectFrame={frame} editing={editing} />)}
   </span>
 }
 
@@ -526,9 +543,9 @@ function PositionedObjectContent({ item, document, measurable, editing }: {
     />
   }
   if (item.type === 'table') return <TableView table={item} document={document} measurable={measurable} editing={editing} />
-  if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} />
+  if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} editing={editing} />
   if (item.kind === 'shape' && SHAPE_SVG_ELEMENTS.has(item.element)) return <ShapeView item={item} />
-  return <ObjectPlaceholderView item={item} document={document} positioned />
+  return <ObjectPlaceholderView item={item} document={document} positioned editing={editing} />
 }
 
 /**
@@ -584,7 +601,7 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
       left: hwpUnitToCssPx(relativeX),
       top: hwpUnitToCssPx(paragraphObjectOffset(position, false)),
       zIndex: objectZIndex(item),
-      pointerEvents: positionedPointerEvents(item, placement)
+      pointerEvents: positionedPointerEvents(item, placement, editing)
     }
   }
   return <div
@@ -617,7 +634,7 @@ function PageObjectView({ item, frame, horizontal, document, editing, container 
       left: hwpUnitToCssPx(x),
       top: hwpUnitToCssPx(y),
       zIndex: objectZIndex(item),
-      pointerEvents: positionedPointerEvents(item, 'page')
+      pointerEvents: positionedPointerEvents(item, 'page', editing)
     }}
   ><PositionedObjectBody item={item} document={document} measurable={false} editing={editing} /></div>
 }
@@ -738,34 +755,51 @@ export function PageBandSpacers({ bands, bodyHeight }: { bands?: readonly PageBa
 }
 
 const TABLE_PARAGRAPH_SURFACE_LABEL = 'HWPX 표 앞뒤 글자 편집'
-const SUBLIST_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
+const MEMO_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
 const TABLE_PARAGRAPH_GATE: ParagraphStructureGate = { split: 'TABLE_PARAGRAPH', mergePrevious: 'TABLE_PARAGRAPH', mergeNext: 'TABLE_PARAGRAPH' }
 
 /**
- * 각주·미주·머리말·꼬리말 문단의 편집 props. 글자 입력·삭제·치환만 받고(문단 하나 범위, 여러 run 허용) 문단 나눔·병합은
- * capability와 같은 이유(`SUBLIST_TEXT`)로 막는다. 표·그림이 든 문단은 `isEditableTextParagraph`가 걸러 읽기 전용이다.
+ * 각주·미주·머리말·꼬리말·글상자·메모 문단의 편집 props. 글자 입력·삭제·치환(문단 하나 범위, 여러 run 허용)을 받고, 메모가 아니면
+ * capability와 같은 문단 구조 gate(`documentStructureOf`, 개체가 든 문단·빈 문단은 막는다)로 Enter·경계 병합도 받는다. 메모는
+ * 문단 나눔·병합을 `SUBLIST_TEXT`로 막는다. 표·그림이 든 문단은 `isEditableTextParagraph`가 걸러 읽기 전용이다.
  */
 export function sublistParagraphEditing(
   editing: ParagraphEditingProps | undefined,
-  structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT',
+  structure: SublistStructure,
   surfaceLabel: string,
   desiredSelection: EditorSelection | undefined
 ): ParagraphEditingProps | undefined {
+  const memo = structure === 'MEMO_TEXT'
   return editing && {
     ...editing,
     surfaceLabel,
     allowMultipleRuns: true,
     allowParagraphRange: false,
-    allowParagraphStructure: false,
+    allowParagraphStructure: !memo,
     allowTableParagraph: false,
     rangeScope: undefined,
     rangeScopeOf: (sectionPath, paragraphId) => sublistParagraphRangeScope(sectionPath, structure, paragraphId),
-    structureOf: undefined,
-    structureGate: SUBLIST_STRUCTURE_GATE,
+    structureOf: memo ? undefined : editing.documentStructureOf,
+    structureGate: memo ? MEMO_STRUCTURE_GATE : undefined,
     allowParagraphMergePrevious: true,
     allowParagraphMergeNext: true,
     desiredSelection
   }
+}
+
+const TEXT_BOX_SURFACE_LABEL = 'HWPX 글상자 편집'
+const MEMO_SURFACE_LABEL = 'HWPX 메모 편집'
+
+/**
+ * 글상자 글·메모 본문의 편집 props. decoder가 anchor를 붙인(글자만 든) 글상자·메모이고 편집 중일 때만 있다. 개체가 든 글상자·메모와
+ * 필드 subList는 읽기 전용이다. 머리말 안 글상자처럼 쪽마다 되풀이되는 글상자는 바깥 편집 props의 selection 복원을 그대로 따른다.
+ */
+export function objectTextEditing(item: ViewerObjectPlaceholder, editing: ParagraphEditingProps | undefined): ParagraphEditingProps | undefined {
+  if (!editing || (item.kind !== 'text-box' && item.kind !== 'memo') || !item.paragraphs?.length) return undefined
+  if (!item.paragraphs.some((paragraph) => isEditableTextParagraph(paragraph, true))) return undefined
+  return item.kind === 'memo'
+    ? sublistParagraphEditing(editing, 'MEMO_TEXT', MEMO_SURFACE_LABEL, editing.desiredSelection)
+    : sublistParagraphEditing(editing, 'TEXT_BOX_TEXT', TEXT_BOX_SURFACE_LABEL, editing.desiredSelection)
 }
 
 /** 구역 끝에 모은 미주 본문. 편집 중에는 본문 문단의 글자를 고칠 수 있다(번호·본문 위치의 번호 표시는 그대로). */
@@ -878,11 +912,18 @@ interface ParagraphEditingProps {
    * 표 셀은 대신 {@link structureGate}와 {@link rangeScope}를 문단마다 직접 넘긴다.
    */
   structureOf?: (paragraphId: string) => { rangeScope: string; gate: ParagraphStructureGate } | undefined
+  /**
+   * 문서 전체 문단 id → 문단 구조 gate(`topLevelParagraphStructure`, subList 문단 포함). 표 셀 편집 props가 {@link structureOf}를
+   * 비워도 남아 셀·머리말 안 글상자 같은 subList 문단이 capability와 같은 gate를 쓴다.
+   */
+  documentStructureOf?: (paragraphId: string) => { rangeScope: string; gate: ParagraphStructureGate } | undefined
   structureGate?: ParagraphStructureGate
   editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
+  /** 입력 칸이 남은 글자를 내보내는 손잡이를 등록한다. 편집 command가 돌기 전에 모두 부른다. */
+  registerInputFlush?: (flusher: EditingInputFlusher) => () => void
   onSelectionChange: (
     anchor: ViewerSourceAnchor,
     selection: { anchorOffset: number; focusOffset: number }
@@ -1182,7 +1223,7 @@ function ParagraphBody({
     ? paragraph.content.map((item, contentIndex) => {
       if (outOfLine(item)) return null
       if (isObjectPlaceholder(item)) {
-        return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} />
+        return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} editing={editing} />
       }
       if (tableTexts && item.type === 'table') {
         return <TableView key={`${paragraph.id}:${item.id}`} table={item} document={document} editing={editing} />
@@ -1207,6 +1248,7 @@ function ParagraphBody({
       }
       onCommit={activeEditing.onCommit}
       onComposingChange={activeEditing.onComposingChange}
+      registerInputFlush={activeEditing.registerInputFlush}
       onSelectionChange={activeEditing.onSelectionChange}
       getRangeSelection={() => {
         const nativeSelection = readEditorSelection()
@@ -1927,6 +1969,11 @@ export default function App() {
     setDocument(next)
   }, [])
   editingTransient.current.synchronize(editing, editingPending)
+  // 입력 칸에 아직 보내지 않은 글자(한글 음절 묶음 대기)가 있는지. 이때도 실행 취소·저장 버튼을 눌러 둘 수 있게 한다.
+  const [editingInputBuffered, setEditingInputBuffered] = useState(false)
+  // 입력 반영을 기다린 command가 쓸 최신 편집 selection. 편집 결과·selection 변경 때 React가 다시 그리기 전에 바로 바꾼다.
+  const editingSelectionRef = useRef<EditorSelection | undefined>(editingSelection)
+  editingSelectionRef.current = editingSelection
   // 편집 patch가 section만 바꾸면 style map object가 그대로라 아래 값도 모두 그대로다(측정 DOM memo·측정 재사용의 기준).
   // style definition을 바꾼 patch도 바뀐 id만 새 object이고, 글꼴을 바꾼 글자 모양 object도 id별로 다시 쓴다.
   const charStyles = document?.charStyles
@@ -2037,34 +2084,41 @@ export default function App() {
     const top = event.currentTarget.getBoundingClientRect().top
     changeZoomAt(pinchZoom(zoom, event.deltaY), event.clientY - top)
   }
-  const objectPlaceholderCounts = useMemo(() => document ? countObjectPlaceholders(document) : {}, [document])
+  const objectPlaceholderCounts = useMemo(() => document ? countIncompleteObjectPlaceholders(document) : {}, [document])
   const objectPlaceholderTotal = totalObjectPlaceholders(objectPlaceholderCounts)
   const [objectNotice, setObjectNotice] = useState({ dismissed: false, expanded: false })
   useEffect(() => setObjectNotice({ dismissed: false, expanded: false }), [openedPath])
   const substitutions = Object.values(fontResolutions).filter((resolution) => resolution.substituted)
   const documentLoading = Boolean(sectionProgress && sectionProgress.loaded < sectionProgress.total)
 
-  const openPath = async (path: string, openReceivedAt = Date.now()) => {
+  const resolveEditingBeforeOpen = async (): Promise<boolean> => {
     const currentEditing = editingTransient.current.currentSession
-    if (currentEditing?.isDirty) {
-      if (editingTransient.current.pendingCount || editingTransient.current.isComposing) {
-        setEditingStatus('입력 반영이 끝난 뒤 다시 문서를 열어 주세요.')
-        return
+    if (!currentEditing?.isDirty) return true
+    try {
+      const resolution = await api().resolveDirtyEditing(
+        currentEditing.sessionId
+      ) as EditingResolveDirtyResult
+      if (resolution.outcome === 'cancelled') {
+        setEditingStatus('문서 열기 취소 · 편집 내용 유지')
+        return false
       }
-      try {
-        const resolution = await api().resolveDirtyEditing(
-          currentEditing.sessionId
-        ) as EditingResolveDirtyResult
-        if (resolution.outcome === 'cancelled') {
-          setEditingStatus('문서 열기 취소 · 편집 내용 유지')
-          return
-        }
-      } catch (reason) {
-        const status = editingErrorStatus('문서 교체', reason) ?? '문서 교체 취소'
-        if (isEditingEngineFailure(reason)) endEditingAfterEngineFailure(status)
-        else setEditingStatus(status)
-        return
-      }
+    } catch (reason) {
+      const status = editingErrorStatus('문서 교체', reason) ?? '문서 교체 취소'
+      if (isEditingEngineFailure(reason)) endEditingAfterEngineFailure(status)
+      else setEditingStatus(status)
+      return false
+    }
+    return true
+  }
+  const openPath = async (path: string, openReceivedAt = Date.now()) => {
+    if (editingTransient.current.currentSession) {
+      // 입력 칸에 남은 글자와 진행 중인 편집 command를 먼저 반영한 뒤 dirty 여부를 본다. 입력 직후 다른 문서를 열어도
+      // 마지막 글자가 저장 확인에 들어간다(편집 상태가 그 사이 끝났으면 확인 없이 연다).
+      let proceed: boolean | undefined
+      await editingTransient.current.runAfterInput(async () => {
+        proceed = await resolveEditingBeforeOpen()
+      })
+      if (proceed === false) return
     }
     const requestStartedAt = performance.now()
     const loadId = String(++loadSequence.current)
@@ -2378,8 +2432,10 @@ export default function App() {
       canRedo: result.canRedo,
       isDirty: result.isDirty
     } : current)
+    editingTransient.current.noteHistory(result)
     if (result.selection) setTableCellSelection(undefined)
     const projection = reconcileEditingSelection(next, result.selection)
+    editingSelectionRef.current = projection.selection
     setEditingSelection(projection.selection)
     setEditingSelectionNotice(editingSelectionProjectionStatus(projection.status))
   }, [])
@@ -2420,19 +2476,22 @@ export default function App() {
   ) => {
     setEditingSelectionNotice(null)
     setTableCellSelection(undefined)
-    setEditingSelection({
+    editingSelectionRef.current = {
       sectionPath: anchor.sectionPath,
       anchorTextNodeId: anchor.textNodeId,
       focusTextNodeId: anchor.textNodeId,
       ...selection
-    })
+    }
+    setEditingSelection(editingSelectionRef.current)
   }, [])
   const updateEditorSelection = useCallback((selection: EditorSelection) => {
     setEditingSelectionNotice(null)
     setTableCellSelection(undefined)
+    editingSelectionRef.current = selection
     setEditingSelection(selection)
   }, [])
   const updateTableCellSelection = useCallback((selection: TableCellSelection) => {
+    editingSelectionRef.current = undefined
     setEditingSelection(undefined)
     setEditingSelectionNotice(null)
     setTableCellSelection(selection)
@@ -2445,7 +2504,8 @@ export default function App() {
     markEditingTiming('han-flow:editing-commit')
     setEditingPending((current) => current + 1)
     setEditingStatus('변경 반영 중…')
-    void api().commitEditing({
+    // 응답까지 센다. 입력 직후 누른 실행 취소·모양·저장 command는 이 commit이 끝난 뒤에 돈다(`runAfterInput`).
+    void editingTransient.current.trackInput(api().commitEditing({
       sessionId,
       transactionId,
       sectionPath: anchor.sectionPath,
@@ -2468,7 +2528,7 @@ export default function App() {
       inputType: intent.inputType,
       compositionId: intent.compositionId,
       timestamp: intent.timestamp
-    }).then((result: EditingActionResult) => {
+    }) as Promise<EditingActionResult>).then((result: EditingActionResult) => {
       applyEditingResult(result)
       setEditingStatus('편집 중')
     }).catch((reason: unknown) => {
@@ -2483,42 +2543,51 @@ export default function App() {
     inputType: string,
     timestamp: number
   ) => {
-    if (!editing || editingTransient.current.isComposing) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('여러 글자 범위 반영 중…')
-    void api().commitRangeEditing({
-      sessionId: editing.sessionId,
-      transactionId: editingTransient.current.nextTransactionId('ui-range'),
-      selectionBefore: selection,
-      insert,
-      inputType,
-      timestamp
-    }).then((result: EditingActionResult) => {
-      applyEditingResult(result)
-      setEditingStatus('편집 중')
-    }).catch((reason: unknown) => {
-      return recoverEditingFailure('범위 편집', reason)
-    }).finally(() => {
-      setEditingPending((current) => Math.max(0, current - 1))
+    if (!editing || editingTransient.current.isImeComposing) return
+    const sessionId = editing.sessionId
+    // 남은 글자 commit을 먼저 보낸 뒤 보낸다(범위 selection의 글자 offset은 이미 그 글자를 포함한다).
+    void editingTransient.current.runTypingCommand(async () => {
+      setEditingPending((current) => current + 1)
+      setEditingStatus('여러 글자 범위 반영 중…')
+      try {
+        applyEditingResult(await api().commitRangeEditing({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-range'),
+          selectionBefore: selection,
+          insert,
+          inputType,
+          timestamp
+        }) as EditingActionResult)
+        setEditingStatus('편집 중')
+      } catch (reason) {
+        await recoverEditingFailure('범위 편집', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
     })
   }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const splitEditingParagraph = useCallback((selection: EditorSelection, timestamp: number) => {
-    if (!editing || editingTransient.current.isComposing) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('문단 나누는 중…')
-    void api().splitParagraphEditing({
-      sessionId: editing.sessionId,
-      transactionId: editingTransient.current.nextTransactionId('ui-split'),
-      selectionBefore: selection,
-      timestamp
-    }).then((result: EditingActionResult) => {
-      applyEditingResult(result)
-      setEditingStatus('편집 중')
-    }).catch((reason: unknown) => {
-      return recoverEditingFailure('문단 나눔', reason)
-    }).finally(() => {
-      setEditingPending((current) => Math.max(0, current - 1))
-    })
+    if (!editing || editingTransient.current.isImeComposing) return
+    const sessionId = editing.sessionId
+    // 한글 입력 직후 Enter도 남은 글자 commit을 먼저 보낸 뒤 나눈다. 빈 문단 첫 입력이면 caret anchor가 바뀌므로 그 commit
+    // 결과를 기다린다.
+    void editingTransient.current.runTypingCommand(async (waitedForInput) => {
+      setEditingPending((current) => current + 1)
+      setEditingStatus('문단 나누는 중…')
+      try {
+        applyEditingResult(await api().splitParagraphEditing({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-split'),
+          selectionBefore: selectionAfterInput(selection, editingSelectionRef.current, waitedForInput, { followSameSurface: false }),
+          timestamp
+        }) as EditingActionResult)
+        setEditingStatus('편집 중')
+      } catch (reason) {
+        await recoverEditingFailure('문단 나눔', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    }, isSyntheticCaretAnchorId(selection.focusTextNodeId))
   }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const mergeEditingParagraph = useCallback((
     selection: EditorSelection,
@@ -2526,28 +2595,36 @@ export default function App() {
     inputType: 'deleteContentBackward' | 'deleteContentForward',
     timestamp: number
   ) => {
-    if (!editing || editingTransient.current.isComposing) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('문단 합치는 중…')
-    void api().mergeParagraphEditing({
-      sessionId: editing.sessionId,
-      transactionId: editingTransient.current.nextTransactionId('ui-merge'),
-      selectionBefore: selection,
-      direction,
-      inputType,
-      timestamp
-    }).then((result: EditingActionResult) => {
-      applyEditingResult(result)
-      setEditingStatus('편집 중')
-    }).catch((reason: unknown) => {
-      return recoverEditingFailure('문단 병합', reason)
-    }).finally(() => {
-      setEditingPending((current) => Math.max(0, current - 1))
-    })
+    if (!editing || editingTransient.current.isImeComposing) return
+    const sessionId = editing.sessionId
+    void editingTransient.current.runTypingCommand(async (waitedForInput) => {
+      setEditingPending((current) => current + 1)
+      setEditingStatus('문단 합치는 중…')
+      try {
+        applyEditingResult(await api().mergeParagraphEditing({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-merge'),
+          selectionBefore: selectionAfterInput(selection, editingSelectionRef.current, waitedForInput, { followSameSurface: false }),
+          direction,
+          inputType,
+          timestamp
+        }) as EditingActionResult)
+        setEditingStatus('편집 중')
+      } catch (reason) {
+        await recoverEditingFailure('문단 병합', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    }, isSyntheticCaretAnchorId(selection.focusTextNodeId))
   }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
   const onComposingChange = useCallback((composing: boolean) => {
     editingTransient.current.setComposing(composing)
+    setEditingInputBuffered(composing)
   }, [])
+  const registerInputFlush = useCallback(
+    (flusher: EditingInputFlusher) => editingTransient.current.registerInputFlusher(flusher),
+    []
+  )
   const editingCapabilityState = useMemo(
     () => editingCapabilities(document, editingSelection),
     [document, editingSelection]
@@ -2586,47 +2663,50 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !characterStyleState.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !characterStyleState.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('글자 모양 반영 중…')
-    try {
-      applyEditingResult(await api().applyCharacterStyle({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-style'),
-        sectionPath: editingSelection.sectionPath,
-        textNodeId: editingSelection.focusTextNodeId,
-        selection: editingSelection,
-        ...style,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus(
-        style.bold !== undefined
-          ? style.bold ? '굵게 적용' : '굵게 해제'
-          : style.italic !== undefined
-            ? style.italic ? '기울임 적용' : '기울임 해제'
-            : style.underline !== undefined
-              ? style.underline ? '밑줄 적용' : '밑줄 해제'
-              : style.strikeout !== undefined
-                ? style.strikeout ? '취소선 적용' : '취소선 해제'
-          : style.height !== undefined
-            ? `글자 크기 ${style.height / 100}pt`
-            : style.color !== undefined
-              ? '글자 색상 적용'
-              : '문서 글꼴 적용'
-      )
-    } catch (reason) {
-      await recoverEditingFailure('글자 모양', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('글자 모양 반영 중…')
+      try {
+        applyEditingResult(await api().applyCharacterStyle({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-style'),
+          sectionPath: selection.sectionPath,
+          textNodeId: selection.focusTextNodeId,
+          selection,
+          ...style,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus(
+          style.bold !== undefined
+            ? style.bold ? '굵게 적용' : '굵게 해제'
+            : style.italic !== undefined
+              ? style.italic ? '기울임 적용' : '기울임 해제'
+              : style.underline !== undefined
+                ? style.underline ? '밑줄 적용' : '밑줄 해제'
+                : style.strikeout !== undefined
+                  ? style.strikeout ? '취소선 적용' : '취소선 해제'
+            : style.height !== undefined
+              ? `글자 크기 ${style.height / 100}pt`
+              : style.color !== undefined
+                ? '글자 색상 적용'
+                : '문서 글꼴 적용'
+        )
+      } catch (reason) {
+        await recoverEditingFailure('글자 모양', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     characterStyleState.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2640,43 +2720,46 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.paragraphStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.paragraphStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('문단 모양 반영 중…')
-    try {
-      applyEditingResult(await api().applyParagraphStyle({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-style'),
-        sectionPath: editingSelection.sectionPath,
-        textNodeId: editingSelection.focusTextNodeId,
-        selection: editingSelection,
-        ...style,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus(
-        style.align !== undefined
-          ? '문단 정렬 적용'
-          : style.lineSpacing !== undefined
-            ? `줄 간격 ${style.lineSpacing}%`
-            : style.indent !== undefined
-              ? style.indent >= 0 ? `첫 줄 들여쓰기 ${style.indent / 100}pt` : `첫 줄 내어쓰기 ${Math.abs(style.indent) / 100}pt`
-              : style.marginBefore !== undefined
-                ? `문단 앞 간격 ${style.marginBefore / 100}pt`
-                : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
-      )
-    } catch (reason) {
-      await recoverEditingFailure('문단 모양', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('문단 모양 반영 중…')
+      try {
+        applyEditingResult(await api().applyParagraphStyle({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-style'),
+          sectionPath: selection.sectionPath,
+          textNodeId: selection.focusTextNodeId,
+          selection,
+          ...style,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus(
+          style.align !== undefined
+            ? '문단 정렬 적용'
+            : style.lineSpacing !== undefined
+              ? `줄 간격 ${style.lineSpacing}%`
+              : style.indent !== undefined
+                ? style.indent >= 0 ? `첫 줄 들여쓰기 ${style.indent / 100}pt` : `첫 줄 내어쓰기 ${Math.abs(style.indent) / 100}pt`
+                : style.marginBefore !== undefined
+                  ? `문단 앞 간격 ${style.marginBefore / 100}pt`
+                  : `문단 뒤 간격 ${(style.marginAfter ?? 0) / 100}pt`
+        )
+      } catch (reason) {
+        await recoverEditingFailure('문단 모양', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.paragraphStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2689,41 +2772,44 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 셀 모양 반영 중…')
-    try {
-      applyEditingResult(await api().applyCellStyle({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-cell-style'),
-        sectionPath: editingSelection.sectionPath,
-        textNodeId: editingSelection.focusTextNodeId,
-        selection: editingSelection,
-        ...style,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus(
-        style.backgroundColor !== undefined
-          ? '표 셀 배경색 적용'
-          : style.borderType === 'NONE'
-            ? '표 셀 테두리 해제'
-            : style.borderWidth !== undefined
-              ? `표 셀 테두리 ${style.borderWidth}mm`
-              : '표 셀 테두리색 적용'
-      )
-    } catch (reason) {
-      await recoverEditingFailure('표 셀 모양', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 셀 모양 반영 중…')
+      try {
+        applyEditingResult(await api().applyCellStyle({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-cell-style'),
+          sectionPath: selection.sectionPath,
+          textNodeId: selection.focusTextNodeId,
+          selection,
+          ...style,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus(
+          style.backgroundColor !== undefined
+            ? '표 셀 배경색 적용'
+            : style.borderType === 'NONE'
+              ? '표 셀 테두리 해제'
+              : style.borderWidth !== undefined
+                ? `표 셀 테두리 ${style.borderWidth}mm`
+                : '표 셀 테두리색 적용'
+        )
+      } catch (reason) {
+        await recoverEditingFailure('표 셀 모양', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2731,30 +2817,33 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 행 추가 중…')
-    try {
-      applyEditingResult(await api().insertTableRowAfter({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-row'),
-        selectionBefore: editingSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('현재 셀 아래에 빈 행 추가')
-    } catch (reason) {
-      await recoverEditingFailure('표 행 추가', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 행 추가 중…')
+      try {
+        applyEditingResult(await api().insertTableRowAfter({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-row'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('현재 셀 아래에 빈 행 추가')
+      } catch (reason) {
+        await recoverEditingFailure('표 행 추가', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2762,30 +2851,33 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 행 삭제 중…')
-    try {
-      applyEditingResult(await api().deleteTableRow({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-row'),
-        selectionBefore: editingSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('현재 표 행 삭제')
-    } catch (reason) {
-      await recoverEditingFailure('표 행 삭제', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 행 삭제 중…')
+      try {
+        applyEditingResult(await api().deleteTableRow({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-row'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('현재 표 행 삭제')
+      } catch (reason) {
+        await recoverEditingFailure('표 행 삭제', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2793,30 +2885,33 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 열 추가 중…')
-    try {
-      applyEditingResult(await api().insertTableColumnAfter({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
-        selectionBefore: editingSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('현재 열 오른쪽에 빈 열 추가')
-    } catch (reason) {
-      await recoverEditingFailure('표 열 추가', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 열 추가 중…')
+      try {
+        applyEditingResult(await api().insertTableColumnAfter({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('현재 열 오른쪽에 빈 열 추가')
+      } catch (reason) {
+        await recoverEditingFailure('표 열 추가', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2824,30 +2919,33 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 열 삭제 중…')
-    try {
-      applyEditingResult(await api().deleteTableColumn({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
-        selectionBefore: editingSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('현재 표 열 삭제')
-    } catch (reason) {
-      await recoverEditingFailure('표 열 삭제', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 열 삭제 중…')
+      try {
+        applyEditingResult(await api().deleteTableColumn({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-column'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('현재 표 열 삭제')
+      } catch (reason) {
+        await recoverEditingFailure('표 열 삭제', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2855,59 +2953,133 @@ export default function App() {
     if (
       !editing ||
       !editingSelection ||
-      !editingCapabilityState.cellStyle.available ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !editingCapabilityState.cellStyle.available
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('표 셀 병합 중…')
-    try {
-      applyEditingResult(await api().mergeTableCellRight({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-cell-merge'),
-        selectionBefore: editingSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('오른쪽 셀과 병합 · 병합 셀은 읽기 전용')
-    } catch (reason) {
-      await recoverEditingFailure('표 셀 병합', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('표 셀 병합 중…')
+      try {
+        applyEditingResult(await api().mergeTableCellRight({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-cell-merge'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('오른쪽 셀과 병합 · 병합 셀은 읽기 전용')
+      } catch (reason) {
+        await recoverEditingFailure('표 셀 병합', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     editingSelection,
     editingCapabilityState.cellStyle.available,
-    editingPending,
     applyEditingResult,
     recoverEditingFailure
   ])
   const splitTableCell = useCallback(async () => {
     if (
       !editing ||
-      !tableCellSelection ||
-      editingPending ||
-      editingTransient.current.isComposing
+      !tableCellSelection
     ) return
-    setEditingPending((current) => current + 1)
-    setEditingStatus('병합 셀 분할 중…')
-    try {
-      applyEditingResult(await api().splitTableCell({
-        sessionId: editing.sessionId,
-        transactionId: editingTransient.current.nextTransactionId('ui-table-cell-split'),
-        selection: tableCellSelection,
-        timestamp: performance.now()
-      }) as EditingActionResult)
-      setEditingStatus('병합 셀 분할 · 왼쪽 셀 편집 가능')
-    } catch (reason) {
-      await recoverEditingFailure('표 셀 분할', reason)
-    } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
-    }
+    const sessionId = editing.sessionId
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 돈다.
+    await editingTransient.current.runAfterInput(async () => {
+      setEditingPending((current) => current + 1)
+      setEditingStatus('병합 셀 분할 중…')
+      try {
+        applyEditingResult(await api().splitTableCell({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-table-cell-split'),
+          selection: tableCellSelection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('병합 셀 분할 · 왼쪽 셀 편집 가능')
+      } catch (reason) {
+        await recoverEditingFailure('표 셀 분할', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
   }, [
     editing?.sessionId,
     tableCellSelection,
-    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
+  const insertFootnote = useCallback(async () => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.footnote.available
+    ) return
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('각주 넣는 중…')
+      try {
+        applyEditingResult(await api().insertFootnote({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-footnote-insert'),
+          selectionBefore: selection,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('caret 자리에 각주를 넣고 각주 본문으로 이동')
+      } catch (reason) {
+        await recoverEditingFailure('각주 넣기', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.footnote.available,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
+  const deleteFootnote = useCallback(async () => {
+    const notePath = editingCapabilityState.focus?.footnotePath
+    if (
+      !editing ||
+      !editingSelection ||
+      !notePath
+    ) return
+    const sessionId = editing.sessionId
+    const requested = editingSelectionRef.current ?? editingSelection
+    // 입력 직후 눌러도 버리지 않는다. 입력 칸의 남은 글자를 먼저 반영한 뒤 그 결과 selection에서 돈다.
+    await editingTransient.current.runAfterInput(async (waitedForInput) => {
+      const selection = selectionAfterInput(requested, editingSelectionRef.current, waitedForInput)
+      setEditingPending((current) => current + 1)
+      setEditingStatus('각주 지우는 중…')
+      try {
+        applyEditingResult(await api().deleteFootnote({
+          sessionId,
+          transactionId: editingTransient.current.nextTransactionId('ui-footnote-delete'),
+          selectionBefore: selection,
+          notePath,
+          timestamp: performance.now()
+        }) as EditingActionResult)
+        setEditingStatus('각주를 지우고 뒤 각주 번호를 다시 매김')
+      } catch (reason) {
+        await recoverEditingFailure('각주 지우기', reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.focus?.footnotePath,
     applyEditingResult,
     recoverEditingFailure
   ])
@@ -2938,6 +3110,10 @@ export default function App() {
   useEffect(() => api().onRecoveryJournalStopped((notice: { sessionId: string; message: string }) => {
     setRecoveryJournalStopped(notice)
     if (editingTransient.current.currentSession?.sessionId === notice.sessionId) setEditingStatus(notice.message)
+  }), [])
+  // 창 닫기·앱 종료 전 main의 요청: 입력 칸에 남은 글자를 commit하고 끝나면 답한다. main은 답을 받은 뒤 dirty를 본다.
+  useEffect(() => api().onFlushEditingInput((requestId: string) => {
+    void answerInputFlushRequest(editingTransient.current, () => api().editingInputFlushed(requestId))
   }), [])
   useEffect(() => api().onRecoveryStart((request: { filePath: string; journalId: string }) => {
     // 엔진이 끝난 session을 renderer가 아직 모를 수 있다. 편집 상태를 먼저 정리한다.
@@ -2990,47 +3166,59 @@ export default function App() {
       }
     })()
   }, [pendingRecovery, loading, openedPath, documentLoading, editing, fixedDocument])
-  const undoEditing = useCallback(async () => {
-    if (!editing || editingPending || editingTransient.current.isComposing) return
-    try {
-      applyEditingResult(await api().undoEditing(editing.sessionId) as EditingActionResult)
-      setEditingStatus('실행 취소')
-    } catch (reason) {
-      await recoverEditingFailure('실행 취소', reason)
-    }
-  }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
-  const redoEditing = useCallback(async () => {
-    if (!editing || editingPending || editingTransient.current.isComposing) return
-    try {
-      applyEditingResult(await api().redoEditing(editing.sessionId) as EditingActionResult)
-      setEditingStatus('다시 실행')
-    } catch (reason) {
-      await recoverEditingFailure('다시 실행', reason)
-    }
-  }, [editing?.sessionId, editingPending, applyEditingResult, recoverEditingFailure])
+  // 실행 취소·다시 실행은 입력 칸에 남은 글자(한글 음절 묶음 대기·응답 대기 commit)를 먼저 반영한 뒤 돈다. 입력 직후
+  // 첫 실행 취소가 그 글자를 되돌린다(예전에는 조합 대기·응답 대기 중 누른 실행 취소를 그냥 버렸다).
+  const runHistory = useCallback(async (direction: HistoryDirection) => {
+    if (!editing) return
+    const sessionId = editing.sessionId
+    await editingTransient.current.runAfterInput(async () => {
+      const label = direction === 'redo' ? '다시 실행' : '실행 취소'
+      setEditingPending((current) => current + 1)
+      try {
+        applyEditingResult(await (direction === 'redo'
+          ? api().redoEditing(sessionId)
+          : api().undoEditing(sessionId)) as EditingActionResult)
+        setEditingStatus(label)
+      } catch (reason) {
+        await recoverEditingFailure(label, reason)
+      } finally {
+        setEditingPending((current) => Math.max(0, current - 1))
+      }
+    })
+  }, [editing?.sessionId, applyEditingResult, recoverEditingFailure])
+  const undoEditing = useCallback(() => runHistory('undo'), [runHistory])
+  const redoEditing = useCallback(() => runHistory('redo'), [runHistory])
   const routeNativeHistory = useCallback((direction: HistoryDirection) => {
-    if (editingTransient.current.isComposing) return
-    if (direction === 'redo') void redoEditing()
-    else void undoEditing()
-  }, [undoEditing, redoEditing])
+    if (editingTransient.current.isImeComposing) return
+    void runHistory(direction)
+  }, [runHistory])
   const saveEditingAs = useCallback(async () => {
-    if (!editing?.isDirty || editingPending || editingTransient.current.isComposing) return
-    setEditingPending((current) => current + 1)
+    if (!editing) return
+    // 입력 직후 저장도 마지막 글자까지 담는다. 남은 글자를 반영한 뒤 그 결과의 dirty 상태로 저장 여부를 정한다.
+    const hadInput = editing.isDirty || editingTransient.current.hasPendingInput
+    if (!hadInput) return
+    await editingTransient.current.runAfterInput(() => saveEditingAsNow())
+  }, [editing?.sessionId, editing?.isDirty])
+  const saveEditingAsNow = async () => {
+    const current = editingTransient.current.currentSession
+    if (!current?.isDirty) return
+    setEditingPending((count) => count + 1)
     setEditingStatus('HWPX 변경본 검증 중…')
     try {
-      const result = await api().saveEditingAs(editing.sessionId) as EditingSaveAsDialogResult
+      const result = await api().saveEditingAs(current.sessionId) as EditingSaveAsDialogResult
       if (result.outcome === 'cancelled') {
         setEditingStatus('편집 중')
         return
       }
-      setEditing((current) => current ? {
-        sessionId: current.sessionId,
+      editingTransient.current.noteHistory(result)
+      setEditing((session) => session ? {
+        sessionId: session.sessionId,
         revision: result.revision,
         savedRevision: result.savedRevision,
         canUndo: result.canUndo,
         canRedo: result.canRedo,
         isDirty: result.isDirty
-      } : current)
+      } : session)
       const savedName = result.destinationPath.split(/[\\/]/).pop() ?? result.destinationPath
       const structureLabels = {
         text: '본문',
@@ -3038,7 +3226,8 @@ export default function App() {
         'paragraph-style': '문단 모양',
         'paragraph-structure': '문단 구조',
         'table-cell-style': '표 셀 모양',
-        'table-structure': '표 구조'
+        'table-structure': '표 구조',
+        'note-structure': '각주'
       } as const
       const savedStructures = result.lossPolicy.structures
         .map(({ structure }) => structureLabels[structure])
@@ -3056,9 +3245,9 @@ export default function App() {
       if (isEditingEngineFailure(reason)) endEditingAfterEngineFailure(status)
       else setEditingStatus(status)
     } finally {
-      setEditingPending((current) => Math.max(0, current - 1))
+      setEditingPending((count) => Math.max(0, count - 1))
     }
-  }, [editing?.sessionId, editing?.isDirty, editingPending, endEditingAfterEngineFailure])
+  }
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && searchOpen) {
@@ -3088,7 +3277,8 @@ export default function App() {
         void saveEditingAs()
         return
       }
-      if ((action === 'undo' || action === 'redo') && editing && !editingTransient.current.isComposing) {
+      // IME가 조합 중인 키(event.isComposing)는 IME 몫이다. 조합을 마친 뒤 대기 중인 글자는 실행 취소가 먼저 반영한다.
+      if ((action === 'undo' || action === 'redo') && editing && !event.isComposing && !editingTransient.current.isImeComposing) {
         event.preventDefault()
         if (action === 'redo') void redoEditing()
         else void undoEditing()
@@ -3213,6 +3403,7 @@ export default function App() {
       shortcutPlatform={shortcutPlatform}
       editing={editing}
       editingPending={editingPending}
+      editingInputPending={editingInputBuffered || editingTransient.current.hasPendingInput}
       documentLoading={documentLoading}
       loading={loading}
       hasDocument={hasDocument}
@@ -3261,6 +3452,10 @@ export default function App() {
       onDeleteTableColumn={() => void deleteTableColumn()}
       onMergeTableCellRight={() => void mergeTableCellRight()}
       onSplitTableCell={() => void splitTableCell()}
+      footnoteAvailable={editingCapabilityState.footnote.available}
+      footnoteDeleteAvailable={Boolean(editingCapabilityState.focus?.footnotePath)}
+      onInsertFootnote={() => void insertFootnote()}
+      onDeleteFootnote={() => void deleteFootnote()}
     />
     {effectiveDocument && !loading && !objectNotice.dismissed && <ObjectPlaceholderBanner
       counts={objectPlaceholderCounts}
@@ -3298,7 +3493,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
+          const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, registerInputFlush, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, documentStructureOf: structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
           const pageFrame = effectiveDocument.page
           const bodyWidth = pageFrame.width - pageFrame.margin.left - pageFrame.margin.right
           const bodyHeight = pageFrame.height - pageFrame.margin.top - pageFrame.margin.bottom

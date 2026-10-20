@@ -44,7 +44,13 @@ import { PDF_OBJECT_WARNING_CONTINUE, pdfObjectPlaceholderConfirmation } from '.
 import { writeFileAtomically } from '../core/editing/save_as'
 import { editingLossPolicyDetail } from './editing_loss_guidance'
 import { isAllowedExternalUrl, isSameTrustedDocument } from './external_navigation'
-import { createGuardedIpc, rendererUrlMatcher } from './ipc_guard'
+import { createGuardedIpc, createRendererRequest, rendererUrlMatcher } from './ipc_guard'
+import {
+  EDITING_FLUSH_INPUT_CHANNEL,
+  EDITING_INPUT_FLUSHED_CHANNEL,
+  RENDERER_INPUT_FLUSH_TIMEOUT_MS,
+  resolveWindowClose
+} from './window_close'
 import type {
   EditingCharacterStyleRequest,
   EditingCellStyleRequest,
@@ -55,6 +61,8 @@ import type {
   EditingMergeTableCellRightRequest,
   EditingMergeParagraphRequest,
   EditingInsertTableRowRequest,
+  EditingInsertFootnoteRequest,
+  EditingDeleteFootnoteRequest,
   EditingParagraphStyleRequest,
   EditingRangeCommitRequest,
   EditingSplitParagraphRequest,
@@ -85,6 +93,12 @@ const devRendererUrl = isDev ? process.env['ELECTRON_RENDERER_URL'] || undefined
 const ipc = createGuardedIpc(ipcMain, {
   isTrustedWebContents: (webContents) => windowsById.get(webContents.id)?.webContents === webContents,
   isTrustedUrl: rendererUrlMatcher({ rendererFile, devServerUrl: devRendererUrl })
+})
+// 창 닫기·앱 종료 전에 renderer 입력 칸에 남은 글자(음절 묶음 대기)를 commit하게 하고 답을 기다린다(`window_close.ts`).
+const rendererInputFlush = createRendererRequest(ipc, {
+  requestChannel: EDITING_FLUSH_INPUT_CHANNEL,
+  replyChannel: EDITING_INPUT_FLUSHED_CHANNEL,
+  timeoutMs: RENDERER_INPUT_FLUSH_TIMEOUT_MS
 })
 // PDF 내보내기 요청마다 renderer가 인쇄 준비를 마쳤다고 알릴 때까지 기다리는 대기열(requestId → 보낸 webContents·완료).
 const pendingPdfReady = new Map<string, { sender: Electron.WebContents; resolve: () => void }>()
@@ -329,7 +343,8 @@ function captureVisualState(window: BrowserWindow): void {
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
-  // column(2단 영역 둘째 단의 본문 문단), line-split(쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각). 없으면 본문 문단·표 셀.
+  // column(2단 영역 둘째 단의 본문 문단), line-split(쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각), text-box(글상자 글), memo(메모 본문).
+  // 없으면 본문 문단·표 셀.
   const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
   const editTargetLabels: Record<string, string> = {
     'table-caret': 'HWPX 표 앞뒤 글자 편집',
@@ -339,7 +354,9 @@ function captureVisualState(window: BrowserWindow): void {
     header: 'HWPX 머리말 편집',
     footer: 'HWPX 꼬리말 편집',
     column: 'HWPX 문단 편집',
-    'line-split': 'HWPX 문단 편집'
+    'line-split': 'HWPX 문단 편집',
+    'text-box': 'HWPX 글상자 편집',
+    memo: 'HWPX 메모 편집'
   }
   // 같은 입력 칸 이름을 쓰는 대상 가운데 고를 칸(표 앞·뒤 caret, 각주·미주 목록)의 조상 selector.
   const editTargetScopes: Record<string, string> = {
@@ -349,7 +366,9 @@ function captureVisualState(window: BrowserWindow): void {
     endnote: '[data-note-kind="endnote"]',
     column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]',
     // 쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각(편집 중 원본 문단을 조각 높이로 잘라 둔 입력 칸).
-    'line-split': '.viewer-line-split-clip'
+    'line-split': '.viewer-line-split-clip',
+    'text-box': '[data-object-kind="text-box"]',
+    memo: '[data-object-kind="memo"]'
   }
   const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
   const decorationTarget = editTarget === 'header' || editTarget === 'footer'
@@ -360,6 +379,8 @@ function captureVisualState(window: BrowserWindow): void {
   const tableStructureProbeEnabled = testValue('HAN_FLOW_VISUAL_TABLE_STRUCTURE_PROBE') === '1'
   const autoSaveEdit = testValue('HAN_FLOW_VISUAL_AUTO_SAVE') === '1'
   const exitWhenComplete = testValue('HAN_FLOW_VISUAL_EXIT') === '1'
+  // 상태를 다 잰 뒤 이 글자를 조합 입력하고 commit 전에 바로 앱을 끝낸다(입력 직후 종료 E2E).
+  const closeAfterTypingText = testValue('HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING')
   // 강제 종료 뒤 다시 띄운 앱에서 복구한 편집 글자(HAN_FLOW_E2E_RECOVERY_ACTION=recover와 함께 쓴다).
   const recoveryText = testValue('HAN_FLOW_VISUAL_RECOVERY_TEXT')
   // 화면 글자에 있어야 하는 문자열(복구 뒤 저장본을 다시 열어 확인).
@@ -798,6 +819,184 @@ function captureVisualState(window: BrowserWindow): void {
       setTimeout(() => void captureWhenReady(), 250)
       return
     }
+    if (!editTriggered && editText && editTarget === 'footnote') {
+      // 각주 만들기·지우기 E2E: 본문 caret에 [각주 넣기] → 새 각주 본문에 조합 입력 → 실행 취소(입력·각주)·다시 실행 →
+      // 새 각주 본문 caret에서 [각주 지우기] → 실행 취소 → (저장). 번호 표시는 쪽 화면의 각주 번호 표시로 센다.
+      editTriggered = true
+      stableSamples = 0
+      previousSignature = ''
+      editProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-button'
+        const setPhase = (value) => {
+          phase = value
+          console.error('HAN_FLOW_E2E_PHASE ' + value)
+        }
+        const waitFor = async (predicate, timeout = 30000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('각주 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        ${RIBBON_E2E_HELPERS}
+        const expected = ${JSON.stringify(editText)}
+        const button = (label) => document.querySelector('[aria-label="' + label + '"]')
+        const waitButton = async (label) => {
+          await revealRibbonControl(label)
+          return waitFor(() => {
+            const candidate = button(label)
+            return candidate && !candidate.disabled && !candidate.closest('[role="tabpanel"]')?.hidden ? candidate : undefined
+          })
+        }
+        const markers = () => Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker[data-object-kind="footnote"]')).map((marker) => marker.textContent)
+        const surfaceById = (id) => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]'))
+          .find((element) => element.dataset.sourceTextNodeId === id)
+        const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
+        const settle = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        const textNode = (element) => {
+          if (!element.firstChild) element.append(document.createTextNode(''))
+          return element.firstChild
+        }
+        const setSelection = (element, anchorOffset, focusOffset) => {
+          const node = textNode(element)
+          window.getSelection().setBaseAndExtent(node, anchorOffset, node, focusOffset)
+        }
+        const getSelection = (element) => {
+          const selection = window.getSelection()
+          const offset = (node, nodeOffset) => {
+            if (!element.contains(node)) return -1
+            const range = document.createRange()
+            range.selectNodeContents(element)
+            range.setEnd(node, nodeOffset)
+            return range.toString().length
+          }
+          return selection?.anchorNode ? { anchorOffset: offset(selection.anchorNode, selection.anchorOffset), focusOffset: offset(selection.focusNode, selection.focusOffset) } : undefined
+        }
+        const caretAt = (element, offset) => {
+          const value = element && getSelection(element)
+          return value?.anchorOffset === offset && value?.focusOffset === offset
+        }
+        // 버튼은 한 번만 누른다. 입력 직후 누른 첫 [실행 취소]도 남은 조합 글자를 먼저 반영한 뒤 그 글자를 되돌려야 한다.
+        const click = async (label, nextPhase, predicate) => {
+          setPhase(nextPhase)
+          ;(await waitButton(label)).click()
+          await waitFor(predicate)
+        }
+        const editButton = await waitFor(() => button('HWPX 편집 시작'))
+        editButton.click()
+        setPhase('body-surface')
+        await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        const activeTabAfterStart = selectedRibbonTab()
+        const body = await waitFor(() => Array.from(document.querySelectorAll('.viewer-page [aria-label="HWPX 문단 편집"]'))
+          .find((element) => element.dataset.inputReady === 'true' && (element.textContent ?? '').length >= 4))
+        body.focus()
+        await settle()
+        setSelection(body, 2, 2)
+        body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        await settle()
+        const originalMarkers = markers()
+        await click('각주 넣기', 'insert-footnote', () => markers().length === originalMarkers.length + 1)
+        const insertedMarkers = markers()
+        setPhase('new-footnote-caret')
+        const noteSurface = await waitFor(() => {
+          const active = document.activeElement
+          return active?.getAttribute('aria-label') === 'HWPX 각주·미주 편집' && active.dataset.inputReady === 'true' && (active.textContent ?? '') === '' ? active : undefined
+        })
+        const noteId = noteSurface.dataset.sourceTextNodeId
+        setPhase('type-footnote')
+        // 실제 IME처럼 한 입력 칸에 조합 event를 이어 보낸다(편집 E2E 기본 probe와 같은 순서).
+        let composed = ''
+        const target = surfaceById(noteId)
+        for (const character of Array.from(expected)) {
+          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+          target.textContent = composed + 'ㅎ'
+          setSelection(target, composed.length + 1, composed.length + 1)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㅎ', isComposing: true }))
+          composed += character
+          target.textContent = composed
+          setSelection(target, composed.length, composed.length)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
+          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
+        }
+        // 마지막 음절의 compositionend 바로 뒤(음절 묶음이 아직 입력 칸에 머물러 commit 전) [실행 취소]를 한 번 누른다.
+        const editedMatches = surfaceById(noteId)?.textContent === expected
+        // 각주 넣기 상태 문구가 그대로면 아직 글자 commit 결과가 오지 않았다(입력 반영 전에 누른 실행 취소).
+        const undoClickedBeforeCommit = status().includes('각주 본문으로 이동')
+        await click('실행 취소', 'undo-text', () => surfaceById(noteId)?.textContent === '' && !button('다시 실행')?.disabled)
+        const immediateUndoMatches = surfaceById(noteId)?.textContent === '' && markers().length === insertedMarkers.length
+        await waitFor(() => caretAt(surfaceById(noteId), 0))
+        const undoneMatches = surfaceById(noteId)?.textContent === ''
+        const undoSelectionMatches = caretAt(surfaceById(noteId), 0)
+        await click('실행 취소', 'undo-insert', () => markers().length === originalMarkers.length)
+        const insertUndone = JSON.stringify(markers()) === JSON.stringify(originalMarkers)
+        await click('다시 실행', 'redo-insert', () => markers().length === originalMarkers.length + 1)
+        await click('다시 실행', 'redo-text', () => surfaceById(noteId)?.textContent === expected)
+        await waitFor(() => caretAt(surfaceById(noteId), expected.length))
+        const redoneMatches = surfaceById(noteId)?.textContent === expected && JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
+        const redoSelectionMatches = caretAt(surfaceById(noteId), expected.length)
+        // 입력 직후 실행 취소로 projection 전에 되돌렸으므로, 입력 글자의 projection caret은 다시 실행 뒤 위치로 본다.
+        const projectedSelectionMatches = redoSelectionMatches
+        setPhase('delete-caret')
+        const redone = surfaceById(noteId)
+        redone.focus()
+        await settle()
+        setSelection(redone, 1, 1)
+        redone.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        await settle()
+        await click('각주 지우기', 'delete-footnote', () => markers().length === originalMarkers.length)
+        const deleted = JSON.stringify(markers()) === JSON.stringify(originalMarkers) &&
+          !(document.querySelector('.viewer-pages')?.innerText ?? '').includes(expected)
+        await click('실행 취소', 'delete-undo', () => markers().length === originalMarkers.length + 1 && surfaceById(noteId)?.textContent === expected)
+        const deleteUndone = JSON.stringify(markers()) === JSON.stringify(insertedMarkers)
+        let saveStatusMatches
+        let dirtyCleared
+        if (${autoSaveEdit}) {
+          setPhase('save-button')
+          const saveButton = await waitButton('HWPX 변경본 저장')
+          saveButton.click()
+          setPhase('save-complete')
+          await waitFor(() => status().includes('저장 완료'))
+          saveStatusMatches = status().includes('각주') && /Preview (?:갱신 안 됨|없음)/.test(status())
+          dirtyCleared = !status().includes('저장 안 됨') && saveButton.disabled
+        }
+        return {
+          mode: 'footnote',
+          surface: 'footnote',
+          noteKind: 'footnote',
+          activeTabAfterStart,
+          originalMarkers,
+          insertedMarkers,
+          editedMatches,
+          undoneMatches,
+          redoneMatches,
+          projectedSelectionMatches,
+          undoSelectionMatches,
+          redoSelectionMatches,
+          insertUndone,
+          deleted,
+          deleteUndone,
+          saveStatusMatches,
+          dirtyCleared,
+          dirtyAtEnd: status().includes('저장 안 됨'),
+          undoClickedBeforeCommit,
+          immediateUndoMatches,
+          editableCount: document.querySelectorAll('.viewer-page [aria-label="HWPX 각주·미주 편집"]').length
+        }
+      })()`).catch(async (reason) => ({
+        probeError: reason instanceof Error ? reason.message : String(reason),
+        diagnostics: await window.webContents.executeJavaScript(`({
+          status: document.querySelector('.viewer-status')?.textContent,
+          markers: Array.from(document.querySelectorAll('.viewer-page sup.viewer-note-marker')).map((marker) => marker.textContent),
+          enabledButtons: Array.from(document.querySelectorAll('.viewer-ribbon-controls button:not(:disabled)')).map((button) => button.getAttribute('aria-label')),
+          activeLabel: document.activeElement?.getAttribute('aria-label'),
+          activeText: document.activeElement?.textContent
+        })`)
+      }))
+      setTimeout(() => void captureWhenReady(), 250)
+      return
+    }
     if (!editTriggered && editText) {
       editTriggered = true
       stableSamples = 0
@@ -913,6 +1112,9 @@ function captureVisualState(window: BrowserWindow): void {
         // 빈 문단 합성 anchor(#hp:p:N:empty)는 첫 입력 뒤 새 #hp:t:M anchor로 바뀐다. caret을 가진 새 surface를 따라간다.
         const editedTarget = await waitFor(() => findProjectedSurface(surfaces(), anchorId, expected, window.getSelection()?.focusNode))
         const editedAnchorId = editedTarget.dataset.sourceTextNodeId
+        // 글자·문단 모양 probe가 run을 나누면 입력 칸 element가 바뀌므로 각주·개체 종류는 편집 직후에 읽어 둔다.
+        const editedNoteKind = editedTarget.closest('[data-note-kind]')?.dataset.noteKind
+        const editedObjectKind = editedTarget.closest('[data-object-kind]')?.dataset.objectKind
         await waitFor(() => {
           const value = getSelection(editedTarget)
           return value.anchorOffset === selectionAfter.anchorOffset &&
@@ -947,6 +1149,27 @@ function captureVisualState(window: BrowserWindow): void {
           return value.anchorOffset === selectionAfter.anchorOffset && value.focusOffset === selectionAfter.focusOffset
         })
         const redoSelection = getSelection(redoneTarget)
+        // 입력 직후 실행 취소 단축키: 한 음절을 조합 입력하고 compositionend 바로 뒤(음절 묶음이 입력 칸에 머물러 commit 전)
+        // Ctrl+Z(macOS ⌘Z)를 한 번 누른다. 첫 실행 취소가 남은 글자를 먼저 반영한 뒤 그 글자만 되돌려야 한다(재시도 없음).
+        setPhase('immediate-undo-type')
+        const immediateTarget = surfaceById(editedAnchorId)
+        immediateTarget.focus()
+        setSelection(immediateTarget, expected.length, expected.length)
+        immediateTarget.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+        immediateTarget.textContent = expected + 'ㄱ'
+        setSelection(immediateTarget, expected.length + 1, expected.length + 1)
+        immediateTarget.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: 'ㄱ', isComposing: true }))
+        immediateTarget.textContent = expected + '가'
+        setSelection(immediateTarget, expected.length + 1, expected.length + 1)
+        immediateTarget.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: '가', isComposing: true }))
+        immediateTarget.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '가' }))
+        setPhase('immediate-undo-key')
+        const macShortcut = window.api?.platform === 'darwin'
+        immediateTarget.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: !macShortcut, metaKey: macShortcut, bubbles: true, cancelable: true }))
+        await waitFor(() => surfaceById(editedAnchorId)?.textContent === expected &&
+          document.querySelector('[aria-label="다시 실행"]')?.disabled === false)
+        const immediateUndoMatches = surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
+          .every((element) => element.textContent === expected)
         // 머리말·꼬리말 끝·처음에서 방향 키: 쪽마다 되풀이된 같은 칸으로 건너가지 않고 그 쪽 칸 안에 caret이 남아야 한다.
         // 다른 쪽 칸으로 옮겨 가면 caret이 같은 글자의 처음(또는 끝)으로 튄다. 마지막 쪽(둘째 쪽) 칸에서 누른다.
         let navigationProbe
@@ -1156,7 +1379,8 @@ function captureVisualState(window: BrowserWindow): void {
           decorationSynced: surfaces().filter((element) => element.dataset.sourceTextNodeId === editedAnchorId)
             .every((element) => element.textContent === expected),
           anchorTransition: anchorId === editedAnchorId ? undefined : { from: anchorId, to: editedAnchorId },
-          noteKind: editedTarget.closest('[data-note-kind]')?.dataset.noteKind,
+          noteKind: editedNoteKind,
+          objectKind: editedObjectKind,
           navigationProbe,
           activeTabAfterStart,
           originalLength: original.length,
@@ -1166,6 +1390,7 @@ function captureVisualState(window: BrowserWindow): void {
           projectedSelectionMatches: selectionAfterProjection.anchorOffset === selectionAfter.anchorOffset && selectionAfterProjection.focusOffset === selectionAfter.focusOffset,
           undoSelectionMatches: undoSelection.anchorOffset === selectionBefore.anchorOffset && undoSelection.focusOffset === selectionBefore.focusOffset,
           redoSelectionMatches: redoSelection.anchorOffset === selectionAfter.anchorOffset && redoSelection.focusOffset === selectionAfter.focusOffset,
+          immediateUndoMatches,
           styleProbe,
           saveStatusMatches,
           dirtyCleared,
@@ -1331,7 +1556,9 @@ function captureVisualState(window: BrowserWindow): void {
           footer: content(page.querySelector('.viewer-footer'))
         }
       }),
-      recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby'))
+      // MathML로 그린 수식(수식 script를 해석한 것): 원본 개체 수에는 들고 안내 배너 개수에서는 빠진다.
+      renderedEquations: document.querySelectorAll('.viewer-page [data-equation-rendered]').length,
+      recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby, .viewer-page .viewer-equation-math'))
         .filter((element) => !element.parentElement?.closest('.viewer-object-body, .viewer-note-body'))
         .reduce((sum, element) => sum + (element.textContent.match(/[^\\s\\p{Co}]/gu) || []).length, 0),
       objectNotice: document.querySelector('.viewer-object-banner-text')?.textContent ?? null,
@@ -1627,6 +1854,73 @@ function captureVisualState(window: BrowserWindow): void {
     }
     visualState.windowTitle = window.getTitle()
     visualState.suggestedPdfPath = suggestedPdfExportPath(currentDocumentPaths.get(window.webContents.id), lastDialogDirectory)
+    if (closeAfterTypingText && exitWhenComplete) {
+      // 입력 직후 종료: 깨끗한 편집 문서의 문단 끝에 음절을 조합 입력하고, 음절 묶음이 아직 입력 칸에 머문(commit 전) 그 자리에서
+      // 바로 앱을 끝낸다. 닫기 순서가 남은 입력을 먼저 반영해 저장 확인(HAN_FLOW_DIRTY_ACTION)을 거쳐야 한다.
+      visualState.closeAfterTypingProbe = await window.webContents.executeJavaScript(`(async () => {
+        let phase = 'edit-start'
+        try {
+        const waitFor = async (predicate, timeout = 30000) => {
+          const started = performance.now()
+          while (performance.now() - started < timeout) {
+            const result = predicate()
+            if (result) return result
+            await new Promise((resolve) => setTimeout(resolve, 25))
+          }
+          throw new Error('입력 직후 종료 E2E 조건 대기 시간이 초과되었습니다: ' + phase)
+        }
+        const status = () => document.querySelector('.viewer-status')?.textContent ?? ''
+        // 글자가 있는 본문 문단을 먼저 고른다(없으면 첫 입력 칸).
+        const readySurface = () => {
+          const ready = Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+            .filter((element) => element.dataset.inputReady === 'true')
+          return ready.find((element) => (element.textContent ?? '').length > 0) ?? ready[0]
+        }
+        if (!document.querySelector('.viewer-editing-badge')) {
+          ;(await waitFor(() => document.querySelector('[aria-label="HWPX 편집 시작"]'))).click()
+          await waitFor(() => document.querySelector('.viewer-editing-badge'))
+        }
+        phase = 'surface'
+        let target = await waitFor(readySurface)
+        phase = 'focus'
+        const anchorId = target.dataset.sourceTextNodeId
+        target.focus()
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+        target = await waitFor(() => Array.from(document.querySelectorAll('[aria-label="HWPX 문단 편집"]'))
+          .find((element) => element.dataset.sourceTextNodeId === anchorId && element.dataset.inputReady === 'true'))
+        target.focus()
+        phase = 'type'
+        const dirtyBefore = status().includes('저장 안 됨')
+        const setCaret = (offset) => {
+          if (!target.firstChild) target.append(document.createTextNode(''))
+          window.getSelection().setBaseAndExtent(target.firstChild, offset, target.firstChild, offset)
+        }
+        let text = target.textContent ?? ''
+        setCaret(text.length)
+        for (const character of Array.from(${JSON.stringify(closeAfterTypingText)})) {
+          target.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, data: '' }))
+          text += character
+          target.textContent = text
+          setCaret(text.length)
+          target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertCompositionText', data: character, isComposing: true }))
+          target.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: character }))
+        }
+        // 이 시점에 글자는 입력 칸에만 있다(음절 묶음 대기). 상태 막대도 아직 깨끗하다고 보여야 한다.
+        return { dirtyBefore, dirtyAfterTyping: status().includes('저장 안 됨'), typedAt: Date.now() }
+        } catch (error) {
+          return {
+            probeError: String(error?.message ?? error),
+            phase,
+            surfaces: Array.from(document.querySelectorAll('[contenteditable]')).map((element) => [element.getAttribute('aria-label'), element.dataset.inputReady, (element.textContent ?? '').length]).slice(0, 10),
+            status: document.querySelector('.viewer-status')?.textContent ?? ''
+          }
+        }
+      })()`).catch((reason) => ({ probeError: String(reason) }))
+      // 상태 파일을 쓰는 동안에도 commit 대기 시간(450ms)이 지나지 않도록 바로 끝낸다.
+      if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState))
+      app.quit()
+      return
+    }
     if (stateOutput) await writeFile(stateOutput, JSON.stringify(visualState, null, 2))
     console.log('Visual test state:', visualState)
     if (exitWhenComplete) app.quit()
@@ -1884,7 +2178,10 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   })
   // 창을 떠나면 아직 내리지 않은 편집 기록을 바로 디스크에 쓴다.
   window.on('blur', () => void editingSessions.flushJournal(senderId))
+  // renderer가 비정상 종료하면 남은 입력 반영 요청을 기다리지 않고 지금 상태로 닫기 확인을 이어 간다.
+  window.webContents.on('render-process-gone', () => rendererInputFlush.cancel(senderId))
   window.webContents.once('destroyed', () => {
+    rendererInputFlush.cancel(senderId)
     documentImporter.cancel(senderId)
     // 닫기 확인을 거친 창은 이미 끝냈다. 그 밖의 경우(renderer 비정상 종료 등)는 window-all-closed가 정리를 기다린다.
     void editingSessions.stop(senderId)
@@ -1896,27 +2193,46 @@ function createWindow(initialOpen?: OpenPathRequest): BrowserWindow {
   })
   window.on('close', (event) => {
     if (closeApproved) return
-    const sessionId = editingSessions.currentSessionId(senderId)
-    if (!sessionId) return
-    const dirty = editingSessions.isDirty(senderId)
-    // 확인 대화상자를 띄우기 전에 기록을 내린다. 대화상자 중 OS가 앱을 끝내도 편집이 남는다.
-    if (dirty) void editingSessions.flushJournal(senderId)
+    if (!editingSessions.currentSessionId(senderId)) return
+    // 지금 dirty이면 renderer 답을 기다리기 전에 먼저 기록을 내린다(반영한 입력은 아래 순서가 다시 내린다).
+    if (editingSessions.isDirty(senderId)) void editingSessions.flushJournal(senderId)
     // 편집 session이 있는 창은 session을 끝내고(복구 기록 삭제까지) 나서 닫는다. 닫힌 뒤에 지우면 앱이 먼저 끝나
     // 다음 실행에서 버린(또는 방금 저장한) 편집을 복구하겠느냐고 묻는다.
     event.preventDefault()
     if (resolvingClose) return
     resolvingClose = true
     void (async () => {
-      if (dirty) {
+      // renderer 입력 칸에 남은 글자를 먼저 commit하게 한 뒤 dirty를 본다(`window_close.ts`). 입력 직후 닫아도 저장 확인을 거친다.
+      const decision = await resolveWindowClose({
+        currentSessionId: () => editingSessions.currentSessionId(senderId),
+        flushRendererInput: async () => {
+          const dirtyBeforeFlush = editingSessions.isDirty(senderId)
+          const outcome = window.isDestroyed()
+            ? 'unavailable' as const
+            : await rendererInputFlush.request(window.webContents)
+          // 입력 직후 종료 E2E: 반영 전후 dirty를 verify_app이 읽는다(stderr).
+          if (testValue('HAN_FLOW_VISUAL_CLOSE_AFTER_TYPING')) {
+            console.error('HAN_FLOW_E2E_CLOSE ' + JSON.stringify({
+              flush: outcome,
+              dirtyBeforeFlush,
+              dirtyAfterFlush: editingSessions.isDirty(senderId)
+            }))
+          }
+          return outcome
+        },
+        isDirty: (currentSessionId) => editingSessions.isDirty(senderId, currentSessionId),
+        flushJournal: () => editingSessions.flushJournal(senderId),
         // 닫히는 바로 그 창을 dialog 부모와 close 대상으로 쓴다.
-        const result = await resolveDirtyEditing(senderId, sessionId, window)
-        if (result.outcome === 'cancelled') {
-          applicationQuitRequested = false
-          return
-        }
+        resolveDirty: (currentSessionId) => resolveDirtyEditing(senderId, currentSessionId, window),
+        windowDestroyed: () => window.isDestroyed(),
+        stopSession: () => editingSessions.stop(senderId),
+        log: (message) => console.warn(message)
+      })
+      if (decision === 'cancelled') {
+        applicationQuitRequested = false
+        return
       }
-      if (window.isDestroyed()) return
-      await editingSessions.stop(senderId)
+      if (decision === 'gone') return
       closeApproved = true
       const resumeApplicationQuit = applicationQuitRequested
       if (window.isDestroyed()) {
@@ -2554,6 +2870,36 @@ app.whenReady().then(() => {
       event.sender.id,
       request as EditingMergeTableCellRightRequest
     )
+  }))
+
+  ipc.handle('editing:insertFootnote', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 넣기 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.insertFootnote(event.sender.id, request as EditingInsertFootnoteRequest)
+  }))
+
+  ipc.handle('editing:deleteFootnote', editingIpcHandler(async (event, request: unknown) => {
+    if (
+      !request ||
+      typeof request !== 'object' ||
+      !['sessionId', 'transactionId', 'notePath'].every(
+        (key) => typeof (request as Record<string, unknown>)[key] === 'string'
+      ) ||
+      !Number.isFinite((request as Record<string, unknown>)['timestamp']) ||
+      !isEditingSelection((request as Record<string, unknown>)['selectionBefore'])
+    ) {
+      throw new EditingOperationError('EDITING_INVALID_REQUEST', 'HWPX 각주 지우기 요청 형식이 올바르지 않습니다.')
+    }
+    return editingSessions.deleteFootnote(event.sender.id, request as EditingDeleteFootnoteRequest)
   }))
 
   ipc.handle('editing:splitTableCell', editingIpcHandler(async (event, request: unknown) => {

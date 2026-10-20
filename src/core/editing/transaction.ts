@@ -29,6 +29,12 @@ import {
   PatchTableFragmentCommand,
   ReplaceTableFragmentCommand
 } from './table_patch'
+import {
+  applyFootnoteCommand,
+  DeleteFootnoteCommand,
+  InsertFootnoteCommand,
+  RestoreFootnoteCommand
+} from './footnote_patch'
 import { buildLossReport } from './xml_scan'
 import { isSyntheticCaretAnchorId } from './empty_paragraph_anchor'
 import { ViewerDocument } from '../document/viewer_document'
@@ -53,6 +59,9 @@ export type EditCommand =
   | RestoreCellStyleCommand
   | ReplaceTableFragmentCommand
   | PatchTableFragmentCommand
+  | InsertFootnoteCommand
+  | DeleteFootnoteCommand
+  | RestoreFootnoteCommand
 
 export interface EditTransaction {
   id: string
@@ -151,7 +160,9 @@ export function applyEditTransaction(
                     ? applyRestoreCellStyleCommand(currentPackage, command)
                     : command.type === 'replace-table-fragment' || command.type === 'patch-table-fragment'
                       ? applyReplaceTableFragmentCommand(currentPackage, command)
-                      : applyReplaceParagraphFragmentCommand(currentPackage, command)
+                      : command.type === 'insert-footnote' || command.type === 'delete-footnote' || command.type === 'restore-footnote'
+                        ? applyFootnoteCommand(currentPackage, command)
+                        : applyReplaceParagraphFragmentCommand(currentPackage, command)
     if (command.type === 'replace-text' && result.package !== currentPackage) {
       const anchorId = (result as ReturnType<typeof applyReplaceTextCommand>).anchor.textNodeId
       if (anchorId !== command.textNodeId) {

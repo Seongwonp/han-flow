@@ -469,7 +469,7 @@ describe('HWPX 문단·글자 style patch', () => {
     expect(restored.package.readEntry(sectionPath)).toEqual(source.readEntry(sectionPath))
   })
 
-  test('이미 같은 문단 정렬은 no-op이고 머리말처럼 제한 밖 anchor는 거부한다', async () => {
+  test('이미 같은 문단 정렬은 no-op이고 머리말 글자도 같은 규칙으로 받는다', async () => {
     const source = await sourceWithCounts()
     const anchor = editableAnchor(source)
     const noOp = applyParagraphStyleCommand(source, {
@@ -484,13 +484,15 @@ describe('HWPX 문단·글자 style patch', () => {
     const headerAnchor = listHwpxTextAnchors(source, sectionPath).find(
       (candidate) => candidate.text === '공개 머리말'
     )!
-    expect(() =>
-      applyCharacterStyleCommand(source, {
-        type: 'apply-character-style',
-        sectionPath,
-        textNodeId: headerAnchor.textNodeId,
-        bold: false
-      })
-    ).toThrow('최상위 표 셀 직속 문단')
+    // 머리말 문단도 글자 모양 대상이다(공개 머리말은 굵은 글자다). 메모 본문 같은 제한 밖 anchor는 `sublist_text.test.ts`가 본다.
+    const header = applyCharacterStyleCommand(source, {
+      type: 'apply-character-style',
+      sectionPath,
+      textNodeId: headerAnchor.textNodeId,
+      bold: false
+    })
+    expect(header.changed).toBe(true)
+    expect(applyRestoreStyleCommand(header.package, header.inverse as Parameters<typeof applyRestoreStyleCommand>[1]).package.readEntry(sectionPath))
+      .toEqual(source.readEntry(sectionPath))
   })
 })

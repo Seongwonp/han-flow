@@ -54,12 +54,14 @@ describe('복구 기록 replay 검사', () => {
       'apply-cell-style',
       'apply-character-style',
       'apply-paragraph-style',
+      'delete-footnote',
+      'insert-footnote',
       'patch-table-fragment',
       'replace-paragraph-fragment',
       'replace-table-fragment',
       'replace-text'
     ])
-    for (const type of ['restore-style', 'restore-character-run', 'restore-cell-style'] as const) {
+    for (const type of ['restore-style', 'restore-character-run', 'restore-cell-style', 'restore-footnote'] as const) {
       expect(() => assertReplayableTransaction(transaction({ type, sectionPath: SECTION, textNodeId: ANCHOR } as never)))
         .toThrow(HwpxEditConflictError)
     }

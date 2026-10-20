@@ -7,6 +7,7 @@ import {
 } from './selection'
 import { isSyntheticCaretAnchorId } from './empty_paragraph_anchor'
 import { HwpxEditConflictError, listHwpxTextAnchors } from './text_patch'
+import { footnotesWithinSelection } from './footnote_patch'
 import {
   planReplaceParagraphSelection,
   selectionSpansParagraphs,
@@ -46,7 +47,8 @@ export function planReplaceSelection(
   const startIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.start.textNodeId)
   const endIndex = anchors.findIndex((anchor) => anchor.textNodeId === normalized.end.textNodeId)
   // 같은 문단 안 여러 run 범위. 문서 순서로 사이에 있는 `hp:t` 가운데 이 문단에 직접 든 것만 고친다. 문단 안 각주·미주
-  // 본문이나 표 셀처럼 다른 문단에 든 `hp:t`는 범위 사이에 있어도 지우지 않는다.
+  // 본문이나 표 셀처럼 다른 문단에 든 `hp:t`는 범위 사이에 있어도 글자 command로 지우지 않는다. 본문 문단의 범위가 각주 번호 표시를
+  // 품으면 그 각주를 통째로 지운다(글자 command 뒤, 뒤 각주부터 — 글자 command의 anchor 순번과 앞 각주 index가 바뀌지 않는다).
   const paragraph = textParagraph(sourcePackage, selection.sectionPath, normalized.start.textNodeId)
   const affected = anchors.slice(startIndex, endIndex + 1).filter((anchor) =>
     textParagraph(sourcePackage, selection.sectionPath, anchor.textNodeId) === paragraph
@@ -58,6 +60,7 @@ export function planReplaceSelection(
     )
   }
 
+  const footnotes = footnotesWithinSelection(sourcePackage, selection.sectionPath, normalized.start.textNodeId, normalized.end.textNodeId)
   const commands: EditCommand[] = affected.map((anchor, index) => {
     const first = index === 0
     const last = index === affected.length - 1
@@ -70,6 +73,9 @@ export function planReplaceSelection(
       insert: first ? insert : ''
     }
   })
+  for (const notePath of footnotes) {
+    commands.push({ type: 'delete-footnote', sectionPath: selection.sectionPath, textNodeId: normalized.start.textNodeId, notePath })
+  }
 
   return {
     commands,

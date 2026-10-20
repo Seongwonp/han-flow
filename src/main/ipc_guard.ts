@@ -171,3 +171,102 @@ export function createGuardedIpc(
     }
   }
 }
+
+/** main이 renderer에 보내고 답을 기다리는 요청의 결과. */
+export type RendererRequestOutcome = 'replied' | 'timeout' | 'unavailable'
+
+/** 요청을 받을 renderer(BrowserWindow.webContents와 같은 모양). */
+export interface RendererRequestTarget {
+  readonly id: number
+  isDestroyed(): boolean
+  isCrashed(): boolean
+  send(channel: string, ...args: unknown[]): void
+}
+
+export interface RendererRequest {
+  /**
+   * `target`에 요청을 보내고 답(`replied`)·시간 초과(`timeout`)·renderer 없음(`unavailable`) 가운데 하나로 끝난다.
+   * 거절하지 않는다. renderer가 이미 사라졌거나 비정상 종료했으면 보내지 않고 바로 `unavailable`이다.
+   */
+  request(target: RendererRequestTarget): Promise<RendererRequestOutcome>
+  /** 그 renderer에 보낸 요청을 모두 `unavailable`로 끝낸다(renderer 비정상 종료·창 소멸). */
+  cancel(webContentsId: number): void
+  /** 답을 기다리는 요청 수 */
+  readonly pendingCount: number
+}
+
+export interface RendererRequestOptions {
+  /** main → renderer 요청 channel. 인자는 요청 id 하나다. */
+  requestChannel: string
+  /** renderer → main 답 channel. 인자는 받은 요청 id 하나다. 검사를 통과한 보낸 쪽만 받는다. */
+  replyChannel: string
+  timeoutMs: number
+  warn?: (message: string) => void
+  setTimer?: (callback: () => void, ms: number) => unknown
+  clearTimer?: (handle: unknown) => void
+}
+
+/**
+ * main이 renderer에 묻고 답을 기다리는 요청. 답은 {@link GuardedIpc.on}으로 받으므로 신뢰하지 않는 frame의 답은 버리고,
+ * 요청을 보낸 바로 그 webContents가 보낸 같은 요청 id의 답만 받는다. 답이 `timeoutMs` 안에 오지 않으면(멈춘 renderer)
+ * `timeout`으로 끝내고 경고를 남긴다.
+ */
+export function createRendererRequest(ipc: GuardedIpc, options: RendererRequestOptions): RendererRequest {
+  const warn = options.warn ?? ((message: string) => console.warn(message))
+  const setTimer = options.setTimer ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
+  const clearTimer = options.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>))
+  const pending = new Map<string, {
+    webContentsId: number
+    timer: unknown
+    finish: (outcome: RendererRequestOutcome) => void
+  }>()
+  let sequence = 0
+
+  const settle = (requestId: string, outcome: RendererRequestOutcome): void => {
+    const entry = pending.get(requestId)
+    if (!entry) return
+    pending.delete(requestId)
+    clearTimer(entry.timer)
+    entry.finish(outcome)
+  }
+
+  ipc.on(options.replyChannel, (event, requestId: unknown) => {
+    if (typeof requestId !== 'string') return
+    const entry = pending.get(requestId)
+    if (!entry || event.sender?.id !== entry.webContentsId) return
+    settle(requestId, 'replied')
+  })
+
+  return {
+    request(target) {
+      let unavailable = false
+      try {
+        unavailable = target.isDestroyed() || target.isCrashed()
+      } catch {
+        unavailable = true
+      }
+      if (unavailable) return Promise.resolve('unavailable')
+      const requestId = `${options.requestChannel}:${target.id}:${++sequence}`
+      return new Promise<RendererRequestOutcome>((resolvePromise) => {
+        const timer = setTimer(() => {
+          warn(`renderer가 ${options.timeoutMs}ms 안에 답하지 않았습니다: ${options.requestChannel}`)
+          settle(requestId, 'timeout')
+        }, options.timeoutMs)
+        pending.set(requestId, { webContentsId: target.id, timer, finish: resolvePromise })
+        try {
+          target.send(options.requestChannel, requestId)
+        } catch {
+          settle(requestId, 'unavailable')
+        }
+      })
+    },
+    cancel(webContentsId) {
+      for (const [requestId, entry] of Array.from(pending)) {
+        if (entry.webContentsId === webContentsId) settle(requestId, 'unavailable')
+      }
+    },
+    get pendingCount() {
+      return pending.size
+    }
+  }
+}
