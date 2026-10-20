@@ -168,6 +168,5 @@ tests/fixtures/private/
 
 # Local AI collaboration notes
 /GEMINI.md
-/CLAUDE.md
 /.claude/
 /docs/ai_prompts.md
