@@ -5,6 +5,7 @@ import { sourceParagraphStructureAccess } from './paragraph_patch'
 import { parseSourceTree, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
 import { resolveTableFragmentCommand } from './table_patch'
 import { HwpxEditConflictError } from './text_patch'
+import { parseFootnotePath } from './footnote_patch'
 import type { EditCommand, EditTransaction } from './transaction'
 
 /*
@@ -27,8 +28,10 @@ import type { EditCommand, EditTransaction } from './transaction'
  * - 글자 command(`replace-text`): 대상은 그 command section의 `hp:t` anchor(`#hp:t:N`), 빈 문단 합성 anchor(`#hp:p:N:empty`),
  *   표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`) 가운데 하나여야 하고, 범위는 0 이상 정수(`from <= to`), 입력은 문자열이다.
  *   inverse 전용 option(`restoreSelfClosingTag`·`insertSource`·`removeCreatedText`)은 live 편집의 forward command에 없으므로
- *   받지 않는다. 각주·미주·머리말·꼬리말 글자도 같은 `#hp:t:N` anchor라 같은 규칙을 탄다. 대상 anchor가 실제로 있는지는 적용할 때
- *   편집 코어가 다시 본다.
+ *   받지 않는다. 각주·미주·머리말·꼬리말·글상자·메모 글자도 같은 `#hp:t:N` anchor라 같은 규칙을 탄다. 대상 anchor가 실제로 있는지는
+ *   적용할 때 편집 코어가 다시 본다.
+ * - 각주 command(`insert-footnote`·`delete-footnote`, 복구 기록 version 4부터): 모양만 보고(`assertFootnoteCommandShape`) 위치·번호
+ *   매기기 검사는 편집 코어가 적용할 때 한다. inverse 전용 `restore-footnote`는 forward로 받지 않는다.
  */
 
 /** 편집 엔진이 forward transaction에 넣는 command 종류. */
@@ -39,7 +42,9 @@ export const FORWARD_EDIT_COMMAND_TYPES: ReadonlySet<EditCommand['type']> = new 
   'apply-cell-style',
   'replace-paragraph-fragment',
   'replace-table-fragment',
-  'patch-table-fragment'
+  'patch-table-fragment',
+  'insert-footnote',
+  'delete-footnote'
 ])
 
 /** 표 planner가 새로 만들 수 있는(개수가 늘 수 있는) 표 뼈대·단순 텍스트 셀 element. */
@@ -169,6 +174,25 @@ function assertTextCommandShape(command: Extract<EditCommand, { type: 'replace-t
 }
 
 /**
+ * 각주 command 모양. 만들기는 그 section의 실제 `hp:t` anchor(`#hp:t:N`, 합성 caret 아님)와 0 이상 정수 offset, 지우기는 그 section의
+ * 각주 경로(`#hp:footNote:K`)와 selection 기준 anchor다. anchor·각주가 실제로 있는지와 본문 문단 위치는 적용할 때 편집 코어가 본다.
+ */
+function assertFootnoteCommandShape(command: Extract<EditCommand, { type: 'insert-footnote' | 'delete-footnote' }>): void {
+  const value = command as unknown as Record<string, unknown>
+  const sectionPath = value['sectionPath']
+  const textNodeId = value['textNodeId']
+  const valid =
+    typeof sectionPath === 'string' &&
+    /^Contents\/section\d+\.xml$/.test(sectionPath) &&
+    typeof textNodeId === 'string' &&
+    isTextAnchorOf(sectionPath, textNodeId) &&
+    (command.type === 'insert-footnote'
+      ? textNodeId.startsWith(`${sectionPath}#hp:t:`) && Number.isSafeInteger(value['offset']) && (value['offset'] as number) >= 0
+      : typeof value['notePath'] === 'string' && parseFootnotePath(sectionPath, value['notePath']) !== undefined)
+  if (!valid) throw new HwpxEditConflictError('복구 기록의 각주 command 형식이 올바르지 않습니다.')
+}
+
+/**
  * 복구 기록의 transaction 하나를 replay해도 되는지 확인한다. 통과하지 못하면 HwpxEditConflictError를 던지고,
  * replay는 그 기록 전체를 실패(격리)로 처리한다. 적용 때 하는 검사(expected fragment 일치, selection, revision)는 그대로 돈다.
  * `sourcePackage`는 이 transaction을 적용할 package다. 표 변경 조각 command를 확인하려면 있어야 한다.
@@ -180,6 +204,8 @@ export function assertReplayableTransaction(transaction: EditTransaction, source
     }
     if (command.type === 'replace-text') {
       assertTextCommandShape(command)
+    } else if (command.type === 'insert-footnote' || command.type === 'delete-footnote') {
+      assertFootnoteCommandShape(command)
     } else if (command.type === 'replace-paragraph-fragment') {
       assertParagraphReplacement(command.replacementFragment)
     } else if (command.type === 'replace-table-fragment') {

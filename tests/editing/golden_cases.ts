@@ -9,7 +9,7 @@ import {
   planSplitParagraph
 } from '../../src/core/editing/paragraph_patch'
 import { createEditorSelection, EditorSelection } from '../../src/core/editing/selection'
-import { getSourceAttribute, nearestSourceAncestor, SourceElement } from '../../src/core/editing/source_tree'
+import { findSourceElements, getSourceAttribute, nearestSourceAncestor, SourceElement } from '../../src/core/editing/source_tree'
 import {
   applyCharacterStyleCommand,
   applyParagraphStyleCommand,
@@ -33,6 +33,7 @@ import {
   locateHwpxTextElement
 } from '../../src/core/editing/text_patch'
 import { EditCommand } from '../../src/core/editing/transaction'
+import { applyFootnoteCommand, footnotePath, planDeleteFootnote, planInsertFootnote } from '../../src/core/editing/footnote_patch'
 import { isSurrogateBoundarySafe } from '../../src/core/editing/xml_scan'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import * as generators from '../fixtures/public/create_synthetic_hwpx'
@@ -95,6 +96,10 @@ export function applyCommand(sourcePackage: HwpxSourcePackage, command: EditComm
       return applyReplaceTableFragmentCommand(sourcePackage, command)
     case 'replace-paragraph-fragment':
       return applyReplaceParagraphFragmentCommand(sourcePackage, command)
+    case 'insert-footnote':
+    case 'delete-footnote':
+    case 'restore-footnote':
+      return applyFootnoteCommand(sourcePackage, command)
   }
 }
 
@@ -299,8 +304,106 @@ export function sublistCases(sourcePackage: HwpxSourcePackage, sectionPaths: rea
   })
 }
 
-export type Family = 'text' | 'style' | 'paragraph' | 'table' | 'table-caret' | 'sublist'
-export const FAMILIES: Family[] = ['text', 'style', 'paragraph', 'table', 'table-caret', 'sublist']
+/** `hp:t`가 든 글상자 글(`text-box`)·메모 본문(`memo`) subList. 그 밖이면 undefined. */
+export function objectTextKind(sourcePackage: HwpxSourcePackage, sectionPath: string, element: SourceElement): 'text-box' | 'memo' | undefined {
+  const tree = packageEntryTree(sourcePackage, sectionPath)
+  for (let node = element.parent; node; node = node.parent) {
+    if (node.name === 'hp:drawText') return 'text-box'
+    if (node.name === 'hp:fieldBegin') return getSourceAttribute(tree, node, 'type') === 'MEMO' ? 'memo' : undefined
+    if (node.name === 'hp:footNote' || node.name === 'hp:endNote' || node.name === 'hp:header' || node.name === 'hp:footer') return undefined
+  }
+  return undefined
+}
+
+/**
+ * 글상자 글·메모 본문 글자 편집(2026-10-20 추가 family). 같은 `replace-text` command가 글상자·메모 subList 안 `hp:t`만 고치고
+ * 도형·메모 정의를 byte 그대로 두는지 golden으로 고정한다. 개체가 든 글상자·메모 글도 코어는 같은 anchor로 고친다(편집 노출은
+ * capability가 막는다).
+ */
+export function objectTextCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
+  const located = sectionPaths.flatMap((sectionPath) => listHwpxTextAnchors(sourcePackage, sectionPath).flatMap((anchor) => {
+    const kind = objectTextKind(sourcePackage, sectionPath, locateHwpxTextElement(sourcePackage, sectionPath, anchor.textNodeId)!.element)
+    return kind ? [{ sectionPath, anchor, kind }] : []
+  }))
+  return sample(located, SUBLIST_SAMPLE).flatMap(({ sectionPath, anchor, kind }) => {
+    const middle = safeOffset(anchor.text, Math.floor(anchor.text.length / 2))
+    const text = (from: number, to: number, insert: string): Case['build'] => () => ({
+      command: { type: 'replace-text', sectionPath, textNodeId: anchor.textNodeId, from, to, insert }
+    })
+    return [
+      { label: `${kind} ${anchor.ordinal} insert`, build: text(middle, middle, '상자&<') },
+      { label: `${kind} ${anchor.ordinal} replace-all`, build: text(0, anchor.text.length, 'x\ty') }
+    ]
+  })
+}
+
+/**
+ * 각주·미주·머리말·꼬리말·글상자 문단의 글자·문단 모양과 문단 구조(2026-10-20 추가 family). 번호 control과 글자가 한 run에 든
+ * 각주 첫 문단의 글자 모양 분할, subList 안 문단 나눔·병합이 지정한 node만 바꾸고 undo·redo가 정확한지 고정한다.
+ */
+export function sublistStructureCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
+  const located = sectionPaths.flatMap((sectionPath) => listHwpxTextAnchors(sourcePackage, sectionPath).flatMap((anchor) => {
+    const element = locateHwpxTextElement(sourcePackage, sectionPath, anchor.textNodeId)!.element
+    const kind = sublistKind(element) ?? (objectTextKind(sourcePackage, sectionPath, element) === 'text-box' ? 'text-box' : undefined)
+    return kind ? [{ sectionPath, anchor, kind }] : []
+  }))
+  return sample(located, SUBLIST_SAMPLE).flatMap(({ sectionPath, anchor, kind }) => {
+    const base = { sectionPath, textNodeId: anchor.textNodeId }
+    const id = anchor.textNodeId
+    const middle = safeOffset(anchor.text, Math.floor(anchor.text.length / 2))
+    const label = `${kind} ${anchor.ordinal}`
+    const cases: Case[] = [
+      { label: `${label} bold`, build: () => ({ command: { type: 'apply-character-style', ...base, bold: true } }) },
+      { label: `${label} italic-size`, build: () => ({ command: { type: 'apply-character-style', ...base, italic: true, height: 1300 } }) },
+      { label: `${label} align-spacing`, build: () => ({ command: { type: 'apply-paragraph-style', ...base, align: 'RIGHT', lineSpacing: 170 } }) },
+      { label: `${label} split`, build: (source) => planSplitParagraph(source, createEditorSelection(sectionPath, id, middle)) },
+      {
+        label: `${label} merge-next`,
+        build: (source) => planMergeParagraph(source, createEditorSelection(sectionPath, id, anchor.text.length), 'next')
+      }
+    ]
+    const from = safeOffset(anchor.text, 1)
+    const to = safeOffset(anchor.text, anchor.text.length - 1)
+    if (from < to) {
+      cases.push({ label: `${label} partial-bold`, build: () => ({ command: { type: 'apply-character-style', ...base, bold: true, from, to } }) })
+    }
+    return cases
+  })
+}
+
+/** fixture마다 각주 만들기에 쓰는 본문 anchor 수. */
+export const FOOTNOTE_SAMPLE = 3
+
+/**
+ * 각주 만들기·지우기(2026-10-20 추가 family). 본문 anchor 가운데·끝에 각주를 넣고, 있는 각주를 지운다. `hp:t`를 나누고 각주
+ * control을 넣거나 빼며 뒤 각주 번호(`number`·`autoNum num`, 이어 매기기면 뒤 section까지)만 바꾸는지, undo·redo가 정확한지 고정한다.
+ * 본문 문단 밖 anchor·쪽마다 매기기 번호는 거부 기록으로 남는다.
+ */
+export function footnoteCases(sourcePackage: HwpxSourcePackage, sectionPaths: readonly string[]): Case[] {
+  const located = sectionPaths.flatMap((sectionPath) => listHwpxTextAnchors(sourcePackage, sectionPath).map((anchor) => ({ sectionPath, anchor })))
+  const inserts: Case[] = sample(located, FOOTNOTE_SAMPLE).flatMap(({ sectionPath, anchor }) => {
+    const middle = safeOffset(anchor.text, Math.floor(anchor.text.length / 2))
+    const label = `${sectionPath.replace(/^Contents\//, '')} ${anchor.ordinal}`
+    return [
+      { label: `${label} insert-middle`, build: (source) => planInsertFootnote(source, createEditorSelection(sectionPath, anchor.textNodeId, middle)) },
+      { label: `${label} insert-end`, build: (source) => planInsertFootnote(source, createEditorSelection(sectionPath, anchor.textNodeId, anchor.text.length)) }
+    ]
+  })
+  const deletes: Case[] = sectionPaths.flatMap((sectionPath) => {
+    const notes = findSourceElements(packageEntryTree(sourcePackage, sectionPath), 'hp:footNote')
+    const first = listHwpxTextAnchors(sourcePackage, sectionPath)[0]
+    return first
+      ? notes.slice(0, 2).map((_note, index) => ({
+          label: `${sectionPath.replace(/^Contents\//, '')} delete-${index}`,
+          build: (source: HwpxSourcePackage) => planDeleteFootnote(source, createEditorSelection(sectionPath, first.textNodeId, 0), footnotePath(sectionPath, index))
+        }))
+      : []
+  })
+  return [...inserts, ...deletes]
+}
+
+export type Family = 'text' | 'style' | 'paragraph' | 'table' | 'table-caret' | 'sublist' | 'object-text' | 'sublist-structure' | 'footnote'
+export const FAMILIES: Family[] = ['text', 'style', 'paragraph', 'table', 'table-caret', 'sublist', 'object-text', 'sublist-structure', 'footnote']
 
 /** manifest fixture의 파일 경로. generator fixture는 `directory`에 만든다. */
 export function fixturePath(directory: string, fixture: ManifestFixture): string {
@@ -325,6 +428,9 @@ export async function casesByFamily(original: HwpxSourcePackage): Promise<Record
     paragraph: picked.flatMap(paragraphCases),
     table: index.sectionPaths.flatMap((sectionPath) => tableCases(original, sectionPath)),
     'table-caret': tableCaretCases(original, index.sectionPaths),
-    sublist: sublistCases(original, index.sectionPaths)
+    sublist: sublistCases(original, index.sectionPaths),
+    'object-text': objectTextCases(original, index.sectionPaths),
+    'sublist-structure': sublistStructureCases(original, index.sectionPaths),
+    footnote: footnoteCases(original, index.sectionPaths)
   }
 }

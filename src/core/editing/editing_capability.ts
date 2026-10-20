@@ -1,6 +1,5 @@
 import {
   isObjectPlaceholder,
-  paragraphFootnotes,
   ViewerDocument,
   ViewerParagraph,
   ViewerSection,
@@ -18,9 +17,14 @@ import { isSurrogateBoundarySafe } from './xml_scan'
  * - `TABLE_CELL_TEXT`: 최상위 표의 셀 문단
  * - `NOTE_TEXT`: 쪽 아래 각주와 구역 끝 미주 목록의 본문 문단
  * - `HEADER_FOOTER_TEXT`: 머리말·꼬리말 문단
- * 각주·미주·머리말·꼬리말은 글자 입력·삭제·치환만 허용한다(문단 나눔·병합, 글자·문단 모양은 막는다).
+ * - `TEXT_BOX_TEXT`: 글자만 든 글상자(도형 글 `hp:drawText`) 문단
+ * - `MEMO_TEXT`: 글자만 든 메모 본문 문단
+ * 각주·미주·머리말·꼬리말·글상자 문단은 글자 입력·삭제·치환, 글자·문단 모양, 문단 구조 규칙(`paragraph_structure.ts`)을 통과한
+ * 문단의 Enter·경계 병합을 허용한다. 범위 선택은 문단 하나 안이다. 메모 본문은 글자 입력·삭제·치환만 허용한다.
  */
-export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT' | 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT'
+export type EditingStructure = 'TOP_LEVEL_TEXT' | 'TABLE_CELL_TEXT' | SublistStructure
+/** subList 문단 구조(각주·미주, 머리말·꼬리말, 글상자, 메모). 문단마다 범위 scope를 따로 둔다. */
+export type SublistStructure = 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT' | 'TEXT_BOX_TEXT' | 'MEMO_TEXT'
 export type EditingCapabilityReason =
   | 'NO_SELECTION'
   | 'STALE_SELECTION'
@@ -35,8 +39,10 @@ export type EditingCapabilityReason =
   | 'PARAGRAPH_COMPLEX_RUN'
   /** 표가 든 본문 문단의 표 앞·뒤 글자. 글자 입력·삭제만 하고 글자 모양·문단 나눔은 막는다(표 앞·뒤 caret은 문단 모양도 막는다). */
   | 'TABLE_PARAGRAPH'
-  /** 머리말·꼬리말·각주·미주 문단. 글자 입력·삭제·치환만 한다. */
+  /** 메모 본문 문단. 글자 입력·삭제·치환만 한다(글자·문단 모양과 문단 나눔·병합은 막는다). */
   | 'SUBLIST_TEXT'
+  /** 각주는 본문 문단(구역 직속, 표가 든 문단 제외) 글자 사이의 접힌 caret에만 넣는다. */
+  | 'FOOTNOTE_POSITION'
 
 export interface EditingCapabilityState {
   available: boolean
@@ -65,6 +71,8 @@ export interface EditingAnchorContext {
   emptyParagraph?: boolean
   /** 표가 든 본문 문단(`table_caret.ts`)의 글자 anchor이면 true. */
   tableParagraph?: boolean
+  /** 쪽 아래 각주 본문 문단이면 그 각주 경로(`${sectionPath}#hp:footNote:K`). 각주 지우기 대상이다(미주는 없다). */
+  footnotePath?: string
   /** 그 가운데 글자가 아직 없는 표 앞·뒤 합성 anchor(`#hp:p:N:table-before|after`)이면 true. */
   tableCaret?: boolean
   /**
@@ -87,6 +95,8 @@ export interface EditingCapabilities {
   paragraphStyle: EditingCapabilityState
   paragraphStructure: EditingCapabilityState
   cellStyle: EditingCapabilityState
+  /** caret 자리에 각주 만들기(`footnote_patch.ts`). 지우기는 `focus.footnotePath`가 있는 각주 본문이나 번호 표시를 품은 범위에서 한다. */
+  footnote: EditingCapabilityState
   focus?: EditingAnchorContext
 }
 
@@ -129,9 +139,95 @@ export function tableParagraphRangeScope(sectionPath: string, paragraphId: strin
   return `${sectionPath}:table-paragraph:${paragraphId}:${index}`
 }
 
-/** 머리말·꼬리말·각주·미주 문단의 범위 scope(문단 하나). */
-export function sublistParagraphRangeScope(sectionPath: string, structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT', paragraphId: string): string {
-  return `${sectionPath}:${structure === 'NOTE_TEXT' ? 'note' : 'header-footer'}:${paragraphId}`
+const SUBLIST_SCOPE_NAMES: Readonly<Record<SublistStructure, string>> = {
+  NOTE_TEXT: 'note',
+  HEADER_FOOTER_TEXT: 'header-footer',
+  TEXT_BOX_TEXT: 'text-box',
+  MEMO_TEXT: 'memo'
+}
+
+/** 각주·미주·머리말·꼬리말·글상자·메모 문단의 범위 scope(문단 하나). */
+export function sublistParagraphRangeScope(sectionPath: string, structure: SublistStructure, paragraphId: string): string {
+  return `${sectionPath}:${SUBLIST_SCOPE_NAMES[structure]}:${paragraphId}`
+}
+
+/** 메모 본문 문단 gate: 글자만 고치고 문단 나눔·병합은 막는다. */
+const MEMO_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
+
+/**
+ * subList 하나(각주 하나, 머리말 하나, 글상자 하나, 메모 하나)의 문단마다 문단 구조 gate와 범위 scope. gate는 본문·표 셀과 같은
+ * 규칙(`siblingStructure`: 개체가 든 문단·빈 문단은 자기와 인접 문단의 병합을 막는다)이고, 범위 scope는 문단마다 따로다(여러 문단
+ * 범위 치환은 열지 않는다). 메모는 문단 구조 command를 모두 막는다.
+ */
+function sublistStructure(
+  paragraphs: readonly ViewerParagraph[],
+  sectionPath: string,
+  structure: SublistStructure
+): ParagraphStructureEntry[] {
+  const scope = (paragraph: ViewerParagraph) => sublistParagraphRangeScope(sectionPath, structure, paragraph.id)
+  if (structure === 'MEMO_TEXT') return paragraphs.map((paragraph) => ({ rangeScope: scope(paragraph), gate: MEMO_STRUCTURE_GATE }))
+  return siblingStructure(paragraphs, paragraphs.map(editableTexts), sectionPath, scope)
+    .map((entry, index) => ({ rangeScope: scope(paragraphs[index]), gate: entry.gate }))
+}
+
+interface SublistGroup {
+  structure: SublistStructure
+  paragraphs: readonly ViewerParagraph[]
+  /** 쪽 아래 각주면 그 각주 경로. */
+  footnotePath?: string
+}
+
+/**
+ * 문단 목록 안의 subList 묶음을 문서 순서로 모은다: 각주 번호 표시의 본문, 글상자 글, 메모 본문. 표 셀(깊이 무관)과 각주 본문 안도
+ * 본다. 글상자·메모 안은 다시 보지 않는다(글자만 든 글상자·메모에는 개체가 없고, 개체가 든 것은 decoder가 anchor를 붙이지 않는다).
+ * 미주는 구역 끝 목록 block에 있어 따로 모은다(`sectionSublistGroups`).
+ */
+function embeddedSublistGroups(paragraphs: readonly ViewerParagraph[], groups: SublistGroup[] = []): SublistGroup[] {
+  for (const paragraph of paragraphs) {
+    for (const item of paragraph.content) {
+      if (item.type === 'table') {
+        for (const row of item.rows) for (const cell of row.cells) embeddedSublistGroups(cell.paragraphs, groups)
+      } else if (item.type === 'object-placeholder') {
+        if (item.note) {
+          groups.push({ structure: 'NOTE_TEXT', paragraphs: item.note.paragraphs, footnotePath: item.note.sourcePath })
+          embeddedSublistGroups(item.note.paragraphs, groups)
+        } else if (item.paragraphs?.length && (item.kind === 'text-box' || item.kind === 'memo')) {
+          groups.push({ structure: item.kind === 'memo' ? 'MEMO_TEXT' : 'TEXT_BOX_TEXT', paragraphs: item.paragraphs })
+        }
+      }
+    }
+  }
+  return groups
+}
+
+/**
+ * section의 모든 subList 묶음. 구역 끝 미주 목록은 쪽 사이에서 나눌 수 있게 미주 문단마다 block이 따로라, 같은 미주(`sourcePath`)의
+ * 문단을 다시 하나로 모아 문단 사이 gate를 정한다.
+ */
+function sectionSublistGroups(section: ViewerSection): SublistGroup[] {
+  const groups: SublistGroup[] = []
+  const endnotes = new Map<string, ViewerParagraph[]>()
+  for (const block of section.blocks) {
+    embeddedSublistGroups([block], groups)
+    for (const item of block.content) {
+      if (item.type !== 'note-list') continue
+      for (const note of item.notes) {
+        let paragraphs = endnotes.get(note.sourcePath)
+        if (!paragraphs) {
+          paragraphs = []
+          endnotes.set(note.sourcePath, paragraphs)
+          groups.push({ structure: 'NOTE_TEXT', paragraphs })
+        }
+        paragraphs.push(...note.paragraphs)
+        embeddedSublistGroups(note.paragraphs, groups)
+      }
+    }
+  }
+  for (const control of [...section.headers, ...section.footers]) {
+    groups.push({ structure: 'HEADER_FOOTER_TEXT', paragraphs: control.paragraphs })
+    embeddedSublistGroups(control.paragraphs, groups)
+  }
+  return groups
 }
 
 function paragraphContexts(
@@ -250,6 +346,12 @@ function paragraphSourcePath(paragraph: ViewerParagraph): string | undefined {
         }
       }
     }
+    if (item.type === 'object-placeholder' && item.paragraphs) {
+      for (const nested of item.paragraphs) {
+        const path = paragraphSourcePath(nested)
+        if (path) return path
+      }
+    }
     if (item.type === 'table') {
       for (const row of item.rows) {
         for (const cell of row.cells) {
@@ -294,15 +396,16 @@ function sectionSourcePath(section: ViewerSection): string | undefined {
 }
 
 /**
- * 각주·미주 본문(구역 끝 목록 block)과 머리말·꼬리말 문단의 글자 anchor. 문단마다 범위 scope를 따로 두고 문단 구조 command는
- * 막는다. 글상자·메모처럼 decoder가 anchor를 붙이지 않는 문단과 표·그림이 든 문단(셀 포함)은 읽기 전용으로 남는다.
+ * subList 문단의 글자 anchor. 문단마다 범위 scope를 따로 두고 문단 구조 gate는 그 subList 안 규칙(`sublistStructure`)을 쓴다.
+ * 개체가 든 글상자·메모처럼 decoder가 anchor를 붙이지 않는 문단과 표·그림이 든 문단(셀 포함)은 읽기 전용으로 남는다.
  */
-function sublistContexts(paragraphs: readonly ViewerParagraph[], sectionPath: string, structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT'): EditingAnchorContext[] {
-  return paragraphs.flatMap((paragraph) => {
+function sublistContexts(group: SublistGroup, sectionPath: string): EditingAnchorContext[] {
+  const structure = sublistStructure(group.paragraphs, sectionPath, group.structure)
+  return group.paragraphs.flatMap((paragraph, index) => {
     const texts = editableTexts(paragraph)
     if (!texts) return []
-    const gate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' } as const
-    return paragraphContexts(paragraph, texts, structure, sublistParagraphRangeScope(sectionPath, structure, paragraph.id), undefined, gate)
+    const contexts = paragraphContexts(paragraph, texts, group.structure, structure[index].rangeScope, undefined, structure[index].gate)
+    return group.footnotePath ? contexts.map((context) => ({ ...context, footnotePath: group.footnotePath })) : contexts
   })
 }
 
@@ -311,14 +414,23 @@ function sectionParagraphStructure(section: ViewerSection): ReadonlyArray<readon
   if (cached) return cached
   const sectionPath = sectionSourcePath(section)
   const structure = sectionPath ? topLevelStructure(section.blocks, section.blocks.map(editableTexts), sectionPath) : []
-  const result = sectionPath ? section.blocks.map((paragraph, index) => [paragraph.id, structure[index]] as const) : []
+  const result: Array<readonly [string, ParagraphStructureEntry]> = sectionPath
+    ? section.blocks.map((paragraph, index) => [paragraph.id, structure[index]] as const)
+    : []
+  if (sectionPath) {
+    for (const group of sectionSublistGroups(section)) {
+      const entries = sublistStructure(group.paragraphs, sectionPath, group.structure)
+      group.paragraphs.forEach((paragraph, index) => result.push([paragraph.id, entries[index]] as const))
+    }
+  }
   sectionStructures.set(section, result)
   return result
 }
 
 /**
- * 구역 본문 문단 id → 문단 구조 gate·여러 문단 범위 scope. renderer가 본문 문단 입력 surface의 Enter·Backspace·Delete와
- * 범위 scope를 capability와 같게 정하는 데 쓴다(표 셀은 셀 안 문단만 보면 되므로 renderer가 같은 규칙을 셀 안에서 쓴다).
+ * 구역 본문 문단과 subList(각주·미주·머리말·꼬리말·글상자·메모) 문단 id → 문단 구조 gate·범위 scope. renderer가 문단 입력
+ * surface의 Enter·Backspace·Delete와 범위 scope를 capability와 같게 정하는 데 쓴다(표 셀은 셀 안 문단만 보면 되므로 renderer가
+ * 같은 규칙을 셀 안에서 쓴다). subList 문단의 범위 scope는 문단 하나다.
  */
 export function topLevelParagraphStructure(
   document: ViewerDocument
@@ -371,22 +483,12 @@ function sectionAnchorContexts(section: ViewerSection): readonly EditingAnchorCo
               }))
             )
           : []
-      const nested = paragraph.content.flatMap((item) =>
-        item.type === 'table'
-          ? tableContexts(item, sectionPath)
-          : item.type === 'note-list'
-            ? item.notes.flatMap((note) => sublistContexts(note.paragraphs, sectionPath, 'NOTE_TEXT'))
-            : []
-      )
-      // 각주 본문은 번호 표시가 놓인 쪽 아래에 그리지만 원본 위치(번호 표시가 든 문단)에서 센다.
-      const footnotes = paragraphFootnotes(paragraph).flatMap((note) => sublistContexts(note.paragraphs, sectionPath, 'NOTE_TEXT'))
-      return [...topLevel, ...nested, ...footnotes]
+      const tables = paragraph.content.flatMap((item) => item.type === 'table' ? tableContexts(item, sectionPath) : [])
+      return [...topLevel, ...tables]
     })
-    result.push(
-      ...[...section.headers, ...section.footers].flatMap((control) =>
-        sublistContexts(control.paragraphs, sectionPath, 'HEADER_FOOTER_TEXT')
-      )
-    )
+    // 각주 본문은 번호 표시가 놓인 쪽 아래에, 미주는 구역 끝 목록에 그리지만 원본 위치(번호 표시가 든 문단)에서 센다.
+    // 글상자·메모 글은 개체가 놓인 문단에서 센다.
+    result.push(...sectionSublistGroups(section).flatMap((group) => sublistContexts(group, sectionPath)))
   }
   sectionContexts.set(section, result)
   return result
@@ -457,7 +559,8 @@ export function editingCapabilities(
       characterStyle: state,
       paragraphStyle: state,
       paragraphStructure: state,
-      cellStyle: state
+      cellStyle: state,
+      footnote: state
     }
   }
   const contexts = listEditingAnchorContexts(document)
@@ -471,7 +574,8 @@ export function editingCapabilities(
       characterStyle: state,
       paragraphStyle: state,
       paragraphStructure: state,
-      cellStyle: state
+      cellStyle: state,
+      footnote: state
     }
   }
   if (anchor.rangeScope !== focus.rangeScope) {
@@ -483,6 +587,7 @@ export function editingCapabilities(
       paragraphStyle: state,
       paragraphStructure: state,
       cellStyle: state,
+      footnote: state,
       focus
     }
   }
@@ -496,40 +601,43 @@ export function editingCapabilities(
       paragraphStyle: state,
       paragraphStructure: state,
       cellStyle: state,
+      footnote: state,
       focus
     }
   }
   const topLevel = anchor.structure === 'TOP_LEVEL_TEXT' && focus.structure === 'TOP_LEVEL_TEXT'
   const tableCell = anchor.structure === 'TABLE_CELL_TEXT' && focus.structure === 'TABLE_CELL_TEXT'
-  const sublist = anchor.structure === 'NOTE_TEXT' || anchor.structure === 'HEADER_FOOTER_TEXT'
+  // 같은 범위 scope 안이므로 anchor·focus의 구조는 같다.
+  const memo = anchor.structure === 'MEMO_TEXT'
+  const sublist = anchor.structure === 'NOTE_TEXT' || anchor.structure === 'HEADER_FOOTER_TEXT' || anchor.structure === 'TEXT_BOX_TEXT'
   const tableParagraph = anchor.tableParagraph === true || focus.tableParagraph === true
   const tableCaret = anchor.tableCaret === true || focus.tableCaret === true
   const structuralCell = tableCell && anchor.cellStructureEditable === true && focus.cellStructureEditable === true
   const sameRun = anchor.textNodeId === focus.textNodeId
   const sameParagraph = anchor.paragraphId === focus.paragraphId
   const emptyParagraph = anchor.emptyParagraph === true || focus.emptyParagraph === true
-  // 글자·문단 모양은 본문과 표 셀(병합·머리글 셀 포함) 모두 같은 run·문단 조건만 본다.
+  // 글자·문단 모양은 본문, 표 셀(병합·머리글 셀 포함), 각주·미주·머리말·꼬리말·글상자 문단 모두 같은 run·문단 조건만 본다.
   // 목록에 오르는 표 셀은 최상위 표의 직속 셀뿐이라 셀 안에 다시 든 표는 여기까지 오지 않는다.
-  // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다. 각주·머리말 등 subList 문단은 글자만,
+  // 빈 문단은 글자 run이 아직 없으므로 첫 입력 전에는 문단 모양만 연다. 메모 본문은 글자만,
   // 표가 든 본문 문단은 글자와(표 앞·뒤 caret이 아니면) 문단 모양만 연다.
   const characterStyle = (): EditingCapabilityState => {
-    if (sublist) return unavailable('SUBLIST_TEXT')
-    if (!topLevel && !tableCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (memo) return unavailable('SUBLIST_TEXT')
+    if (!topLevel && !tableCell && !sublist) return unavailable('TABLE_CELL_STRUCTURE')
     if (tableParagraph) return unavailable('TABLE_PARAGRAPH')
     if (emptyParagraph) return unavailable('EMPTY_PARAGRAPH')
     return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
   }
   const paragraphStyle = (): EditingCapabilityState => {
-    if (sublist) return unavailable('SUBLIST_TEXT')
-    if (!topLevel && !tableCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (memo) return unavailable('SUBLIST_TEXT')
+    if (!topLevel && !tableCell && !sublist) return unavailable('TABLE_CELL_STRUCTURE')
     if (tableCaret) return unavailable('TABLE_PARAGRAPH')
     return sameParagraph ? { available: true } : unavailable('MULTI_PARAGRAPH_SELECTION')
   }
   const paragraphStructure = (): EditingCapabilityState => {
-    if (sublist) return unavailable('SUBLIST_TEXT')
+    if (memo) return unavailable('SUBLIST_TEXT')
     if (tableParagraph) return unavailable('TABLE_PARAGRAPH')
     if (emptyParagraph) return unavailable('EMPTY_PARAGRAPH')
-    if (!topLevel && !structuralCell) return unavailable('TABLE_CELL_STRUCTURE')
+    if (!topLevel && !structuralCell && !sublist) return unavailable('TABLE_CELL_STRUCTURE')
     if (focus.structureGate?.split) return unavailable(focus.structureGate.split)
     return sameRun ? { available: true } : unavailable('MULTI_RUN_SELECTION')
   }
@@ -542,6 +650,10 @@ export function editingCapabilities(
     cellStyle: !structuralCell || !focus.cellStyleId
       ? unavailable('TABLE_CELL_STRUCTURE')
       : { available: true },
+    // 각주는 본문 문단 글자 사이의 접힌 caret에 넣는다. 구역 각주 번호가 쪽마다 새로 매기기면 편집 코어가 거부한다.
+    footnote: topLevel && sameRun && selection.anchorOffset === selection.focusOffset && !tableParagraph && !emptyParagraph
+      ? { available: true }
+      : unavailable('FOOTNOTE_POSITION'),
     focus
   }
 }

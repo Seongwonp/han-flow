@@ -13,6 +13,7 @@ import {
   ParagraphStructureGate,
   reconcileEditingSelection,
   sublistParagraphRangeScope,
+  SublistStructure,
   tableParagraphRangeScope,
   tableParagraphTexts,
   topLevelParagraphStructure
@@ -201,7 +202,7 @@ export function Content({
       style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }}
     />
   }
-  if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
+  if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} editing={measurable ? undefined : editing} />
   if (item.type === 'note-list') return <NoteListView item={item} document={document} editing={measurable ? undefined : editing} />
   return <TableView table={item} document={document} measurable={measurable} editing={editing} />
 }
@@ -252,11 +253,13 @@ function useFitBodyHeight(limitPx: number | undefined) {
   return bodyRef
 }
 
-export function ObjectPlaceholderView({ item, document, positioned = false }: {
+export function ObjectPlaceholderView({ item, document, positioned = false, editing }: {
   item: ViewerObjectPlaceholder
   document: ViewerRenderStyles
   /** 원본 위치로 그리는 개체 상자(`PositionedObjectBody`) 안을 채운다. */
   positioned?: boolean
+  /** 편집 중이면 글자만 든 글상자 글·메모 본문을 입력 칸으로 그린다(`objectTextEditing`). */
+  editing?: ParagraphEditingProps
 }) {
   // 일부 단위 테스트는 쪽 설정 없는 문서 조각을 넘긴다.
   const page = document.page as ViewerDocument['page'] | undefined
@@ -286,6 +289,7 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
   const markerText = item.flow === 'marker' && item.paragraphs ? paragraphsPlainText(item.paragraphs) : ''
   // 글상자처럼 되살린 문단이 있으면 이름표를 모서리에 겹쳐 두어 상자가 선언 크기보다 커지지 않게 한다.
   const hasBody = item.flow !== 'marker' && Boolean(item.paragraphs?.length)
+  const bodyEditing = objectTextEditing(item, editing)
   return <span
     {...common}
     className={`viewer-object-placeholder viewer-object-${positioned ? 'block' : item.flow}${hasBody ? ' viewer-object-with-body' : ''}${item.fitted ? ' viewer-object-fitted' : ''}`}
@@ -298,8 +302,13 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
     {/* 줄 안 표시의 쌍점은 CSS ::after가 아니라 글자로 둔다. ::after 글은 화면 innerText에 없지만 PDF에는 추출돼 글자 수가 어긋난다. */}
     <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}{item.flow === 'marker' && (item.fallbackText || markerText) ? ':' : ''}</span>
     {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
-    {markerText && <span className="viewer-object-fallback">{markerText}</span>}
-    {hasBody && <ContainerBody item={item} document={document} bodyRef={bodyRef} />}
+    {/* 편집 중인 메모는 줄 안 본문 글 자리에 같은 글을 입력 칸으로 그린다(보기 모드와 같은 글이라 줄 배치가 거의 같다). */}
+    {markerText && (item.kind === 'memo' && bodyEditing
+      ? <span className="viewer-object-fallback viewer-memo-body">
+          {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={bodyEditing} />)}
+        </span>
+      : <span className="viewer-object-fallback">{markerText}</span>)}
+    {hasBody && <ContainerBody item={item} document={document} bodyRef={bodyRef} editing={bodyEditing} />}
   </span>
 }
 
@@ -341,9 +350,13 @@ function positionedBoxSize(item: PositionedContent): CSSProperties {
   return { width, height: hwpUnitToCssPx(item.position.height) }
 }
 
-/** 표 셀처럼 편집하는 개체가 아니면 글 앞·뒤 개체가 밑의 본문 글 선택·caret을 가리지 않게 한다. */
-function positionedPointerEvents(item: PositionedContent, placement: ObjectPlacement): CSSProperties['pointerEvents'] {
-  return item.type !== 'table' && (placement === 'overlay' || placement === 'page') ? 'none' : undefined
+/**
+ * 표 셀처럼 편집하는 개체가 아니면 글 앞·뒤 개체가 밑의 본문 글 선택·caret을 가리지 않게 한다. 편집 중인 글상자(글자만 든
+ * 글상자)는 그 글을 누를 수 있게 둔다.
+ */
+function positionedPointerEvents(item: PositionedContent, placement: ObjectPlacement, editing?: ParagraphEditingProps): CSSProperties['pointerEvents'] {
+  if (item.type === 'table' || (item.type === 'object-placeholder' && objectTextEditing(item, editing))) return undefined
+  return placement === 'overlay' || placement === 'page' ? 'none' : undefined
 }
 
 const SHAPE_SVG_ELEMENTS = new Set(['hp:rect', 'hp:ellipse', 'hp:line', 'hp:polygon'])
@@ -387,13 +400,14 @@ export function ShapeView({ item }: { item: ViewerObjectPlaceholder & { position
  * 원본 위치에 그리는 글상자. 원본 선·채우기·안쪽 여백·세로 맞춤으로 상자를 그리고 글은 읽기 전용 문단으로 안에 둔다. 글이 쪽 본문
  * 높이 한도(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 자리 표시처럼 같은 비율로 줄인다.
  */
-export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder; document: ViewerRenderStyles }) {
+export function TextBoxView({ item, document, editing }: { item: ViewerObjectPlaceholder; document: ViewerRenderStyles; editing?: ParagraphEditingProps }) {
   const page = document.page as ViewerDocument['page'] | undefined
   const pageBodyHeight = page ? page.height - page.margin.top - page.margin.bottom : 0
   const bodyRef = useFitBodyHeight(pageBodyHeight > 0 ? hwpUnitToCssPx(pageBodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined)
   const shape = item.shape
   const margin = shape?.textMargin
   const align = shape?.textVerticalAlign
+  const bodyEditing = objectTextEditing(item, editing)
   return <div
     className={`viewer-text-box${item.fitted ? ' viewer-object-fitted' : ''}`}
     data-object-kind={item.kind}
@@ -411,7 +425,7 @@ export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder;
       justifyContent: align === 'CENTER' ? 'center' : align === 'BOTTOM' ? 'flex-end' : 'flex-start'
     }}
   >
-    <ContainerBody item={item} document={document} bodyRef={bodyRef} />
+    <ContainerBody item={item} document={document} bodyRef={bodyRef} editing={bodyEditing} />
   </div>
 }
 
@@ -419,10 +433,11 @@ export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder;
  * 글상자 글(되살린 읽기 전용 문단). 안쪽 여백 안 글 영역을 칸으로 보고 그 안 글자처럼 취급하지 않는 개체를 칸 기준 원본 위치에
  * 그린다(`containerObjectFrame`). 크기를 모르는 상자는 개체를 줄 흐름 안에 둔다.
  */
-function ContainerBody({ item, document, bodyRef }: {
+function ContainerBody({ item, document, bodyRef, editing }: {
   item: ViewerObjectPlaceholder
   document: ViewerRenderStyles
   bodyRef: RefObject<HTMLSpanElement>
+  editing?: ParagraphEditingProps
 }) {
   const size = item.position ?? item.size
   const margin = item.shape?.textMargin
@@ -437,7 +452,7 @@ function ContainerBody({ item, document, bodyRef }: {
   // 칸 기준 개체가 있으면 글 영역 전체를 기준 상자로 쓰도록 본문을 글 영역 높이로 늘린다(이때 글은 위에 맞춘다).
   return <span className="viewer-object-body" ref={bodyRef} style={layered ? { position: 'relative', minHeight: hwpUnitToCssPx(frame!.page.height) } : undefined}>
     {frame && <ContainerObjectLayer paragraphs={paragraphs} frame={frame} container="text-box" document={document} />}
-    {paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} objectFrame={frame} />)}
+    {paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} objectFrame={frame} editing={editing} />)}
   </span>
 }
 
@@ -459,9 +474,9 @@ function PositionedObjectBody({ item, document, measurable, editing }: {
     />
   }
   if (item.type === 'table') return <TableView table={item} document={document} measurable={measurable} editing={editing} />
-  if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} />
+  if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} editing={editing} />
   if (item.kind === 'shape' && SHAPE_SVG_ELEMENTS.has(item.element)) return <ShapeView item={item} />
-  return <ObjectPlaceholderView item={item} document={document} positioned />
+  return <ObjectPlaceholderView item={item} document={document} positioned editing={editing} />
 }
 
 /**
@@ -517,7 +532,7 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
       left: hwpUnitToCssPx(relativeX),
       top: hwpUnitToCssPx(paragraphObjectOffset(position, false)),
       zIndex: objectZIndex(item),
-      pointerEvents: positionedPointerEvents(item, placement)
+      pointerEvents: positionedPointerEvents(item, placement, editing)
     }
   }
   return <div
@@ -550,7 +565,7 @@ function PageObjectView({ item, frame, horizontal, document, editing, container 
       left: hwpUnitToCssPx(x),
       top: hwpUnitToCssPx(y),
       zIndex: objectZIndex(item),
-      pointerEvents: positionedPointerEvents(item, 'page')
+      pointerEvents: positionedPointerEvents(item, 'page', editing)
     }}
   ><PositionedObjectBody item={item} document={document} measurable={false} editing={editing} /></div>
 }
@@ -671,34 +686,51 @@ export function PageBandSpacers({ bands, bodyHeight }: { bands?: readonly PageBa
 }
 
 const TABLE_PARAGRAPH_SURFACE_LABEL = 'HWPX 표 앞뒤 글자 편집'
-const SUBLIST_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
+const MEMO_STRUCTURE_GATE: ParagraphStructureGate = { split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' }
 const TABLE_PARAGRAPH_GATE: ParagraphStructureGate = { split: 'TABLE_PARAGRAPH', mergePrevious: 'TABLE_PARAGRAPH', mergeNext: 'TABLE_PARAGRAPH' }
 
 /**
- * 각주·미주·머리말·꼬리말 문단의 편집 props. 글자 입력·삭제·치환만 받고(문단 하나 범위, 여러 run 허용) 문단 나눔·병합은
- * capability와 같은 이유(`SUBLIST_TEXT`)로 막는다. 표·그림이 든 문단은 `isEditableTextParagraph`가 걸러 읽기 전용이다.
+ * 각주·미주·머리말·꼬리말·글상자·메모 문단의 편집 props. 글자 입력·삭제·치환(문단 하나 범위, 여러 run 허용)을 받고, 메모가 아니면
+ * capability와 같은 문단 구조 gate(`documentStructureOf`, 개체가 든 문단·빈 문단은 막는다)로 Enter·경계 병합도 받는다. 메모는
+ * 문단 나눔·병합을 `SUBLIST_TEXT`로 막는다. 표·그림이 든 문단은 `isEditableTextParagraph`가 걸러 읽기 전용이다.
  */
 export function sublistParagraphEditing(
   editing: ParagraphEditingProps | undefined,
-  structure: 'NOTE_TEXT' | 'HEADER_FOOTER_TEXT',
+  structure: SublistStructure,
   surfaceLabel: string,
   desiredSelection: EditorSelection | undefined
 ): ParagraphEditingProps | undefined {
+  const memo = structure === 'MEMO_TEXT'
   return editing && {
     ...editing,
     surfaceLabel,
     allowMultipleRuns: true,
     allowParagraphRange: false,
-    allowParagraphStructure: false,
+    allowParagraphStructure: !memo,
     allowTableParagraph: false,
     rangeScope: undefined,
     rangeScopeOf: (sectionPath, paragraphId) => sublistParagraphRangeScope(sectionPath, structure, paragraphId),
-    structureOf: undefined,
-    structureGate: SUBLIST_STRUCTURE_GATE,
+    structureOf: memo ? undefined : editing.documentStructureOf,
+    structureGate: memo ? MEMO_STRUCTURE_GATE : undefined,
     allowParagraphMergePrevious: true,
     allowParagraphMergeNext: true,
     desiredSelection
   }
+}
+
+const TEXT_BOX_SURFACE_LABEL = 'HWPX 글상자 편집'
+const MEMO_SURFACE_LABEL = 'HWPX 메모 편집'
+
+/**
+ * 글상자 글·메모 본문의 편집 props. decoder가 anchor를 붙인(글자만 든) 글상자·메모이고 편집 중일 때만 있다. 개체가 든 글상자·메모와
+ * 필드 subList는 읽기 전용이다. 머리말 안 글상자처럼 쪽마다 되풀이되는 글상자는 바깥 편집 props의 selection 복원을 그대로 따른다.
+ */
+export function objectTextEditing(item: ViewerObjectPlaceholder, editing: ParagraphEditingProps | undefined): ParagraphEditingProps | undefined {
+  if (!editing || (item.kind !== 'text-box' && item.kind !== 'memo') || !item.paragraphs?.length) return undefined
+  if (!item.paragraphs.some((paragraph) => isEditableTextParagraph(paragraph, true))) return undefined
+  return item.kind === 'memo'
+    ? sublistParagraphEditing(editing, 'MEMO_TEXT', MEMO_SURFACE_LABEL, editing.desiredSelection)
+    : sublistParagraphEditing(editing, 'TEXT_BOX_TEXT', TEXT_BOX_SURFACE_LABEL, editing.desiredSelection)
 }
 
 /** 구역 끝에 모은 미주 본문. 편집 중에는 본문 문단의 글자를 고칠 수 있다(번호·본문 위치의 번호 표시는 그대로). */
@@ -811,6 +843,11 @@ interface ParagraphEditingProps {
    * 표 셀은 대신 {@link structureGate}와 {@link rangeScope}를 문단마다 직접 넘긴다.
    */
   structureOf?: (paragraphId: string) => { rangeScope: string; gate: ParagraphStructureGate } | undefined
+  /**
+   * 문서 전체 문단 id → 문단 구조 gate(`topLevelParagraphStructure`, subList 문단 포함). 표 셀 편집 props가 {@link structureOf}를
+   * 비워도 남아 셀·머리말 안 글상자 같은 subList 문단이 capability와 같은 gate를 쓴다.
+   */
+  documentStructureOf?: (paragraphId: string) => { rangeScope: string; gate: ParagraphStructureGate } | undefined
   structureGate?: ParagraphStructureGate
   editorHostRef?: RefObject<HTMLDivElement>
   desiredSelection?: EditorSelection
@@ -1052,7 +1089,7 @@ export function ParagraphView({
     ? paragraph.content.map((item, contentIndex) => {
       if (outOfLine(item)) return null
       if (isObjectPlaceholder(item)) {
-        return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} />
+        return <ObjectPlaceholderView key={`${paragraph.id}:object${contentIndex}`} item={item} document={document} editing={editing} />
       }
       if (tableTexts && item.type === 'table') {
         return <TableView key={`${paragraph.id}:${item.id}`} table={item} document={document} editing={editing} />
@@ -2667,6 +2704,70 @@ export default function App() {
     applyEditingResult,
     recoverEditingFailure
   ])
+  const insertFootnote = useCallback(async () => {
+    if (
+      !editing ||
+      !editingSelection ||
+      !editingCapabilityState.footnote.available ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('각주 넣는 중…')
+    try {
+      applyEditingResult(await api().insertFootnote({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-footnote-insert'),
+        selectionBefore: editingSelection,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('caret 자리에 각주를 넣고 각주 본문으로 이동')
+    } catch (reason) {
+      await recoverEditingFailure('각주 넣기', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.footnote.available,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
+  const deleteFootnote = useCallback(async () => {
+    const notePath = editingCapabilityState.focus?.footnotePath
+    if (
+      !editing ||
+      !editingSelection ||
+      !notePath ||
+      editingPending ||
+      editingTransient.current.isComposing
+    ) return
+    setEditingPending((current) => current + 1)
+    setEditingStatus('각주 지우는 중…')
+    try {
+      applyEditingResult(await api().deleteFootnote({
+        sessionId: editing.sessionId,
+        transactionId: editingTransient.current.nextTransactionId('ui-footnote-delete'),
+        selectionBefore: editingSelection,
+        notePath,
+        timestamp: performance.now()
+      }) as EditingActionResult)
+      setEditingStatus('각주를 지우고 뒤 각주 번호를 다시 매김')
+    } catch (reason) {
+      await recoverEditingFailure('각주 지우기', reason)
+    } finally {
+      setEditingPending((current) => Math.max(0, current - 1))
+    }
+  }, [
+    editing?.sessionId,
+    editingSelection,
+    editingCapabilityState.focus?.footnotePath,
+    editingPending,
+    applyEditingResult,
+    recoverEditingFailure
+  ])
   const startEditing = async () => {
     if (!openedPath || fixedDocument || documentLoading || editing) return
     setEditingStatus('편집 준비 중…')
@@ -2794,7 +2895,8 @@ export default function App() {
         'paragraph-style': '문단 모양',
         'paragraph-structure': '문단 구조',
         'table-cell-style': '표 셀 모양',
-        'table-structure': '표 구조'
+        'table-structure': '표 구조',
+        'note-structure': '각주'
       } as const
       const savedStructures = result.lossPolicy.structures
         .map(({ structure }) => structureLabels[structure])
@@ -3017,6 +3119,10 @@ export default function App() {
       onDeleteTableColumn={() => void deleteTableColumn()}
       onMergeTableCellRight={() => void mergeTableCellRight()}
       onSplitTableCell={() => void splitTableCell()}
+      footnoteAvailable={editingCapabilityState.footnote.available}
+      footnoteDeleteAvailable={Boolean(editingCapabilityState.focus?.footnotePath)}
+      onInsertFootnote={() => void insertFootnote()}
+      onDeleteFootnote={() => void deleteFootnote()}
     />
     {effectiveDocument && !loading && !objectNotice.dismissed && <ObjectPlaceholderBanner
       counts={objectPlaceholderCounts}
@@ -3054,7 +3160,7 @@ export default function App() {
           const index = virtualized ? visibleRange.start + localIndex : localIndex
           const decoration = decorations[index]
           const pageNumber = decoration.pageNumber ? formatPageNumber(decoration.pageNumber, decoration.pageNumberIndex) : undefined
-          const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
+          const pageEditing: ParagraphEditingProps | undefined = editing && !printing ? { pending: Boolean(editingPending), restoreToken: layoutMeasurements, allowMultipleRuns: true, allowParagraphRange: true, allowParagraphStructure: true, allowTableParagraph: true, editorHostRef: editingHostRef, desiredSelection: editingSelection, onCommit: commitParagraph, onComposingChange, onSelectionChange: updateEditingSelection, onEditorSelectionChange: updateEditorSelection, onRangeCommit: commitRangeParagraph, onSplitParagraph: splitEditingParagraph, onMergeParagraph: mergeEditingParagraph, onParagraphStructureUnavailable: paragraphStructureUnavailable, structureOf, documentStructureOf: structureOf, onHistory: routeNativeHistory, tableCellSelection, onTableCellSelectionChange: updateTableCellSelection } : undefined
           const pageFrame = effectiveDocument.page
           const bodyWidth = pageFrame.width - pageFrame.margin.left - pageFrame.margin.right
           const bodyHeight = pageFrame.height - pageFrame.margin.top - pageFrame.margin.bottom

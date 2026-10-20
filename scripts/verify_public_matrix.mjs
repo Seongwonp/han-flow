@@ -126,6 +126,19 @@ const EDIT_SCOPE_CASES = [
 ]
 const DECORATION_TARGETS = ['header', 'footer']
 
+// subList 편집 E2E(createSublistEditHwpx, 1쪽): 글자만 든 글상자 글·메모 본문에 입력하고, 번호와 같은 run의 각주 글자·글상자 글에는
+// 글자·문단 모양 probe(부분 굵게 run 분할·정렬·크기·색·줄 간격·문단 간격·들여쓰기와 실행 취소·다시 실행)까지 한 뒤 Save As하고
+// 저장본을 다시 열어 글자와 글상자·메모·각주 개수를 확인한다. 표가 든 글상자는 읽기 전용이라 입력 칸이 없어야 한다.
+// footnote는 [각주 넣기]·[각주 지우기]와 그 실행 취소·다시 실행을 거친 뒤 저장해 각주가 하나 늘었는지 본다.
+const SUBLIST_EDIT_CASES = [
+  { id: 'text-box', target: 'text-box', text: '상자고침' },
+  { id: 'memo', target: 'memo', text: '메모고침' },
+  { id: 'note-style', target: 'note', text: '각주모양', style: true },
+  { id: 'text-box-style', target: 'text-box', text: '상자모양', style: true },
+  // 제목 caret에 각주를 넣고(기존 각주 앞이라 새 각주가 1번, 기존 각주가 2번) 입력·되돌리기·지우기·되돌리기 뒤 저장한다.
+  { id: 'footnote', target: 'footnote', text: '새각주' }
+]
+
 // 원본 위치 개체 E2E(createFloatingObjectHwpx): 화면 개체 상자(용지 기준 CSS px)가 generator의 기대값(FLOATING_OBJECT_EXPECTED,
 // HWPUNIT)과 이 오차 안에서 같아야 하고, 자리 차지·글 옆 배치 개체와 본문 글이 겹치지 않아야 한다(verify_app이 실패로 본다).
 // 문단 편집·쪽 위 표 셀 편집 뒤 저장본을 다시 열어도 개체가 같은 자리에 있어야 한다.
@@ -353,6 +366,19 @@ try {
     })
   }
   const editScope = (target) => editScopeResults.find((result) => result.target === target)
+  const sublistEditPath = generator.createSublistEditHwpx(directory, 'han-flow-sublist-edit.hwpx')
+  const sublistEditResults = []
+  for (const scope of SUBLIST_EDIT_CASES) {
+    sublistEditResults.push({
+      id: scope.id,
+      ...await verify(sublistEditPath, 500, false, {
+        HAN_FLOW_VERIFY_EDIT_TEXT: scope.text,
+        HAN_FLOW_VERIFY_EDIT_TARGET: scope.target,
+        HAN_FLOW_VERIFY_EDIT_SAVE: '1',
+        ...(scope.style ? { HAN_FLOW_VERIFY_STYLE: '1' } : {})
+      })
+    })
+  }
   const longFootnoteEdit = await verify(generator.createLongFootnoteHwpx(directory, 'han-flow-footnote-long-edit.hwpx'), 500, false, {
     HAN_FLOW_VERIFY_EDIT_TEXT: LONG_FOOTNOTE_EDIT_TEXT,
     HAN_FLOW_VERIFY_EDIT_TARGET: 'note',
@@ -447,6 +473,17 @@ try {
       editScope(target)?.saveAs?.reopenedPlaceholderCounts?.footnote === 1 && editScope(target)?.saveAs?.reopenedPlaceholderCounts?.endnote === 1
         ? undefined
         : `edit-scope ${target}: 저장본의 각주·미주 번호 표시가 1개씩이 아님`),
+    ...sublistEditResults.filter(({ passed }) => !passed).map(({ id, failures: sublistFailures }) => `sublist-edit ${id}: ${sublistFailures.join(', ')}`),
+    ...sublistEditResults.filter(({ saveAs }) => !saveAs?.reopenedTextPresent).map(({ id }) => `sublist-edit ${id}: 저장본에 입력 글자가 없음`),
+    ...sublistEditResults
+      .filter(({ id, saveAs }) => {
+        const counts = saveAs?.reopenedPlaceholderCounts
+        return !(counts?.['text-box'] === 3 && counts?.memo === 1 && counts?.footnote === (id === 'footnote' ? 2 : 1))
+      })
+      .map(({ id, saveAs }) => `sublist-edit ${id}: 저장본의 글상자·메모·각주 수가 다름(${JSON.stringify(saveAs?.reopenedPlaceholderCounts)})`),
+    ...sublistEditResults
+      .filter(({ editingProbe }) => editingProbe?.editableCount !== undefined && editingProbe.editableCount < 1)
+      .map(({ id }) => `sublist-edit ${id}: 입력 칸이 없음`),
     ...longNameResults.filter(({ passed }) => !passed).map(({ scale, failures: longFailures }) => `긴 파일 이름 ${scale}배: ${longFailures.join(', ')}`),
     // 실제로 잘리는지는 글꼴 폭과 창 너비에 따라 다르므로, 한 줄 유지·말줄임 설정·전체 이름 tooltip만 요구한다.
     ...longNameResults
@@ -518,6 +555,18 @@ try {
       noteKind: editingProbe?.noteKind,
       reopenedTextPresent: saveAs?.reopenedTextPresent,
       reopenedTextPageCount: saveAs?.reopenedTextPageCount,
+      reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
+    })),
+    sublistEdit: sublistEditResults.map(({ id, passed, totalPages, editingProbe, saveAs }) => ({
+      id,
+      passed,
+      totalPages,
+      objectKind: editingProbe?.objectKind,
+      noteKind: editingProbe?.noteKind,
+      editableCount: editingProbe?.editableCount,
+      styleProbe: editingProbe?.styleProbe,
+      footnoteMarkers: editingProbe?.insertedMarkers,
+      reopenedTextPresent: saveAs?.reopenedTextPresent,
       reopenedPlaceholderCounts: saveAs?.reopenedPlaceholderCounts
     })),
     crashRecovery: { passed: crashRecoveryResult.passed, ...crashRecoveryResult.crashRecovery },

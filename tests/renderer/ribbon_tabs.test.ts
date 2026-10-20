@@ -167,7 +167,13 @@ describe('리본 탭 markup', () => {
     for (const label of ['문서 열기', '새 창', 'HWPX 변경본 저장', 'PDF로 내보내기']) {
       expect(panelFor(markup, '파일')).toContain(`aria-label="${label}"`)
     }
-    expect(groupLabels(panelFor(markup, '편집'))).toEqual(['기록'])
+    expect(groupLabels(panelFor(markup, '편집'))).toEqual(['기록', '각주'])
+    // 각주 넣기·지우기는 capability가 열 때만 켠다.
+    expect(control(markup, '각주 넣기')).toContain('disabled')
+    expect(control(markup, '각주 지우기')).toContain('disabled')
+    const footnoteMarkup = render({ editing: editingSession, fixedDocument: false, footnoteAvailable: true, footnoteDeleteAvailable: true })
+    expect(control(footnoteMarkup, '각주 넣기')).not.toContain('disabled')
+    expect(control(footnoteMarkup, '각주 지우기')).not.toContain('disabled')
     expect(groupLabels(panelFor(markup, '서식'))).toEqual(['글자 모양', '문단 정렬', '문단 간격'])
     expect(groupLabels(panelFor(markup, '표'))).toEqual(['표 셀 모양', '표 구조'])
     expect(panelFor(markup, '표')).toContain('aria-label="오른쪽 표 셀과 병합"')

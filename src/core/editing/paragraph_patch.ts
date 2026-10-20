@@ -108,7 +108,8 @@ function locateParagraph(
     throw new HwpxEditConflictError('지원하는 일반 텍스트 문단 구조를 찾을 수 없습니다.')
   }
   const scope = paragraph.parent
-  if (scope.name === 'hp:subList') {
+  // 각주·미주·머리말·꼬리말·글자만 든 글상자 문단은 같은 subList 안 문단끼리만 나누고 합친다(문단 구조 규칙은 본문과 같다).
+  if (scope.name === 'hp:subList' && !isStructureSubList(scope)) {
     const cell = nearestSourceAncestor(paragraph, 'hp:tc')
     const cellSpan = cell?.children.find(
       (child): child is SourceElement => child.kind === 'element' && child.name === 'hp:cellSpan'
@@ -122,10 +123,27 @@ function locateParagraph(
     ) {
       throw new HwpxEditConflictError('병합되지 않은 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
     }
-  } else if (scope.name !== 'hs:sec') {
-    throw new HwpxEditConflictError('최상위 문단 또는 일반 표 body cell 문단만 구조를 편집할 수 있습니다.')
+  } else if (scope.name !== 'hs:sec' && scope.name !== 'hp:subList') {
+    throw new HwpxEditConflictError('최상위 문단, 일반 표 body cell 문단, 각주·미주·머리말·꼬리말·글상자 문단만 구조를 편집할 수 있습니다.')
   }
   return { tree, textNode, run, paragraph, scope }
+}
+
+/** 글자만 든 subList가 가질 수 있는 element(viewer decoder의 `isPlainTextSubList`와 같은 규칙). */
+const PLAIN_SUBLIST_ELEMENTS: ReadonlySet<string> = new Set(['hp:p', 'hp:run', 'hp:t', 'hp:lineBreak', 'hp:tab', 'hp:linesegarray', 'hp:lineseg'])
+
+/**
+ * 문단 구조 command를 받는 표 셀 밖 subList: 각주·미주·머리말·꼬리말, 글자만 든 글상자(`hp:drawText`). 메모·필드 subList는
+ * 글자만 고친다.
+ */
+function isStructureSubList(scope: SourceElement): boolean {
+  const host = scope.parent?.name
+  if (host === 'hp:footNote' || host === 'hp:endNote' || host === 'hp:header' || host === 'hp:footer') return true
+  if (host !== 'hp:drawText') return false
+  const plain = (node: SourceElement): boolean => node.children.every(
+    (child) => child.kind !== 'element' || (PLAIN_SUBLIST_ELEMENTS.has(child.name) && plain(child))
+  )
+  return plain(scope)
 }
 
 /** element가 아닌 형제(text·comment·CDATA·PI)가 공백 text뿐이면 true. */
@@ -224,7 +242,8 @@ function nodesSource(tree: SourceTree, nodes: readonly SourceNode[]): string {
 }
 
 /** 문서 순서(여는 tag 위치)로 `left`가 `right`보다 뒤이면 양수. 조상은 자손보다 앞이다. */
-function compareDocumentOrder(left: SourceElement, right: SourceElement): number {
+/** @internal 같은 tree 안 두 element의 문서 순서(음수면 left가 앞). */
+export function compareDocumentOrder(left: SourceElement, right: SourceElement): number {
   const path = (node: SourceElement): number[] => {
     const indexes: number[] = []
     for (let current: SourceElement | undefined = node; current?.parent; current = current.parent) {

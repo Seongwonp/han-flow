@@ -100,6 +100,23 @@ export interface EditingMergeTableCellRightRequest {
   timestamp: number
 }
 
+/** caret 자리에 각주를 넣는다(`footnote_patch.ts`). */
+export interface EditingInsertFootnoteRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  timestamp: number
+}
+
+/** 각주 하나(`${sectionPath}#hp:footNote:K`)를 지운다. selection은 그 각주 본문이나 번호 표시가 든 본문 문단에 있다. */
+export interface EditingDeleteFootnoteRequest {
+  sessionId: string
+  transactionId: string
+  selectionBefore: EditorSelection
+  notePath: string
+  timestamp: number
+}
+
 export interface EditingSplitTableCellRequest {
   sessionId: string
   transactionId: string

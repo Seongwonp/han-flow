@@ -3,13 +3,14 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { ViewerDocument, ViewerNoteList } from '../../src/core/document/viewer_document'
+import { ViewerDocument, ViewerNoteList, ViewerObjectPlaceholder } from '../../src/core/document/viewer_document'
+import { topLevelParagraphStructure } from '../../src/core/editing/editing_capability'
 import { HwpxSourcePackage } from '../../src/core/parser/source_package'
 import { decodeViewerDocument } from '../../src/core/parser/viewer_decoder'
-import { FootnoteAreaView, NoteListView, ParagraphView, sublistParagraphEditing } from '../../src/renderer/src/App'
+import { FootnoteAreaView, NoteListView, ObjectPlaceholderView, objectTextEditing, ParagraphView, sublistParagraphEditing, TextBoxView } from '../../src/renderer/src/App'
 import { sectionFootnoteSettings } from '../../src/core/layout/footnote_layout'
 import { paginateViewerDocument } from '../../src/core/layout/pagination'
-import { createEditScopeHwpx } from '../fixtures/public/create_synthetic_hwpx'
+import { createEditScopeHwpx, createSublistEditHwpx, SUBLIST_EDIT_TEXTS } from '../fixtures/public/create_synthetic_hwpx'
 
 const noop = () => undefined
 
@@ -97,19 +98,74 @@ describe('편집 범위 확장 화면', () => {
     expect(render(createElement(FootnoteAreaView, { footnotes: pages[0].footnotes![0], settings, columnWidth: 48190, document }))).not.toContain('viewer-editable-text')
   })
 
-  test('머리말 편집 props는 active 쪽에만 selection 복원을 넘기고 문단 구조를 막는다', () => {
+  test('머리말 편집 props는 active 쪽에만 selection 복원을 넘기고 문서 문단 구조 gate를 쓴다(메모는 문단 구조를 막는다)', () => {
     const selection = { sectionPath: 'Contents/section0.xml', anchorTextNodeId: 'x', anchorOffset: 0, focusTextNodeId: 'x', focusOffset: 0 }
-    const base = pageEditing({ allowTableParagraph: true, desiredSelection: selection }) as any
+    const structure = topLevelParagraphStructure(document)
+    const documentStructureOf = (id: string) => structure.get(id)
+    const base = pageEditing({ allowTableParagraph: true, desiredSelection: selection, documentStructureOf }) as any
     const active = sublistParagraphEditing(base, 'HEADER_FOOTER_TEXT', 'HWPX 머리말 편집', selection)!
     const inactive = sublistParagraphEditing(base, 'HEADER_FOOTER_TEXT', 'HWPX 머리말 편집', undefined)!
     expect(active.desiredSelection).toBe(selection)
     expect(inactive.desiredSelection).toBeUndefined()
-    expect(active).toMatchObject({ allowParagraphStructure: false, allowTableParagraph: false, allowParagraphRange: false })
-    expect(active.structureGate).toEqual({ split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' })
+    expect(active).toMatchObject({ allowParagraphStructure: true, allowTableParagraph: false, allowParagraphRange: false })
+    expect(active.structureGate).toBeUndefined()
+    expect(active.structureOf).toBe(documentStructureOf)
+    expect(structure.get(document.sections[0].headers[0].paragraphs[0].id)).toEqual({
+      rangeScope: 'Contents/section0.xml:header-footer:s0:header0:p0',
+      gate: {}
+    })
+    const memo = sublistParagraphEditing(base, 'MEMO_TEXT', 'HWPX 메모 편집', selection)!
+    expect(memo).toMatchObject({ allowParagraphStructure: false, structureOf: undefined })
+    expect(memo.structureGate).toEqual({ split: 'SUBLIST_TEXT', mergePrevious: 'SUBLIST_TEXT', mergeNext: 'SUBLIST_TEXT' })
     expect(sublistParagraphEditing(undefined, 'HEADER_FOOTER_TEXT', 'x', undefined)).toBeUndefined()
     const header = document.sections[0].headers[0].paragraphs[0]
     const markup = render(createElement(ParagraphView, { paragraph: header, document, editing: active }))
     expect(markup).toContain('aria-label="HWPX 머리말 편집"')
     expect(markup).toContain('data-editor-range-scope="Contents/section0.xml:header-footer:s0:header0:p0"')
+  })
+})
+
+describe('글상자·메모 편집 화면', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'han-flow-object-text-view-'))
+  let document: ViewerDocument
+  beforeAll(async () => {
+    document = await decodeViewerDocument(await HwpxSourcePackage.open(createSublistEditHwpx(directory)))
+  })
+  afterAll(() => rmSync(directory, { recursive: true, force: true }))
+
+  const placeholderIn = (blockIndex: number, kind: ViewerObjectPlaceholder['kind']) =>
+    document.sections[0].blocks[blockIndex].content.find((item): item is ViewerObjectPlaceholder => item.type === 'object-placeholder' && item.kind === kind)!
+
+  test('글자만 든 글상자는 편집 중 문단마다 입력 칸을 두고, 보기·측정에서는 읽기 전용이다', () => {
+    const structure = topLevelParagraphStructure(document)
+    const editing = pageEditing({ documentStructureOf: (id: string) => structure.get(id) }) as any
+    const box = placeholderIn(2, 'text-box')
+    const markup = render(createElement(TextBoxView, { item: box, document, editing }))
+    expect(count(markup, 'aria-label="HWPX 글상자 편집"')).toBe(2)
+    expect(markup).toContain(`data-editor-range-scope="Contents/section0.xml:text-box:${box.paragraphs![0].id}"`)
+    expect(render(createElement(TextBoxView, { item: box, document }))).not.toContain('viewer-editable-text')
+    // 줄 안 글상자(자리 표시 상자)도 같은 입력 칸을 둔다.
+    const inline = placeholderIn(3, 'text-box')
+    expect(count(render(createElement(ObjectPlaceholderView, { item: inline, document, editing })), 'aria-label="HWPX 글상자 편집"')).toBe(1)
+    // 표가 든 글상자는 편집 중에도 읽기 전용이다.
+    const objectBox = placeholderIn(5, 'text-box')
+    expect(objectTextEditing(objectBox, editing)).toBeUndefined()
+    expect(render(createElement(TextBoxView, { item: objectBox, document, editing }))).not.toContain('viewer-editable-text')
+  })
+
+  test('메모는 편집 중 줄 안 본문 글 자리에 메모 입력 칸을 두고 문단 나눔을 막는다', () => {
+    const editing = pageEditing() as any
+    const memo = placeholderIn(4, 'memo')
+    const markup = render(createElement(ObjectPlaceholderView, { item: memo, document, editing }))
+    expect(count(markup, 'aria-label="HWPX 메모 편집"')).toBe(1)
+    expect(markup).toContain('viewer-memo-body')
+    expect(objectTextEditing(memo, editing)).toMatchObject({ allowParagraphStructure: false })
+    const view = render(createElement(ObjectPlaceholderView, { item: memo, document }))
+    expect(view).not.toContain('viewer-editable-text')
+    expect(view).toContain(SUBLIST_EDIT_TEXTS.memo)
+    // 메모가 든 본문 문단은 본문 입력 칸과 메모 입력 칸을 함께 그린다.
+    const paragraph = render(createElement(ParagraphView, { paragraph: document.sections[0].blocks[4], document, editing }))
+    expect(count(paragraph, 'aria-label="HWPX 메모 편집"')).toBe(1)
+    expect(count(paragraph, 'aria-label="HWPX 문단 편집"')).toBe(2)
   })
 })

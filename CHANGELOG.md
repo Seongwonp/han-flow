@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 편집 범위: 글상자·메모 글자, subList 모양·문단 나눔, 각주 만들기·지우기
+
+- 글자만 든 글상자(도형 글 `hp:drawText`)와 메모 본문(`hp:fieldBegin type="MEMO"`)의 글자 입력·삭제·치환. decoder가 글자만 든 subList에 section `hp:t` 순번 anchor를 붙이고(표·그림·도형·수식·각주·필드가 하나라도 든 글상자·메모는 전체 읽기 전용) capability가 `TEXT_BOX_TEXT`·`MEMO_TEXT`로 연다. 원본 위치 글상자는 편집 중 그 자리에서 입력 칸이 되고(글 앞·뒤 글상자도 편집 중에는 누를 수 있음), 메모는 줄 안 "메모: …" 자리에 입력 칸을 둔다
+- 각주·미주·머리말·꼬리말·글상자 문단의 글자·문단 모양과 Enter 분할·경계 병합(`SUBLIST_TEXT` 차단은 메모 본문에만 남음). 한/글 저장본처럼 번호(`hp:autoNum`)와 글자가 한 run에 든 각주 첫 문단의 글자 모양은 번호를 원래 모양 run에 남기고 글자만 새 run으로 나눔(실행 취소는 원래 run bytes 복원). 문단 구조 규칙은 본문과 같아 번호가 든 각주 첫 문단은 Enter·병합을 막음
+- 리본 `편집` 탭 `각주` group: [각주 넣기]는 본문 문단 글자 사이 caret에 한/글 모양 각주(번호 control + 빈 본문)를 넣고 새 각주로 caret을 옮김. 번호는 앞 각주 + 1, 뒤 각주 `number`·`autoNum num`을 올림(이어 매기기면 뒤 구역까지). [각주 지우기]와 번호 표시를 품은 본문 범위 삭제는 각주를 통째로 지우고 뒤 번호를 내림. 실행 취소는 본문 문단 원문과 번호 attribute를 되돌려 원래 bytes를 복원하고, `instId`까지 package 상태로 정해 다시 실행·복구 replay가 같은 bytes를 만듦. 쪽마다 새로 매기기(`ON_PAGE`) 구역·표 셀·글상자·머리말 안 각주 넣기와 미주는 지원하지 않음
+- 저장 정책에 `note-structure`(`NOTE_STRUCTURE_CHANGED`, 재열기 권장)를 더함. 복구 기록 형식 version 4: `insert-footnote`·`delete-footnote`는 version 4 기록에서만 받고(replay 검사는 실제 `#hp:t:N` anchor·offset, `#hp:footNote:K` 모양), version 1~3 기록은 그대로 읽음
+- golden family 3개(`object-text`·`sublist-structure`·`footnote`)와 단위 test(`object_text`·`footnote_patch`·subList 복구 기록 replay), renderer test를 추가하고 기존 style·paragraph golden은 위치 거부였던 subList 표본만 바뀜. verify:matrix에 subList 편집 합성 fixture(`createSublistEditHwpx`)의 글상자·메모 입력, 각주·글상자 글자·문단 모양 probe, 각주 넣기→입력→실행 취소·다시 실행→지우기→실행 취소를 각각 Save As→재열기까지 확인하는 검사를 추가
+- 편집 coverage 측정이 쪽 아래 각주 본문(번호 표시 자리 표시 안)을 anchor 없음으로 세던 문제를 고침. 외부 한/글 28종: anchor 96.3% → 99.2%, text 편집 96.0% → 98.9%, 글자 가중 94.3% → 98.9%, 글자 모양 77.7% → 81.2%, 문단 모양 95.0% → 98.7%, 문단 나눔 270 → 281/399(불일치 0), 글자 칸 없는 문단 45/46 → 46/46
+
 ### 표 셀 선언 높이·글 옆 배치·칸 안 원본 위치 개체
 
 - HWPX 표 셀을 한/글처럼 선언 높이(`hp:cellSz height`, 안쪽 여백 포함)를 최소 높이로 그림. 예전 `td`의 `min-height`는 표 칸에 듣지 않아 내용 높이로 그려졌음. `td` `height` + `border-box`(행 최소 높이)로 바꾸고 내용이 길면 늘어남. 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄이고 쪽을 넘어 나뉜 조각 셀은 내용 높이(`cellMinimumHeight`). 사용자 문서 doc2 1쪽의 용지 기준 빨간 타원이 표 아래 빈 곳이 아니라 표 안 작성자 줄을 감쌈(PDF 그림 비교)
