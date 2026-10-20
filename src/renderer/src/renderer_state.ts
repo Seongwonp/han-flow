@@ -343,15 +343,17 @@ export class EditingImeTransientState {
 
 /**
  * main의 남은 입력 반영 요청(창 닫기·앱 종료 전, `editing:flushInput`)에 답한다. 입력 칸의 대기 글자(음절 묶음·조합 중 글자)를
- * commit 요청으로 보내고, 그 commit과 앞서 줄 선 편집 command가 모두 끝난 뒤({@link EditingImeTransientState.runAfterInput})
- * `reply`를 부른다. main은 답을 받은 뒤 dirty를 다시 보고 저장 확인을 띄운다. 반영이 실패해도 답한다(main은 그때 상태로 이어 간다).
+ * 곧바로 commit 요청으로 보내고(앞선 편집 command가 오래 걸려도 main이 답을 기다리는 동안 dirty를 알 수 있게 줄 서기 전에
+ * 보낸다), 그 commit과 앞서 줄 선 편집 command가 모두 끝난 뒤({@link EditingImeTransientState.runAfterInput}) `reply`를 부른다.
+ * main은 답을 받은 뒤 dirty를 다시 보고 저장 확인을 띄운다. 반영이 실패해도 답한다(main은 그때 상태로 이어 간다).
  */
 export async function answerInputFlushRequest(
-  transient: Pick<EditingImeTransientState, 'runAfterInput'>,
+  transient: Pick<EditingImeTransientState, 'runAfterInput' | 'flushInput'>,
   reply: () => void,
   log: (reason: unknown) => void = (reason) => console.warn('닫기 전 입력 반영 실패:', reason)
 ): Promise<void> {
   try {
+    transient.flushInput()
     await transient.runAfterInput(() => undefined)
   } catch (reason) {
     log(reason)

@@ -47,6 +47,7 @@ import { ViewerProjectionCache } from '../core/parser/viewer_projection'
 import { saveAsFailureMessage } from './editing_save_messages'
 import {
   decodeRecoveryJournalFor,
+  RECOVERY_JOURNAL_VERSION,
   RecoveryJournalError,
   type RecoveryJournalEntry,
   type RecoveryJournalHeader,
@@ -188,7 +189,7 @@ export class EditingEngine {
       if (!(reason instanceof RecoveryJournalError)) throw reason
       throw new EditingOperationError('EDITING_RECOVERY_FAILED', `복구 기록이 손상되어 되살릴 수 없습니다: ${reason.message}`, 'none')
     }
-    const result = await this.replay(decoded.entries)
+    const result = await this.replay(decoded.entries, decoded.header.version)
     return {
       ...result,
       replayedEntries: decoded.entries.length,
@@ -201,8 +202,9 @@ export class EditingEngine {
    * 복구 기록을 처음부터 다시 적용한다. live 편집과 같은 commit·undo·redo·저장 지점 경로를 타고, 단계마다 기록된 revision과
    * 맞는지 확인한다. commit은 적용 전에 forward command 종류와 문단·표 교체 fragment 구조를 확인한다(`replay_guard.ts`).
    * 하나라도 어긋나면 EDITING_RECOVERY_FAILED. 적용한 record는 다시 기록으로 내보내 새 session의 기록이 된다.
+   * `journalVersion`은 기록 형식 version이다(없으면 지금 version). 이전 version 기록에 없던 command 모양을 거부하는 데 쓴다.
    */
-  async replay(entries: readonly RecoveryJournalEntry[]): Promise<EditingActionResult> {
+  async replay(entries: readonly RecoveryJournalEntry[], journalVersion = RECOVERY_JOURNAL_VERSION): Promise<EditingActionResult> {
     if (this.history.package.revision !== 0 || this.history.canUndo || this.history.canRedo) {
       throw new EditingOperationError('EDITING_INVALID_REQUEST', '복구 기록은 새로 연 편집 session에만 적용할 수 있습니다.')
     }
@@ -211,7 +213,7 @@ export class EditingEngine {
         switch (entry.type) {
           case 'commit':
             // 기록 파일은 앱 밖에서 바뀔 수 있다. planner를 거치지 않으므로 live 편집이 만들 수 있는 command인지 먼저 본다.
-            assertReplayableTransaction(entry.transaction, this.history.package)
+            assertReplayableTransaction(entry.transaction, this.history.package, journalVersion)
             this.commitTransaction(entry.transaction, entry.at)
             break
           case 'undo':

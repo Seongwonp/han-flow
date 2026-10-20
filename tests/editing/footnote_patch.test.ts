@@ -193,6 +193,54 @@ describe('각주 만들기·지우기', () => {
     expect(separateResult.lossReport.modifiedEntries).toEqual([section0])
   })
 
+  test.each(['ON_SECTION', 'ON_PAGE'] as const)('%s 구역 뒤 이어 매기는 구역 각주 번호도 넣기·지우기에 따라 올리고 내린다', async (type) => {
+    const later = `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>둘째 구역</hp:t><hp:ctrl><hp:footNote number="2" suffixChar="41" instId="7"><hp:subList><hp:p id="0" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl>${AUTO_NUM(2)}</hp:ctrl><hp:t>둘째 구역 각주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t/></hp:run></hp:p></hs:sec>`
+    const numbering = (value: string) => value.includes('<hp:footNotePr')
+      ? value.replace(/(<hp:footNotePr>[\s\S]*?<hp:numbering type=")[A-Z_]+/, `$1${type}`)
+      : value.replace('</hp:secPr>', `<hp:footNotePr><hp:numbering type="${type}" newNum="1"/></hp:footNotePr></hp:secPr>`)
+    const source = await HwpxSourcePackage.open(variant(directory, `restart-${type}`, numbering, later))
+    const both = (pkg: HwpxSourcePackage) => [xml(pkg), xml(pkg, section1)]
+    const originals = both(source)
+    expect(originals[0]).toContain(`<hp:numbering type="${type}"`)
+    const laterAt = (number: number) => originals[1].replace('<hp:footNote number="2"', `<hp:footNote number="${number}"`).replace(AUTO_NUM(2), AUTO_NUM(number))
+    const lead = anchorOf(source, SUBLIST_EDIT_TEXTS.boxLead)
+    const plan = planInsertFootnote(source, caret(lead.textNodeId, 1))
+    const history = new HwpxEditHistory(source)
+    const insert = transaction(source, [plan.command], caret(lead.textNodeId, 1), plan.selectionAfter)
+    history.commit(insert)
+    const inserted = both(history.package)
+    // 앞 구역 각주가 하나 늘었으므로 이어 매기는 둘째 구역 각주는 3번이다.
+    expect(inserted[1]).toBe(laterAt(3))
+    expect(inserted[0]).toContain('<hp:footNote number="2" suffixChar="41"')
+    // 새 각주를 지우면 둘째 구역 각주는 다시 2번이다.
+    const created = listHwpxTextAnchors(history.package, section0).find((anchor) => anchor.textNodeId === plan.selectionAfter.focusTextNodeId)!
+    const remove = planDeleteFootnote(history.package, caret(created.textNodeId), `${section0}#hp:footNote:1`)
+    history.setSelection(caret(created.textNodeId))
+    history.commit(transaction(history.package, [remove.command], caret(created.textNodeId), remove.selectionAfter, 'deleteFootnote'))
+    const removed = both(history.package)
+    expect(removed[1]).toBe(originals[1])
+    expect(removed[0]).toContain('<hp:footNote number="1" suffixChar="41" instId="9301">')
+    // 원래 각주(1번)를 지우면 둘째 구역 각주는 1번이 된다.
+    const first = anchorOf(history.package, SUBLIST_EDIT_TEXTS.footnoteBody)
+    const removeFirst = planDeleteFootnote(history.package, caret(first.textNodeId, 1), `${section0}#hp:footNote:0`)
+    history.setSelection(caret(first.textNodeId, 1))
+    history.commit(transaction(history.package, [removeFirst.command], caret(first.textNodeId, 1), removeFirst.selectionAfter, 'deleteFootnote'))
+    const firstRemoved = both(history.package)
+    expect(firstRemoved[1]).toBe(laterAt(1))
+    history.undo()
+    expect(both(history.package)).toEqual(removed)
+    history.undo()
+    expect(both(history.package)).toEqual(inserted)
+    history.undo()
+    expect(both(history.package)).toEqual(originals)
+    history.redo()
+    expect(both(history.package)).toEqual(inserted)
+    history.redo()
+    expect(both(history.package)).toEqual(removed)
+    history.redo()
+    expect(both(history.package)).toEqual(firstRemoved)
+  })
+
   test('머리말·꼬리말과 각주·메모 본문, 범위 선택에는 각주·미주를 넣지 않는다(글상자에는 넣는다)', async () => {
     const source = await HwpxSourcePackage.open(createSublistEditHwpx(directory, 'scope.hwpx'))
     const document = await decodeViewerDocument(source)
@@ -384,5 +432,63 @@ describe('각주 만들기·지우기', () => {
     expect(() => assertReplayableTransaction({ ...valid, commands: [{ type: 'delete-endnote', sectionPath: section0, textNodeId: lead.textNodeId, notePath: `${section0}#hp:endNote:0` }] }, source)).not.toThrow()
     const result = applyEditTransaction(source, valid)
     expect(() => assertReplayableTransaction({ ...valid, commands: result.inverse!.commands }, source)).toThrow('편집이 만들지 않는 command')
+  })
+
+  test('두 구역 문서에서 각주·미주·각주를 넣고 그 셋을 품은 범위를 지우면 이어 매기는 뒤 구역 번호도 내리고 undo·redo가 bytes를 되살린다', async () => {
+    const later = `<?xml version="1.0" encoding="UTF-8"?><hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"><hp:p id="1" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>둘째 구역</hp:t><hp:ctrl><hp:footNote number="2" suffixChar="41" instId="7"><hp:subList><hp:p id="0" paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:ctrl>${AUTO_NUM(2)}</hp:ctrl><hp:t>둘째 구역 각주</hp:t></hp:run></hp:p></hp:subList></hp:footNote></hp:ctrl><hp:t/></hp:run></hp:p></hs:sec>`
+    const source = await HwpxSourcePackage.open(variant(directory, 'multi-range', (value) => value, later))
+    const both = (pkg: HwpxSourcePackage) => [xml(pkg), xml(pkg, section1)]
+    const markers = async (pkg: HwpxSourcePackage) => {
+      const document = await decodeViewerDocument(pkg)
+      return [footnotes(document, 0), footnotes(document, 1)].map((notes) => notes.map((note) => `${note.kind}:${note.marker}`))
+    }
+    const history = new HwpxEditHistory(source)
+    const commit = (commands: EditCommand[], before: EditorSelection, after: EditorSelection, inputType: string) => {
+      history.setSelection(before)
+      history.commit(transaction(history.package, commands, before, after, inputType))
+      return both(history.package)
+    }
+    // 글상자가 놓인 문단에 각주, 미주, 각주를 차례로 넣는다(글|각주|상|미주|자가|각주| 놓인 문단).
+    const lead = anchorOf(source, SUBLIST_EDIT_TEXTS.boxLead)
+    let selection = caret(lead.textNodeId, 1)
+    let plan: { command: EditCommand; selectionAfter: EditorSelection } = planInsertFootnote(history.package, selection)
+    const steps = [both(source), commit([plan.command], selection, plan.selectionAfter, 'insertFootnote')]
+    const tail = listHwpxTextAnchors(history.package, section0).find((anchor) => anchor.ordinal === lead.ordinal + 2)!
+    expect(tail.text).toBe(SUBLIST_EDIT_TEXTS.boxLead.slice(1))
+    selection = caret(tail.textNodeId, 1)
+    plan = planInsertEndnote(history.package, selection)
+    steps.push(commit([plan.command], selection, plan.selectionAfter, 'insertEndnote'))
+    const third = anchorOf(history.package, SUBLIST_EDIT_TEXTS.boxLead.slice(2))
+    selection = caret(third.textNodeId, 2)
+    plan = planInsertFootnote(history.package, selection)
+    steps.push(commit([plan.command], selection, plan.selectionAfter, 'insertFootnote'))
+    expect(await markers(history.package)).toEqual([['footnote:1)', 'footnote:2)', 'footnote:3)'], ['footnote:4)']])
+    expect(xml(history.package, section1)).toContain('<hp:footNote number="4"')
+
+    // 문단 맨 앞부터 마지막 각주 뒤 글자 앞까지 지운다: 각주 둘·미주 하나가 함께 지워진다.
+    const anchors = listHwpxTextAnchors(history.package, section0)
+    const start = anchors.find((anchor) => anchor.ordinal === lead.ordinal)!
+    const end = anchors.find((anchor) => anchor.text === SUBLIST_EDIT_TEXTS.boxLead.slice(4))!
+    const range: EditorSelection = { sectionPath: section0, anchorTextNodeId: start.textNodeId, anchorOffset: 0, focusTextNodeId: end.textNodeId, focusOffset: 0 }
+    const replace = planReplaceSelection(history.package, range, 'Z')
+    expect(replace.commands.map((command) => command.type).filter((type) => type !== 'replace-text').sort())
+      .toEqual(['delete-endnote', 'delete-footnote', 'delete-footnote'])
+    const deleted = commit([...replace.commands], range, replace.selectionAfter, 'insertText')
+    expect(await markers(history.package)).toEqual([['footnote:1)'], ['footnote:2)']])
+    expect(deleted[0]).not.toContain('<hp:endNote')
+    expect(deleted[1]).toBe(steps[0][1])
+
+    history.undo()
+    expect(both(history.package)).toEqual(steps[3])
+    history.redo()
+    expect(both(history.package)).toEqual(deleted)
+    for (const expected of [steps[3], steps[2], steps[1], steps[0]]) {
+      history.undo()
+      expect(both(history.package)).toEqual(expected)
+    }
+    for (const expected of [steps[1], steps[2], steps[3], deleted]) {
+      history.redo()
+      expect(both(history.package)).toEqual(expected)
+    }
   })
 })

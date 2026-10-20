@@ -39,8 +39,8 @@ import { buildLossReport, isSurrogateBoundarySafe } from './xml_scan'
  * - `insert-footnote`: 각주를 둘 수 있는 문단(아래 "넣을 수 있는 자리")의 `hp:t` anchor 글자 사이(offset)에 각주 하나를 넣는다.
  *   그 `hp:t`를 둘로 나누고 사이에 한/글 저장본과 같은 모양의 `<hp:ctrl><hp:footNote>…</hp:footNote></hp:ctrl>`를 둔다. 새 각주
  *   본문은 번호 control(`hp:autoNum`)과 빈 `<hp:t/>`가 든 문단 하나다. 번호는 구역 각주 모양(`hp:footNotePr`)의 번호 매기기를
- *   따른다: 바로 앞 각주 번호 + 1(앞 각주가 없으면 시작 번호 `newNum`), 뒤 각주들은 `number`·`num`을 1씩 올린다. 이어
- *   매기기(`CONTINUOUS`)면 뒤 구역들의 각주도 올린다(새로 매기는 구역에서 멈춘다).
+ *   따른다: 바로 앞 각주 번호 + 1(앞 각주가 없으면 시작 번호 `newNum`), 뒤 각주들은 `number`·`num`을 1씩 올린다. 뒤
+ *   구역들이 이어 매기면(`CONTINUOUS`) 지금 구역 번호 매기기 종류와 상관없이 그 구역들의 각주도 올린다(새로 매기는 구역에서 멈춘다).
  * - `delete-footnote`: `${sectionPath}#hp:footNote:K`(section 안 각주 문서 순서) 각주를 지우고 뒤 각주 번호를 1씩 내린다.
  *   번호 control만 든 `hp:ctrl`이면 `hp:ctrl`째 지운다. 각주 뒤의 빈 `<hp:t/>` 같은 주변 node는 그대로 둔다.
  * - `insert-endnote`·`delete-endnote`(2026-10-20): 미주(`hp:endNote`, `#hp:endNote:K`)도 같은 방식이다. 번호는 구역 미주 모양
@@ -55,8 +55,9 @@ import { buildLossReport, isSurrogateBoundarySafe } from './xml_scan'
  *
  * 쪽마다 새로 매기기(`ON_PAGE`, 2026-10-20): 번호가 쪽 배치에 달려 있다. 한/글은 저장된 `number`·`num`이 아니라 번호 매기기 종류로
  * 열 때 번호를 다시 매기고(번호 매기기 종류를 잘못 쓴 저장본은 한/글이 이어 매긴 번호로 보인다), viewer도 쪽을 나눈 뒤 쪽마다 다시
- * 매긴다(`footnote_layout`). 그래서 새 각주에는 바로 앞 각주 번호 + 1(앞 각주가 다른 쪽이면 틀릴 수 있는 임시 값)을 쓰고, 다른
- * 각주 번호는 바꾸지 않는다.
+ * 매긴다(`footnote_layout`). 그래서 새 각주에는 바로 앞 각주 번호 + 1(앞 각주가 다른 쪽이면 틀릴 수 있는 임시 값)을 쓰고, 같은
+ * 구역 다른 각주 번호는 바꾸지 않는다. 뒤 구역이 이어 매기면(`CONTINUOUS`) 그 구역 각주 번호는 앞 구역 각주가 하나 늘고 준 만큼
+ * 올리고 내린다(구역마다 새로 매기는 구역 뒤에서도 같다).
  *
  * 손대지 않은 node는 원문 bytes 그대로이고, 새 node만 기본 표기로 쓴다. forward command는 package 상태만으로 결과가 정해진다
  * (`instId`도 section의 가장 큰 값 + 1) — 복구 기록 replay와 다시 실행이 같은 bytes를 만든다.
@@ -288,9 +289,10 @@ interface PlannedNumberChange {
 }
 
 /**
- * 각주 하나를 넣거나(+1) 지운(-1) 뒤 다시 매겨야 하는 번호. 같은 section의 `fromIndex`부터 끝까지와, 이어 매기기면 뒤 section들의
- * 같은 종류 각주(새로 매기는 section에서 멈춘다)다. 반환하는 inverse 항목의 index는 바꾼 뒤 상태(current)와 바꾸기 전 상태(target)다.
- * 쪽마다 새로 매기기(`ON_PAGE`)는 다른 각주 번호를 바꾸지 않는다(한/글·viewer가 쪽마다 다시 매긴다).
+ * 각주 하나를 넣거나(+1) 지운(-1) 뒤 다시 매겨야 하는 번호. 같은 section의 `fromIndex`부터 끝까지와, 뒤 section들이 이어
+ * 매기면(`CONTINUOUS`) 그 section들의 같은 종류 각주(새로 매기는 section에서 멈춘다)다. 뒤 section은 지금 section이 구역마다
+ * (`ON_SECTION`)·쪽마다(`ON_PAGE`) 새로 매기더라도 올리고 내린다. 반환하는 inverse 항목의 index는 바꾼 뒤 상태(current)와 바꾸기
+ * 전 상태(target)다. 쪽마다 새로 매기는(`ON_PAGE`) section 안 다른 각주 번호는 바꾸지 않는다(한/글·viewer가 쪽마다 다시 매긴다).
  */
 function planRenumber(
   sourcePackage: HwpxSourcePackage,
@@ -300,7 +302,6 @@ function planRenumber(
 ): { changes: PlannedNumberChange[]; inverse: FootnoteNumberChange[] } {
   const changes: PlannedNumberChange[] = []
   const inverse: FootnoteNumberChange[] = []
-  if (current.numbering.type === 'ON_PAGE') return { changes, inverse }
   const shift = (scope: SectionNotes, from: number, indexShift: number) => {
     scope.notes.slice(from).forEach((note, offset) => {
       const index = from + offset
@@ -318,15 +319,15 @@ function planRenumber(
       }
     })
   }
-  // 같은 section에서는 넣은(지운) 각주 하나만큼 뒤 각주 index도 밀린다.
-  shift(current, fromIndex, delta)
-  if (current.numbering.type === 'CONTINUOUS') {
-    const paths = sectionPathsOf(sourcePackage)
-    for (const path of paths.slice(paths.indexOf(current.sectionPath) + 1)) {
-      const later = sectionNotes(sourcePackage, path, current.kind)
-      if (later.numbering.type !== 'CONTINUOUS') break
-      shift(later, 0, 0)
-    }
+  // 같은 section에서는 넣은(지운) 각주 하나만큼 뒤 각주 index도 밀린다. 쪽마다 새로 매기는 section 안 번호는 임시 값이라 그대로 둔다.
+  if (current.numbering.type !== 'ON_PAGE') shift(current, fromIndex, delta)
+  // 뒤 section이 이어 매기면(`CONTINUOUS`) 지금 section 번호 매기기 종류와 상관없이 앞 section 각주 수가 하나 바뀐 만큼 올리고
+  // 내린다(`previousNumber`가 앞 section의 마지막 각주 번호에서 이어 가는 것과 같은 규칙). 새로 매기는 section에서 멈춘다.
+  const paths = sectionPathsOf(sourcePackage)
+  for (const path of paths.slice(paths.indexOf(current.sectionPath) + 1)) {
+    const later = sectionNotes(sourcePackage, path, current.kind)
+    if (later.numbering.type !== 'CONTINUOUS') break
+    shift(later, 0, 0)
   }
   return { changes, inverse }
 }

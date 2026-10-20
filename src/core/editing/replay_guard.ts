@@ -2,9 +2,9 @@ import type { HwpxSourcePackage } from '../parser/source_package'
 import { parseEmptyParagraphAnchorId, parseTableCaretAnchorId } from './empty_paragraph_anchor'
 import { isNoteNumberControl, paragraphStructureViolation } from './paragraph_structure'
 import { sourceParagraphStructureAccess } from './paragraph_patch'
-import { parseSourceTree, serializeSourceNode, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
+import { getSourceAttribute, nearestSourceAncestor, parseSourceTree, serializeSourceNode, type SourceElement, type SourceNode, type SourceTree } from './source_tree'
 import { resolveTableFragmentCommand } from './table_patch'
-import { HwpxEditConflictError } from './text_patch'
+import { HwpxEditConflictError, locateHwpxTextElement } from './text_patch'
 import { parseEndnotePath, parseFootnotePath } from './footnote_patch'
 import type { EditCommand, EditTransaction } from './transaction'
 
@@ -16,9 +16,11 @@ import type { EditCommand, EditTransaction } from './transaction'
  *   inverse 전용이라 기록의 forward command로 받지 않는다.
  * - 문단 fragment 교체: 교체 fragment는 `hp:p` element만 이어 붙인 것이고, 각 문단은 문단 구조 command의 공통 규칙
  *   ({@link paragraphStructureViolation}: `hp:run`·`hp:linesegarray`만, run마다 `hp:t` 하나와 `hp:lineBreak`·`hp:tab`)을
- *   통과해야 한다. planner(분할·병합·범위 치환)는 이 규칙을 통과한 문단에서만 fragment를 만든다. 각주·미주 첫 문단 나눔(복구 기록
- *   version 5부터)은 첫 문단 첫 run의 번호 control을 받되, 그 control 원문이 바꾸기 전 fragment에 그대로 있어야 한다(번호를 새로
- *   들이지 않는다).
+ *   통과해야 한다. planner(분할·병합·범위 치환)는 이 규칙을 통과한 문단에서만 fragment를 만든다. 각주·미주 첫 문단 나눔·병합(복구 기록
+ *   version 5부터)은 교체 fragment 첫 문단 첫 run의 번호 control 하나를 받는다. 이때 command가 가리키는(fragment가 시작하는) 현재
+ *   문단이 각주·미주 본문(`hp:footNote|hp:endNote/hp:subList`)의 첫 `hp:p`이고, 번호 control은 정확히 하나이며 그 본문 종류와
+ *   같은 `numType`이고, 그 원문이 바꾸기 전 fragment에 그대로 있어야 한다(번호를 새로 들이거나 본문 문단으로 옮기거나 늘리지
+ *   않는다). version 4까지의 기록은 이 예외를 받지 않는다.
  * - 표 fragment 교체: 교체 fragment는 `hp:tbl` element 하나이고, 바꾸기 전 표(`expectedFragment`, 적용 때 현재 원문과 같은지
  *   확인한다)에 없던 element 이름을 들이지 않으며, 표 뼈대·단순 텍스트 셀 element가 아닌 것(그림·수식·중첩 표·제어 등)의
  *   개수를 늘리지 않는다. 표 planner는 빈 행·열·셀을 단순 텍스트 셀에서만 복제하므로 이 범위 안이다.
@@ -96,17 +98,62 @@ function countElements(nodes: readonly SourceNode[], counts = new Map<string, nu
   return counts
 }
 
-function assertParagraphReplacement(expectedFragment: string, replacementFragment: string): void {
+/** 번호 control을 받는 각주·미주 첫 문단 나눔·병합이 시작된 기록 형식 version. */
+const NOTE_NUMBER_RUN_JOURNAL_VERSION = 5
+
+/**
+ * command가 가리키는 현재 문단이 각주·미주 본문 첫 `hp:p`이면 그 본문의 번호 `numType`(`FOOTNOTE`·`ENDNOTE`), 아니면 undefined.
+ */
+function noteFirstParagraphNumType(
+  sourcePackage: HwpxSourcePackage | undefined,
+  command: Extract<EditCommand, { type: 'replace-paragraph-fragment' }>
+): 'FOOTNOTE' | 'ENDNOTE' | undefined {
+  if (!sourcePackage) return undefined
+  let located: ReturnType<typeof locateHwpxTextElement>
+  try {
+    located = locateHwpxTextElement(sourcePackage, command.sectionPath, command.textNodeId)
+  } catch {
+    return undefined
+  }
+  const paragraph = located && nearestSourceAncestor(located.element, 'hp:p')
+  const subList = paragraph?.parent
+  const note = subList?.name === 'hp:subList' ? subList.parent : undefined
+  if (!paragraph || !subList || (note?.name !== 'hp:footNote' && note?.name !== 'hp:endNote')) return undefined
+  const first = subList.children.find((child): child is SourceElement => child.kind === 'element' && child.name === 'hp:p')
+  if (first !== paragraph) return undefined
+  return note.name === 'hp:footNote' ? 'FOOTNOTE' : 'ENDNOTE'
+}
+
+function assertParagraphReplacement(
+  command: Extract<EditCommand, { type: 'replace-paragraph-fragment' }>,
+  sourcePackage: HwpxSourcePackage | undefined,
+  journalVersion: number
+): void {
+  const { expectedFragment, replacementFragment } = command
   const tree = parseFragment(replacementFragment, '문단')
   const access = sourceParagraphStructureAccess(tree)
+  const noteType = noteFirstParagraphNumType(sourcePackage, command)
   rootElements(tree, 'hp:p', '문단').forEach((paragraph, index) => {
-    // 각주·미주 첫 문단의 번호 control은 첫 문단에서만, 바꾸기 전 fragment에 같은 원문이 있을 때만 받는다.
+    // 각주·미주 첫 문단의 번호 control은 그 첫 문단을 가리키는 command의 첫 문단 첫 run에서 하나만, 같은 종류이고 바꾸기 전
+    // fragment에 같은 원문이 있을 때만 받는다.
     const firstRun = paragraph.children.find((child): child is SourceElement => child.kind === 'element' && child.name === 'hp:run')
     const numbers = index === 0 && firstRun ? firstRun.children.filter((child) => isNoteNumberControl(child, access)) : []
-    const numberRun = numbers.length > 0 && numbers.every((control) => expectedFragment.includes(serializeSourceNode(tree, control)))
+    const numberRun = numbers.length === 1 &&
+      journalVersion >= NOTE_NUMBER_RUN_JOURNAL_VERSION &&
+      expectedFragment.includes(serializeSourceNode(tree, numbers[0])) &&
+      noteType !== undefined &&
+      numberControlType(tree, numbers[0]) === noteType
     const violation = paragraphStructureViolation<SourceNode>(paragraph, access, { numberRun })
     if (violation) throw new HwpxEditConflictError(`복구 기록의 문단 fragment를 적용할 수 없습니다: ${violation.message}`)
   })
+}
+
+/** 번호 control(`hp:ctrl/hp:autoNum`)의 `numType`. */
+function numberControlType(tree: SourceTree, control: SourceNode): string | undefined {
+  const autoNum = control.kind === 'element'
+    ? control.children.find((child): child is SourceElement => child.kind === 'element' && child.name === 'hp:autoNum')
+    : undefined
+  return autoNum && getSourceAttribute(tree, autoNum, 'numType')
 }
 
 function assertTableReplacement(expectedFragment: string, replacementFragment: string): void {
@@ -210,9 +257,15 @@ function assertFootnoteCommandShape(
 /**
  * 복구 기록의 transaction 하나를 replay해도 되는지 확인한다. 통과하지 못하면 HwpxEditConflictError를 던지고,
  * replay는 그 기록 전체를 실패(격리)로 처리한다. 적용 때 하는 검사(expected fragment 일치, selection, revision)는 그대로 돈다.
- * `sourcePackage`는 이 transaction을 적용할 package다. 표 변경 조각 command를 확인하려면 있어야 한다.
+ * `sourcePackage`는 이 transaction을 적용할 package다. 표 변경 조각 command와 각주·미주 첫 문단 번호 control을 확인하려면 있어야
+ * 한다. `journalVersion`은 기록 형식 version이다(없으면 지금 version). version 4까지의 기록은 번호 control이 든 문단 fragment를
+ * 받지 않는다.
  */
-export function assertReplayableTransaction(transaction: EditTransaction, sourcePackage?: HwpxSourcePackage): void {
+export function assertReplayableTransaction(
+  transaction: EditTransaction,
+  sourcePackage?: HwpxSourcePackage,
+  journalVersion: number = NOTE_NUMBER_RUN_JOURNAL_VERSION
+): void {
   for (const command of transaction.commands) {
     if (!FORWARD_EDIT_COMMAND_TYPES.has(command.type)) {
       throw new HwpxEditConflictError(`복구 기록에 편집이 만들지 않는 command(${String(command.type)})가 있습니다.`)
@@ -225,7 +278,7 @@ export function assertReplayableTransaction(transaction: EditTransaction, source
     ) {
       assertFootnoteCommandShape(command)
     } else if (command.type === 'replace-paragraph-fragment') {
-      assertParagraphReplacement(command.expectedFragment, command.replacementFragment)
+      assertParagraphReplacement(command, sourcePackage, journalVersion)
     } else if (command.type === 'replace-table-fragment') {
       assertTableReplacement(command.expectedFragment, command.replacementFragment)
     } else if (command.type === 'patch-table-fragment') {

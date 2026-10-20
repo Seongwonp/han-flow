@@ -804,6 +804,19 @@ function remarkContent(content: ViewerContent[], markers: ReadonlyMap<string, st
       changed = true
       return { ...item, rows }
     }
+    // 글상자 안 각주 번호 표시도 바꾼다.
+    if (item.type === 'object-placeholder' && item.paragraphs?.length) {
+      let boxChanged = false
+      const paragraphs = item.paragraphs.map((paragraph) => {
+        const remarked = remarkContent(paragraph.content, markers)
+        if (remarked === paragraph.content) return paragraph
+        boxChanged = true
+        return { ...paragraph, content: remarked }
+      })
+      if (!boxChanged) return item
+      changed = true
+      return { ...item, paragraphs }
+    }
     return item
   })
   return changed ? next : content
