@@ -2,12 +2,14 @@ import { CSSProperties, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   CompositionCommitBuffer,
   CompositionInputController,
+  flushPendingComposition,
   TextCommitIntent,
   TextSelection
 } from '../../core/editing/composition_input'
 import { ViewerSourceAnchor } from '../../core/document/viewer_document'
 import { EditorSelection } from '../../core/editing/selection'
 import { HistoryDirection, interceptHistoryInput } from './keyboard_shortcuts'
+import type { EditingInputFlusher } from './renderer_state'
 
 interface ParagraphInputSurfaceProps {
   text: string
@@ -20,6 +22,12 @@ interface ParagraphInputSurfaceProps {
   desiredSelection?: TextSelection
   onCommit: (anchor: ViewerSourceAnchor, intent: TextCommitIntent) => void
   onComposingChange: (composing: boolean) => void
+  /**
+   * 편집 command(실행 취소·모양·저장 등)가 돌기 전에 이 입력 칸의 남은 글자를 내보낼 손잡이를 등록한다. 돌려준 함수로 해제한다.
+   * 한글 조합 묶음은 compositionend 뒤 잠깐 입력 칸에 머물기 때문에, 이 손잡이가 없으면 입력 직후 누른 command가 그 글자보다
+   * 먼저 처리되거나 버려진다.
+   */
+  registerInputFlush?: (flusher: EditingInputFlusher) => () => void
   onSelectionChange: (anchor: ViewerSourceAnchor, selection: TextSelection) => void
   onBoundaryNavigate?: (direction: 'previous' | 'next', selection: TextSelection) => void
   onBoundaryExtend?: (direction: 'previous' | 'next', selection: TextSelection) => void
@@ -121,6 +129,7 @@ export function ParagraphInputSurface({
   desiredSelection,
   onCommit,
   onComposingChange,
+  registerInputFlush,
   onSelectionChange,
   onBoundaryNavigate,
   onBoundaryExtend,
@@ -154,6 +163,7 @@ export function ParagraphInputSurface({
   const onParagraphStructureUnavailableRef = useRef(onParagraphStructureUnavailable)
   const mergeBlockedRef = useRef({ previous: mergePreviousBlocked, next: mergeNextBlocked })
   const onHistoryRef = useRef(onHistory)
+  const registerInputFlushRef = useRef(registerInputFlush)
   const restoringSelectionRef = useRef(false)
   const inputTypeRef = useRef<string | undefined>()
   boundaryNavigateRef.current = onBoundaryNavigate
@@ -169,6 +179,7 @@ export function ParagraphInputSurface({
   onParagraphStructureUnavailableRef.current = onParagraphStructureUnavailable
   mergeBlockedRef.current = { previous: mergePreviousBlocked, next: mergeNextBlocked }
   onHistoryRef.current = onHistory
+  registerInputFlushRef.current = registerInputFlush
 
   useLayoutEffect(() => {
     const element = elementRef.current
@@ -257,17 +268,40 @@ export function ParagraphInputSurface({
     }
     const flushCompositionBuffer = () => {
       clearCompositionTimer()
-      const snapshot = {
+      const intent = flushPendingComposition(controller, compositionBuffer, {
         ...read(),
         inputType: inputTypeRef.current ?? 'insertCompositionText',
         timestamp: performance.now()
-      }
-      compositionBuffer.update(snapshot)
-      const intent = compositionBuffer.flush()
-      controller.reset(snapshot.text, snapshot.selection)
+      })
       onComposingChangeRef.current(false)
       if (intent) onCommitRef.current(sourceAnchorRef.current, intent)
     }
+    // 붙여넣기·줄바꿈처럼 입력 칸이 바로 commit하는 입력 앞에서, 남은 조합 묶음을 먼저 보내 순서를 지킨다.
+    const flushSettledComposition = () => {
+      if (compositionBuffer.pending && !controller.isComposing) flushCompositionBuffer()
+    }
+    // 편집 command 전에 부른다. IME가 아직 조합 중이면 focus를 잠깐 옮겨 조합을 끝내게 한 뒤(Chromium은 이때 compositionend를
+    // 바로 보낸다) 남은 글자를 commit하고 caret을 되돌린다. 그래도 조합이 남으면 지금 화면 글자를 확정 글자로 보낸다.
+    const flushForCommand = () => {
+      if (!compositionBuffer.pending && !controller.isComposing && !rangeCompositionRef.current) return
+      if ((controller.isComposing || rangeCompositionRef.current) && globalThis.document.activeElement === element) {
+        const selection = textSelection(element)
+        restoringSelectionRef.current = true
+        try {
+          element.blur()
+          element.focus({ preventScroll: true })
+          restoreSelection(element, selection)
+        } finally {
+          restoringSelectionRef.current = false
+        }
+      }
+      if (rangeCompositionRef.current) return
+      if (compositionBuffer.pending || controller.isComposing) flushCompositionBuffer()
+    }
+    const unregisterInputFlush = registerInputFlushRef.current?.({
+      flush: flushForCommand,
+      composing: () => controller.isComposing || Boolean(rangeCompositionRef.current)
+    })
     const scheduleCompositionFlush = () => {
       clearCompositionTimer()
       compositionTimerRef.current = setTimeout(flushCompositionBuffer, 450)
@@ -315,7 +349,6 @@ export function ParagraphInputSurface({
           event,
           event.isComposing ||
             controller.isComposing ||
-            compositionBuffer.pending ||
             Boolean(rangeCompositionRef.current),
           onHistoryRef.current
         )
@@ -349,6 +382,7 @@ export function ParagraphInputSurface({
       if (event.inputType === 'insertLineBreak') {
         event.preventDefault()
         if (event.isComposing || controller.isComposing) return
+        flushSettledComposition()
         if (rangeSelection && rangeSelection.anchorTextNodeId !== rangeSelection.focusTextNodeId) {
           onRangeCommitRef.current?.(
             rangeSelection,
@@ -531,6 +565,7 @@ export function ParagraphInputSurface({
     }
     const paste = (event: ClipboardEvent) => {
       if (controller.isComposing) return
+      flushSettledComposition()
       const insert = (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n')
       const rangeSelection = getRangeSelectionRef.current?.()
       event.preventDefault()
@@ -571,6 +606,7 @@ export function ParagraphInputSurface({
     element.addEventListener('paste', paste)
     element.dataset.inputReady = 'true'
     return () => {
+      unregisterInputFlush?.()
       clearCompositionTimer()
       element.removeEventListener('beforeinput', beforeInput)
       element.removeEventListener('compositionstart', compositionStart)

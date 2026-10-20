@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### 입력 직후 실행 취소·편집 command
+
+- 한글 조합 직후 누른 첫 [실행 취소]·`Ctrl+Z`(macOS `⌘Z`)가 무시되던 문제를 고침. 연속 음절은 compositionend 뒤 약 450ms 입력 칸에 묶여 있다가 commit하는데, 그동안 renderer가 조합 중으로 보고 실행 취소를 버렸고 commit 응답을 기다리는 동안에도 버튼을 끄거나 command를 버렸음. 이제 입력 칸이 남은 글자를 내보내는 손잡이를 등록하고, 실행 취소·다시 실행·글자/문단/셀 모양·표 행·열·병합·각주 넣기/지우기·다른 이름으로 저장·다른 문서 열기는 남은 글자를 먼저 commit하고 그 응답 뒤에 차례로 돎(`runAfterInput`). IME가 아직 조합 중이면 조합을 확정한 뒤 반영. 본문·표 셀·각주·머리말·꼬리말·글상자·메모 입력 칸이 같은 경로
+- 같은 원인으로 버려지던 입력 직후 Enter 문단 나눔·경계 Backspace 병합·여러 문단 범위 입력·브라우저 기본 undo도 고침(남은 글자 commit을 먼저 보내고 바로 보냄, 빈 문단 첫 입력이면 그 결과 caret에서). 붙여넣기·줄바꿈은 남은 조합 글자 뒤에 보내 순서를 지킴. 깨끗한 문서에 막 입력해 commit 결과가 오기 전에도 [실행 취소]·[다른 이름으로 저장]을 켜고 저장본에 마지막 글자까지 담음
+- verify:matrix 각주 E2E의 [실행 취소] 재시도를 없애고 입력 반영 전에 한 번 누른 실행 취소가 바로 되돌리는지 검사(`undoClickedBeforeCommit`). 모든 편집 E2E에 한 음절 조합 직후 `Ctrl+Z` 한 번으로 그 글자만 되돌리는 검사(`immediateUndoMatches`)를 추가. 단위 test(`editing_input_sequencing`·`composition_input`의 `flushPendingComposition`·리본 실행 취소/저장 활성)
+
 ### 편집 범위: 글상자·메모 글자, subList 모양·문단 나눔, 각주 만들기·지우기
 
 - 글자만 든 글상자(도형 글 `hp:drawText`)와 메모 본문(`hp:fieldBegin type="MEMO"`)의 글자 입력·삭제·치환. decoder가 글자만 든 subList에 section `hp:t` 순번 anchor를 붙이고(표·그림·도형·수식·각주·필드가 하나라도 든 글상자·메모는 전체 읽기 전용) capability가 `TEXT_BOX_TEXT`·`MEMO_TEXT`로 연다. 원본 위치 글상자는 편집 중 그 자리에서 입력 칸이 되고(글 앞·뒤 글상자도 편집 중에는 누를 수 있음), 메모는 줄 안 "메모: …" 자리에 입력 칸을 둔다
