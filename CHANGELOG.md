@@ -127,6 +127,7 @@
 - 보도자료 머리 표처럼 좁은 가운데 정렬 셀의 내어쓰기가 셀 안쪽 폭보다 커서 `배포`가 왼쪽 날짜 셀 끝과 겹치던 문제를 셀 안쪽 폭 안으로 내어쓰기를 줄여 수정, 합성 fixture에 머리 표와 표 셀 밖 글자 E2E 검사 추가
 - 기본 편집 E2E가 글자 칸 없는 빈 문단(합성 anchor `#hp:p:N:empty`)을 첫 surface로 고르면 첫 입력 뒤 새 `#hp:t:M` anchor로 바뀌는 것을 따라가지 못해 `projection` 대기 시간 초과로 실패하던 probe를 caret을 가진 새 anchor를 따라가도록 수정(앱 동작은 정상), 구역 첫 문단이 빈 문단인 합성 fixture로 matrix 편집·저장 검증 추가
 - 아주 긴 파일 이름에서 상단 막대 파일 이름이 오른쪽 `편집 시작` 버튼을 밀어 버튼 글자가 세로로 줄바꿈되던 문제를 파일 이름 한 줄 말줄임(전체 이름 tooltip)·동작 버튼 고정 폭·툴바/리본 버튼 `nowrap`으로 수정하고, 툴바 control 넘침·파일 이름 말줄임 E2E 검사와 배율 1·1.25·1.5 긴 한글 파일 이름 matrix 검증 추가
+- 인증서 없이도 준비된 Windows 서명 배포 경로: 비서명 설정을 이어받아 `forceCodeSigning`·SHA-256·RFC 3161 timestamp·별도 출력(`release/windows-release`)을 덧씌운 `package:win:release`(PFX `WIN_CSC_LINK` 또는 Azure Trusted Signing, 서명 재료가 없으면 빌드 전 실패), Authenticode 서명·timestamp·버전 리소스·appId·NSIS 설치 방식·`.hwp`/`.hwpx` 연결·SHA-256을 보고하는 `release:audit:win`(Windows는 PowerShell, 그 밖은 osslsigncode, 서명자 이름·secret 값 미출력)과 parser probe test, secret이 없으면 첫 단계에서 실패하고 test 뒤 서명 설치본·strict 감사·`SHA256SUMS.txt`·artifact를 만드는 `release-windows.yml`(수동·`v*` tag) 추가. 비서명 `windows-ci.yml`은 그대로
 
 ### V3 HWPX 편집 기반
 

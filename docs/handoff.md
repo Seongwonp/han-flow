@@ -37,6 +37,7 @@ Windows·macOS용 HWP/HWPX 데스크톱 뷰어 + **제한적 HWPX 편집기**(El
 | 스크립트 probe | `npm run test:probe` |
 | 공개 corpus | `npm run verify:corpus`, `npm run corpus:editing-coverage` |
 | 패키지(로컬) | `npm run package:linux` / `package:win` / `package:win:installer` / `package:mac` |
+| Windows 서명 배포 | `npm run package:win:release`(서명 secret 필요), `npm run release:audit:win` |
 | 패키지 앱 E2E | `xvfb-run -a npm run verify:matrix` (약 35분), `verify:hwp-matrix` |
 | 단일 문서 검사 | `node scripts/verify_app.mjs <file>`, `node scripts/verify_pdf.mjs <file>` |
 | 입력 지연 | `npm run benchmark:edit-latency` (`HAN_FLOW_EDIT_LATENCY_MODE=bold`로 모양 편집) |

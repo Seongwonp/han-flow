@@ -197,7 +197,7 @@ A4 세로 fixture(`59528 × 84189 HWPUNIT`, 사방 20mm 여백)를 사용합니�
 | V3 — 제한적 HWPX 편집 | 자동 관문 완료·외부 승인 대기 | Windows 한/글 왕복·macOS 물리 IME 대기 |
 | Sprint 0 — 기준선과 P0 방어 | 완료 | CI·resource budget·legacy 제거 |
 | Sprint 4 — 호환성 corpus | 진행 중 | HWPX synthetic 11종·외부 공개 28종·HWP 1종, intake 계약 완료, 렌더링 품질 지표 확장 중 |
-| Sprint 5 — Windows 배포 후보 | 진행 중 | 비서명 NSIS artifact, 실기·code signing 대기 |
+| Sprint 5 — Windows 배포 후보 | 진행 중 | 비서명 NSIS artifact, 서명 release 경로·감사·workflow 준비 완료, 인증서·실기 대기 |
 | Sprint 6 — macOS 공개 배포 | macOS 하드웨어 대기 | macOS 13+ 실행, arm64 서명·공증·설치 |
 | V4 — 사용자 배포 | 준비 중 | Sprint 5·6·7 |
 
@@ -387,6 +387,9 @@ npm run package:win:installer
 macOS 패키지는 `release/mac-arm64/Han-Flow.app`에 생성됩니다. Linux CI는 `release/linux-unpacked`를 묶은 unpacked 앱을 7일 보관 artifact로 올립니다.
 Ubuntu 24.04 이상은 비특권 user namespace를 제한하므로 이 unpacked `dir` 빌드를 실행하려면 `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`로 sandbox helper 권한을 주거나 `--no-sandbox`로 실행해야 하며, AppArmor profile을 포함한 deb/AppImage 패키지는 이후 과제입니다.
 Windows CI는 비서명 NSIS 설치본(`Han-Flow-<version>-win-x64.exe`)과 unpacked 앱을 7일 보관 artifact로 올리며, code signing(V4) 전까지 SmartScreen 경고가 표시됩니다.
+공개 배포용 서명 설치본은 `npm run package:win:release`(서명 재료 없으면 빌드 전 실패, `release/windows-release/`)와 수동·`v*` tag로
+실행하는 `Release Windows` workflow로만 만들며, `npm run release:audit:win`이 Authenticode 서명·timestamp·버전 리소스·파일 연결을
+확인합니다. 인증서 선택지와 secret 위치는 [V4 배포 전략](docs/v4_release_strategy.md#windows-서명-배포-sprint-5)에 있습니다.
 
 주요 회귀 관문:
 
@@ -401,6 +404,7 @@ npm run verify:pdf -- /path/to/document.hwpx
 npm run verify:pdf -- /path/to/document.hwp
 npm run fixture:v3-windows
 npm run release:audit
+npm run release:audit:win
 ```
 
 `verify:pdf`는 화면과 PDF의 페이지별 글자 수를 code point 단위로 비교하고, 글꼴에 glyph가 없어 PDF에서
@@ -426,6 +430,8 @@ HWPX 화면에 표준 기호로 보입니다.
 `release:audit`는 현재 macOS app의 target·Developer ID 준비 여부·도구·서명·architecture를
 읽기 전용으로 진단한다. 기본 실행은 blocker를 보고만 하며 `-- --strict`를 붙이면 blocker가
 있을 때 실패한다.
+`release:audit:win`은 Windows release 설정과 서명 설치본(기본 `release/windows-release/`, 또는 `-- <설치본.exe>`)을
+같은 방식으로 진단하며 서명자 이름과 secret 값은 출력하지 않는다.
 
 전체 RC 관문은 private reference HWPX 경로를 받아 test, package, HWPX/HWP 공개 matrix,
 실사용 문서 smoke test와 PDF 검증을 순서대로 실행합니다.
@@ -486,7 +492,7 @@ docs/              # 아키텍처, 전략, ADR, 기준선과 검증 이력
 - [개발 인계 문서](docs/handoff.md)
 - [다음 작업](docs/next_steps.md)
 - [V3 Windows 한/글 재열기 matrix](docs/v3_windows_round_trip_matrix.md)
-- [V4 macOS 배포 조사와 구현 전략](docs/v4_release_strategy.md)
+- [V4 배포 조사와 구현 전략 (macOS·Windows)](docs/v4_release_strategy.md)
 - [V2 HWP 5.0 조사와 도입 전략](docs/hwp_v2_strategy.md)
 - [HWP parser bake-off](docs/hwp_v2_bakeoff.md)
 - [ADR-0001: HWP parser와 renderer 역할](docs/adr/0001-hwp-parser-roles.md)

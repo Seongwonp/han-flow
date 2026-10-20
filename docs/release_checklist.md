@@ -3,7 +3,7 @@
 기준일: 2026-09-28
 
 이 문서의 앞부분은 완료한 V1 RC 기준선을 보존한다. 실제 공개 배포 판단은 아래 V4 관문과
-[V4 macOS 배포 전략](v4_release_strategy.md)을 함께 따른다.
+[V4 배포 전략(macOS·Windows)](v4_release_strategy.md)을 함께 따른다.
 
 ## V1 Release Candidate 기준선
 
@@ -92,6 +92,23 @@ Han-Flow는 V4가 완성될 때까지 개인용으로 사용한다. 아래 항�
 - [ ] `dmg`·`zip` SHA-256과 배포 manifest 기록
 - [ ] 수동 설치 릴리스 안정화 뒤 updater 활성화 여부 판정
 - [ ] 버전·변경 사항·known limitation을 포함한 GitHub Release 작성
+
+## V4 Windows 공개 배포 관문
+
+비서명 로컬·CI 설치본(`package:win:installer`, `windows-ci.yml`)은 개인 검증용이다. 공개 설치본은 서명 경로
+(`package:win:release`, `release-windows.yml`)로만 만든다. 세부 절차는
+[V4 배포 전략의 Windows 서명 배포 절](v4_release_strategy.md#windows-서명-배포-sprint-5)을 따른다.
+
+- [x] release 설정 분리: `forceCodeSigning: true`, SHA-256 + RFC 3161 timestamp, `release/windows-release` 출력
+- [x] appId `com.hanflow.viewer`, NSIS 사용자별 설치(`oneClick: false`·`perMachine: false`), `.hwp`·`.hwpx` 연결을 비서명 설치본과 같게 유지
+- [x] 서명 재료 사전 검사(빠진 변수 이름만 출력)와 `npm run release:audit:win`
+- [x] `release-windows.yml`: secret 없으면 첫 단계 실패, test 뒤 서명 빌드, strict 감사, `SHA256SUMS.txt`, artifact 업로드
+- [ ] 인증서 종류 결정·발급과 GitHub `windows-release` environment secret 등록
+- [ ] release workflow 성공과 `release:audit:win -- --strict` 통과(서명 `valid`·timestamp·버전 리소스)
+- [ ] 깨끗한 Windows 11에서 디지털 서명 탭·SmartScreen 표시·설치·첫 실행·제거
+- [ ] 설치 뒤 `.hwp`·`.hwpx` 연결 프로그램 목록과 비서명 설치본 위 덮어쓰기 설치
+- [ ] Windows 실기 관문(위 2026-09-28 목록의 Windows 11·한/글 왕복) 통과
+- [ ] 설치본 SHA-256, 변경 사항·known limitation을 넣은 GitHub Release 초안 검토
 
 ## 추가 문서 검증 절차
 

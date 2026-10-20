@@ -119,6 +119,7 @@
     "package:mac": "npm run build && electron-builder --mac dir --publish never",
     "package:win": "npm run build && electron-builder --win dir --x64 --publish never",
     "package:win:installer": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:win:release": "node scripts/build/check_windows_signing.mjs && npm run build && electron-builder --config scripts/build/electron-builder.win-release.cjs --win nsis --x64 --publish never",
     "package:linux": "npm run build && electron-builder --linux dir --publish never",
     "experiment:package:mac:x64": "npm run build && electron-builder --mac dir --x64 --publish never",
     "experiment:package:mac:universal": "npm run build && electron-builder --mac dir --universal --publish never",
@@ -145,6 +146,7 @@
     "probe:hwp": "node scripts/probes/compare_hwp_probes.mjs",
     "test:probe": "node --test scripts/probes/*.test.mjs",
     "release:audit": "node scripts/audit_macos_release.mjs",
+    "release:audit:win": "node scripts/audit_windows_release.mjs",
     "experiment:verify:mac-arch": "node scripts/verify_macos_architectures.mjs",
     "release:check": "node scripts/release_check.mjs"
   },

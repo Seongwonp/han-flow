@@ -1,0 +1,134 @@
+name: Release Windows
+
+# 서명된 Windows 공개 배포 설치본을 만든다. 비서명 CI 설치본은 windows-ci.yml이 따로 만든다.
+# 서명 재료(secret)가 없으면 테스트·빌드 전에 실패하며, 비서명 "release"는 절대 만들지 않는다.
+# 필요한 secret·variable과 준비 방법: docs/v4_release_strategy.md의 "Windows 서명 배포" 절.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signed-installer:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    # secret을 이 environment에만 두면 승인자·branch 보호 규칙을 걸 수 있다(없으면 GitHub가 빈 environment를 만든다).
+    environment: windows-release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 의존성 설치 전에 node만으로 확인한다. 값은 출력하지 않고 빠진 변수 이름만 보인다.
+      - name: Check signing secrets
+        shell: bash
+        env:
+          HAN_FLOW_WIN_SIGNING_MODE: ${{ vars.HAN_FLOW_WIN_SIGNING_MODE }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          HAN_FLOW_AZURE_SIGNING_ENDPOINT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ENDPOINT }}
+          HAN_FLOW_AZURE_SIGNING_ACCOUNT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ACCOUNT }}
+          HAN_FLOW_AZURE_CERTIFICATE_PROFILE: ${{ vars.HAN_FLOW_AZURE_CERTIFICATE_PROFILE }}
+          HAN_FLOW_WIN_PUBLISHER_NAME: ${{ vars.HAN_FLOW_WIN_PUBLISHER_NAME }}
+        run: |
+          if ! node scripts/build/check_windows_signing.mjs; then
+            echo "::error title=Windows 서명 재료 없음::서명 secret이 없어 공개 배포 설치본을 만들지 않습니다. docs/v4_release_strategy.md의 Windows 서명 배포 절을 따라 secret을 등록하세요."
+            exit 1
+          fi
+
+      - name: Check tag matches package version
+        if: ${{ github.ref_type == 'tag' }}
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error title=tag와 version 불일치::tag ${GITHUB_REF_NAME}와 package.json version v${version}이 다릅니다."
+            exit 1
+          fi
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Unit and integration tests
+        run: npm test -- --runInBand
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Parser probes
+        run: npm run test:probe
+
+      - name: Public HWPX corpus
+        run: npm run verify:corpus
+
+      # forceCodeSigning: 서명이 하나라도 실패하면 electron-builder가 실패한다.
+      - name: Build signed NSIS installer
+        env:
+          HAN_FLOW_WIN_SIGNING_MODE: ${{ vars.HAN_FLOW_WIN_SIGNING_MODE }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          HAN_FLOW_AZURE_SIGNING_ENDPOINT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ENDPOINT }}
+          HAN_FLOW_AZURE_SIGNING_ACCOUNT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ACCOUNT }}
+          HAN_FLOW_AZURE_CERTIFICATE_PROFILE: ${{ vars.HAN_FLOW_AZURE_CERTIFICATE_PROFILE }}
+          HAN_FLOW_WIN_PUBLISHER_NAME: ${{ vars.HAN_FLOW_WIN_PUBLISHER_NAME }}
+        run: npm run package:win:release
+
+      # Authenticode 서명·timestamp·버전 리소스·파일 연결 설정을 확인한다. 서명자 이름은 출력하지 않는다.
+      - name: Audit signed installer
+        shell: bash
+        env:
+          HAN_FLOW_WIN_SIGNING_MODE: ${{ vars.HAN_FLOW_WIN_SIGNING_MODE }}
+          HAN_FLOW_WIN_PUBLISHER_NAME: ${{ vars.HAN_FLOW_WIN_PUBLISHER_NAME }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK != '' && 'set' || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD != '' && 'set' || '' }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID != '' && 'set' || '' }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID != '' && 'set' || '' }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET != '' && 'set' || '' }}
+          HAN_FLOW_AZURE_SIGNING_ENDPOINT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ENDPOINT }}
+          HAN_FLOW_AZURE_SIGNING_ACCOUNT: ${{ vars.HAN_FLOW_AZURE_SIGNING_ACCOUNT }}
+          HAN_FLOW_AZURE_CERTIFICATE_PROFILE: ${{ vars.HAN_FLOW_AZURE_CERTIFICATE_PROFILE }}
+        run: npm run release:audit:win -- --strict | tee release/windows-release/windows-release-audit.txt
+
+      - name: Compute SHA-256 checksums
+        shell: bash
+        working-directory: release/windows-release
+        run: |
+          shopt -s nullglob
+          installers=(Han-Flow-*-win-x64.exe)
+          if [ "${#installers[@]}" -ne 1 ]; then
+            echo "::error::서명된 설치본이 정확히 1개가 아닙니다(${#installers[@]}개)."
+            exit 1
+          fi
+          sha256sum "${installers[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload signed Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: han-flow-windows-release-${{ github.sha }}
+          path: |
+            release/windows-release/Han-Flow-*-win-x64.exe
+            release/windows-release/SHA256SUMS.txt
+            release/windows-release/windows-release-audit.txt
+          if-no-files-found: error
+          retention-days: 30

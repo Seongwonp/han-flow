@@ -34,7 +34,36 @@
 
 ## 2. 배포 (V4) — 결정 필요
 
-- Windows code signing 인증서 준비 → 서명된 NSIS 설치본
+### Windows 서명 설치본 — 인증서만 넣으면 되는 상태 (2026-10-20)
+
+끝난 것([V4 배포 전략의 Windows 절](v4_release_strategy.md#windows-서명-배포-sprint-5)):
+
+- `npm run package:win:release`: 비서명 설정을 이어받은 release 설정(`scripts/build/electron-builder.win-release.cjs`)으로
+  `forceCodeSigning`·SHA-256·RFC 3161 timestamp 서명 NSIS를 `release/windows-release/`에 만든다. 서명 재료가 없으면 빌드 전에 실패.
+- `npm run release:audit:win`: 서명(`valid`/`unsigned`/`invalid`)·timestamp·버전 리소스·appId·NSIS 설치 방식·`.hwp`/`.hwpx` 연결·SHA-256.
+- `.github/workflows/release-windows.yml`: 수동 실행·`v*` tag. secret 없으면 첫 단계 실패, test 뒤 서명 빌드·strict 감사·`SHA256SUMS.txt`·artifact.
+- 비서명 `package:win`·`package:win:installer`·`windows-ci.yml`은 그대로.
+
+소유자가 할 일:
+
+1. **인증서 종류 결정** — 비용은 2026-10 대략치, 구매 전 공식 페이지에서 재확인.
+   - Azure Trusted Signing(현 Artifact Signing) Basic: 월 약 US$10. CI 친화적이고 HSM 관리가 없지만 공개 신뢰 자격(국가·조직/개인)이 제한되니
+     한국 개인 자격부터 확인. 자격이 되면 1순위.
+   - OV 코드 서명 + cloud HSM 서명(SSL.com eSigner·DigiCert KeyLocker·Certum SimplySign 등): 연 약 US$200–500 + 서명 사용료.
+     2023-06 이후 새 인증서는 PFX로 내보낼 수 없어 업체 도구를 부르는 custom `sign` hook을 추가해야 한다(업체 정해지면 작업).
+   - EV·USB 토큰: 더 비싸고 GitHub hosted runner에서 못 쓰며 2024년부터 SmartScreen 즉시 평판 이점도 없어 권하지 않음.
+   - 이미 가진 내보낼 수 있는 PFX(2023-06 이전 발급)가 있으면 지금 `pfx` 모드로 바로 사용.
+2. **secret 등록** — GitHub 저장소 Settings → Environments → `windows-release`(승인자 지정 권장).
+   - `pfx`: secret `WIN_CSC_LINK`(PFX base64), `WIN_CSC_KEY_PASSWORD`; variable `HAN_FLOW_WIN_PUBLISHER_NAME`(선택).
+   - `azure`: secret `AZURE_TENANT_ID`·`AZURE_CLIENT_ID`·`AZURE_CLIENT_SECRET`; variable `HAN_FLOW_WIN_SIGNING_MODE=azure`·
+     `HAN_FLOW_AZURE_SIGNING_ENDPOINT`·`HAN_FLOW_AZURE_SIGNING_ACCOUNT`·`HAN_FLOW_AZURE_CERTIFICATE_PROFILE`·`HAN_FLOW_WIN_PUBLISHER_NAME`.
+   - 저장소·`.env`·issue·로그에 값을 남기지 않는다.
+3. **첫 서명 release** — Actions에서 `Release Windows`를 수동 실행 → artifact의 설치본을 깨끗한 Windows 11에서 디지털 서명 탭·
+   SmartScreen·설치·`.hwp`/`.hwpx` 연결·제거 확인([릴리스 체크리스트](release_checklist.md#v4-windows-공개-배포-관문)).
+   통과하면 `package.json` version에 맞춘 `v<version>` tag를 push하고 GitHub Release는 수동으로 작성.
+
+### 그 밖
+
 - macOS: Mac 하드웨어와 Apple Developer ID 필요(arm64 서명·공증) — [V4 배포 전략](v4_release_strategy.md)
 - 자동 업데이트는 서명된 수동 배포가 안정된 뒤
 
