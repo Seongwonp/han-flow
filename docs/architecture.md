@@ -431,8 +431,8 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
 | `hp:equation` | `equation` | script를 해석하면 MathML 수식(아래 "수식 조판"), 못 하면 "수식" 상자 + `hp:script` 원문(고정폭) |
 | `hp:chart`(`hp:switch` 안 차트, OLE 대체본 크기 사용) | `chart` | "차트" 상자 |
 | `hp:ole` | `ole` | "OLE 개체" 상자 + `hp:shapeComment` |
-| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 문단(글자만 든 글상자는 편집 가능, 본문 원본 위치 개체는 원본 선·면 색 상자) |
-| 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | "도형"/"글맵시" 상자(본문 원본 위치의 사각형·타원·선·다각형은 SVG) |
+| `hp:rect`·`hp:ellipse`·`hp:arc`·`hp:polygon`·`hp:curve`·`hp:container`(안에 `hp:drawText`) | `text-box` | "글상자" 상자 + 되살린 문단(글자만 든 글상자는 편집 가능, 본문 원본 위치 개체는 원본 선·면 색 상자, 사각형이 아닌 글상자는 도형 SVG를 글 뒤에) |
+| 같은 도형(글 없음)·`hp:line`·`hp:connectLine`·`hp:textart` | `shape` | 사각형·타원·선·다각형·호·곡선·연결선·묶음 도형은 SVG(아래 "도형 SVG", 원본 위치·줄 안 모두), 글맵시와 그리지 못한 도형은 "도형"/"글맵시" 상자 |
 | `hp:btn`·`hp:radioBtn`·`hp:checkBtn`·`hp:comboBox`·`hp:edit`·`hp:listBox`·`hp:scrollBar` | `form-control` | "양식 컨트롤" 상자 + caption·값 |
 | `hp:video` | `video` | "동영상" 상자 |
 | `hp:ctrl/hp:footNote`·`hp:endNote` | `footnote`·`endnote` | 본문 위 첨자 번호, 각주 본문은 쪽(단) 아래 각주 영역, 미주 본문은 구역 끝 `note-list` |
@@ -491,6 +491,46 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
   않는 개체가 N개 있습니다 (…)")·상태 막대를 만들고, PDF 내보내기 요청에 개수를 실어 보내면 main이 저장 위치를 묻기 전에
   `dialog.showMessageBox`(창에 연결)로 [그래도 내보내기]/[취소]를 묻는다. E2E 경로(`HAN_FLOW_PDF_EXPORT_PATH`)는 묻지 않는다.
 
+### 도형 SVG (2026-10-20)
+
+decoder `shape_decoder.ts`(`decodeShapeStyle`)가 도형을 화면 모델로 읽고 renderer `ShapeView.tsx`가 SVG로 그린다(화면과 PDF가 같은 벡터).
+좌표는 개체 상자 왼쪽 위 기준 HWPUNIT이고 SVG `viewBox`가 CSS px로 바꾼다. 도형 원본 좌표는 원래 크기(`hp:orgSz`) 기준이라 그리는 크기
+(원본 위치는 배치 상자, 줄 안은 선언 크기)로 늘인다.
+
+| 원본 | 모델 | 그리기 |
+| --- | --- | --- |
+| `hp:rect`·`hp:ellipse`·`hp:line`·`hp:polygon` | `points`(선·다각형) | `rect`·`ellipse`·`line`·`polygon`(묶음 안 사각형은 `ratio` 곡률을 둥근 모서리 path로) |
+| `hp:arc type` `NORMAL`·`PIE`·`CHORD` | `path`·`closed` | 중심(`hc:center`)과 두 축 끝점(`hc:ax1`·`hc:ax2`)으로 만든 4분의 1 타원(`center + u·cosθ + v·sinθ`, 아핀 변환한 3차 Bézier). 부채꼴은 중심으로, 활꼴은 두 끝점으로 닫는다 |
+| `hp:curve`(`hp:seg type x1 y1 x2 y2`) | `path` | 이어지는 `CURVE` 조각 셋 = 3차 Bézier 하나(한/글이 조절 다각형으로 저장), 남는 둘은 2차, 하나·`LINE`은 직선. 끝점이 시작점과 같으면 닫아 채운다 |
+| `hp:connectLine type` | `path` | `STRAIGHT_*` 직선, `STROKE_*` 꺾인 점(`hp:controlPoints`)을 지나는 꺾은선, `ARC_*` 꺾인 점을 지나는 곡선(Catmull-Rom → Bézier). `*_ONEWAY`는 끝, `*_BOTH`는 양쪽 화살표(선 모양에 화살표가 없을 때) |
+| `hp:container` | `parts` | 안쪽 도형마다 path(묶음 상자 좌표로 평탄화, 아래) |
+
+- 선(`hp:lineShape`): 색·굵기(화면에서 0.5pt 이상)·모양(`DASH`·`DOT`·`DASH_DOT`·`DASH_DOT_DOT`·`LONG_DASH`는 굵기 배수 점선, `CIRCLE`은
+  둥근 점, 이중선·물결선은 실선 근사)·끝 모양(`ROUND`·`FLAT`)·투명도(`alpha` 0~255 → `stroke-opacity`). 열린 선(선·호·곡선·연결선)의 시작
+  (`headStyle`)·끝(`tailStyle`) 화살표는 끝점과 그 앞 조절점 방향으로 path를 직접 그린다(화살·오목 화살·창은 끝점이 꼭짓점, 마름모·원·사각형은
+  끝점이 가운데, `EMPTY_*`·`headfill="0"`은 흰 속). 크기(`headSz` `폭_길이`, SMALL·MEDIUM·LARGE)는 280·420·600 HWPUNIT + 선 굵기 × 2다.
+- 채우기(`hc:fillBrush`): 단색(`hc:winBrush faceColor`), 무늬(`hatchStyle` 6종, 바탕 `faceColor`·선 `hatchColor`, 400 HWPUNIT 간격
+  `pattern`), 그러데이션(`hc:gradation`: `LINEAR`는 0도가 왼쪽→오른쪽인 `linearGradient`를 `angle`만큼 시계 방향으로, `RADIAL`·`CONICAL`·
+  `SQUARE`는 중심(`centerX`·`centerY` %)에서 퍼지는 `radialGradient`로 근사, 색은 같은 간격). 투명도는 `fill-opacity`. 그림 채우기(`hc:imgBrush`)는
+  그리지 않는다. SVG id는 React `useId`에서 만든다.
+- 묶음(`hp:container`): 안쪽 도형의 놓임(`childPlacement`) = 위치(`hp:offset`, 부모 원래 크기 좌표) × 회전 중심(`hp:rotationInfo centerX`·
+  `centerY`) 둘레의 회전·대칭(`hp:flip`, 대칭 뒤 회전) × 원래 → 현재 크기 배율. 묶음 상자 배율(원래 → 그리는 크기)부터 안쪽 묶음을 차례로
+  곱해 내려가 각 도형 path를 묶음 상자 좌표로 옮긴다(아핀 변환이라 Bézier가 그대로 옮겨지고 선 굵기는 바뀌지 않는다). `hp:renderingInfo`
+  행렬(이동 × (크기 × 회전)…)은 위치·크기가 없는 안쪽 도형에만 쓴다(한/글 최상위 그림의 행렬은 `hp:offset`을 상쇄하는 등 의미가 일정하지 않아
+  위치·크기를 우선했다). 깊이 16·도형 2000개까지. 글이 든 묶음은 전처럼 묶음 상자 전체의 글상자로 그리고 도형은 글 뒤 SVG로 그린다.
+- 그림(`hp:pic`): `pictureCrop`이 자르기(`hp:imgClip` 왼쪽·위·오른쪽·아래, 원본 그림 크기 `hp:imgDim` 비율)와 그릴 자리(`hp:imgRect` 네
+  꼭짓점, `hp:orgSz` 비율)를 0~1 비율로 읽는다(경계가 뒤집혔거나 `hp:imgDim`이 없으면 자르지 않는다. 한/글이 `hp:imgDim` 없이 저장한
+  뒤집힌 경계가 실제 문서에 있다). renderer `CroppedPicture`는 넘친 부분을 숨긴 상자 안에 그림 전체를 `1/보이는 비율`로 늘여 옮긴다.
+  `pictureFilter`는 `hc:img bright`·`contrast`(-100~100)·`effect`(`GRAY_SCALE`, `BLACK_WHITE`는 회색조 + 대비 4배)·`alpha`를 CSS
+  filter·불투명도로, 테두리(`hp:lineShape`)는 상자 안쪽 선으로 그린다. 그림 효과(`hp:effects` 그림자·네온·반사·부드러운 가장자리)는 그리지
+  않는다. 그림 회전 안 함(`rotateimage="0"`)은 테두리 틀만 돌리고 그림은 대칭만 한다(원본 위치 그림은 감싼 회전 상자 없이 `PictureView`가 틀과
+  그림을 따로 돌린다).
+- E2E: verify_app이 `vectorShapes`(도형 SVG의 path `getBBox`·화살표·채우기·점선, 자른 그림 상자와 그 안 그림 위치, 회전 안 함 그림과 테두리
+  상자, 줄 간격 종류 문단의 줄 높이, 밀린 개체)를 낸다. verify:matrix `createShapeHwpx`가 기대값(`SHAPE_FIXTURE_EXPECTED`, path 상자 HWPUNIT
+  60 안)과 비교하고, verify_pdf `HAN_FLOW_PDF_PIXEL_PROBES`로 PDF를 96dpi로 다시 그린 PPM의 몇 자리 색(묶음 사각형·그러데이션·자른 그림
+  두 쪽·밀린 사각형 새 자리와 빈 원래 자리)을 확인한다. 줄 간격 문단을 고쳐 저장한 뒤 다시 열어도 같아야 한다. 단위 test
+  `tests/parser/shape_decoder.test.ts`, `tests/renderer/shape_view.test.ts`.
+
 ### 수식 조판 (MathML)
 
 - `src/core/document/equation_script.ts`가 `hp:script`(한컴 수식 script, eqn 계열)를 토큰 → MathML 나무(`MathElement`)로 바꾼다.
@@ -516,8 +556,7 @@ viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글�
 (배치 `textWrap`·`textFlow`, 기준 `vertRelTo` PAPER·PAGE·PARA / `horzRelTo` PAPER·PAGE·COLUMN·PARA, 맞춤 TOP·CENTER·BOTTOM·
 INSIDE·OUTSIDE / LEFT·CENTER·RIGHT·INSIDE·OUTSIDE, offset, `flowWithText`, `zOrder`, 크기, `hp:outMargin`)를 붙인다. offset은
 32비트 부호 없는 음수(예: 4294964867)를 부호 있는 값으로 바꾸고(`signedHwpUnit`), 크기는 한/글이 쪽 배치에 쓰는 `hp:sz`를 먼저 쓴다
-(도형 `hp:curSz`는 글상자 글에 맞춰 더 클 수 있다). 사각형·타원·선·다각형·글상자는 `shape`(선 `hp:lineShape`, 면 `hc:winBrush`,
-선·다각형 꼭짓점을 `hp:sz`/`hp:orgSz` 비율로 늘린 값, 글상자 안쪽 여백·세로 맞춤)도 붙인다.
+(도형 `hp:curSz`는 글상자 글에 맞춰 더 클 수 있다). 도형·글상자는 `shape`(아래 "도형 SVG", 글상자 안쪽 여백·세로 맞춤)도 붙인다.
 
 renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 때 이 위치를 쓴다. 본문 최상위 문단은 놓인 쪽·단, 머리말·꼬리말
 문단은 쪽 본문 폭(`decorationFrame`), 표 셀·글상자 문단은 칸 기준 가상 용지(아래 "칸 안 개체")를 받는다. 각주·미주 문단은 받지 않아
@@ -549,8 +588,13 @@ renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 
   않으므로 자리·띠·글 옆 흐름·측정은 회전 전 상자다.
 - 쌓임 순서(2026-10-20): `objectZIndex`가 `zOrder`(0~9997로 자름)를 글 앞 개체는 `1 + zOrder`, 글 뒤 개체는 `zOrder - 9999`(언제나
   음수)로 바꾼다. `.viewer-page`가 stacking context라 문단 안·쪽 layer·칸 layer 개체가 같은 쪽 안에서 원본 순서로 쌓인다(머리말·꼬리말
-  칸은 `z-index: 1`이라 그 안 문단 기준 개체는 칸 안에서만). 표 앞·뒤 caret은 `z-index: 10001`. 겹침 허용 안 함(`allowOverlap="0"`)의
-  자리 밀기는 하지 않는다.
+  칸은 `z-index: 1`이라 그 안 문단 기준 개체는 칸 안에서만). 표 앞·뒤 caret은 `z-index: 10001`.
+- 겹침 허용 안 함(`allowOverlap="0"`, 2026-10-20): `resolveObjectY`가 같은 쪽(칸)에 문서 순서로 먼저 놓인 겹침 허용 안 함 개체와 상자가
+  겹치는 뒤 개체를 앞 개체 아래 끝으로 민다(밀린 자리가 다른 개체와 겹치면 다시 민다. 밀어서 용지(`flowWithText`면 쪽 본문) 아래를 넘으면
+  원래 자리). 한/글처럼 글과 어울리거나 자리를 차지하는 용지·쪽 기준 개체만 따지고(글 앞·뒤 개체는 늘 겹칠 수 있음), 문단 기준 개체는
+  글 흐름에 따라 자리가 바뀌어 따지지 않는다. 가로 겹침은 쪽 나눔과 화면이 같은 값을 쓰도록 쪽 본문 폭 기준 가로 위치로 본다. pagination은
+  쪽마다 놓인 개체 자리(`pagePlaced`)로 띠를 잡고(block이 다음 쪽으로 넘어가면 그 쪽 자리로 다시 잡는다), `PageObjectLayer`·칸 layer가 같은
+  순서로 그린다(밀린 개체는 `data-object-nudged`). 한/글이 저장한 용지·쪽 기준 위치는 보통 이미 겹치지 않아 실제 문서에서는 드물게 쓰인다.
 - 쪽 띠: pagination(`paginateViewerSection`의 `page` 인자)은 block을 놓을 때 그 block의 용지·쪽 기준 개체 띠를 그 쪽 띠 목록에
   더한다. 결과는 `ViewerPage.bands`(쪽 본문 기준, 합친 띠)다.
   - 다단이 없는 구역(`simpleFlow`, 2026-10-20): 쪽 위 block을 위에서부터 띠 사이로 흘린 끝 위치(`flowBlockEnd`)를 사용 높이로 쓴다.
@@ -638,6 +682,15 @@ section에 `hp:pagePr`가 없으면 앞 section 것을 같은 object로 잇고, 
   `createSectionPageHwpx`(A4 세로 2쪽·A4 가로 1쪽·B5 맞쪽 2쪽)가 쪽마다 상자 크기·padding(맞쪽 짝수 쪽 바꿈)·쪽 번호 아래 끝·머리말 자리,
   가로 구역 세로 본문보다 넓은 표(overflow 없음)·용지 오른쪽 아래 기준 글상자, PDF 쪽마다 용지 크기(pt), B5 둘째 단 편집→Save As→재열기를
   확인한다. 단위 test `tests/layout/section_page_setup.test.ts`.
+
+줄 간격 종류(2026-10-20): decoder `lineSpacingOf`가 `hh:lineSpacing type`을 `ViewerParaStyle.lineSpacingType`으로 읽는다. 백분율(`PERCENT`,
+기본)은 값 그대로, 고정 값(`FIXED`)·여백만 지정(`BETWEEN_LINES`)·최소(`AT_LEAST`)는 HWPUNIT 길이라 문단 여백과 같은 단위 규칙(HwpUnitChar
+`hp:case`는 그대로, `hp:default`·직접 저장은 2배)으로 읽는다. renderer `paragraphLineHeight`가 CSS 줄 높이로 바꾼다: 백분율은 배수(100% 미만은
+100%), 고정 값은 px(모든 줄 같은 높이), 여백만 지정은 `calc(1em + 여백)`, 최소는 `max(1em, 값)`이고, 뒤 둘은 글자 run마다 같은 식을 주어
+(`ParagraphSpanLineHeight` context, 편집 입력 칸은 style) 줄 상자가 그 줄의 가장 큰 글자로 정해진다. 빈 문단 한 줄·표 셀 반 줄 간격·표만 든
+문단 아래 줄 간격도 같은 식(`leading` = 줄 높이 − 글자 크기)을 쓴다. 쪽 나눔·줄 단위 쪽 나눔은 측정 DOM이 같은 문단 요소로 잰 높이·줄 경계를
+쓰므로 따로 근사하지 않는다. 리본은 백분율이 아닌 줄 간격을 "고정 24pt"처럼 보여 주고 −·＋는 160%에서 시작해 백분율로 바꾼다(편집 코어는
+늘 `PERCENT`로 적는다). 문단 요소에 `data-line-spacing="종류 값"`(백분율 제외)을 붙인다.
 
 줄 높이 바탕(2026-10-20): CSS 줄 상자는 문단 요소 글자 크기 × 줄 간격(strut)보다 낮아지지 않는다. 문단 요소가 기본 16px를 물려받으면
 10pt 160% 줄이 한/글(1000 + 600)보다 20% 커지므로, `paragraphStrutCss`가 문단 글자 run 가운데 가장 작은 글자 모양을 문단 요소에 준다.

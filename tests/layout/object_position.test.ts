@@ -14,6 +14,8 @@ import {
   PageFrame,
   pageObjectBand,
   paragraphObjectOffset,
+  PlacedObjectRect,
+  resolveObjectY,
   tableInFlow,
   WRAP_MIN_TEXT_WIDTH,
   wrapTextSide
@@ -270,5 +272,41 @@ describe('글 옆 배치(SQUARE)의 글 흐름 쪽과 쪽 기준 띠의 부분 �
     expect(blockBandFlowKind(paragraph([{ ...text, text: '' }, image()]))).toBe('box')
     expect(blockBandFlowKind(paragraph([text, image()]))).toBe('mixed')
     expect(blockBandFlowKind(paragraph([text, image(position({ wrap: 'SQUARE' }))]))).toBe('mixed')
+  })
+})
+
+describe('겹침 허용 안 함 개체 밀기', () => {
+  const paper = (x: number, y: number, overrides: Partial<ViewerObjectPosition> = {}) =>
+    position({ vertRelTo: 'PAPER', horzRelTo: 'PAPER', horzOffset: x, vertOffset: y, ...overrides })
+
+  test('앞 개체와 겹치면 아래로 밀고, 밀린 자리가 또 겹치면 다시 민다', () => {
+    const placed: PlacedObjectRect[] = []
+    expect(resolveObjectY(paper(10000, 20000), page, placed)).toBe(20000)
+    expect(resolveObjectY(paper(15000, 30000), page, placed)).toBe(30000)
+    // [20000, 24000]과 겹쳐 24000으로, 거기서 [30000, 34000]과는 겹치지 않는다. 다음 개체는 둘 다 지나 34000.
+    expect(resolveObjectY(paper(12000, 22000), page, placed)).toBe(24000)
+    expect(resolveObjectY(paper(12000, 26000), page, placed)).toBe(34000)
+    expect(placed).toHaveLength(4)
+  })
+
+  test('겹침 허용·글 앞뒤·문단 기준·가로로 비켜난 개체는 밀지 않는다', () => {
+    const placed: PlacedObjectRect[] = []
+    resolveObjectY(paper(10000, 20000), page, placed)
+    expect(resolveObjectY(paper(10000, 21000, { allowOverlap: true }), page, placed)).toBe(21000)
+    expect(resolveObjectY(paper(10000, 21000, { wrap: 'IN_FRONT_OF_TEXT' }), page, placed)).toBe(21000)
+    expect(resolveObjectY(paper(30000, 21000), page, placed)).toBe(21000)
+    expect(placed).toHaveLength(2)
+  })
+
+  test('밀면 용지 아래를 넘는 개체는 원래 자리에 둔다', () => {
+    const placed: PlacedObjectRect[] = []
+    resolveObjectY(paper(10000, 78000), page, placed)
+    expect(resolveObjectY(paper(10000, 79000), page, placed)).toBe(79000)
+  })
+
+  test('쪽 띠도 밀린 자리로 잡는다', () => {
+    const placed: PlacedObjectRect[] = []
+    pageObjectBand(paper(10000, 20000), page, false, placed)
+    expect(pageObjectBand(paper(10000, 21000), page, false, placed)).toEqual({ top: 24000 - page.margin.top, bottom: 28000 - page.margin.top })
   })
 })

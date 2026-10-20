@@ -346,6 +346,87 @@ function pageFlowFailures(result, expected, label = 'page-flow') {
   return failures
 }
 
+// 도형·그림 자르기·겹침·줄 간격 E2E(createShapeHwpx): 호·곡선·연결선·묶음 도형이 SVG로(path 상자는 기대값과 HWPUNIT 60 안,
+// 화살표·그러데이션·무늬·점선), 줄 안 부채꼴도 SVG로, 자른 그림은 상자 안에 보이는 부분만(그림 위치·크기), 그림 회전 안 함은 그림은
+// 돌리지 않고 테두리만 돌리고, 겹침 허용 안 함 사각형은 앞 사각형 아래로 밀리고, 줄 간격 종류 문단은 종류대로 줄 높이(1px 안)여야 한다.
+// PDF에도 같은 도형·그림이 그려졌는지 다시 그린 PDF 쪽에서 몇 자리 색을 읽어 본다. 줄 간격 문단을 고쳐 저장한 뒤 다시 열어도 같아야 한다.
+const SHAPE_EDIT_TEXT = '도형편집'
+const SHAPE_PATH_TOLERANCE = 60
+
+function shapeFailures(result, generator, label = 'shapes') {
+  const expected = generator.SHAPE_FIXTURE_EXPECTED
+  const vector = result?.vectorShapes
+  if (!vector) return [`${label}: 도형 상태가 없음`]
+  const failures = []
+  for (const shape of expected.shapes) {
+    const actual = vector.shapes.find((item) => item.element === shape.element && item.placement === 'page' &&
+      Math.abs(item.box.x - hwpToPx(shape.x)) <= FLOATING_TOLERANCE_PX && Math.abs(item.box.y - hwpToPx(shape.y)) <= FLOATING_TOLERANCE_PX)
+    const name = `${label} ${shape.element}(${shape.x}, ${shape.y})`
+    if (!actual) {
+      failures.push(`${name}: SVG 도형이 없음`)
+      continue
+    }
+    failures.push(...floatingBoxFailures(name, actual.box, shape))
+    if (actual.parts.length !== shape.parts.length) failures.push(`${name}: path ${actual.parts.length}개(기대 ${shape.parts.length}개)`)
+    shape.parts.forEach((part, index) => {
+      const box = actual.parts[index]
+      if (!box || ['x', 'y', 'width', 'height'].some((axis) => Math.abs(box[axis] - part[axis]) > SHAPE_PATH_TOLERANCE)) {
+        failures.push(`${name}: ${index + 1}번째 path 상자 ${JSON.stringify(box)}(기대 ${JSON.stringify(part)})`)
+      }
+    })
+    if ((shape.arrows ?? 0) !== actual.arrows) failures.push(`${name}: 화살표 ${actual.arrows}개(기대 ${shape.arrows ?? 0}개)`)
+    if (shape.fill && !actual.fills.includes(shape.fill)) failures.push(`${name}: 채우기 ${actual.fills.join(',') || '없음'}(기대 ${shape.fill})`)
+    if (shape.dashed && !actual.dashed) failures.push(`${name}: 점선이 아님`)
+  }
+  if (!vector.shapes.some((item) => item.element === 'hp:arc' && !item.placement)) failures.push(`${label}: 줄 안 부채꼴이 SVG로 그려지지 않음`)
+  const clipped = expected.clippedPicture
+  const crop = vector.clippedImages.find((item) => Math.abs(item.box.x - hwpToPx(clipped.x)) <= FLOATING_TOLERANCE_PX && Math.abs(item.box.y - hwpToPx(clipped.y)) <= FLOATING_TOLERANCE_PX)
+  if (!crop) failures.push(`${label}: 자른 그림이 없음(${JSON.stringify(vector.clippedImages)})`)
+  else {
+    failures.push(...floatingBoxFailures(`${label} 자른 그림 상자`, crop.box, clipped), ...floatingBoxFailures(`${label} 자른 그림 안 그림`, crop.image, clipped.image))
+    if (crop.overflow !== 'hidden') failures.push(`${label}: 자른 그림 상자가 넘친 부분을 숨기지 않음(${crop.overflow})`)
+  }
+  const upright = vector.uprightImages[0]
+  const uprightExpected = expected.uprightPicture
+  if (!upright?.picture || !upright.border) failures.push(`${label}: 그림 회전 안 함 그림이 없음`)
+  else {
+    failures.push(...floatingBoxFailures(`${label} 회전 안 함 그림`, upright.picture, uprightExpected))
+    const radians = uprightExpected.rotation * Math.PI / 180
+    const borderWidth = uprightExpected.width * Math.cos(radians) + uprightExpected.height * Math.sin(radians)
+    if (Math.abs(upright.border.width - hwpToPx(borderWidth)) > 2) failures.push(`${label}: 회전 안 함 그림 테두리 틀이 돌지 않음(폭 ${upright.border.width}px, 기대 ${hwpToPx(borderWidth).toFixed(1)}px)`)
+  }
+  const nudged = vector.nudged.find((item) => item.nudge === expected.overlap.nudge)
+  if (!nudged) failures.push(`${label}: 겹침 허용 안 함 사각형이 밀리지 않음(${JSON.stringify(vector.nudged)})`)
+  else failures.push(...floatingBoxFailures(`${label} 밀린 사각형`, nudged, expected.overlap.second))
+  for (const spacing of generator.SHAPE_LINE_SPACINGS) {
+    const actual = vector.lineSpacings.find((item) => item.spacing === `${spacing.type} ${spacing.value}`)
+    if (!actual || actual.lines < 3) failures.push(`${label}: ${spacing.label} 줄 간격 문단이 세 줄 이상이 아님(${JSON.stringify(actual)})`)
+    else if (Math.abs(actual.pitch - hwpToPx(spacing.pitch)) > 1) failures.push(`${label}: ${spacing.label} 줄 높이 ${actual.pitch}px(기대 ${hwpToPx(spacing.pitch).toFixed(1)}px)`)
+  }
+  return failures
+}
+
+/** PDF에서 도형·그림 색을 읽을 자리(쪽 왼쪽 위 기준 CSS px)와 기대 색. */
+function shapePixelProbes(generator) {
+  const expected = generator.SHAPE_FIXTURE_EXPECTED
+  const group = expected.shapes.find((shape) => shape.element === 'hp:container')
+  const pie = expected.shapes[1]
+  const clipped = expected.clippedPicture
+  const { first, second } = expected.overlap
+  return [
+    // 묶음 안 90도 돌린 초록 사각형 가운데.
+    { label: '묶음 사각형', page: 1, x: hwpToPx(group.x + 3000), y: hwpToPx(group.y + 2000), color: [76, 175, 80] },
+    // 부채꼴 아래쪽(위→아래 흰색→빨강 그러데이션의 아래 끝 가까이).
+    { label: '부채꼴 그러데이션', page: 1, x: hwpToPx(pie.x + 1000), y: hwpToPx(pie.y + pie.height - 300), color: [195, 15, 15], tolerance: 45 },
+    // 자른 그림 왼쪽 반은 원본 왼쪽 위(빨강), 오른쪽 반은 오른쪽 위(초록).
+    { label: '자른 그림 왼쪽', page: 1, x: hwpToPx(clipped.x + clipped.width / 4), y: hwpToPx(clipped.y + clipped.height / 2), color: [220, 40, 40] },
+    { label: '자른 그림 오른쪽', page: 1, x: hwpToPx(clipped.x + clipped.width * 3 / 4), y: hwpToPx(clipped.y + clipped.height / 2), color: [40, 160, 60] },
+    // 밀린 사각형은 새 자리에 있고 원래 자리(앞 사각형 오른쪽)는 비어 있다.
+    { label: '밀린 사각형', page: 1, x: hwpToPx(second.x + second.width - 1000), y: hwpToPx(second.y + second.height - 1000), color: [251, 234, 234], tolerance: 12 },
+    { label: '밀린 사각형 원래 자리', page: 1, x: hwpToPx(second.x + second.width - 1000), y: hwpToPx(first.y + first.height - 500), color: [255, 255, 255], tolerance: 8 }
+  ]
+}
+
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
@@ -499,6 +580,12 @@ try {
     HAN_FLOW_VERIFY_EDIT_SAVE: '1'
   })
 
+  const shapePath = generator.createShapeHwpx(directory, 'han-flow-shapes.hwpx')
+  const shapeView = await verify(shapePath, 500)
+  const shapePdf = await verifyPdf(shapePath, { HAN_FLOW_PDF_PIXEL_PROBES: JSON.stringify(shapePixelProbes(generator)) })
+  pdfResults.push({ fixtureId: 'shapes', ...shapePdf })
+  const shapeEdit = await verify(shapePath, 500, false, { HAN_FLOW_VERIFY_EDIT_TEXT: SHAPE_EDIT_TEXT, HAN_FLOW_VERIFY_EDIT_SAVE: '1' })
+
   const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
   const editScopeResults = []
   for (const scope of EDIT_SCOPE_CASES) {
@@ -627,6 +714,11 @@ try {
       ? undefined
       : 'section-page 편집: 입력 글자가 B5 구역 첫 쪽 둘째 단에 없음',
     ...sectionPageFailures({ ...sectionPageEdit, totalPages: sectionPageEdit.saveAs?.reopenedPages, pageBoxes: sectionPageEdit.saveAs?.reopenedPageBoxes, pageDecorations: sectionPageEdit.saveAs?.reopenedPageDecorations, positionedObjects: sectionPageEdit.saveAs?.reopenedPositionedObjects }, generator.SECTION_PAGE_EXPECTED, 'section-page 저장본'),
+    shapeView.passed ? undefined : `shapes: ${shapeView.failures.join(', ')}`,
+    ...shapeFailures(shapeView, generator),
+    shapeEdit.passed ? undefined : `shapes 편집: ${shapeEdit.failures.join(', ')}`,
+    shapeEdit.saveAs?.reopenedTextPresent === false ? 'shapes 편집: 저장본에 입력 글자가 없음' : undefined,
+    ...shapeFailures({ vectorShapes: shapeEdit.saveAs?.reopenedVectorShapes }, generator, 'shapes 저장본'),
     longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
     longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
     longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
@@ -752,6 +844,13 @@ try {
       pageBoxes: sectionPageView.pageBoxes,
       pdfPageSizes: sectionPagePdf.pageSizes,
       edit: { passed: sectionPageEdit.passed, reopenedPages: sectionPageEdit.saveAs?.reopenedPages, reopenedTextPresent: sectionPageEdit.saveAs?.reopenedTextPresent }
+    },
+    shapes: {
+      passed: shapeView.passed,
+      totalPages: shapeView.totalPages,
+      vectorShapes: shapeView.vectorShapes,
+      pixelProbes: shapePdf.pixelProbes,
+      edit: { passed: shapeEdit.passed, reopenedPages: shapeEdit.saveAs?.reopenedPages }
     },
     longFootnoteEdit: {
       passed: longFootnoteEdit.passed,

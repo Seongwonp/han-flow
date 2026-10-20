@@ -137,6 +137,31 @@ try {
     renderedBytes.push((await stat(`${prefix}.png`)).size)
   }
 
+  // 벡터 도형·그림이 PDF에도 그려졌는지: `HAN_FLOW_PDF_PIXEL_PROBES`(JSON `[{ page, x, y, color: [r, g, b], tolerance?, label? }]`, x·y는
+  // 쪽 왼쪽 위 기준 CSS px)의 자리를 96dpi(CSS px 1:1)로 다시 그린 PPM에서 읽어 색을 비교한다.
+  const pixelProbes = process.env.HAN_FLOW_PDF_PIXEL_PROBES ? JSON.parse(process.env.HAN_FLOW_PDF_PIXEL_PROBES) : []
+  const pixelResults = []
+  const rasters = new Map()
+  for (const probe of pixelProbes) {
+    if (!rasters.has(probe.page)) {
+      const prefix = join(directory, `probe-${probe.page}`)
+      await run('pdftoppm', ['-f', String(probe.page), '-l', String(probe.page), '-singlefile', '-r', '96', pdfPath, prefix])
+      const bytes = await readFile(`${prefix}.ppm`)
+      // P6 머리: "P6\n<폭> <높이>\n255\n" 뒤에 RGB bytes.
+      const header = bytes.subarray(0, 64).toString('latin1').match(/^P6\s+(\d+)\s+(\d+)\s+(\d+)\s/u)
+      if (!header) throw new Error('PPM 머리를 읽지 못했습니다.')
+      rasters.set(probe.page, { width: Number(header[1]), height: Number(header[2]), offset: header[0].length, bytes })
+    }
+    const raster = rasters.get(probe.page)
+    const x = Math.round(probe.x)
+    const y = Math.round(probe.y)
+    const index = raster.offset + (y * raster.width + x) * 3
+    const color = x >= 0 && y >= 0 && x < raster.width && y < raster.height ? [raster.bytes[index], raster.bytes[index + 1], raster.bytes[index + 2]] : null
+    const tolerance = probe.tolerance ?? 40
+    const matches = Boolean(color) && color.every((value, channel) => Math.abs(value - probe.color[channel]) <= tolerance)
+    pixelResults.push({ label: probe.label, page: probe.page, x, y, expected: probe.color, actual: color, matches })
+  }
+
   const compareAllPages = state.totalPages <= 50 && state.mountedPages === state.totalPages
   const expectedPageSizes = (state.pageSizes ?? []).map(({ width, height }) => ({
     widthPoints: width * 72 / 96,
@@ -181,7 +206,8 @@ try {
       : undefined,
     // 사설 영역 글자는 비교 글자 수에서 빼지만 숫자는 그렇지 않다. 비교 글자 수가 같아도 숫자·필수 문자열, 표시 대체 표·허용
     // 목록 밖의 사설 영역 글자가 빠지면 실패다.
-    ...census.failures
+    ...census.failures,
+    ...pixelResults.filter((probe) => !probe.matches).map((probe) => `PDF ${probe.page}쪽 ${probe.label ?? ''}(${probe.x}, ${probe.y}) 색 ${JSON.stringify(probe.actual)}(기대 ${JSON.stringify(probe.expected)})`)
   ].filter(Boolean)
   const result = {
     fixture: basename(fixture),
@@ -204,6 +230,7 @@ try {
     // raw는 공백 외 전체 code point, privateUse는 비교에서 제외한 사설 영역 글자, digits는 ASCII 숫자다.
     ...census.fields,
     renderedPages: renderPages,
+    pixelProbes: pixelResults.length ? pixelResults : undefined,
     failures,
     artifacts: keepArtifacts ? directory : undefined
   }

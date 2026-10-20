@@ -1,4 +1,4 @@
-import { ViewerBorder, ViewerBreakSetting, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerObjectTransform, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell, ViewerEquation } from '../document/viewer_document'
+import { ViewerBorder, ViewerBreakSetting, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerObjectTransform, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerLineSpacingType, ViewerSection, ViewerTable, ViewerTableCell, ViewerEquation } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
 import { parseEquationScript } from '../document/equation_script'
 import { countIncompleteObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
@@ -12,6 +12,7 @@ import {
 } from '../document/paragraph_margin_units'
 import { contentOutOfFlow } from '../layout/object_position'
 import { isRenderedStrikeShape } from './line_shape'
+import { decodeShapeStyle, pictureCrop, pictureFilter, strokeOf } from './shape_decoder'
 import { OrderedXmlNode, walkOrderedXml } from './ordered_xml'
 import {
   EMPTY_PARAGRAPH_BLOCKING_CONTROLS,
@@ -271,44 +272,6 @@ export function objectTransform(node: OrderedXmlNode): ViewerObjectTransform | u
   }
 }
 
-const SHAPE_STROKE_NONE = new Set(['NONE', ''])
-
-/** 도형·글상자의 선·채우기·꼭짓점(`hp:lineShape`·`hc:fillBrush`·`hc:startPt`/`hc:endPt`·`hc:pt`). 그릴 것이 없으면 undefined. */
-function shapeStyle(node: OrderedXmlNode, size: { width: number; height: number } | undefined): ViewerShapeStyle | undefined {
-  const style: ViewerShapeStyle = {}
-  const line = child(node, 'hp:lineShape')
-  const color = line?.attributes.color ?? ''
-  const strokeWidth = num(line?.attributes.width)
-  if (line && !SHAPE_STROKE_NONE.has(line.attributes.style ?? '') && /^#[0-9a-f]{6}$/iu.test(color) && strokeWidth > 0) {
-    style.stroke = { color, width: strokeWidth, style: line.attributes.style ?? 'SOLID' }
-  }
-  const brush = child(node, 'hc:fillBrush')
-  const winBrush = brush ? child(brush, 'hc:winBrush') : undefined
-  const face = winBrush?.attributes.faceColor ?? ''
-  // alpha는 투명도(0 불투명 ~ 255 투명)다.
-  if (/^#[0-9a-f]{6}$/iu.test(face) && num(winBrush?.attributes.alpha) < 255) style.fill = face
-  const original = child(node, 'hp:orgSz')
-  const scaleX = size && num(original?.attributes.width) > 0 ? size.width / num(original!.attributes.width) : 1
-  const scaleY = size && num(original?.attributes.height) > 0 ? size.height / num(original!.attributes.height) : 1
-  const point = (item: OrderedXmlNode) => ({ x: num(item.attributes.x) * scaleX, y: num(item.attributes.y) * scaleY })
-  if (node.name === 'hp:line') {
-    const start = child(node, 'hc:startPt')
-    const end = child(node, 'hc:endPt')
-    if (start && end) style.points = [point(start), point(end)]
-  } else if (node.name === 'hp:polygon') {
-    const points = children(node, 'hc:pt').map(point)
-    if (points.length >= 2) style.points = points
-  }
-  const drawText = child(node, 'hp:drawText')
-  if (drawText) {
-    const margin = child(drawText, 'hp:textMargin')
-    if (margin) style.textMargin = box(margin)
-    const subList = child(drawText, 'hp:subList')
-    if (subList?.attributes.vertAlign) style.textVerticalAlign = subList.attributes.vertAlign
-  }
-  return Object.keys(style).length ? style : undefined
-}
-
 function objectFlow(node: OrderedXmlNode): ViewerObjectFlow {
   if (child(node, 'hp:pos')?.attributes.treatAsChar === '1') return 'inline'
   const wrap = node.attributes.textWrap
@@ -372,7 +335,7 @@ function placeholder(
 ): ViewerObjectPlaceholder {
   const { size, fitted } = fitObjectSize(declaredSize(node), context.objectHeightLimit)
   const position = objectPosition(node, size, context.objectHeightLimit)
-  const shape = SHAPE_ELEMENTS.has(node.name) ? shapeStyle(node, position ?? size) : undefined
+  const shape = SHAPE_ELEMENTS.has(node.name) ? decodeShapeStyle(node, position ?? size) : undefined
   const transform = objectTransform(node)
   return {
     type: 'object-placeholder',
@@ -707,6 +670,11 @@ function decodeImage(node: OrderedXmlNode, context: Pick<DecodeContext, 'objectH
   const height = fittedSize?.height
   const position = objectPosition(node, fittedSize ?? declaredSize(node), context.objectHeightLimit)
   const transform = objectTransform(node)
+  const crop = pictureCrop(node)
+  const filter = pictureFilter(node)
+  const border = strokeOf(node)
+  // 그림 회전 안 함: 회전이 있을 때만 뜻이 있다(틀만 돌린다).
+  const rotateImage = transform?.rotation && child(node, 'hp:rotationInfo')?.attributes.rotateimage === '0' ? false : undefined
   return {
     type: 'image',
     resourceId: resource?.attributes.binaryItemIDRef,
@@ -714,7 +682,11 @@ function decodeImage(node: OrderedXmlNode, context: Pick<DecodeContext, 'objectH
     height,
     ...(fitted ? { fitted } : {}),
     ...(position ? { position } : {}),
-    ...(transform ? { transform } : {})
+    ...(transform ? { transform } : {}),
+    ...(rotateImage === false ? { rotateImage } : {}),
+    ...(crop ? { crop } : {}),
+    ...(filter ? { filter } : {}),
+    ...(border ? { border } : {})
   }
 }
 
@@ -931,6 +903,23 @@ function decodeHeaderFooters(
   })
 }
 
+const LINE_SPACING_TYPES = new Set<ViewerLineSpacingType>(['PERCENT', 'FIXED', 'BETWEEN_LINES', 'AT_LEAST'])
+
+/**
+ * 문단 줄 간격(`hh:lineSpacing type`·`value`). 백분율(`PERCENT`, 기본)은 값 그대로, 고정 값·여백만 지정·최소는 HWPUNIT 길이라 여백과
+ * 같은 단위 규칙(HwpUnitChar `hp:case`는 그대로, 그 밖은 2배로 저장)으로 읽는다. 모르는 종류는 백분율로 본다.
+ */
+export function lineSpacingOf(paraPr: OrderedXmlNode): Pick<ViewerParaStyle, 'lineSpacing' | 'lineSpacingType'> {
+  const metric = paragraphMetricNode(paraPr, 'hh:lineSpacing')
+  const value = num(metric?.node.attributes.value)
+  const type = metric?.node.attributes.type as ViewerLineSpacingType | undefined
+  if (!metric || !type || type === 'PERCENT' || !LINE_SPACING_TYPES.has(type)) return { lineSpacing: value }
+  const length = Math.round(value * metric.scale)
+  // 고정 값·최소가 0 이하이면 한/글도 글자 높이 한 줄로 그린다. 백분율 근사로 두지 않고 여백 0으로 본다.
+  if (!Number.isFinite(length) || length < 0) return { lineSpacing: 0, lineSpacingType: 'BETWEEN_LINES' }
+  return { lineSpacing: length, lineSpacingType: type }
+}
+
 function decodeHeader(nodes: OrderedXmlNode[]) {
   const all = walkOrderedXml(nodes)
   const fonts: Record<string, string> = {}
@@ -969,10 +958,11 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
     for (const name of ['widowOrphan', 'keepWithNext', 'keepLines', 'pageBreakBefore'] as const) {
       if (breakNode?.attributes[name] === '1') breakSetting[name] = true
     }
+    const lineSpacing = lineSpacingOf(style)
     paraStyles[style.attributes.id] = {
       id: style.attributes.id,
       align: child(style, 'hh:align')?.attributes.horizontal,
-      lineSpacing: num(paragraphMetricNode(style, 'hh:lineSpacing')?.node.attributes.value),
+      ...lineSpacing,
       indent: getValue('hc:intent'),
       margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') },
       tabPrId: style.attributes.tabPrIDRef,

@@ -55,7 +55,13 @@ export interface ViewerParseTimings {
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string; code?: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; italic: boolean; underline: boolean; strikeout: boolean; fontId?: string; fontFamily?: string }
-export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; indent?: HwpUnit; margin: BoxSpacing; tabPrId?: string; heading?: ViewerHeadingStyle; breakSetting?: ViewerBreakSetting }
+/**
+ * 문단 모양. `lineSpacing`은 줄 간격 값이고 종류(`lineSpacingType`, `hh:lineSpacing type`)에 따라 뜻이 다르다. 없거나 `PERCENT`면
+ * 글자 높이에 대한 백분율, `FIXED`(고정 값)는 줄 높이, `BETWEEN_LINES`(여백만 지정)는 글자 높이에 더할 줄 사이 여백,
+ * `AT_LEAST`(최소)는 줄 높이의 최솟값이다(뒤 셋은 HWPUNIT).
+ */
+export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; lineSpacingType?: ViewerLineSpacingType; indent?: HwpUnit; margin: BoxSpacing; tabPrId?: string; heading?: ViewerHeadingStyle; breakSetting?: ViewerBreakSetting }
+export type ViewerLineSpacingType = 'PERCENT' | 'FIXED' | 'BETWEEN_LINES' | 'AT_LEAST'
 /**
  * 문단 나눔 설정(OWPML `hh:breakSetting`). 켜진 것만 true로 둔다.
  * - `widowOrphan`: 외톨이줄 보호. 쪽을 넘어 나눌 때 앞·뒤 조각에 줄을 둘 이상 둔다.
@@ -187,7 +193,23 @@ export interface ViewerImage {
   position?: ViewerObjectPosition
   /** 회전·대칭. 없으면 그대로 그린다. */
   transform?: ViewerObjectTransform
+  /**
+   * 그림 회전 안 함(`hp:rotationInfo rotateimage="0"`). 개체 틀(테두리)만 돌리고 그림은 돌리지 않는다(대칭은 그대로).
+   */
+  rotateImage?: false
+  /**
+   * 그림 자르기(`hp:imgClip`, 원본 그림 크기 `hp:imgDim` 기준)와 그림을 그리는 자리(`hp:imgRect`, `hp:orgSz` 기준). 모두 0~1 비율이다.
+   * `frame`은 개체 상자 안 그림 자리, `source`는 원본 그림 가운데 보이는 부분이다. 자르지 않고 상자를 다 채우면 없다.
+   */
+  crop?: { frame: ViewerUnitRect; source: ViewerUnitRect }
+  /** 그림 효과(`hc:img`): 밝기·대비(-100~100), 회색조·흑백(`effect`), 불투명도(0~1). 원본 그대로면 없다. */
+  filter?: { brightness?: number; contrast?: number; effect?: 'GRAY_SCALE' | 'BLACK_WHITE'; opacity?: number }
+  /** 그림 테두리(`hp:lineShape`). 없거나 `NONE`이면 없다. */
+  border?: ViewerShapeStroke
 }
+
+/** 0~1 비율로 나타낸 직사각형. */
+export interface ViewerUnitRect { left: number; top: number; width: number; height: number }
 
 /** 개체와 본문 글의 배치 관계(OWPML `textWrap`). */
 export type ViewerTextWrap = 'SQUARE' | 'TIGHT' | 'THROUGH' | 'TOP_AND_BOTTOM' | 'BEHIND_TEXT' | 'IN_FRONT_OF_TEXT'
@@ -303,13 +325,74 @@ export interface ViewerEquation {
   baseLine?: number
 }
 
+/**
+ * 도형 선(`hp:lineShape`). 색·굵기(HWPUNIT)·모양(`SOLID`·`DASH`·`DOT`·`DASH_DOT`·`DASH_DOT_DOT`·`LONG_DASH`·`CIRCLE`·이중선 계열),
+ * 끝 모양(`endCap`: `ROUND`·`FLAT`), 시작·끝 화살표(`headStyle`·`tailStyle`: `NORMAL`이면 없음, `ARROW`·`SPEAR`·`CONCAVE_ARROW`·
+ * `EMPTY_DIAMOND`·`EMPTY_CIRCLE`·`EMPTY_BOX`·`FILLED_DIAMOND`·`FILLED_CIRCLE`·`FILLED_BOX`)와 크기(`SMALL_SMALL` ~ `LARGE_LARGE`,
+ * 앞이 폭·뒤가 길이), 불투명도(0~1, `alpha`는 투명도 0~255).
+ */
+export interface ViewerShapeStroke {
+  color: string
+  width: HwpUnit
+  style: string
+  endCap?: 'ROUND' | 'FLAT'
+  headStyle?: string
+  tailStyle?: string
+  headSize?: string
+  tailSize?: string
+  /** 화살표 속을 채우는지(`headfill`·`tailfill`). 없으면 채운다. */
+  headFill?: boolean
+  tailFill?: boolean
+  opacity?: number
+}
+
+/**
+ * 도형 면 채우기(`hc:fillBrush`).
+ * - `solid`: 단색(`hc:winBrush faceColor`), `hatch`: 무늬(`hatchStyle` `HORIZONTAL`·`VERTICAL`·`BACK_SLASH`·`SLASH`·`CROSS`·
+ *   `CROSS_DIAGONAL`, 바탕은 `faceColor`).
+ * - `gradient`: 그러데이션(`hc:gradation`). `LINEAR`는 `angle`(도, 0이면 왼쪽→오른쪽, 시계 방향), `RADIAL`·`CONICAL`·`SQUARE`는 중심
+ *   (`centerX`·`centerY`, 0~100%)에서 바깥으로 퍼지는 원형으로 그린다. 색은 같은 간격으로 놓는다.
+ * `opacity`는 0~1(원본 `alpha`는 투명도 0~255).
+ */
+export type ViewerShapeFill =
+  | { kind: 'solid'; color: string; opacity?: number }
+  | { kind: 'hatch'; color: string; hatchColor: string; hatchStyle: string; opacity?: number }
+  | { kind: 'gradient'; type: 'LINEAR' | 'RADIAL' | 'CONICAL' | 'SQUARE'; angle: number; centerX: number; centerY: number; colors: string[]; opacity?: number }
+
+/**
+ * 묶음 도형(`hp:container`) 안 도형 하나. 좌표는 묶음 개체 상자(왼쪽 위 0, HWPUNIT) 기준으로 이미 옮긴 값이다(안쪽 묶음의 위치·크기·
+ * 회전·대칭을 모두 반영). `path`는 SVG path 자료이고 `closed`면 면을 채운다. 글은 묶음 개체 전체의 글상자로 따로 그린다.
+ */
+export interface ViewerShapePart {
+  element: string
+  path: string
+  closed: boolean
+  stroke?: ViewerShapeStroke
+  fill?: ViewerShapeFill
+  /** 열린 선(`hp:line`·`hp:connectLine`·`hp:curve`·호)의 시작·끝 방향(화살표). [끝점, 그 앞 점]. */
+  start?: [{ x: number; y: number }, { x: number; y: number }]
+  end?: [{ x: number; y: number }, { x: number; y: number }]
+}
+
 export interface ViewerShapeStyle {
-  /** 선 색(`#RRGGBB`), 굵기(HWPUNIT), 모양(`SOLID`·`DASH`…). 선이 없으면(`NONE`) undefined. */
-  stroke?: { color: string; width: HwpUnit; style: string }
-  /** 면 색(`#RRGGBB`). 채우기가 없거나 투명하면 undefined. */
+  /** 선 색(`#RRGGBB`), 굵기(HWPUNIT), 모양(`SOLID`·`DASH`…)과 끝 모양·화살표. 선이 없으면(`NONE`) undefined. */
+  stroke?: ViewerShapeStroke
+  /** 면 색(`#RRGGBB`). 단색 채우기가 없거나 완전히 투명하면 undefined(글상자 배경에 쓴다). */
   fill?: string
+  /** 면 채우기(단색·무늬·그러데이션). 도형 SVG가 쓴다. */
+  fillPaint?: ViewerShapeFill
   /** 선(`hp:line`)의 두 끝점이나 다각형(`hp:polygon`)의 꼭짓점. */
   points?: Array<{ x: HwpUnit; y: HwpUnit }>
+  /**
+   * 호(`hp:arc`)·곡선(`hp:curve`)·연결선(`hp:connectLine`)의 SVG path 자료(개체 상자 기준 HWPUNIT). `closed`면 면을 채운다(부채꼴·활꼴,
+   * 닫힌 곡선). `start`·`end`는 화살표 방향(끝점과 그 앞 점)이다.
+   */
+  path?: string
+  closed?: boolean
+  start?: [{ x: number; y: number }, { x: number; y: number }]
+  end?: [{ x: number; y: number }, { x: number; y: number }]
+  /** 묶음 도형(`hp:container`)을 이루는 도형들(문서 순서, 뒤가 위). */
+  parts?: ViewerShapePart[]
   /** 글상자 안쪽 여백(`hp:drawText/hp:textMargin`)과 글의 세로 맞춤(`hp:subList vertAlign`). */
   textMargin?: BoxSpacing
   textVerticalAlign?: string

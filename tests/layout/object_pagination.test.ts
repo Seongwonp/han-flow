@@ -109,7 +109,8 @@ describe('용지·쪽 기준 자리 차지 개체의 본문 띠(pagination)', ()
 
   test('겹치는 띠는 한 번만 빼고, 띠는 같은 쪽의 다음 단에도 적용된다', () => {
     const blocks = [
-      block('a', [image(position()), image(position({ vertOffset: 1000 }))]),
+      // 겹침 허용(`allowOverlap`)이면 두 개체가 겹친 채 놓인다.
+      block('a', [image(position()), image(position({ vertOffset: 1000, allowOverlap: true }))]),
       ...Array.from({ length: 6 }, (_, index) => block(`b${index}`))
     ]
     const document = documentOf(blocks, true)
@@ -117,6 +118,29 @@ describe('용지·쪽 기준 자리 차지 개체의 본문 띠(pagination)', ()
     // 띠 [0, 4000] → 단마다 4000만 쓴다: 첫 단 a·b0·b1·b2, 둘째 단 b3·b4·b5·…
     expect(first.bands).toEqual([{ top: 0, bottom: 4000 }])
     expect(first.columns?.map((column) => column.map((paragraph) => paragraph.id))).toEqual([['a', 'b0', 'b1', 'b2'], ['b3', 'b4', 'b5']])
+  })
+
+  test('겹침 허용 안 함 개체가 같은 쪽 앞 개체와 겹치면 아래로 밀어 띠를 잡는다(뒤 block의 개체도)', () => {
+    const blocks = [
+      block('a', [image(position())]),
+      block('b', [image(position({ vertOffset: 1000 }))]),
+      ...Array.from({ length: 6 }, (_, index) => block(`c${index}`))
+    ]
+    const [first] = paginateViewerDocument(documentOf(blocks, true), heights(blocks))
+    // 첫 개체 [0, 3000], 둘째 개체는 [1000, 4000]에서 [3000, 6000]으로 밀린다.
+    expect(first.bands).toEqual([{ top: 0, bottom: 6000 }])
+  })
+
+  test('겹침 허용 안 함이어도 다음 쪽 개체는 앞 쪽 개체에 밀리지 않는다', () => {
+    const blocks = [
+      block('a', [image(position())]),
+      ...Array.from({ length: 3 }, (_, index) => block(`c${index}`)),
+      block('b', [image(position({ vertOffset: 1000 }))], true),
+      block('d')
+    ]
+    const pages = paginateViewerDocument(documentOf(blocks), heights(blocks))
+    expect(pages.map((item) => item.blocks[0].id)).toEqual(['a', 'b'])
+    expect(pages[1].bands).toEqual([{ top: 1000, bottom: 4000 }])
   })
 
   test('글 앞·뒤 개체와 문단 기준 개체는 쪽 본문 띠를 만들지 않는다', () => {
@@ -193,7 +217,7 @@ describe('글자처럼 취급하지 않는 개체 decode', () => {
     const textBox = items.find((item): item is ViewerObjectPlaceholder => item.type === 'object-placeholder' && item.paragraphs?.[0]?.content.some((content) => content.type === 'text' && content.text === FLOATING_OBJECT_TEXTS.textBoxInner) === true)!
     expect(textBox.kind).toBe('text-box')
     expect(textBox.position).toMatchObject({ wrap: 'IN_FRONT_OF_TEXT', vertRelTo: 'PAPER', horzRelTo: 'PAPER', vertOffset: 40000, horzOffset: 30000, width: 20000, height: 6000 })
-    expect(textBox.shape).toEqual({ stroke: { color: '#1F4E79', width: 57, style: 'SOLID' }, fill: '#EAF1FB', textMargin: { top: 283, right: 283, bottom: 283, left: 283 }, textVerticalAlign: 'CENTER' })
+    expect(textBox.shape).toEqual({ stroke: { color: '#1F4E79', width: 57, style: 'SOLID' }, fill: '#EAF1FB', fillPaint: { kind: 'solid', color: '#EAF1FB' }, textMargin: { top: 283, right: 283, bottom: 283, left: 283 }, textVerticalAlign: 'CENTER' })
     expect(contentPlacement(textBox)).toBe('page')
 
     const images = items.filter((item): item is ViewerImage => item.type === 'image')

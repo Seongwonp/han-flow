@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 호·곡선·연결선·묶음 도형, 그림 자르기, 겹침 허용 안 함, 줄 간격 종류
+
+- 도형을 SVG로 그림(`shape_decoder.ts`·`ShapeView.tsx`): 호(`hp:arc` 보통·부채꼴·활꼴, 중심·두 축 끝점의 4분의 1 타원), 곡선(`hp:curve`, `CURVE` 조각 셋 = 3차 Bézier), 연결선(`hp:connectLine` 직선·꺾은선·곡선, 종류별 화살표), 묶음 도형(`hp:container`, 안쪽 위치·크기·회전·대칭을 곱해 평탄화, 중첩 묶음, 위치 없는 안쪽 도형은 `hp:renderingInfo` 행렬). 선 모양(점선·끝 모양·시작/끝 화살표 9종·크기·투명도)과 채우기(단색·무늬 6종·선형/원형 그러데이션·투명도), 줄 안 도형도 SVG, 사각형이 아닌 글상자는 도형을 글 뒤에 그림
+- 그림 자르기(`hp:imgClip`을 `hp:imgDim` 비율로, `hp:imgRect` 그림 자리), 밝기·대비·회색조·흑백·투명도, 그림 테두리, 그림 회전 안 함(`rotateimage="0"`, 틀만 돌림). 원본 크기가 없거나 경계가 뒤집힌 자르기(실제 문서에 있음)는 무시
+- 겹침 허용 안 함(`allowOverlap="0"`) 용지·쪽 기준 자리 차지·글 옆 배치 개체가 같은 쪽 앞 개체와 겹치면 아래로 밂(`resolveObjectY`, pagination 띠와 쪽 layer가 같은 규칙)
+- 줄 간격 종류 고정 값·여백만 지정·최소를 CSS 줄 높이로 그림(`lineSpacingOf`·`paragraphLineHeight`, 여백·최소는 글자 run마다, 측정·쪽 나눔이 같은 높이). 리본은 "고정 24pt"처럼 보여 주고 −·＋는 백분율로 바꿈
+- verify_app `vectorShapes`, verify_pdf 색 확인 자리(`HAN_FLOW_PDF_PIXEL_PROBES`), verify:matrix 합성 fixture `createShapeHwpx`(SVG path 상자·화살표·채우기·점선, 자른 그림, 회전 안 함 그림, 밀린 개체, 줄 간격 종류별 줄 높이, PDF 색, 편집→Save As→재열기), 단위 test(`shape_decoder`·`shape_view`·`object_position`·`object_pagination`)
+- 사용자 문서 5종 verify_app·verify_pdf 통과, 쪽 수(2·3·1·1·2)·화면/PDF 글자 수·개체 위치 변경 없음(doc2의 타원·선은 전처럼 SVG, 자르기 경계가 원본 크기 전체이거나 뒤집혀 그림 변화 없음, 겹침 밀기 대상 없음). large-progressive 한 글자 입력 input→DOM p50/p95: 56.0/140.8ms → 57.2/119.9ms
+
 ### 미주 만들기·지우기, 표 셀·글상자 안 각주, 쪽마다 매기는 각주, 번호 문단 Enter, 메모 모양
 
 - 리본 `편집` 탭 `각주·미주` group에 [미주 넣기]·[미주 지우기]를 더하고(`insert-endnote`·`delete-endnote`, 구역 미주 모양 번호·뒤 번호 다시 매기기, 미주 본문은 구역·문서 끝 목록), 각주·미주를 본문·표 셀·글상자 문단 caret에 넣을 수 있게 함(`noteHostViolation`). 머리말·꼬리말은 한/글처럼 막고 사유를 표시(`NOTE_IN_HEADER_FOOTER`). 글상자는 글자만 든 각주·미주를 품어도 계속 편집 가능(`isPlainSubList`)

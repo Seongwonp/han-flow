@@ -1190,3 +1190,105 @@ export function createSectionPageHwpx(directory: string, fileName = 'han-flow-se
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 도형·그림 자르기·겹침 허용 안 함·줄 간격 종류 합성 문서(직접 작성, 개인정보 없음). A4(`FLOATING_OBJECT_PAGE`) 한 쪽.
+ * - 용지 기준 글 앞 도형: 호(보통·부채꼴·활꼴), 곡선(3차 Bézier), 연결선(끝 화살표), 묶음 도형(돌린 사각형·원형 그러데이션 타원·좌우
+ *   대칭한 안쪽 묶음의 화살표 선), 자른 그림(`hp:imgClip`), 그림 회전 안 함(`rotateimage="0"`, 30도, 테두리), 줄 안 부채꼴.
+ * - 겹침 허용 안 함(`allowOverlap="0"`) 자리 차지 사각형 둘(뒤 문단 사각형이 앞 사각형과 겹침 → 앞 사각형 아래로 밀림).
+ * - 줄 간격 종류 문단: 고정 값 24pt(HwpUnitChar `hp:case`, `hp:default`는 2배), 여백만 지정 12pt, 최소 20pt, 최소 5pt(글자 10pt).
+ * verify:matrix가 도형 SVG 요소·화살표·채우기와 path 상자, 자른 그림 자리, 밀린 사각형 위치, 줄 간격 종류별 줄 높이를 본다.
+ */
+export const SHAPE_FIXTURE_TEXTS = {
+  title: '도형 시험 문서',
+  shapes: '도형 문단에는 호와 곡선과 묶음 도형이 글 앞에 놓입니다.',
+  overlapA: '겹침 앞 사각형 문단',
+  overlapB: '겹침 뒤 사각형 문단',
+  lineSpacing: (label: string) => `${label} 줄 간격 문단입니다. 이 문단은 세 줄 넘게 이어지도록 길게 쓴 글이며 줄과 줄 사이 높이가 줄 간격 종류에 맞아야 합니다. 화면과 PDF의 글자 수도 같아야 하고 쪽 나눔도 줄 높이를 따라야 합니다. 한 줄을 더 채우려고 덧붙인 문장입니다.`
+} as const
+/** 줄 간격 종류 문단(문단 모양 id, 종류, 값 HWPUNIT)과 글자 10pt에서 기대하는 줄 높이(HWPUNIT). */
+export const SHAPE_LINE_SPACINGS = [
+  { id: 20, label: '고정', type: 'FIXED', value: 2400, pitch: 2400 },
+  { id: 21, label: '여백', type: 'BETWEEN_LINES', value: 1200, pitch: 2200 },
+  { id: 22, label: '최소', type: 'AT_LEAST', value: 2000, pitch: 2000 },
+  { id: 23, label: '작은 최소', type: 'AT_LEAST', value: 500, pitch: 1000 }
+] as const
+/** 화면에서 기대하는 상자(HWPUNIT). 도형 path 상자는 개체 상자 기준, 개체 위치는 용지 기준이다. */
+export const SHAPE_FIXTURE_EXPECTED = {
+  shapes: [
+    { element: 'hp:arc', x: 8000, y: 14000, width: 8000, height: 6000, parts: [{ x: 0, y: 0, width: 8000, height: 6000 }], arrows: 1 },
+    { element: 'hp:arc', x: 20000, y: 14000, width: 6000, height: 6000, parts: [{ x: 0, y: 0, width: 6000, height: 6000 }], fill: 'gradient' },
+    { element: 'hp:arc', x: 30000, y: 14000, width: 6000, height: 6000, parts: [{ x: 0, y: 0, width: 6000, height: 6000 }], fill: 'hatch' },
+    { element: 'hp:curve', x: 40000, y: 14000, width: 8000, height: 4000, parts: [{ x: 0, y: 1000, width: 8000, height: 3000 }], dashed: true },
+    { element: 'hp:connectLine', x: 8000, y: 24000, width: 10000, height: 4000, parts: [{ x: 0, y: 0, width: 10000, height: 4000 }], arrows: 1 },
+    {
+      element: 'hp:container',
+      x: 22000,
+      y: 24000,
+      width: 12000,
+      height: 8000,
+      // 90도 돌린 사각형, 원형 그러데이션 타원, 좌우 대칭한 안쪽 묶음의 선(끝 화살표).
+      parts: [{ x: 1000, y: -1000, width: 4000, height: 6000 }, { x: 6000, y: 4000, width: 6000, height: 4000 }, { x: 0, y: 4000, width: 6000, height: 4000 }],
+      arrows: 1,
+      fill: 'gradient'
+    }
+  ],
+  /** 자른 그림: 상자 10000×5000, 원본 그림(4000×4000) 가운데 가로 1/4~3/4, 세로 0~1/2만 보인다(그림은 상자 기준 위치·크기). */
+  clippedPicture: { x: 38000, y: 24000, width: 10000, height: 5000, image: { x: -5000, y: 0, width: 20000, height: 10000 } },
+  /** 그림 회전 안 함: 그림은 돌리지 않은 상자, 테두리 틀은 30도 돌린 상자. */
+  uprightPicture: { x: 8000, y: 34000, width: 8000, height: 4000, rotation: 30 },
+  /** 겹침 허용 안 함: 앞 사각형(y 68000)과 겹치는 뒤 사각형(원래 y 69000)은 앞 사각형 아래 끝(71000)으로 밀린다. */
+  overlap: { first: { x: 10000, y: 68000, width: 12000, height: 3000 }, second: { x: 16000, y: 71000, width: 12000, height: 3000 }, nudge: 2000 }
+} as const
+
+const quadrantPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAIAAAADnC86AAAAPklEQVR42u3NMREAIAwEMOS8CEQgETmIQAQS8NC1ucuecZOy7Fk2xGKxWCwWixvFWbfsnZSJxWKxWCwWN4o/ODZsuZ4jSdgAAAAASUVORK5CYII=', 'base64')
+const shapeParaMargin = '<hh:margin><hc:left value="0"/><hc:right value="0"/><hc:prev value="0"/><hc:next value="0"/></hh:margin>'
+const shapeHeader = header.replace('</hh:paraProperties>', `${SHAPE_LINE_SPACINGS.map((item) => item.type === 'FIXED'
+  ? `<hh:paraPr id="${item.id}"><hh:align horizontal="JUSTIFY"/><hp:switch><hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar">${shapeParaMargin}<hh:lineSpacing type="FIXED" value="${item.value}" unit="HWPUNIT"/></hp:case><hp:default>${shapeParaMargin}<hh:lineSpacing type="FIXED" value="${item.value * 2}" unit="HWPUNIT"/></hp:default></hp:switch></hh:paraPr>`
+  : `<hh:paraPr id="${item.id}"><hh:align horizontal="JUSTIFY"/>${shapeParaMargin}<hh:lineSpacing type="${item.type}" value="${item.value * 2}" unit="HWPUNIT"/></hh:paraPr>`).join('')}</hh:paraProperties>`)
+const shapeCommon = (width: number, height: number, original = { width, height }) =>
+  `<hp:offset x="0" y="0"/><hp:orgSz width="${original.width}" height="${original.height}"/><hp:curSz width="${width}" height="${height}"/><hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="0" centerX="${width / 2}" centerY="${height / 2}" rotateimage="1"/>`
+const shapeTail = (width: number, height: number, pos: string) =>
+  `<hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${pos}<hp:outMargin left="0" right="0" top="0" bottom="0"/>`
+const shapeLine = (color: string, tailStyle = 'NORMAL', style = 'SOLID') =>
+  `<hp:lineShape color="${color}" width="57" style="${style}" endCap="FLAT" headStyle="NORMAL" tailStyle="${tailStyle}" headfill="1" tailfill="1" headSz="MEDIUM_MEDIUM" tailSz="MEDIUM_MEDIUM" outlineStyle="NORMAL" alpha="0"/>`
+const frontPos = (x: number, y: number) => floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', y, x)
+const shapeArc = (id: number, type: string, x: number, y: number, width: number, height: number, line: string, fill = '', pos = frontPos(x, y), wrap = 'IN_FRONT_OF_TEXT') =>
+  `<hp:arc id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="${wrap}" textFlow="BOTH_SIDES" lock="0" type="${type}">${shapeCommon(width, height)}${line}${fill}<hc:center x="0" y="${height}"/><hc:ax1 x="0" y="0"/><hc:ax2 x="${width}" y="${height}"/>${shapeTail(width, height, pos)}</hp:arc>`
+const gradientFill = (type: string, from: string, to: string) =>
+  `<hc:fillBrush><hc:gradation type="${type}" angle="90" centerX="50" centerY="50" step="255" colorNum="2" stepCenter="50" alpha="0"><hc:color value="${from}"/><hc:color value="${to}"/></hc:gradation></hc:fillBrush>`
+const shapeCurve = `<hp:curve id="9904" zOrder="9904" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0">${shapeCommon(8000, 4000)}${shapeLine('#7030A0', 'NORMAL', 'DASH')}<hp:seg type="CURVE" x1="0" y1="4000" x2="2000" y2="0"/><hp:seg type="CURVE" x1="2000" y1="0" x2="6000" y2="0"/><hp:seg type="CURVE" x1="6000" y1="0" x2="8000" y2="4000"/>${shapeTail(8000, 4000, frontPos(40000, 14000))}</hp:curve>`
+const shapeConnector = `<hp:connectLine id="9905" zOrder="9905" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" type="STRAIGHT_ONEWAY">${shapeCommon(10000, 4000)}${shapeLine('#C00000')}<hp:startPt x="0" y="0" subjectIDRef="0" subjectIdx="0"/><hp:endPt x="10000" y="4000" subjectIDRef="0" subjectIdx="0"/>${shapeTail(10000, 4000, frontPos(8000, 24000))}</hp:connectLine>`
+const groupChild = (offsetX: number, offsetY: number, width: number, height: number, angle = 0, flipHorizontal = false) =>
+  `<hp:offset x="${offsetX}" y="${offsetY}"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hp:flip horizontal="${flipHorizontal ? 1 : 0}" vertical="0"/><hp:rotationInfo angle="${angle}" centerX="${width / 2}" centerY="${height / 2}" rotateimage="1"/>`
+const shapeGroup = `<hp:container id="9906" zOrder="9906" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0">${shapeCommon(12000, 8000, { width: 6000, height: 4000 })}` +
+  `<hp:rect id="0" zOrder="0" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ratio="0">${groupChild(0, 0, 3000, 2000, 90)}${shapeLine('#1F4E79')}<hc:fillBrush><hc:winBrush faceColor="#4CAF50" hatchColor="#000000" alpha="0"/></hc:fillBrush><hc:pt0 x="0" y="0"/><hc:pt1 x="3000" y="0"/><hc:pt2 x="3000" y="2000"/><hc:pt3 x="0" y="2000"/></hp:rect>` +
+  `<hp:ellipse id="0" zOrder="1" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" intervalDirty="0" hasArcPr="0" arcType="NORMAL">${groupChild(3000, 2000, 3000, 2000)}${shapeLine('#1F4E79')}${gradientFill('RADIAL', '#FFFFFF', '#1F4E79')}<hc:center x="1500" y="1000"/><hc:ax1 x="3000" y="1000"/><hc:ax2 x="1500" y="0"/></hp:ellipse>` +
+  `<hp:container id="0" zOrder="2" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0">${groupChild(0, 2000, 3000, 2000, 0, true)}` +
+  `<hp:line id="0" zOrder="3" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" isReverseHV="0">${groupChild(0, 0, 3000, 2000)}${shapeLine('#C00000', 'ARROW')}<hc:startPt x="0" y="0"/><hc:endPt x="3000" y="2000"/></hp:line></hp:container>` +
+  `${shapeTail(12000, 8000, frontPos(22000, 24000))}</hp:container>`
+const clippedPicture = `<hp:pic id="9907" zOrder="9907" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" reverse="0">${shapeCommon(10000, 5000)}<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="10000" y="0"/><hc:pt2 x="10000" y="5000"/><hc:pt3 x="0" y="5000"/></hp:imgRect><hp:imgClip left="1000" right="3000" top="0" bottom="2000"/><hp:inMargin left="0" right="0" top="0" bottom="0"/><hp:imgDim dimwidth="4000" dimheight="4000"/><hc:img binaryItemIDRef="image1" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/><hp:effects/>${shapeTail(10000, 5000, frontPos(38000, 24000))}</hp:pic>`
+const uprightPicture = `<hp:pic id="9908" zOrder="9908" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="8000" height="4000"/><hp:curSz width="8000" height="4000"/><hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="30" centerX="4000" centerY="2000" rotateimage="0"/>${shapeLine('#C00000')}<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="8000" y="0"/><hc:pt2 x="8000" y="4000"/><hc:pt3 x="0" y="4000"/></hp:imgRect><hp:imgClip left="0" right="4000" top="0" bottom="4000"/><hp:imgDim dimwidth="4000" dimheight="4000"/><hc:img binaryItemIDRef="image1" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>${shapeTail(8000, 4000, frontPos(8000, 34000))}</hp:pic>`
+const inlineArc = shapeArc(9909, 'PIE', 0, 0, 3000, 2000, shapeLine('#1F4E79'), '<hc:fillBrush><hc:winBrush faceColor="#FFC000" hatchColor="#000000" alpha="0"/></hc:fillBrush>', objectPos(true), 'TOP_AND_BOTTOM')
+const overlapRect = (id: number, x: number, y: number) =>
+  `<hp:rect id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" ratio="0">${shapeCommon(12000, 3000)}${shapeLine('#1F4E79')}<hc:fillBrush><hc:winBrush faceColor="#FBEAEA" hatchColor="#000000" alpha="0"/></hc:fillBrush><hc:pt0 x="0" y="0"/><hc:pt1 x="12000" y="0"/><hc:pt2 x="12000" y="3000"/><hc:pt3 x="0" y="3000"/>${shapeTail(12000, 3000, floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', y, x))}</hp:rect>`
+const shapeParagraph = (runs: string, paraPrId = 0) =>
+  `<hp:p paraPrIDRef="${paraPrId}"><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+const shapeSection = `${SECTION_XML_HEAD}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${pageFlowSecPr}</hp:run><hp:run charPrIDRef="0"><hp:t>${SHAPE_FIXTURE_TEXTS.title}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${shapeParagraph(`${shapeArc(9901, 'NORMAL', 8000, 14000, 8000, 6000, shapeLine('#1F4E79', 'ARROW'))}${shapeArc(9902, 'PIE', 20000, 14000, 6000, 6000, shapeLine('#1F4E79'), gradientFill('LINEAR', '#FFFFFF', '#C00000'))}${shapeArc(9903, 'CHORD', 30000, 14000, 6000, 6000, shapeLine('#1F4E79'), '<hc:fillBrush><hc:winBrush faceColor="#FFFFFF" hatchColor="#1F4E79" hatchStyle="CROSS" alpha="0"/></hc:fillBrush>')}${shapeCurve}${shapeConnector}${shapeGroup}${clippedPicture}${uprightPicture}<hp:t>${SHAPE_FIXTURE_TEXTS.shapes}</hp:t>${inlineArc}`)}
+  ${SHAPE_LINE_SPACINGS.map((item) => shapeParagraph(`<hp:t>${SHAPE_FIXTURE_TEXTS.lineSpacing(item.label)}</hp:t>`, item.id)).join('\n  ')}
+  ${shapeParagraph(`${overlapRect(9910, SHAPE_FIXTURE_EXPECTED.overlap.first.x, SHAPE_FIXTURE_EXPECTED.overlap.first.y)}<hp:t>${SHAPE_FIXTURE_TEXTS.overlapA}</hp:t>`)}
+  ${shapeParagraph(`${overlapRect(9911, SHAPE_FIXTURE_EXPECTED.overlap.second.x, SHAPE_FIXTURE_EXPECTED.overlap.second.y - SHAPE_FIXTURE_EXPECTED.overlap.nudge)}<hp:t>${SHAPE_FIXTURE_TEXTS.overlapB}</hp:t>`)}
+</hs:sec>`
+
+export function createShapeHwpx(directory: string, fileName = 'han-flow-shapes.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(shapeHeader))
+  zip.addFile('Contents/section0.xml', Buffer.from(shapeSection))
+  zip.addFile('BinData/image1.png', quadrantPng)
+  zip.writeZip(path)
+  return path
+}

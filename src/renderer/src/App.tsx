@@ -1,6 +1,6 @@
-import { CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
+import { createContext, CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, viewerPageFrameAt, viewerSectionPage, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerObjectTransform, ViewerPageNumber, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { BoxSpacing, isObjectPlaceholder, ViewerImage, ViewerParaStyle, paragraphFootnotes, viewerColumnContentWidth, viewerPageFrameAt, viewerSectionPage, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerObjectTransform, ViewerPageNumber, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -49,7 +49,9 @@ import {
   positionedContent,
   regionPageBands,
   wrapTextSide,
-  blockObjectBands
+  blockObjectBands,
+  PlacedObjectRect,
+  resolveObjectY
 } from '../../core/layout/object_position'
 import { columnMeasurementGroups, ColumnMeasurementGroup, columnRects, columnSeparators, columnWidthKey } from '../../core/layout/column_layout'
 import { formatPageNumber, pageNumberAnchor, pageDecorationLayout, pageNumberPlacement, pageNumberPosition } from '../../core/layout/page_number'
@@ -81,6 +83,7 @@ import { countIncompleteObjectPlaceholders, OBJECT_PAGE_HEIGHT_RATIO, totalObjec
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
 import { ViewerToolbar } from './ViewerToolbar'
 import { EquationView } from './EquationView'
+import { CroppedPicture, drawableShape, pictureBorderCss, pictureFilterCss, ShapeView } from './ShapeView'
 import { APP_TITLE, documentFileName, documentTitle } from './document_title'
 import { HistoryDirection, resolveShortcut, rendererPlatform } from './keyboard_shortcuts'
 
@@ -101,6 +104,7 @@ function borderCss(border: ViewerCellStyle['left']): string {
 }
 
 export type { ViewerRenderStyles }
+export { ShapeView }
 
 function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: ViewerRenderStyles): CSSProperties {
   const style = document.charStyles[item.charStyleId]
@@ -135,6 +139,47 @@ export function paragraphStrutCss(paragraph: ViewerParagraph, document: ViewerRe
   const { fontFamily, fontSize } = textCss(smallest, document)
   return { fontFamily, fontSize }
 }
+
+/**
+ * 문단 줄 높이(CSS). 한/글 줄 간격 종류마다:
+ * - 백분율(`PERCENT`, 기본 160%): 글자 크기 × 비율(배수, 100% 미만은 100%).
+ * - 고정 값(`FIXED`): 모든 줄이 그 높이(px). 글자가 더 커도 줄 높이는 그대로다.
+ * - 여백만 지정(`BETWEEN_LINES`): 줄에서 가장 큰 글자 크기 + 여백. 글자 run마다 `calc(1em + 여백)`을 주어 줄 상자가 그 줄의 가장 큰 글자로
+ *   정해지게 한다(`spanLineHeight`).
+ * - 최소(`AT_LEAST`): 글자 크기와 그 값 가운데 큰 쪽(`max(1em, 값)`, run마다).
+ * `leading`은 줄 높이 - 글자 크기(줄 간격 몫, CSS 길이 식)다. 표 셀 첫·마지막 줄 반 줄 간격과 표만 든 문단 아래 줄 간격에 쓴다.
+ */
+export interface ParagraphLineHeight {
+  lineHeight: number | string
+  /** 빈 문단 한 줄 높이(CSS 길이). */
+  minHeight: string
+  leading?: string
+  spanLineHeight?: string
+  /** E2E용 줄 간격 종류·값(`data-line-spacing`). */
+  label: string
+}
+
+export function paragraphLineHeight(style: ViewerParaStyle | undefined): ParagraphLineHeight {
+  const value = style?.lineSpacing ?? 0
+  const type = style?.lineSpacingType ?? 'PERCENT'
+  if (type === 'PERCENT' || !(value >= 0)) {
+    const ratio = value ? Math.max(value / 100, 1) : 1.5
+    const leading = Math.round((ratio - 1) * 1000) / 1000
+    return { lineHeight: ratio, minHeight: `${ratio}em`, ...(leading > 0 ? { leading: `${leading}em` } : {}), label: `PERCENT ${value || 150}` }
+  }
+  const px = Math.round(hwpUnitToCssPx(value) * 1000) / 1000
+  const label = `${type} ${value}`
+  if (type === 'FIXED') return { lineHeight: `${px}px`, minHeight: `${px}px`, leading: `max(0px, calc(${px}px - 1em))`, label }
+  if (type === 'BETWEEN_LINES') {
+    const lineHeight = `calc(1em + ${px}px)`
+    return { lineHeight, minHeight: lineHeight, ...(px > 0 ? { leading: `${px}px` } : {}), spanLineHeight: lineHeight, label }
+  }
+  const lineHeight = `max(1em, ${px}px)`
+  return { lineHeight, minHeight: lineHeight, leading: `max(0px, calc(${px}px - 1em))`, spanLineHeight: lineHeight, label }
+}
+
+/** 여백만 지정·최소 줄 간격 문단 안 글자 run의 줄 높이(`ParagraphLineHeight.spanLineHeight`). 다른 문단은 undefined. */
+const ParagraphSpanLineHeight = createContext<string | undefined>(undefined)
 
 export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string {
   const fragment = cell.splitTop ? (cell.splitBottom ? 'tb' : 't') : (cell.splitBottom ? 'b' : 'full')
@@ -210,21 +255,18 @@ export function Content({
   contentIndex?: number
   editing?: ParagraphEditingProps
 }) {
+  const spanLineHeight = useContext(ParagraphSpanLineHeight)
   if (item.type === 'text') {
     // 화면 표시만 검증된 한컴 PUA 기호를 표준 글자로 바꾼다(편집 입력 surface와 원문은 그대로).
-    return <span style={textCss(item, document)} data-content-index={measurable ? contentIndex : undefined}>{hancomPuaDisplayText(item.text)}</span>
+    const css = textCss(item, document)
+    if (spanLineHeight) css.lineHeight = spanLineHeight
+    return <span style={css} data-content-index={measurable ? contentIndex : undefined}>{hancomPuaDisplayText(item.text)}</span>
   }
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
     // 쪽보다 높은 그림은 decoder가 같은 비율로 줄였다(`fitted`). E2E census가 줄여 그린 개체로 센다.
-    return <img
-      className="viewer-image"
-      src={resourceDataUrl(resource)}
-      data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
-      data-object-rotation={item.transform ? objectTransformLabel(item.transform) : undefined}
-      style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined, ...objectTransformCss(item.transform) }}
-    />
+    return <PictureView item={item} resource={resource} />
   }
   if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} editing={measurable ? undefined : editing} />
   if (item.type === 'note-list') return <NoteListView item={item} document={document} editing={measurable ? undefined : editing} />
@@ -243,6 +285,41 @@ function resourceDataUrl(resource: ViewerResource): string {
     resourceDataUrls.set(resource, url)
   }
   return url
+}
+
+/**
+ * 그림. 자르기(`crop`)가 있으면 상자 안 그림 자리에 보이는 부분만 늘여 그리고, 효과(밝기·대비·회색조·불투명도)는 CSS filter로,
+ * 테두리(`border`)는 상자 안쪽 선으로 그린다. 줄 안 그림은 여기서 회전·대칭한다. 원본 위치 그림은 감싼 상자(`PositionedObjectBody`)가
+ * 돌리지만, 그림 회전 안 함(`rotateImage: false`)이면 여기서 테두리 틀만 돌리고 그림은 대칭만 한다.
+ */
+export function PictureView({ item, resource, positioned = false }: { item: ViewerImage; resource: ViewerResource; positioned?: boolean }) {
+  const src = resourceDataUrl(resource)
+  const filter = pictureFilterCss(item.filter)
+  const border = pictureBorderCss(item.border)
+  const keepUpright = item.rotateImage === false && Boolean(item.transform?.rotation)
+  const ownTransform = !positioned || keepUpright
+  const frameTransform = ownTransform ? objectTransformCss(item.transform) : undefined
+  const pictureTransform = keepUpright ? objectTransformCss({ ...item.transform!, rotation: 0 }) : frameTransform
+  const size: CSSProperties = positioned
+    ? { width: '100%', height: '100%' }
+    : { width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }
+  const data = {
+    'data-object-fitted': item.fitted ? item.fitted.scale.toFixed(3) : undefined,
+    'data-object-rotation': !positioned && item.transform ? objectTransformLabel(item.transform) : undefined,
+    'data-rotate-image': keepUpright ? '0' : undefined
+  }
+  const className = `viewer-image${positioned ? ' viewer-image-positioned' : ''}`
+  if (!border && !item.crop) return <img className={className} src={src} {...data} style={{ ...size, ...pictureTransform, ...filter }} />
+  const fill: CSSProperties = { width: '100%', height: '100%' }
+  const picture = item.crop
+    ? <CroppedPicture src={src} crop={item.crop} className={className} style={{ ...fill, ...pictureTransform }} imageStyle={filter} />
+    : <img className={className} src={src} style={{ ...fill, ...pictureTransform, ...filter }} />
+  if (!border) return <CroppedPicture src={src} crop={item.crop!} className={className} style={{ ...size, ...pictureTransform }} imageStyle={filter} attributes={data} />
+  // 테두리 틀은 회전·대칭을 모두 따르고 그림은 회전 안 함이면 대칭만 따른다.
+  return <span className={`viewer-image-holder${positioned ? ' viewer-image-holder-positioned' : ''}`} {...data} style={size}>
+    {picture}
+    <span className="viewer-image-border" style={{ ...border, ...frameTransform }} />
+  </span>
 }
 
 /** 문단들의 글자만 이어 붙인다(줄 안 메모·필드 표시용). */
@@ -301,6 +378,12 @@ export function ObjectPlaceholderView({ item, document, positioned = false, edit
   if (item.kind === 'equation' && item.equation) return <EquationView item={item} positioned={positioned} common={common} />
   if (item.kind === 'ruby' && item.ruby) {
     return <ruby {...common} className={`viewer-ruby viewer-ruby-${item.ruby.position}`} title="덧말">{item.fallbackText}<rt>{item.ruby.text}</rt></ruby>
+  }
+  // 줄 안(글자처럼 취급)·자리 차지 도형은 선언 크기 상자에 SVG로 그린다.
+  if (!positioned && item.kind === 'shape' && item.size && (item.flow === 'inline' || item.flow === 'block') && drawableShape(item)) {
+    return <span className={`viewer-shape-inline viewer-object-${item.flow}`} contentEditable={false} style={{ width: hwpUnitToCssPx(item.size.width), height: hwpUnitToCssPx(item.size.height), ...objectTransformCss(item.transform) }}>
+      <ShapeView item={item} width={item.size.width} height={item.size.height} />
+    </span>
   }
   const reserve = item.size && (item.flow === 'inline' || item.flow === 'block')
   // 수식은 script가 선언 크기보다 길기 마련이라 폭을 최소값으로만 두어 한 줄로 읽히게 한다.
@@ -409,43 +492,6 @@ function positionedPointerEvents(item: PositionedContent, placement: ObjectPlace
   return placement === 'overlay' || placement === 'page' ? 'none' : undefined
 }
 
-const SHAPE_SVG_ELEMENTS = new Set(['hp:rect', 'hp:ellipse', 'hp:line', 'hp:polygon'])
-
-/** 사각형·타원·선·다각형을 원본 선·채우기로 그린다. 선 굵기는 화면에서 보이도록 0.5pt 이상으로 둔다. */
-export function ShapeView({ item }: { item: ViewerObjectPlaceholder & { position: NonNullable<ViewerObjectPlaceholder['position']> } }) {
-  const width = Math.max(item.position.width, 1)
-  const height = Math.max(item.position.height, 1)
-  const shape = item.shape ?? {}
-  const paint = {
-    fill: shape.fill ?? 'none',
-    stroke: shape.stroke?.color ?? 'none',
-    strokeWidth: shape.stroke ? Math.max(shape.stroke.width, 50) : 0
-  }
-  const points = shape.points?.map((point) => `${point.x},${point.y}`).join(' ')
-  // 굵은 선·높이 0인 가로선도 잘리지 않게 SVG 상자를 선 굵기 절반만큼 넓히고 그만큼 왼쪽 위로 옮긴다.
-  const pad = paint.strokeWidth / 2
-  const figure = item.element === 'hp:ellipse'
-    ? <ellipse cx={width / 2} cy={height / 2} rx={width / 2} ry={height / 2} {...paint} />
-    : item.element === 'hp:line'
-      ? <line x1={shape.points?.[0]?.x ?? 0} y1={shape.points?.[0]?.y ?? 0} x2={shape.points?.[1]?.x ?? width} y2={shape.points?.[1]?.y ?? 0} {...paint} fill="none" />
-      : item.element === 'hp:polygon' && points
-        ? <polygon points={points} {...paint} />
-        : <rect x={0} y={0} width={width} height={height} {...paint} />
-  return <svg
-    className="viewer-shape"
-    data-object-kind={item.kind}
-    data-object-element={item.element}
-    data-source-path={item.sourcePath}
-    role="img"
-    aria-label={item.label}
-    width={hwpUnitToCssPx(width + pad * 2)}
-    height={hwpUnitToCssPx(height + pad * 2)}
-    viewBox={`${-pad} ${-pad} ${width + pad * 2} ${height + pad * 2}`}
-    style={pad ? { marginLeft: -hwpUnitToCssPx(pad), marginTop: -hwpUnitToCssPx(pad) } : undefined}
-    overflow="visible"
-  >{figure}</svg>
-}
-
 /**
  * 원본 위치에 그리는 글상자. 원본 선·채우기·안쪽 여백·세로 맞춤으로 상자를 그리고 글은 읽기 전용 문단으로 안에 둔다. 글이 쪽 본문
  * 높이 한도(`OBJECT_PAGE_HEIGHT_RATIO`)를 넘으면 자리 표시처럼 같은 비율로 줄인다.
@@ -458,6 +504,8 @@ export function TextBoxView({ item, document, editing }: { item: ViewerObjectPla
   const margin = shape?.textMargin
   const align = shape?.textVerticalAlign
   const bodyEditing = objectTextEditing(item, editing)
+  // 사각형이 아닌 글상자(타원·다각형·호·묶음 등)는 상자 테두리 대신 도형을 글 뒤에 SVG로 그린다.
+  const drawnShape = item.element !== 'hp:rect' && drawableShape(item) && Boolean(item.position ?? item.size)
   return <div
     className={`viewer-text-box${item.fitted ? ' viewer-object-fitted' : ''}`}
     data-object-kind={item.kind}
@@ -468,13 +516,15 @@ export function TextBoxView({ item, document, editing }: { item: ViewerObjectPla
     role="group"
     aria-label={`${item.label}${item.fitted ? ' (쪽에 맞게 줄임)' : ''}`}
     style={{
-      border: shape?.stroke ? `${Math.max(hwpUnitToCssPx(shape.stroke.width), 0.75)}px solid ${shape.stroke.color}` : undefined,
-      background: shape?.fill,
+      border: shape?.stroke && !drawnShape ? `${Math.max(hwpUnitToCssPx(shape.stroke.width), 0.75)}px solid ${shape.stroke.color}` : undefined,
+      background: drawnShape ? undefined : shape?.fill,
+      position: drawnShape ? 'relative' : undefined,
       minHeight: item.position ? hwpUnitToCssPx(item.position.height) : undefined,
       padding: margin ? `${hwpUnitToCssPx(margin.top)}px ${hwpUnitToCssPx(margin.right)}px ${hwpUnitToCssPx(margin.bottom)}px ${hwpUnitToCssPx(margin.left)}px` : undefined,
       justifyContent: align === 'CENTER' ? 'center' : align === 'BOTTOM' ? 'flex-end' : 'flex-start'
     }}
   >
+    {drawnShape && <ShapeView item={item} style={{ position: 'absolute', left: 0, top: 0, pointerEvents: 'none' }} />}
     <ContainerBody item={item} document={document} bodyRef={bodyRef} editing={bodyEditing} />
   </div>
 }
@@ -513,7 +563,8 @@ function PositionedObjectBody({ item, document, measurable, editing }: {
   measurable: boolean
   editing?: ParagraphEditingProps
 }) {
-  const transform = item.type === 'table' ? undefined : item.transform
+  // 그림 회전 안 함 그림은 `PictureView`가 틀과 그림을 따로 돌린다.
+  const transform = item.type === 'table' || (item.type === 'image' && item.rotateImage === false) ? undefined : item.transform
   const body = <PositionedObjectContent item={item} document={document} measurable={measurable} editing={editing} />
   // 회전·대칭은 그리기만 바꾼다. 감싼 상자(자리·띠)는 회전 전 크기 그대로다.
   return transform && objectTransformCss(transform)
@@ -535,16 +586,11 @@ function PositionedObjectContent({ item, document, measurable, editing }: {
   if (item.type === 'image') {
     const resource = item.resourceId ? document.resources[item.resourceId] : undefined
     if (!resource) return <span className="viewer-warning">이미지 없음</span>
-    return <img
-      className="viewer-image viewer-image-positioned"
-      src={resourceDataUrl(resource)}
-      data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
-      style={{ width: '100%', height: '100%' }}
-    />
+    return <PictureView item={item} resource={resource} positioned />
   }
   if (item.type === 'table') return <TableView table={item} document={document} measurable={measurable} editing={editing} />
   if (item.kind === 'text-box' && item.paragraphs?.length) return <TextBoxView item={item} document={document} editing={editing} />
-  if (item.kind === 'shape' && SHAPE_SVG_ELEMENTS.has(item.element)) return <ShapeView item={item} />
+  if (item.kind === 'shape' && drawableShape(item)) return <ShapeView item={item} />
   return <ObjectPlaceholderView item={item} document={document} positioned editing={editing} />
 }
 
@@ -613,21 +659,23 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
 }
 
 /** 용지·쪽 기준 개체 하나를 쪽 위 절대 위치(용지 왼쪽 위 기준)에 그린다. */
-function PageObjectView({ item, frame, horizontal, document, editing, container }: {
+function PageObjectView({ item, frame, horizontal, y, document, editing, container }: {
   item: PositionedContent
   frame: ObjectFrame
   horizontal: HorizontalFrame
+  /** 용지 기준 세로 위치(겹침 허용 안 함 개체는 밀린 위치, `resolveObjectY`). */
+  y: number
   document: ViewerRenderStyles
   editing?: ParagraphEditingProps
   container?: ObjectContainer
 }) {
   const x = objectX(item.position, frame.page, horizontal, frame.pageNumber)
-  const y = objectY(item.position, frame.page)
   return <div
     className="viewer-float viewer-float-page"
     data-object-placement="page"
     data-object-wrap={item.position.wrap}
     data-object-container={container}
+    data-object-nudged={y !== objectY(item.position, frame.page) ? Math.round(y - objectY(item.position, frame.page)) : undefined}
     style={{
       ...positionedBoxSize(item),
       position: 'absolute',
@@ -653,6 +701,8 @@ export function PageObjectLayer({ blocks, regions, frameOf, document, editing, c
   container?: ObjectContainer
 }) {
   const objects: ReactNode[] = []
+  // 겹침 허용 안 함 개체는 같은 쪽(칸) 앞 개체와 겹치면 아래로 민다. 쪽 나눔(`pagination.ts`)과 같은 문서 순서로 센다.
+  const placed: PlacedObjectRect[] = []
   for (const block of blocks) {
     const items = block.content.filter((item): item is PositionedContent => positionedContent(item) && contentPlacement(item) === 'page')
     if (!items.length) continue
@@ -674,6 +724,7 @@ export function PageObjectLayer({ blocks, regions, frameOf, document, editing, c
       item={item}
       frame={frame}
       horizontal={horizontal}
+      y={resolveObjectY(item.position, frame.page, placed)}
       document={document}
       editing={editing}
       container={container}
@@ -717,7 +768,8 @@ function ContainerObjectLayer({ paragraphs, frame, container, document, editing 
   editing?: ParagraphEditingProps
 }) {
   if (!hasContainerPageObjects(paragraphs)) return null
-  const bands = paragraphs.flatMap((paragraph) => blockObjectBands(paragraph, frame.page, true))
+  const placed: PlacedObjectRect[] = []
+  const bands = paragraphs.flatMap((paragraph) => blockObjectBands(paragraph, frame.page, true, placed))
   return <>
     <PageBandSpacers bands={bands} bodyHeight={Infinity} />
     <PageObjectLayer blocks={paragraphs} frameOf={() => frame} document={document} editing={editing} container={container} />
@@ -959,9 +1011,16 @@ export interface EditingActiveStyle {
   fontFamily?: string
   align: ParagraphAlignment
   lineSpacing: number
+  lineSpacingLabel?: string
   indent: number
   marginBefore: number
   marginAfter: number
+}
+
+/** 백분율이 아닌 줄 간격의 리본 표시(pt, 소수 한 자리). */
+export function lineSpacingLabel(type: Exclude<ViewerParaStyle['lineSpacingType'], undefined>, value: number): string {
+  const points = Math.round(value / 100 * 10) / 10
+  return `${type === 'FIXED' ? '고정' : type === 'BETWEEN_LINES' ? '여백' : '최소'} ${points}pt`
 }
 
 export interface EditingActiveCellStyle {
@@ -1001,7 +1060,9 @@ export function editingRibbonState(
       fontId: charStyle?.fontId,
       fontFamily: charStyle?.fontFamily,
       align: (paraStyle?.align ?? 'LEFT') as ParagraphAlignment,
-      lineSpacing: paraStyle?.lineSpacing || 160,
+      // 고정 값·여백만 지정·최소 줄 간격은 값이 길이(HWPUNIT)라 백분율 −·＋의 출발점을 한/글 기본값 160%로 둔다.
+      lineSpacing: paraStyle?.lineSpacingType && paraStyle.lineSpacingType !== 'PERCENT' ? 160 : paraStyle?.lineSpacing || 160,
+      ...(paraStyle?.lineSpacingType && paraStyle.lineSpacingType !== 'PERCENT' ? { lineSpacingLabel: lineSpacingLabel(paraStyle.lineSpacingType, paraStyle.lineSpacing ?? 0) } : {}),
       indent: paraStyle?.indent ?? 0,
       marginBefore: paraStyle?.margin.top ?? 0,
       marginAfter: paraStyle?.margin.bottom ?? 0
@@ -1095,6 +1156,7 @@ function ParagraphBody({
   const objectHorizontal = objectFrame ? paragraphHorizontalFrame(objectFrame, indentBox.marginLeft, style?.margin.right ?? 0) : undefined
   const hasWrapObject = paragraphObjects.some((item) => contentPlacement(item) === 'wrap')
   const hasOverlayObject = paragraphObjects.some((item) => contentPlacement(item) === 'overlay')
+  const lineRule = paragraphLineHeight(style)
   const css: CSSProperties = {
     textAlign: style?.align === 'CENTER' ? 'center' : style?.align === 'RIGHT' ? 'right' : style?.align === 'JUSTIFY' ? 'justify' : 'left',
     marginLeft: hwpUnitToCssPx(indentBox.marginLeft),
@@ -1103,7 +1165,7 @@ function ParagraphBody({
     marginTop: hwpUnitToCssPx(style?.margin.top ?? 0),
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     textIndent: hwpUnitToCssPx(indentBox.textIndent),
-    lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
+    lineHeight: lineRule.lineHeight
   }
   // 줄 단위로 나눈 조각: 이어지는 조각은 첫 줄 들여쓰기·문단 위 간격이 없고, 뒤가 이어지는 조각은 문단 아래 간격이 없으며 양쪽
   // 맞춤이면 마지막 줄도 양쪽 맞춤이다(원본 문단에서는 가운데 줄이다).
@@ -1128,17 +1190,17 @@ function ParagraphBody({
     Object.assign(css, strut)
     // 글자만 든 문단(빈 문단 포함)은 글자가 없어도 그 글자 크기의 한 줄(줄 간격 포함)을 차지한다(한/글 빈 줄 높이).
     if (paragraph.content.every((item) => item.type === 'text')) {
-      css.minHeight = `${css.lineHeight}em`
-      const halfLeading = Math.round((Number(css.lineHeight) - 1) / 2 * 1000) / 1000
-      if (cellEdges && halfLeading > 0) {
-        if (cellEdges.first) css.marginTop = `calc(${css.marginTop}px - ${halfLeading}em)`
-        if (cellEdges.last) css.marginBottom = `calc(${css.marginBottom}px - ${halfLeading}em)`
+      css.minHeight = lineRule.minHeight
+      if (cellEdges && lineRule.leading) {
+        // 반 줄 간격. 백분율은 em 값 그대로, 그 밖은 CSS 식이다.
+        const half = typeof lineRule.lineHeight === 'number' ? `${Math.round((lineRule.lineHeight - 1) / 2 * 1000) / 1000}em` : `(${lineRule.leading}) / 2`
+        if (cellEdges.first) css.marginTop = `calc(${css.marginTop}px - ${half})`
+        if (cellEdges.last) css.marginBottom = `calc(${css.marginBottom}px - ${half})`
       }
     } else if (paragraph.content.every((item) => (item.type === 'text' && !item.text.trim()) || (item.type === 'table' && !positionedContent(item)))) {
       // 표만 든 문단: 한/글은 표 줄 아래에 그 문단 글자 크기의 줄 간격(글자 높이 × (줄 간격 - 100%))을 둔다. 표 옆 빈칸(`<hp:t> </hp:t>`)은
       // 한/글에서 표와 같은 줄이므로 표 아래 빈 줄을 만들지 않게 공백을 접는다.
-      const spacing = Math.round((Number(css.lineHeight) - 1) * 1000) / 1000
-      if (spacing > 0) css.paddingBottom = `${spacing}em`
+      if (lineRule.leading) css.paddingBottom = lineRule.leading
       css.whiteSpace = 'normal'
     }
   }
@@ -1206,6 +1268,7 @@ function ParagraphBody({
     data-line-split={paragraph.lineSplit ? `${paragraph.lineSplit.part}${paragraph.lineSplit.continues ? '-continues' : ''}` : undefined}
     data-line-split-source={paragraph.lineSplit?.source.id ?? (clipHeight !== undefined ? paragraph.id : undefined)}
     data-paragraph-structure-block={activeEditing && structureBlocked ? structureGate.split : undefined}
+    data-line-spacing={style?.lineSpacingType && style.lineSpacingType !== 'PERCENT' ? lineRule.label : undefined}
     style={tableTexts || hasOverlayObject || hasWrapObject
       ? { ...css, ...(tableTexts || hasOverlayObject ? { position: 'relative' as const } : {}), ...(hasWrapObject ? { display: 'flow-root' } : {}) }
       : css}
@@ -1235,7 +1298,7 @@ function ParagraphBody({
       key={`${paragraph.id}:runs${editableTexts.length}:${editableText.sourceAnchor!.textNodeId}`}
       text={editableText.text}
       sourceAnchor={editableText.sourceAnchor!}
-      style={textCss(editableText, document)}
+      style={lineRule.spanLineHeight ? { ...textCss(editableText, document), lineHeight: lineRule.spanLineHeight } : textCss(editableText, document)}
       pending={activeEditing.pending}
       restoreToken={activeEditing.restoreToken}
       ariaLabel={tableTexts ? TABLE_PARAGRAPH_SURFACE_LABEL : activeEditing.surfaceLabel}
@@ -1333,9 +1396,9 @@ function ParagraphBody({
       }
       return surface
     })
-    : paragraph.content.map((item, index) => outOfLine(item)
+    : <ParagraphSpanLineHeight.Provider value={lineRule.spanLineHeight}>{paragraph.content.map((item, index) => outOfLine(item)
       ? null
-      : <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} contentIndex={index} editing={editing} />)}</div>
+      : <Content key={`${paragraph.id}:${index}`} item={item} document={document} measurable={measurable} contentIndex={index} editing={editing} />)}</ParagraphSpanLineHeight.Provider>}</div>
 }
 
 /**

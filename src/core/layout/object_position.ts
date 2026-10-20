@@ -130,6 +130,47 @@ export function objectY(position: ViewerObjectPosition, page: PageFrame, paraTop
   return clampToPaper(y, position.height, page.height)
 }
 
+/** 겹침 허용 안 함 개체가 같은 쪽(칸)에 차지한 자리(용지 기준, 바깥 여백 제외). */
+export interface PlacedObjectRect { left: HwpUnit; top: HwpUnit; right: HwpUnit; bottom: HwpUnit }
+
+/**
+ * 겹침을 따지는 개체인지. 한/글은 서로 겹침 허용(`allowOverlap`)을 글과 어울리거나 자리를 차지하는 배치에서만 쓰므로(글 앞·뒤 개체는
+ * 늘 겹칠 수 있다) 용지·쪽 기준이고 글 앞·뒤가 아니며 겹침 허용이 꺼진 개체만 센다. 문단 기준 개체는 글 흐름에 따라 자리가 바뀌어
+ * 따지지 않는다.
+ */
+export function avoidsOverlap(position: ViewerObjectPosition): boolean {
+  return !position.allowOverlap && objectPlacement(position) === 'page' && !isOverlayWrap(position.wrap)
+}
+
+/** 겹침을 따질 때 쓰는 가로 위치: 쪽 나눔과 화면이 같은 값을 쓰도록 단·문단 대신 쪽 본문 폭을 기준으로 본다. */
+function overlapX(position: ViewerObjectPosition, page: PageFrame): HwpUnit {
+  const bodyLeft = page.margin.left
+  const bodyWidth = page.width - page.margin.left - page.margin.right
+  return objectX(position, page, { columnLeft: bodyLeft, columnWidth: bodyWidth, paraLeft: bodyLeft, paraWidth: bodyWidth })
+}
+
+/**
+ * 겹침 허용 안 함(`allowOverlap="0"`) 개체의 세로 위치(용지 기준). 같은 쪽에 먼저 놓인(문서 순서) 겹침 허용 안 함 개체와 상자가
+ * 겹치면 한/글처럼 뒤 개체를 앞 개체 아래 끝으로 민다(밀린 자리가 다른 개체와 겹치면 다시 민다). 밀어서 용지(본문과 함께 움직이면
+ * 쪽 본문) 아래를 넘으면 밀지 않고 원래 자리에 둔다. `placed`에 이 개체 자리를 더한다(겹침을 따지지 않는 개체는 그대로 둔다).
+ */
+export function resolveObjectY(position: ViewerObjectPosition, page: PageFrame, placed?: PlacedObjectRect[]): HwpUnit {
+  const y = objectY(position, page)
+  if (!placed || !avoidsOverlap(position)) return y
+  const left = overlapX(position, page)
+  const right = left + position.width
+  const limit = position.flowWithText ? page.height - page.margin.bottom : page.height
+  let top = y
+  for (let guard = 0; guard <= placed.length; guard += 1) {
+    const blocker = placed.find((rect) => rect.left < right && rect.right > left && rect.top < top + position.height && rect.bottom > top)
+    if (!blocker) break
+    top = blocker.bottom
+  }
+  if (top + position.height > limit + 0.5) top = y
+  placed.push({ left, top, right, bottom: top + position.height })
+  return top
+}
+
 /** 문단 기준 개체의 문단 위 끝에서 잰 세로 위치. 흐름 안에 두는 개체(`band`·`wrap`)는 문단 위로 올리지 않는다. */
 export function paragraphObjectOffset(position: ViewerObjectPosition, inFlow: boolean): HwpUnit {
   return inFlow ? Math.max(position.vertOffset, 0) : position.vertOffset
@@ -182,10 +223,10 @@ export const PAGE_WRAP_MIN_TEXT_RATIO = 0.2
  * `sideWrap`(다단이 없는 구역)이면 글 옆 배치(`SQUARE`·`TIGHT`·`THROUGH`)는 개체 옆으로 글을 흘리는 띠(`wrap`)가 된다. 가로 위치가
  * 문단 기준(`PARA`, 쪽 나눔은 문단 여백을 모른다)이거나 안쪽·바깥쪽 맞춤(쪽 번호가 필요하다)이면 띠 폭 전체를 비운다.
  */
-export function pageObjectBand(position: ViewerObjectPosition, page: PageFrame, sideWrap = false): PageBand | undefined {
+export function pageObjectBand(position: ViewerObjectPosition, page: PageFrame, sideWrap = false, placed?: PlacedObjectRect[]): PageBand | undefined {
   if (objectPlacement(position) !== 'page' || isOverlayWrap(position.wrap)) return undefined
   const bodyHeight = page.height - page.margin.top - page.margin.bottom
-  const y = objectY(position, page) - page.margin.top
+  const y = resolveObjectY(position, page, placed) - page.margin.top
   const top = Math.max(y - position.outMargin.top, 0)
   const bottom = Math.min(y + position.height + position.outMargin.bottom, bodyHeight)
   if (bottom <= top) return undefined
@@ -204,15 +245,23 @@ export function pageObjectBand(position: ViewerObjectPosition, page: PageFrame, 
   return { top, bottom, wrap: side === 'right' ? { float: 'left', width: right } : { float: 'right', width: bodyWidth - left } }
 }
 
-/** block(본문 최상위 문단) 안 용지·쪽 기준 개체의 세로 띠. `sideWrap`은 `pageObjectBand`와 같다. */
-export function blockObjectBands(block: ViewerParagraph, page: PageFrame, sideWrap = false): PageBand[] {
+/**
+ * block(본문 최상위 문단) 안 용지·쪽 기준 개체의 세로 띠. `sideWrap`은 `pageObjectBand`와 같다. `placed`(같은 쪽 앞 block들의 겹침
+ * 허용 안 함 개체 자리)를 주면 겹침 허용 안 함 개체를 밀어 띠를 잡고 그 자리를 `placed`에 더한다(`resolveObjectY`).
+ */
+export function blockObjectBands(block: ViewerParagraph, page: PageFrame, sideWrap = false, placed?: PlacedObjectRect[]): PageBand[] {
   const bands: PageBand[] = []
   for (const item of block.content) {
     if (!positionedContent(item)) continue
-    const band = pageObjectBand(item.position, page, sideWrap)
+    const band = pageObjectBand(item.position, page, sideWrap, placed)
     if (band) bands.push(band)
   }
   return bands
+}
+
+/** block에 겹침을 따지는 개체(`avoidsOverlap`)가 있는지. 없으면 쪽 나눔이 겹침 자리를 따로 셀 필요가 없다. */
+export function blockAvoidsOverlap(block: ViewerParagraph): boolean {
+  return block.content.some((item) => positionedContent(item) && avoidsOverlap(item.position))
 }
 
 /** 겹치거나 맞닿은 두 띠를 합친 글 옆 배치. 같은 쪽 float면 넓은 쪽, 그 밖(폭 전체 띠와 합치거나 양쪽 float)은 폭 전체다. */
