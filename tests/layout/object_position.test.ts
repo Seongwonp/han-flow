@@ -1,6 +1,9 @@
 import {
+  blockBandFlowKind,
   blockObjectBands,
   contentOutOfFlow,
+  flowBlockEnd,
+  PAGE_WRAP_FLOW_SAFETY,
   HorizontalFrame,
   mergePageBands,
   objectPlacement,
@@ -11,7 +14,9 @@ import {
   PageFrame,
   pageObjectBand,
   paragraphObjectOffset,
-  tableInFlow
+  tableInFlow,
+  WRAP_MIN_TEXT_WIDTH,
+  wrapTextSide
 } from '../../src/core/layout/object_position'
 import type { ViewerObjectPosition, ViewerParagraph, ViewerTable } from '../../src/core/document/viewer_document'
 
@@ -189,5 +194,85 @@ describe('쪽 본문 띠(자리 차지·글 옆 배치)', () => {
       ]
     }
     expect(blockObjectBands(block, page)).toEqual([{ top: 0, bottom: 4000 }])
+  })
+})
+
+describe('글 옆 배치(SQUARE)의 글 흐름 쪽과 쪽 기준 띠의 부분 채움', () => {
+  const bodyWidth = 59528 - 5000 - 4000
+
+  test('textFlow로 글이 흐를 쪽을 고르고 좁은 쪽에는 흘리지 않는다', () => {
+    expect(wrapTextSide('BOTH_SIDES', 30000, 5000)).toBe('left')
+    expect(wrapTextSide('BOTH_SIDES', 5000, 30000)).toBe('right')
+    expect(wrapTextSide('LARGEST_ONLY', 12000, 11000)).toBe('left')
+    expect(wrapTextSide('LEFT_ONLY', 5000, 30000)).toBe('left')
+    expect(wrapTextSide('RIGHT_ONLY', 30000, 5000)).toBe('right')
+    expect(wrapTextSide('LEFT_ONLY', WRAP_MIN_TEXT_WIDTH - 1, 30000)).toBe('none')
+    expect(wrapTextSide('BOTH_SIDES', 100, 200)).toBe('none')
+  })
+
+  test('한 단 구역의 쪽 기준 글 옆 배치는 개체 쪽만 비우는 띠를 만든다', () => {
+    // 쪽 본문 오른쪽 끝 그림 10000×4000(바깥 여백 왼쪽 500) → 오른쪽 float 10500, 글은 왼쪽으로 흐른다.
+    const square = position({ vertRelTo: 'PAGE', horzRelTo: 'PAGE', horzAlign: 'RIGHT', vertOffset: 20000, wrap: 'SQUARE', outMargin: { top: 0, right: 0, bottom: 0, left: 500 } })
+    expect(pageObjectBand(square, page, true)).toEqual({ top: 20000, bottom: 24000, wrap: { float: 'right', width: 10500 } })
+    // 다단 구역(sideWrap 없음)·자리 차지·문단 기준 가로·안쪽 맞춤·글 흐를 자리가 좁은 쪽만 지정이면 폭 전체 띠다.
+    expect(pageObjectBand(square, page)).toEqual({ top: 20000, bottom: 24000 })
+    expect(pageObjectBand({ ...square, wrap: 'TOP_AND_BOTTOM' }, page, true)?.wrap).toBeUndefined()
+    expect(pageObjectBand({ ...square, horzRelTo: 'PARA' }, page, true)?.wrap).toBeUndefined()
+    expect(pageObjectBand({ ...square, horzAlign: 'OUTSIDE' }, page, true)?.wrap).toBeUndefined()
+    expect(pageObjectBand({ ...square, textFlow: 'RIGHT_ONLY' }, page, true)?.wrap).toBeUndefined()
+    // 왼쪽 끝 개체는 오른쪽으로 흐른다(왼쪽 float, 폭은 개체 오른쪽 끝까지).
+    expect(pageObjectBand({ ...square, horzAlign: 'LEFT', horzOffset: 1000 }, page, true)?.wrap).toEqual({ float: 'left', width: 11000 })
+    // 가운데 개체의 양쪽 흐름은 넓은 쪽 하나로 근사하고, 남은 폭이 본문의 1/5보다 좁으면 폭 전체 띠다.
+    expect(pageObjectBand({ ...square, horzAlign: 'CENTER', width: 36000 }, page, true)?.wrap).toBeUndefined()
+  })
+
+  test('겹친 띠는 같은 쪽 float면 넓은 쪽, 다른 쪽이나 폭 전체 띠와 겹치면 폭 전체로 합친다', () => {
+    expect(mergePageBands([
+      { top: 0, bottom: 1000, wrap: { float: 'right', width: 5000 } },
+      { top: 500, bottom: 2000, wrap: { float: 'right', width: 8000 } }
+    ])).toEqual([{ top: 0, bottom: 2000, wrap: { float: 'right', width: 8000 } }])
+    expect(mergePageBands([
+      { top: 0, bottom: 1000, wrap: { float: 'right', width: 5000 } },
+      { top: 500, bottom: 2000, wrap: { float: 'left', width: 5000 } }
+    ])).toEqual([{ top: 0, bottom: 2000 }])
+    expect(mergePageBands([{ top: 0, bottom: 1000, wrap: { float: 'right', width: 5000 } }, { top: 1000, bottom: 2000 }])).toEqual([{ top: 0, bottom: 2000 }])
+  })
+
+  test('글 옆 배치 띠는 쪽 본문 위·아래 끝에 닿아도 float로 둔다', () => {
+    const wrap = { float: 'left' as const, width: 9000 }
+    expect(pageBandLayout([{ top: 0, bottom: 4000, wrap }, { top: 70000, bottom: bodyHeight, wrap }], bodyHeight)).toEqual({
+      top: 0,
+      middle: [{ top: 0, bottom: 4000, wrap }, { top: 70000, bottom: bodyHeight, wrap }]
+    })
+  })
+
+  test('글은 띠에 닿을 때만 띠를 지나고, 글 옆 띠 안에서는 남은 폭 비율만큼 느리게 흐른다', () => {
+    const full = [{ top: 5000, bottom: 8000 }]
+    // 띠 위에서 끝나는 글은 띠와 상관없다.
+    expect(flowBlockEnd(0, 4000, 'text', full, bodyWidth)).toBe(4000)
+    // 폭 전체 띠를 지나면 띠 높이만큼 아래로 간다.
+    expect(flowBlockEnd(4000, 2000, 'text', full, bodyWidth)).toBe(9000)
+    const side = [{ top: 5000, bottom: 8000, wrap: { float: 'right' as const, width: bodyWidth / 2 } }]
+    const rate = 0.5 * PAGE_WRAP_FLOW_SAFETY
+    // 띠 안에서 1000만큼의 글은 1000/rate 높이를 쓴다.
+    expect(flowBlockEnd(4000, 2000, 'text', side, bodyWidth)).toBeCloseTo(5000 + 1000 / rate)
+    // 띠를 다 채우고 남은 글은 띠 아래로 이어진다.
+    expect(flowBlockEnd(4000, 4000, 'text', side, bodyWidth)).toBeCloseTo(8000 + 3000 - 3000 * rate)
+    // 표·그림 block은 띠와 겹치지 않는 자리에 통째로 놓는다.
+    expect(flowBlockEnd(4000, 2000, 'box', side, bodyWidth)).toBe(10000)
+    expect(flowBlockEnd(1000, 2000, 'box', side, bodyWidth)).toBe(3000)
+    // 섞인 문단은 띠 옆에서 문단 전체가 좁아지는 경우와 아래로 밀리는 경우 가운데 늦은 쪽이다.
+    expect(flowBlockEnd(4000, 2000, 'mixed', side, bodyWidth)).toBeCloseTo(Math.max(10000, 4000 + 2000 / rate))
+    expect(flowBlockEnd(4000, 2000, 'mixed', full, bodyWidth)).toBe(10000)
+  })
+
+  test('block 종류: 글만 든 문단, 표·그림만 든 문단, 섞인 문단', () => {
+    const paragraph = (content: ViewerParagraph['content']): ViewerParagraph => ({ id: 'p', paraStyleId: '0', pageBreak: false, layoutHeight: 1000, content })
+    const text = { type: 'text' as const, text: '글', charStyleId: '0' }
+    const image = (pos?: ViewerObjectPosition) => ({ type: 'image' as const, resourceId: 'i', width: 1000, height: 1000, ...(pos ? { position: pos } : {}) })
+    expect(blockBandFlowKind(paragraph([text, image(position({ vertRelTo: 'PAGE' })), image(position({ wrap: 'BEHIND_TEXT' }))]))).toBe('text')
+    expect(blockBandFlowKind(paragraph([{ ...text, text: '' }, image()]))).toBe('box')
+    expect(blockBandFlowKind(paragraph([text, image()]))).toBe('mixed')
+    expect(blockBandFlowKind(paragraph([text, image(position({ wrap: 'SQUARE' }))]))).toBe('mixed')
   })
 })

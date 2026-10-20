@@ -173,6 +173,26 @@ function sameFloatingObjects(before = [], after = []) {
     ['x', 'y', 'width'].every((axis) => Math.abs(item[axis] - after[index][axis]) <= FLOATING_TOLERANCE_PX))
 }
 
+// 표 선언 높이·쪽 기준 글 옆 배치·칸 안 원본 위치 개체 E2E(createObjectLayoutHwpx): 쪽 위 표가 셀 선언 높이로 그려지고, 셀·글상자·
+// 머리말 안 개체가 그 칸 기준 원본 위치에 있으며, 쪽 기준 글 옆 배치 그림 옆으로 본문 글이 흘러야 한다(OBJECT_LAYOUT_EXPECTED, HWPUNIT).
+// 문단을 고쳐 저장한 뒤 다시 열어도 같은 자리여야 한다.
+function containerObject(objects, kind, container) {
+  return (objects ?? []).find((item) => item.kind === kind && item.container === container)
+}
+
+function objectLayoutFailures(result, expected, label = 'object-layout') {
+  const objects = result?.positionedObjects
+  const square = floatingObject(objects, 'image', 'page', 'SQUARE')
+  return [
+    ...floatingBoxFailures(`${label} 쪽 위 표(셀 선언 높이)`, floatingObject(objects, 'table', 'page', 'TOP_AND_BOTTOM'), expected.table),
+    ...floatingBoxFailures(`${label} 셀 안 그림`, containerObject(objects, 'image', 'cell'), expected.cellPicture),
+    ...floatingBoxFailures(`${label} 글상자 안 그림`, containerObject(objects, 'image', 'text-box'), expected.textBoxPicture),
+    ...floatingBoxFailures(`${label} 머리말 안 그림`, containerObject(objects, 'image', 'header'), expected.header),
+    ...floatingBoxFailures(`${label} 쪽 기준 글 옆 그림`, square, expected.squarePicture),
+    square?.textBeside ? undefined : `${label}: 쪽 기준 글 옆 배치 그림 옆으로 흐른 본문 글이 없음`
+  ].filter(Boolean)
+}
+
 // 다단 배치 E2E(createColumnLayoutHwpx): 글자가 기대한 쪽·다단 영역·단(흐름 순서)에 있고, 그 단의 왼쪽 끝·폭과 단 사이 구분선
 // 위치가 generator 기대값(COLUMN_LAYOUT_EXPECTED, HWPUNIT)과 오차 안에서 같아야 한다. 단 기준 그림은 오른쪽부터 놓인 첫 단 왼쪽
 // 끝에 있어야 한다. 둘째 단 문단을 고쳐 저장한 뒤 다시 열어도 단 배치가 같아야 한다.
@@ -306,6 +326,11 @@ try {
   const floatingEdits = []
   for (const edit of FLOATING_EDIT_CASES) floatingEdits.push({ id: edit.id, ...await verify(floatingPath, 500, false, edit.environment) })
 
+  const objectLayoutPath = generator.createObjectLayoutHwpx(directory, 'han-flow-object-layout.hwpx')
+  const objectLayoutView = await verify(objectLayoutPath, 500)
+  pdfResults.push({ fixtureId: 'object-layout', ...await verifyPdf(objectLayoutPath) })
+  const objectLayoutEdit = await verify(objectLayoutPath, 500, false, { HAN_FLOW_VERIFY_EDIT_TEXT: '개체배치', HAN_FLOW_VERIFY_EDIT_SAVE: '1' })
+
   const columnPath = generator.createColumnLayoutHwpx(directory, 'han-flow-column-layout.hwpx')
   const columnView = await verify(columnPath, 500)
   pdfResults.push({ fixtureId: 'column-layout', ...await verifyPdf(columnPath) })
@@ -375,6 +400,13 @@ try {
     floatingEdits.find(({ id }) => id === 'table-cell')?.editingProbe?.surface === 'table-cell'
       ? undefined
       : 'floating-objects 쪽 위 표 셀 편집 surface가 검증되지 않음',
+    objectLayoutView.passed ? undefined : `object-layout: ${objectLayoutView.failures.join(', ')}`,
+    ...objectLayoutFailures(objectLayoutView, generator.OBJECT_LAYOUT_EXPECTED),
+    objectLayoutEdit.passed ? undefined : `object-layout 편집: ${objectLayoutEdit.failures.join(', ')}`,
+    ...objectLayoutFailures(objectLayoutEdit, generator.OBJECT_LAYOUT_EXPECTED, 'object-layout 편집'),
+    sameFloatingObjects(objectLayoutEdit.positionedObjects, objectLayoutEdit.saveAs?.reopenedPositionedObjects)
+      ? undefined
+      : 'object-layout 편집: 저장본을 다시 열었을 때 개체 자리가 다름',
     columnView.passed ? undefined : `column-layout: ${columnView.failures.join(', ')}`,
     ...columnLayoutFailures(columnView, generator.COLUMN_LAYOUT_EXPECTED),
     columnEdit.passed ? undefined : `column-layout 편집: ${columnEdit.failures.join(', ')}`,

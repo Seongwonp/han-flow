@@ -138,6 +138,32 @@ describe('용지·쪽 기준 자리 차지 개체의 본문 띠(pagination)', ()
     expect(ids(documentOf(blocks), blocks)).toEqual([['p0', 'p1', 'p2', 'p3', 'p4'], ['p5', 'p6', 'p7', 'p8']])
   })
 
+  test('한 단 구역의 쪽 기준 글 옆 배치 그림은 개체 옆 남은 폭으로 글을 흘려 띠 높이를 다 비우지 않는다', () => {
+    // 쪽 본문 오른쪽 끝, 위에서 3000 아래 그림 4000×3000 → 띠 [3000, 6000], 글은 왼쪽 4000 폭(비율 0.5 × 안전 계수)으로 흐른다.
+    const square = position({ wrap: 'SQUARE', horzAlign: 'RIGHT', vertOffset: 3000 })
+    const blocks = Array.from({ length: 10 }, (_, index) => block(`p${index}`, index === 0 ? [image(square)] : []))
+    const pages = paginateViewerDocument(documentOf(blocks), heights(blocks))
+    expect(pages[0].bands).toEqual([{ top: 3000, bottom: 6000, wrap: { float: 'right', width: 4000 } }])
+    expect(pages[0].blocks.map((paragraph) => paragraph.id)).toEqual(['p0', 'p1', 'p2', 'p3', 'p4', 'p5'])
+    // 같은 그림을 자리 차지로 두면 띠 높이 3000을 다 비운다.
+    const topAndBottom = Array.from({ length: 10 }, (_, index) => block(`p${index}`, index === 0 ? [image({ ...square, wrap: 'TOP_AND_BOTTOM' })] : []))
+    expect(paginateViewerDocument(documentOf(topAndBottom), heights(topAndBottom))[0].blocks).toHaveLength(5)
+    // 다단 구역은 글 옆 배치도 띠 폭 전체를 비운다.
+    const columns = paginateViewerDocument(documentOf(blocks, true), heights(blocks))
+    expect(columns[0].bands).toEqual([{ top: 3000, bottom: 6000 }])
+  })
+
+  test('한 단 구역에서 띠 옆에 들어가지 않는 표 문단은 띠 아래로 간다', () => {
+    const square = position({ wrap: 'SQUARE', horzAlign: 'RIGHT', vertOffset: 3000 })
+    const row = (index: number): ViewerTableRow => ({ cells: [{ row: index, column: 0, rowSpan: 1, columnSpan: 1, width: 8000, height: 1000, margin: { top: 0, right: 0, bottom: 0, left: 0 }, header: false, paragraphs: [] }] })
+    const table: ViewerTable = { type: 'table', id: 't', rowCount: 2, columnCount: 1, width: 8000, height: 2000, pageBreak: 'NONE', repeatHeader: false, rows: [row(0), row(1)] }
+    const tableBlock: ViewerParagraph = { id: 'tb', paraStyleId: '0', pageBreak: false, layoutHeight: 2000, content: [table] }
+    const blocks = [block('p0', [image(square)]), block('p1'), tableBlock, block('p2'), block('p3'), block('p4')]
+    const pages = paginateViewerDocument(documentOf(blocks), { ...heights(blocks), blockHeights: { ...heights(blocks).blockHeights, tb: 2000 } })
+    // p0·p1 [0, 2000], 표는 [2000, 4000]이 띠와 겹쳐 띠 아래 [6000, 8000]로 간다. 남은 글은 다음 쪽.
+    expect(pages.map((item) => item.blocks.map((paragraph) => paragraph.id))).toEqual([['p0', 'p1', 'tb'], ['p2', 'p3', 'p4']])
+  })
+
   test('증분 pagination은 쪽 크기·여백이 같으면 쪽을 다시 쓰고 바뀌면 다시 나눈다', () => {
     const blocks = [block('p0', [image(position())]), ...Array.from({ length: 8 }, (_, index) => block(`p${index + 1}`))]
     const document = documentOf(blocks)

@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -33,6 +33,7 @@ import { LayoutMeasurements, pageColumnRegions, paginateViewerSectionsIncrementa
 import { footnoteLineLength, footnoteLineThickness, sectionFootnoteSettings, ViewerNoteMetrics, ViewerPageFootnote } from '../../core/layout/footnote_layout'
 import { measureNoteElement } from './footnote_measurement'
 import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
+import { cellMinimumHeight } from '../../core/layout/cell_fragment'
 import {
   contentPlacement,
   HorizontalFrame,
@@ -45,7 +46,9 @@ import {
   paragraphObjectOffset,
   PositionedContent,
   positionedContent,
-  regionPageBands
+  regionPageBands,
+  wrapTextSide,
+  blockObjectBands
 } from '../../core/layout/object_position'
 import { columnMeasurementGroups, ColumnMeasurementGroup, columnRects, columnSeparators, columnWidthKey } from '../../core/layout/column_layout'
 import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
@@ -296,15 +299,14 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
     <span className="viewer-object-label">{item.fitted ? `${item.label} (축소)` : item.label}{item.flow === 'marker' && (item.fallbackText || markerText) ? ':' : ''}</span>
     {item.fallbackText && <span className={`viewer-object-fallback${item.kind === 'equation' ? ' viewer-object-script' : ''}`}>{item.fallbackText}</span>}
     {markerText && <span className="viewer-object-fallback">{markerText}</span>}
-    {hasBody && <span className="viewer-object-body" ref={bodyRef}>
-      {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
-    </span>}
+    {hasBody && <ContainerBody item={item} document={document} bodyRef={bodyRef} />}
   </span>
 }
 
 /**
- * 원본 위치로 그리는 개체(`hp:pos treatAsChar="0"`)가 놓인 쪽과 단(용지 기준 HWPUNIT). 본문 최상위 문단에만 넘기고, 표 셀·글상자·
- * 머리말·꼬리말·각주 안 문단은 개체를 줄 흐름 안에 그대로 둔다. 측정 DOM은 첫 단·1쪽으로 잰다(문단 기준 개체만 높이에 든다).
+ * 원본 위치로 그리는 개체(`hp:pos treatAsChar="0"`)가 놓인 쪽과 단(용지 기준 HWPUNIT). 본문 최상위 문단은 놓인 쪽·단, 머리말·꼬리말
+ * 문단은 쪽 본문 폭, 표 셀·글상자 문단은 칸 기준 가상 용지(`containerObjectFrame`)를 받는다. 각주 안 문단은 받지 않아 개체를 줄 흐름
+ * 안에 그대로 둔다. 측정 DOM은 첫 단·1쪽으로 잰다(문단 기준 개체와 칸 안 개체만 높이에 든다).
  */
 export interface ObjectFrame {
   page: PageFrame
@@ -409,10 +411,34 @@ export function TextBoxView({ item, document }: { item: ViewerObjectPlaceholder;
       justifyContent: align === 'CENTER' ? 'center' : align === 'BOTTOM' ? 'flex-end' : 'flex-start'
     }}
   >
-    <span className="viewer-object-body" ref={bodyRef}>
-      {item.paragraphs!.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} />)}
-    </span>
+    <ContainerBody item={item} document={document} bodyRef={bodyRef} />
   </div>
+}
+
+/**
+ * 글상자 글(되살린 읽기 전용 문단). 안쪽 여백 안 글 영역을 칸으로 보고 그 안 글자처럼 취급하지 않는 개체를 칸 기준 원본 위치에
+ * 그린다(`containerObjectFrame`). 크기를 모르는 상자는 개체를 줄 흐름 안에 둔다.
+ */
+function ContainerBody({ item, document, bodyRef }: {
+  item: ViewerObjectPlaceholder
+  document: ViewerRenderStyles
+  bodyRef: RefObject<HTMLSpanElement>
+}) {
+  const size = item.position ?? item.size
+  const margin = item.shape?.textMargin
+  const frame = size
+    ? containerObjectFrame(
+        Math.max(size.width - (margin?.left ?? 0) - (margin?.right ?? 0), 0),
+        Math.max(size.height - (margin?.top ?? 0) - (margin?.bottom ?? 0), 0)
+      )
+    : undefined
+  const paragraphs = item.paragraphs!
+  const layered = Boolean(frame) && hasContainerPageObjects(paragraphs)
+  // 칸 기준 개체가 있으면 글 영역 전체를 기준 상자로 쓰도록 본문을 글 영역 높이로 늘린다(이때 글은 위에 맞춘다).
+  return <span className="viewer-object-body" ref={bodyRef} style={layered ? { position: 'relative', minHeight: hwpUnitToCssPx(frame!.page.height) } : undefined}>
+    {frame && <ContainerObjectLayer paragraphs={paragraphs} frame={frame} container="text-box" document={document} />}
+    {paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} objectFrame={frame} />)}
+  </span>
 }
 
 /** 원본 위치 개체의 내용(그림·표·글상자·도형·자리 표시). 크기는 감싼 상자(`positionedBoxSize`)가 정한다. */
@@ -442,7 +468,7 @@ function PositionedObjectBody({ item, document, measurable, editing }: {
  * 문단 기준 개체(`band`·`wrap`·`overlay`)를 그 문단 안에 그린다. 세로는 문단 위 끝에서 `vertOffset`, 가로는 원본 기준·맞춤으로
  * 정한 용지 위치를 문단 왼쪽 끝 기준으로 바꾼다.
  * - `band`: 문단 흐름 안 블록(개체 높이와 아래 바깥 여백만큼 뒤 글을 민다).
- * - `wrap`: 문단 안 float. 문단 글이 줄 단위로 개체 옆을 흐른다(개체가 단 왼쪽 반에 있으면 왼쪽, 아니면 오른쪽에 띄운다).
+ * - `wrap`: 문단 안 float. 문단 글이 줄 단위로 개체 옆을 흐른다(흐를 쪽은 `wrapTextSide`, float는 그 반대쪽).
  * - `overlay`: 문단 기준 절대 위치(글 흐름에 영향 없음).
  */
 function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, document, measurable, editing }: {
@@ -470,10 +496,11 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
       paddingBottom: hwpUnitToCssPx(position.outMargin.bottom)
     }
   } else if (placement === 'wrap') {
-    const center = x + position.width / 2
-    const floatLeft = position.textFlow === 'RIGHT_ONLY' ||
-      (position.textFlow !== 'LEFT_ONLY' && center <= horizontal.columnLeft + horizontal.columnWidth / 2)
     const paraRight = horizontal.paraLeft + horizontal.paraWidth
+    const rightGap = paraRight - x - position.width
+    const side = wrapTextSide(position.textFlow, x - position.outMargin.left - horizontal.paraLeft, rightGap - position.outMargin.right)
+    // 글이 오른쪽(또는 어느 쪽에도 못 흐름)이면 왼쪽 float. 못 흐르면 float가 문단 폭을 다 차지해 글이 개체 아래로 간다.
+    const floatLeft = side !== 'left'
     style = {
       ...box,
       boxSizing: 'content-box',
@@ -481,7 +508,7 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
       marginTop: hwpUnitToCssPx(paragraphObjectOffset(position, true)),
       marginBottom: hwpUnitToCssPx(position.outMargin.bottom),
       marginLeft: hwpUnitToCssPx(floatLeft ? relativeX - paddingLeft : position.outMargin.left),
-      marginRight: hwpUnitToCssPx(floatLeft ? position.outMargin.right : paraRight - x - position.width)
+      marginRight: hwpUnitToCssPx(floatLeft ? side === 'none' ? Math.max(rightGap, position.outMargin.right) : position.outMargin.right : rightGap)
     }
   } else {
     style = {
@@ -502,12 +529,13 @@ function ParagraphObjectView({ item, placement, frame, horizontal, paddingLeft, 
 }
 
 /** 용지·쪽 기준 개체 하나를 쪽 위 절대 위치(용지 왼쪽 위 기준)에 그린다. */
-function PageObjectView({ item, frame, horizontal, document, editing }: {
+function PageObjectView({ item, frame, horizontal, document, editing, container }: {
   item: PositionedContent
   frame: ObjectFrame
   horizontal: HorizontalFrame
   document: ViewerRenderStyles
   editing?: ParagraphEditingProps
+  container?: ObjectContainer
 }) {
   const x = objectX(item.position, frame.page, horizontal, frame.pageNumber)
   const y = objectY(item.position, frame.page)
@@ -515,6 +543,7 @@ function PageObjectView({ item, frame, horizontal, document, editing }: {
     className="viewer-float viewer-float-page"
     data-object-placement="page"
     data-object-wrap={item.position.wrap}
+    data-object-container={container}
     style={{
       ...positionedBoxSize(item),
       position: 'absolute',
@@ -530,12 +559,14 @@ function PageObjectView({ item, frame, horizontal, document, editing }: {
  * 쪽에 놓인 block(본문 최상위 문단)의 용지·쪽 기준 개체를 쪽 위 절대 위치에 모아 그린다. 단이 여럿이면 block이 놓인 다단 영역·단을
  * 쓴다(단 기준 가로 위치).
  */
-export function PageObjectLayer({ blocks, regions, frameOf, document, editing }: {
+export function PageObjectLayer({ blocks, regions, frameOf, document, editing, container }: {
   blocks: readonly ViewerParagraph[]
   regions?: readonly Pick<ViewerColumnRegion, 'columns'>[]
   frameOf: (regionIndex: number, columnIndex: number) => ObjectFrame
   document: ViewerRenderStyles
   editing?: ParagraphEditingProps
+  /** 머리말·꼬리말·표 셀·글상자 문단의 개체면 그 칸 종류(`data-object-container`). 본문 최상위 문단이면 없다. */
+  container?: ObjectContainer
 }) {
   const objects: ReactNode[] = []
   for (const block of blocks) {
@@ -561,9 +592,52 @@ export function PageObjectLayer({ blocks, regions, frameOf, document, editing }:
       horizontal={horizontal}
       document={document}
       editing={editing}
+      container={container}
     />))
   }
   return <>{objects}</>
+}
+
+/** 원본 위치 개체를 품은 칸. 본문 최상위 문단 밖에서 원본 위치로 그리는 개체에 `data-object-container`로 붙인다. */
+export type ObjectContainer = 'cell' | 'text-box' | 'header' | 'footer'
+
+/**
+ * 표 셀·글상자 안 개체의 기준 영역. 칸(표 셀은 안쪽 여백을 포함한 칸, 글상자는 안쪽 여백 안 글 영역)을 용지로, 그 안쪽 여백 안을
+ * 쪽 본문·단으로 본다. 그래서 칸 안 개체의 용지·쪽 기준 위치는 칸 왼쪽 위에서, 문단 기준 위치는 칸 안 문단에서 잰다. 칸 안에는
+ * 쪽 번호가 없으므로 안쪽·바깥쪽 맞춤은 홀수 쪽으로 본다.
+ */
+export function containerObjectFrame(width: number, height: number, margin: BoxSpacing = { top: 0, right: 0, bottom: 0, left: 0 }): ObjectFrame {
+  return {
+    page: { width, height, margin },
+    columnLeft: margin.left,
+    columnWidth: Math.max(width - margin.left - margin.right, 0),
+    pageNumber: 1
+  }
+}
+
+/** 칸 안 문단에 칸 기준(용지·쪽 기준, `contentPlacement` = `page`)으로 그릴 개체가 있는지. */
+function hasContainerPageObjects(paragraphs: readonly ViewerParagraph[]): boolean {
+  return paragraphs.some((paragraph) => paragraph.content.some((item) => contentPlacement(item) === 'page'))
+}
+
+/**
+ * 표 셀·글상자 안 문단의 용지·쪽 기준 개체를 칸 기준 원본 위치에 그린다. 칸 요소(`position: relative`, 안쪽 여백 상자가 기준)의
+ * 맨 앞에 두어, 글 앞·뒤가 아닌 개체는 쪽 본문 띠처럼 칸 글 흐름에서 세로 띠(글 옆 배치는 개체 옆 남은 폭)를 비운다. 칸은 글이
+ * 늘면 함께 늘어나므로 칸 아래 끝에 닿는 띠도 float로 비운다.
+ */
+function ContainerObjectLayer({ paragraphs, frame, container, document, editing }: {
+  paragraphs: readonly ViewerParagraph[]
+  frame: ObjectFrame
+  container: ObjectContainer
+  document: ViewerRenderStyles
+  editing?: ParagraphEditingProps
+}) {
+  if (!hasContainerPageObjects(paragraphs)) return null
+  const bands = paragraphs.flatMap((paragraph) => blockObjectBands(paragraph, frame.page, true))
+  return <>
+    <PageBandSpacers bands={bands} bodyHeight={Infinity} />
+    <PageObjectLayer blocks={paragraphs} frameOf={() => frame} document={document} editing={editing} container={container} />
+  </>
 }
 
 /**
@@ -574,14 +648,23 @@ export function PageBandSpacers({ bands, bodyHeight }: { bands?: readonly PageBa
   if (!bands?.length) return null
   const layout = pageBandLayout(bands, bodyHeight)
   let previous = layout.top
+  // 글 옆 배치 띠(`wrap`)는 개체 쪽 끝에서 개체까지만 비우는 좁은 float라 글이 남은 폭으로 흐른다. 오른쪽 float가 앞 띠 옆에
+  // 올라붙지 않도록 그때는 모든 float가 양쪽을 비운다(clear both).
+  const clear = layout.middle.some((band) => band.wrap) ? 'both' : 'left'
   return <>
     {layout.top > 0 && <div className="viewer-float-band-spacer" aria-hidden="true" style={{ height: hwpUnitToCssPx(layout.top) }} />}
     {layout.middle.map((band, index) => {
       const gap = Math.max(band.top - previous, 0)
       previous = band.bottom
       return [
-        <div key={`gap${index}`} className="viewer-float-band-spacer" aria-hidden="true" style={{ float: 'left', clear: 'left', width: 0, height: hwpUnitToCssPx(gap) }} />,
-        <div key={`band${index}`} className="viewer-float-band-spacer" aria-hidden="true" style={{ float: 'left', clear: 'left', width: '100%', height: hwpUnitToCssPx(band.bottom - band.top) }} />
+        <div key={`gap${index}`} className="viewer-float-band-spacer" aria-hidden="true" style={{ float: 'left', clear, width: 0, height: hwpUnitToCssPx(gap) }} />,
+        <div
+          key={`band${index}`}
+          className="viewer-float-band-spacer"
+          aria-hidden="true"
+          data-band-wrap={band.wrap?.float}
+          style={{ float: band.wrap?.float ?? 'left', clear, width: band.wrap ? hwpUnitToCssPx(band.wrap.width) : '100%', height: hwpUnitToCssPx(band.bottom - band.top) }}
+        />
       ]
     })}
   </>
@@ -864,8 +947,9 @@ export function ParagraphView({
   /** 문단이 놓이는 칸(표 셀)의 안쪽 폭(HWPUNIT). 내어쓰기 폭을 이 안으로 줄인다. */
   availableWidth?: number
   /**
-   * 본문 최상위 문단이 놓인 쪽·단. 있으면 글자처럼 취급하지 않는 개체를 원본 위치로 그린다(문단 기준 개체는 문단 앞에 모아
-   * 그리고, 용지·쪽 기준 개체는 쪽 layer `PageObjectLayer`가 그리므로 여기서는 뺀다). 없으면 개체를 줄 흐름 안에 둔다.
+   * 문단이 놓인 쪽·단(표 셀·글상자면 칸 기준 가상 용지). 있으면 글자처럼 취급하지 않는 개체를 원본 위치로 그린다(문단 기준 개체는
+   * 문단 앞에 모아 그리고, 용지·쪽 기준 개체는 쪽 layer `PageObjectLayer`·칸 layer `ContainerObjectLayer`가 그리므로 여기서는 뺀다).
+   * 없으면(각주) 개체를 줄 흐름 안에 둔다.
    */
   objectFrame?: ObjectFrame
 }) {
@@ -1215,7 +1299,7 @@ export function measureDocumentLayout(
  * 같은 source anchor의 입력 칸이 쪽마다 하나씩 있으므로 selection 복원(`desiredSelection`)은 마지막으로 focus를 받은 쪽(`active`)의
  * 머리말·꼬리말에만 넘겨 여러 쪽의 입력 칸이 focus를 다투지 않게 한다.
  */
-function HeaderFooterView({ control, kind, document, offset, editing, active = false, onActivate }: {
+export function HeaderFooterView({ control, kind, document, offset, editing, active = false, onActivate, objectFrame }: {
   control?: ViewerHeaderFooter
   kind: 'header' | 'footer'
   document: ViewerRenderStyles
@@ -1223,6 +1307,11 @@ function HeaderFooterView({ control, kind, document, offset, editing, active = f
   editing?: ParagraphEditingProps
   active?: boolean
   onActivate?: () => void
+  /**
+   * 머리말·꼬리말이 놓인 쪽(단은 쪽 본문 폭 하나). 있으면 글자처럼 취급하지 않는 개체를 원본 위치로 그린다. 문단 기준 개체는 머리말
+   * 문단 안에, 용지·쪽 기준 개체는 쪽 위 절대 위치(`PageObjectLayer`)에 둔다. 머리말 개체는 본문 자리를 비우지 않는다.
+   */
+  objectFrame?: ObjectFrame
 }) {
   if (!control) return null
   const controlEditing = sublistParagraphEditing(
@@ -1231,14 +1320,14 @@ function HeaderFooterView({ control, kind, document, offset, editing, active = f
     kind === 'header' ? 'HWPX 머리말 편집' : 'HWPX 꼬리말 편집',
     active ? editing?.desiredSelection : undefined
   )
-  return <div
+  return <><div
     className={`viewer-${kind}`}
     data-header-footer-id={control.id}
     onFocusCapture={controlEditing ? onActivate : undefined}
     style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}
   >
-    {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={controlEditing} />)}
-  </div>
+    {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={controlEditing} objectFrame={objectFrame} />)}
+  </div>{objectFrame && <PageObjectLayer blocks={control.paragraphs} frameOf={() => objectFrame} document={document} container={kind} />}</>
 }
 
 export function TableView({
@@ -1263,9 +1352,14 @@ export function TableView({
   const fallback = (table.width ?? 0) / Math.max(table.columnCount, 1)
   const resolvedWidths = columnWidths.map((width) => width || fallback)
   const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
+  const pageBodyHeight = document.page ? document.page.height - document.page.margin.top - document.page.margin.bottom : undefined
   return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     const fragmented = cell.splitTop || cell.splitBottom
+    const minimumHeight = cellMinimumHeight(cell, pageBodyHeight)
+    // 셀 안 글자처럼 취급하지 않는 개체는 셀(안쪽 여백 포함)을 용지로 보고 원본 위치에 그린다(`containerObjectFrame`).
+    const cellFrame = containerObjectFrame(cell.width, cell.height, cell.margin)
+    const cellObjects = hasContainerPageObjects(cell.paragraphs)
     const cellRangeScope = tableCellRangeScope(table.id, cell)
     const cellSelection = editing && !measurable
       ? selectableMergedTableCell(table, cell)
@@ -1298,7 +1392,8 @@ export function TableView({
         selectCell()
       } : undefined}
       style={{
-      minHeight: fragmented ? undefined : hwpUnitToCssPx(cell.height), verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
+      // 표 칸의 height는 행 최소 높이로 쓰인다(min-height는 표 칸에 듣지 않는다). 선언 높이는 안쪽 여백·테두리를 포함한다.
+      height: minimumHeight !== undefined ? hwpUnitToCssPx(minimumHeight) : undefined, boxSizing: minimumHeight !== undefined ? 'border-box' : undefined, verticalAlign: fragmented ? 'top' : cell.verticalAlign === 'TOP' ? 'top' : cell.verticalAlign === 'BOTTOM' ? 'bottom' : 'middle',
       padding: fragmented ? undefined : `${hwpUnitToCssPx(cell.margin.top)}px ${hwpUnitToCssPx(cell.margin.right)}px ${hwpUnitToCssPx(cell.margin.bottom)}px ${hwpUnitToCssPx(cell.margin.left)}px`,
       paddingTop: fragmented ? hwpUnitToCssPx(cell.splitTop ? 0 : cell.margin.top) : undefined,
       paddingRight: fragmented ? hwpUnitToCssPx(cell.margin.right) : undefined,
@@ -1307,12 +1402,14 @@ export function TableView({
       background: style?.backgroundColor === '#000000' ? '#000' : style?.backgroundColor,
       borderLeft: style ? borderCss(style.left) : undefined, borderRight: style ? borderCss(style.right) : undefined,
       borderTop: cell.splitTop ? 'none' : style ? borderCss(style.top) : undefined,
-      borderBottom: cell.splitBottom ? 'none' : style ? borderCss(style.bottom) : undefined
-    }}>{cell.paragraphs.map((paragraph, paragraphIndex) => <ParagraphView
+      borderBottom: cell.splitBottom ? 'none' : style ? borderCss(style.bottom) : undefined,
+      position: cellObjects ? 'relative' : undefined
+    }}>{cellObjects && <ContainerObjectLayer paragraphs={cell.paragraphs} frame={cellFrame} container="cell" document={document} editing={editing} />}{cell.paragraphs.map((paragraph, paragraphIndex) => <ParagraphView
       key={paragraph.id}
       paragraph={paragraph}
       document={document}
       measurable={measurable}
+      objectFrame={cellFrame}
       availableWidth={Math.max(0, cell.width - cell.margin.left - cell.margin.right)}
       editing={
         cellMode === 'structure' && editing
@@ -2970,6 +3067,8 @@ export default function App() {
             const rect = regionRects[regionIndex]?.[columnIndex] ?? { left: 0, width: bodyWidth }
             return { page: pageFrame, columnLeft: pageFrame.margin.left + rect.left, columnWidth: rect.width, pageNumber: index + 1 }
           }
+          // 머리말·꼬리말은 단과 관계없이 쪽 본문 폭에 놓인다.
+          const decorationFrame: ObjectFrame = { page: pageFrame, columnLeft: pageFrame.margin.left, columnWidth: bodyWidth, pageNumber: index + 1 }
           const renderParagraphs = (paragraphs: typeof page.blocks, regionIndex = 0, columnIndex = 0) => {
             const objectFrame = objectFrameOf(regionIndex, columnIndex)
             return paragraphs.map((paragraph) => <ParagraphView
@@ -3028,7 +3127,7 @@ export default function App() {
                 right: hwpUnitToCssPx(effectiveDocument.page.margin.right),
                 bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom)
               })}</>
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack

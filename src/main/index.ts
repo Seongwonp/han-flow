@@ -1232,25 +1232,35 @@ function captureVisualState(window: BrowserWindow): void {
         const target = element.firstElementChild ?? element
         const box = target.getBoundingClientRect()
         const round = (value) => Math.round(value * 10) / 10
-        // 자리 차지·글 옆 배치 개체가 비운 자리(감싼 상자)에 개체 밖 본문 글이 들어왔는지. 글 앞·뒤 개체는 겹쳐도 된다.
-        const overlay = element.dataset.objectWrap === 'BEHIND_TEXT' || element.dataset.objectWrap === 'IN_FRONT_OF_TEXT'
+        // 자리 차지·글 옆 배치 개체가 비운 자리(감싼 상자)에 개체 밖 본문 글이 들어왔는지. 글 앞·뒤 개체와 본문 자리를 비우지 않는
+        // 머리말·꼬리말 안 개체는 겹쳐도 된다.
+        const container = element.dataset.objectContainer ?? (element.closest('.viewer-header') ? 'header' : element.closest('.viewer-footer') ? 'footer' : undefined)
+        const overlay = element.dataset.objectWrap === 'BEHIND_TEXT' || element.dataset.objectWrap === 'IN_FRONT_OF_TEXT' || container === 'header' || container === 'footer'
         const reserved = element.getBoundingClientRect()
         let textOverlap = false
+        // 글 옆 배치 개체: 같은 높이에서 개체 옆으로 흐른 본문 글 줄이 있는지.
+        const sideWrap = element.dataset.objectWrap === 'SQUARE' || element.dataset.objectWrap === 'TIGHT' || element.dataset.objectWrap === 'THROUGH'
+        let textBeside = false
         if (!overlay) {
           const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT)
           const range = document.createRange()
           for (let node = walker.nextNode(); node && !textOverlap; node = walker.nextNode()) {
             if (!node.textContent?.trim() || element.contains(node) || node.parentElement?.closest('.viewer-header, .viewer-footer, .viewer-page-number, .viewer-footnotes')) continue
             range.selectNodeContents(node)
-            textOverlap = Array.from(range.getClientRects()).some((rect) => rect.width > 0 &&
+            const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0)
+            textOverlap = rects.some((rect) =>
               rect.left < reserved.right - 1 && rect.right > reserved.left + 1 && rect.top < reserved.bottom - 1 && rect.bottom > reserved.top + 1)
+            if (sideWrap && !textBeside) textBeside = rects.some((rect) => rect.top >= reserved.top - 1 && rect.bottom <= reserved.bottom + 1 &&
+              (rect.right <= reserved.left + 1 || rect.left >= reserved.right - 1))
           }
         }
         return {
           page: Number(page.dataset.pageIndex) + 1,
           placement: element.dataset.objectPlacement,
           wrap: element.dataset.objectWrap,
+          container: container ?? (element.parentElement?.closest('td') ? 'cell' : element.parentElement?.closest('.viewer-object-body') ? 'text-box' : undefined),
           textOverlap,
+          ...(sideWrap ? { textBeside } : {}),
           kind: target.dataset?.objectKind ?? (target.tagName === 'IMG' ? 'image' : target.tagName === 'TABLE' ? 'table' : target.tagName.toLowerCase()),
           x: round((box.left - pageBox.left) / scale),
           y: round((box.top - pageBox.top) / scale),

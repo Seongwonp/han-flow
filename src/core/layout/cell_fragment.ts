@@ -74,3 +74,13 @@ export function preservesParagraphOrder(original: readonly ViewerParagraph[], sp
   const combined = [...split.head, ...split.tail]
   return combined.length === original.length && combined.every((paragraph, index) => paragraph === original[index])
 }
+
+/**
+ * 셀을 그릴 때 쓰는 최소 높이(HWPUNIT, 셀 안쪽 여백·테두리 포함). 한/글처럼 선언 높이(`hp:cellSz height`)보다 내용이 짧으면 선언
+ * 높이로 그리고 길면 내용만큼 늘어난다. 쪽을 넘어 나뉜 조각 셀(`splitTop`·`splitBottom`)은 내용 높이만 쓴다(`fragmentHeight`).
+ * 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이(`limit`)로 줄인다. 내용이 짧은 행이 한 쪽보다 높아 넘치지 않게 하려는 것이다.
+ */
+export function cellMinimumHeight(cell: Pick<ViewerTableCell, 'height' | 'splitTop' | 'splitBottom'>, limit?: number): number | undefined {
+  if (cell.splitTop || cell.splitBottom || !(cell.height > 0)) return undefined
+  return limit !== undefined && limit > 0 ? Math.min(cell.height, limit) : cell.height
+}

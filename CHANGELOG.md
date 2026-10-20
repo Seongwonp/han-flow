@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### 표 셀 선언 높이·글 옆 배치·칸 안 원본 위치 개체
+
+- HWPX 표 셀을 한/글처럼 선언 높이(`hp:cellSz height`, 안쪽 여백 포함)를 최소 높이로 그림. 예전 `td`의 `min-height`는 표 칸에 듣지 않아 내용 높이로 그려졌음. `td` `height` + `border-box`(행 최소 높이)로 바꾸고 내용이 길면 늘어남. 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄이고 쪽을 넘어 나뉜 조각 셀은 내용 높이(`cellMinimumHeight`). 사용자 문서 doc2 1쪽의 용지 기준 빨간 타원이 표 아래 빈 곳이 아니라 표 안 작성자 줄을 감쌈(PDF 그림 비교)
+- 글 옆 배치(`SQUARE`·`TIGHT`·`THROUGH`)의 흐를 쪽을 `textFlow`(`LEFT_ONLY`·`RIGHT_ONLY`·`LARGEST_ONLY`, `BOTH_SIDES`는 넓은 쪽 근사)와 개체 옆 빈 폭(약 1cm 미만이면 흘리지 않음)으로 정함(`wrapTextSide`)
+- 다단이 없는 구역의 쪽 기준 개체 띠: 쪽 위 block을 띠 사이로 흘려(`flowBlockEnd`) 글이 닿을 때만 띠를 비우고, 글 옆 배치는 개체 쪽만 비우는 좁은 float로 남은 폭에 글을 흘림. 쪽 나눔은 띠 옆 줄 수를 남은 폭 비율 × 0.85로 어림하고 표·그림 문단은 띠 아래로 봄. 다단 구역은 예전처럼 띠 폭 전체
+- 표 셀·글상자 안 개체는 그 칸을 용지로 본 원본 위치(`containerObjectFrame`, 칸 기준 절대 위치와 칸 글 흐름의 띠), 머리말·꼬리말 안 개체는 쪽 기준 원본 위치에 그림(`data-object-container`). 각주 안 개체는 줄 흐름 그대로. decoder는 모든 문단에서 흐름 밖 개체를 문단 높이에서 뺌
+- verify_app `positionedObjects`에 `container`·`textBeside`(글 옆 개체 옆으로 흐른 글 줄)를 더하고 머리말·꼬리말 개체는 겹침 검사에서 글 앞·뒤처럼 봄. verify:matrix에 합성 fixture(`createObjectLayoutHwpx`: 쪽 위 표 셀 선언 높이, 셀·글상자·머리말 안 그림, 쪽 기준 글 옆 그림)의 개체 상자를 기대값과 1.5px 안에서 비교하고 글 옆 흐름·화면/PDF·문단 편집→Save As→재열기를 확인하는 검사를 추가. 단위 test(`object_position`·`object_pagination`·`object_container_view`)
+- 사용자 문서 5종 verify_app·verify_pdf·편집 저장 통과, 쪽 수(2·3·1·1·2)와 화면 글자 수 변경 없음. doc2·doc3·doc5-d04는 표 행이 선언 높이로 늘어 PDF 그림이 바뀜(doc3 아래 결재 표, doc5-d04 1쪽 본문이 쪽 아래 끝까지 차 쪽 번호와 맞닿음). large-progressive 한 글자 입력 input→DOM p50/p95(같은 컨테이너, 번갈아 두 번) 변경 전 59.5/75.2·78.8/135.9ms, 변경 뒤 57.5/86.7·60.7/98.7ms(측정 잡음 범위, 회귀 없음)
+
 ### 글자·문단 모양 편집 증분 측정
 
 - 글자·문단·셀 모양 command가 header.xml을 바꿔도 style map 전체 대신 id별로 바뀐 definition만 patch에 담고(`styleChanges`, 지운 id는 null), 바뀐 id를 쓰는 section 위치를 알림(`restyledSections`). 참조 id는 해석 결과의 본문·표 셀·머리말·꼬리말·각주·미주 문단 글자·문단 모양과 셀 테두리 id로 정하고(`sectionStyleIds`), definition 내용은 section 해석에 쓰이지 않으므로 그 section은 다시 해석하지 않음. 기존 id의 definition이 바뀌면 그 id를 쓰는 section 모두, 글꼴 목록이 바뀌면 예전처럼 style map 전체(모든 section 다시 잼)

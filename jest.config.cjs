@@ -8,5 +8,7 @@ module.exports = {
   // worker process에서 계속 돌아 뒤 test 파일에 끼어들므로(core module 공유) 여유를 둔다.
   testTimeout: 30_000,
   testMatch: ['**/tests/**/*.test.ts'],
-  modulePathIgnorePatterns: ['<rootDir>/out/']
+  // .claude/worktrees 같은 로컬 작업 사본의 test·module은 집지 않는다.
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/.claude/'],
+  modulePathIgnorePatterns: ['<rootDir>/out/', '<rootDir>/.claude/']
 }

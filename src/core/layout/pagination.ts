@@ -12,7 +12,7 @@ import {
   ViewerNoteMetrics,
   ViewerPageFootnote
 } from './footnote_layout'
-import { blockObjectBands, mergePageBands, PageBand, pageBandsHeight, PageFrame, tableInFlow } from './object_position'
+import { blockBandFlowKind, blockObjectBands, flowBlockEnd, mergePageBands, PageBand, pageBandsHeight, PageFrame, tableInFlow } from './object_position'
 
 /**
  * 쪽 안 다단 영역 하나. 구역 중간에서 다단 정의가 바뀌면(`ViewerParagraph.columnLayout`) 한 쪽에 영역이 위에서부터 여럿 놓인다.
@@ -262,6 +262,11 @@ export function paginateViewerSection(
   // 이 쪽에 놓인 용지·쪽 기준 개체의 띠와 그 높이(겹친 부분은 한 번). 단마다 본문이 이만큼 줄어든다.
   let pageBands: PageBand[] = []
   let bandsHeight = 0
+  // 다단이 없는 구역은 쪽 위 block 흐름(`flowBlockEnd`)으로 띠를 지난다. 띠는 글이 닿을 때만 자리를 쓰고, 글 옆 배치 띠(`wrap`)는
+  // 개체 옆 남은 폭으로 글을 흘린다. 다단 구역은 띠 높이만큼 모든 단 본문을 줄인다(띠 폭 전체).
+  const simpleFlow = Boolean(page) && !flowLayout(section.columnLayout) && !section.blocks.some((block) => flowLayout(block.columnLayout))
+  let pageFlow: { height: number; kind: ReturnType<typeof blockBandFlowKind> }[] = []
+  let mergedBands: PageBand[] = []
   let sectionPageIndex = 0
   let previousLayoutTop: number | undefined
   let previousBlockFragmented = false
@@ -365,6 +370,8 @@ export function paginateViewerSection(
   const resetPage = (layout: ViewerColumnLayout | undefined) => {
     pageBands = []
     bandsHeight = 0
+    pageFlow = []
+    mergedBands = []
     regions = [newRegion(layout, 0)]
     const count = layout?.count ?? 1
     currentNotes = Array.from({ length: count }, () => [])
@@ -484,14 +491,25 @@ export function paginateViewerSection(
     } else if (sourceFlowRestart && multiColumn) breakColumn()
     else if (sourceFlowRestart) flush()
     advanceWhileNotesPending()
-    const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight - noteArea(), availableHeight, measurementsAt(region().layout, columnIndex))
+    // 한 단 흐름에서 표 첫 조각은 아직 지나지 않은 띠를 건너뛴다고 보고 그 높이만큼 덜 채운다.
+    const bandsAhead = simpleFlow ? mergedBands.reduce((sum, band) => sum + Math.max(band.bottom - Math.max(band.top, usedHeight), 0), 0) : 0
+    const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight - bandsAhead - noteArea(), availableHeight, measurementsAt(region().layout, columnIndex))
     fragments.forEach((block, fragmentIndex) => {
       const notes = paragraphFootnotes(block).filter((note) => !placedNotes.has(note.sourcePath))
       const metrics = notes.map(metricsOf)
       const notesTotal = metrics.reduce((sum, item) => sum + item.height, 0)
       // 용지·쪽 기준 개체(자리 차지·글 옆 배치)는 그 block이 놓이는 쪽 본문에서 개체 띠만큼 자리를 더 쓴다.
-      const blockBands = page ? blockObjectBands(block, page) : []
+      const blockBands = page ? blockObjectBands(block, page, simpleFlow) : []
       const bandsExtra = () => blockBands.length ? pageBandsHeight([...pageBands, ...blockBands]) - bandsHeight : 0
+      const flowKind = simpleFlow ? blockBandFlowKind(block) : 'text'
+      // 한 단 흐름: 이 block(과 그 띠)을 지금 쪽에 더했을 때 쪽 본문 흐름이 끝나는 위치. 띠가 새로 생기면 앞 block도 다시 흘린다.
+      const flowEndWith = () => {
+        const height = blockHeight(block)
+        if (!blockBands.length) return flowBlockEnd(usedHeight, height, flowKind, mergedBands, bodyWidth ?? 0)
+        const bands = mergePageBands([...pageBands, ...blockBands])
+        return [...pageFlow, { height, kind: flowKind }].reduce((end, item) => flowBlockEnd(end, item.height, item.kind, bands, bodyWidth ?? 0), 0)
+      }
+      const endWith = () => simpleFlow ? flowEndWith() : usedHeight + blockHeight(block) + bandsExtra()
       if (fragmentIndex > 0) advanceFlow()
       else {
         // 쪽 위에서 시작한 빈 단은 언제나 받는다. 같은 쪽 아래 영역의 단은 들어갈 때까지 다음 단·쪽으로 넘긴다.
@@ -499,7 +517,7 @@ export function paginateViewerSection(
           const blank = !currentColumn().length && !columnNotes().length
           if (blank && region().top <= 0) break
           const height = blockHeight(block)
-          if (usedHeight + height + bandsExtra() + noteArea(notes.length, notesTotal) <= availableHeight) break
+          if (endWith() + noteArea(notes.length, notesTotal) <= availableHeight) break
           if (!currentColumn().length && height <= 0) break
           if (blank) {
             advanceFlow()
@@ -507,9 +525,12 @@ export function paginateViewerSection(
             continue
           }
           // 빈 단에 block과 각주가 다 들어가면 block을 넘긴다. 각주가 빈 단보다도 길면 각주 첫 조각이 여기에 들어갈 때만 둔다.
-          const fitsFresh = height + pageBandsHeight(blockBands) + footnoteAreaHeight(settings, notes.length, notesTotal) <= availableHeight
+          const freshEnd = simpleFlow
+            ? flowBlockEnd(0, height, flowKind, mergePageBands(blockBands), bodyWidth ?? 0)
+            : height + pageBandsHeight(blockBands)
+          const fitsFresh = freshEnd + footnoteAreaHeight(settings, notes.length, notesTotal) <= availableHeight
           const firstPiece = metrics[0] ? noteCursorY(metrics[0], 0) : 0
-          const fitsPartially = notes.length > 0 && usedHeight + height + bandsExtra() + noteArea(1, firstPiece) <= availableHeight
+          const fitsPartially = notes.length > 0 && endWith() + noteArea(1, firstPiece) <= availableHeight
           if (!fitsFresh && fitsPartially) break
           advanceFlow()
           spilled = Boolean(region().layout)
@@ -518,13 +539,25 @@ export function paginateViewerSection(
       }
       advanceWhileNotesPending()
       const height = blockHeight(block)
-      const extra = bandsExtra()
-      currentColumn().push(block)
-      if (blockBands.length) {
-        pageBands.push(...blockBands)
-        bandsHeight += extra
+      if (simpleFlow) {
+        const end = flowEndWith()
+        currentColumn().push(block)
+        pageFlow.push({ height, kind: flowKind })
+        if (blockBands.length) {
+          pageBands.push(...blockBands)
+          mergedBands = mergePageBands(pageBands)
+          bandsHeight = pageBandsHeight(pageBands)
+        }
+        usedHeight = end
+      } else {
+        const extra = bandsExtra()
+        currentColumn().push(block)
+        if (blockBands.length) {
+          pageBands.push(...blockBands)
+          bandsHeight += extra
+        }
+        usedHeight += height + extra
       }
-      usedHeight += height + extra
       notes.forEach((note, index) => {
         placedNotes.add(note.sourcePath)
         pending.push({ note, metrics: metrics[index], cursor: -1 })

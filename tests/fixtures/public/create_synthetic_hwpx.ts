@@ -813,3 +813,60 @@ export function createColumnLayoutHwpx(directory: string, fileName = 'han-flow-c
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 표 선언 높이·쪽 기준 글 옆 배치·칸 안 원본 위치 개체 합성 문서(직접 작성, 개인정보 없음). A4(`FLOATING_OBJECT_PAGE`와 같은 여백).
+ * - 머리말: 용지 기준 위·왼쪽(가로 3000, 세로 1000) 자리 차지 그림 2000×1000
+ * - 쪽 위 왼쪽 기준 자리 차지 표(40000×12000, 1행 2열, 셀 안쪽 여백 500). 셀 글은 한 줄이라 선언 높이 12000으로 그려야 한다.
+ *   첫 셀에 쪽 아래·오른쪽 기준 자리 차지 그림 3000×2000(셀 안쪽 여백 안 오른쪽 아래 끝)
+ * - 쪽 위·오른쪽 기준 글 옆 배치(`SQUARE`, 양쪽) 그림 15000×12000(쪽 본문 위 끝에서 18000): 본문 글이 그림 왼쪽으로 흐른다.
+ * - 용지 기준 글 앞 글상자(가로 30000, 세로 60000, 20000×10000, 안쪽 여백 283) 안 쪽 기준 위·왼쪽(1000, 1000) 그림 2000×2000
+ * verify:matrix가 화면 개체 상자를 아래 기대값(HWPUNIT, 용지 왼쪽 위 기준)과 비교하고, 글 옆 배치 그림 옆에 본문 글이 흐르는지 본다.
+ */
+export const OBJECT_LAYOUT_TEXTS = {
+  title: '개체 배치 시험 문서',
+  header: '개체 배치 머리말',
+  firstCell: '첫 셀 글',
+  secondCell: '둘째 셀 글',
+  textBox: '글상자 안 글',
+  body: (index: number) => `개체 배치 본문 ${index + 1}번 문단입니다. 쪽 기준 글 옆 배치 그림의 왼쪽 빈 곳으로 줄이 좁아져 흘러야 하는 글을 여러 줄 이어 쓰려고 일부러 길게 적었습니다.`
+} as const
+const OBJECT_LAYOUT_TABLE = { width: 40000, height: 12000, cellWidth: 20000, cellMargin: 500 } as const
+/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준, Han-Flow 쪽 본문은 위쪽 여백에서 시작). */
+export const OBJECT_LAYOUT_EXPECTED = {
+  header: { x: 3000, y: 1000, width: 2000, height: 1000 },
+  table: { x: 5669, y: 5669, width: OBJECT_LAYOUT_TABLE.width, height: OBJECT_LAYOUT_TABLE.height },
+  // 셀(안쪽 여백 포함)을 용지로, 안쪽 여백 안을 쪽 본문으로 본다.
+  cellPicture: {
+    x: 5669 + OBJECT_LAYOUT_TABLE.cellWidth - OBJECT_LAYOUT_TABLE.cellMargin - 3000,
+    y: 5669 + OBJECT_LAYOUT_TABLE.height - OBJECT_LAYOUT_TABLE.cellMargin - 2000,
+    width: 3000,
+    height: 2000
+  },
+  squarePicture: { x: 59528 - 5669 - 15000, y: 5669 + 18000, width: 15000, height: 12000 },
+  // 글상자(용지 기준 세로 60000 → 머리말 여백만큼 위) 테두리(57)·안쪽 여백(283) 안에서 (1000, 1000).
+  textBoxPicture: { x: 30000 + 57 + 283 + 1000, y: 60000 - 2835 + 57 + 283 + 1000, width: 2000, height: 2000 }
+} as const
+const layoutPicture = (id: number, wrap: string, width: number, height: number, pos: string) =>
+  `<hp:pic id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="${wrap}" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hc:img binaryItemIDRef="image1"/><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${pos}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`
+const layoutCell = (column: number, runs: string) =>
+  `<hp:tc borderFillIDRef="1" header="0"><hp:subList vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="${OBJECT_LAYOUT_TABLE.cellWidth}" height="${OBJECT_LAYOUT_TABLE.height}"/><hp:cellMargin left="${OBJECT_LAYOUT_TABLE.cellMargin}" right="${OBJECT_LAYOUT_TABLE.cellMargin}" top="${OBJECT_LAYOUT_TABLE.cellMargin}" bottom="${OBJECT_LAYOUT_TABLE.cellMargin}"/></hp:tc>`
+const objectLayoutSection = `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:secPr><hp:pagePr width="${FLOATING_OBJECT_PAGE.width}" height="${FLOATING_OBJECT_PAGE.height}"><hp:margin left="${FLOATING_OBJECT_PAGE.left}" right="${FLOATING_OBJECT_PAGE.right}" top="${FLOATING_OBJECT_PAGE.top}" bottom="${FLOATING_OBJECT_PAGE.bottom}" header="${FLOATING_OBJECT_PAGE.header}" footer="${FLOATING_OBJECT_PAGE.footer}"/></hp:pagePr></hp:secPr><hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${layoutPicture(9601, 'TOP_AND_BOTTOM', 2000, 1000, floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', 1000, 3000))}<hp:t>${OBJECT_LAYOUT_TEXTS.header}</hp:t></hp:run></hp:p></hp:subList></hp:header></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:t>${OBJECT_LAYOUT_TEXTS.title}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${floatingParagraph(`<hp:tbl id="object-layout-table" zOrder="9602" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" rowCnt="1" colCnt="2" pageBreak="NONE" repeatHeader="0"><hp:sz width="${OBJECT_LAYOUT_TABLE.width}" widthRelTo="ABSOLUTE" height="${OBJECT_LAYOUT_TABLE.height}" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAGE', 'PAGE', 'TOP', 'LEFT', 0, 0)}<hp:outMargin left="0" right="0" top="0" bottom="567"/><hp:tr>${layoutCell(0, `<hp:t>${OBJECT_LAYOUT_TEXTS.firstCell}</hp:t>${layoutPicture(9603, 'TOP_AND_BOTTOM', 3000, 2000, floatingPos('PAGE', 'PAGE', 'BOTTOM', 'RIGHT', 0, 0))}`)}${layoutCell(1, `<hp:t>${OBJECT_LAYOUT_TEXTS.secondCell}</hp:t>`)}</hp:tr></hp:tbl><hp:t>${OBJECT_LAYOUT_TEXTS.body(0)}</hp:t>`)}
+  ${floatingParagraph(`${layoutPicture(9604, 'SQUARE', 15000, 12000, floatingPos('PAGE', 'PAGE', 'TOP', 'RIGHT', 18000, 0))}<hp:t>${OBJECT_LAYOUT_TEXTS.body(1)}</hp:t>`)}
+  ${floatingParagraph(`<hp:rect id="9605" zOrder="9605" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="20000" height="10000"/><hp:curSz width="20000" height="10000"/><hp:lineShape color="#1F4E79" width="57" style="SOLID"/><hc:fillBrush><hc:winBrush faceColor="#EAF1FB" hatchColor="#000000" alpha="0"/></hc:fillBrush><hp:drawText lastWidth="20000" name="" editable="0"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${OBJECT_LAYOUT_TEXTS.textBox}</hp:t>${layoutPicture(9606, 'IN_FRONT_OF_TEXT', 2000, 2000, floatingPos('PAGE', 'PAGE', 'TOP', 'LEFT', 1000, 1000))}</hp:run></hp:p></hp:subList><hp:textMargin left="283" right="283" top="283" bottom="283"/></hp:drawText><hp:sz width="20000" widthRelTo="ABSOLUTE" height="10000" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', 60000, 30000)}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:rect><hp:t>${OBJECT_LAYOUT_TEXTS.body(2)}</hp:t>`)}
+  ${Array.from({ length: 10 }, (_, index) => floatingParagraph(`<hp:t>${OBJECT_LAYOUT_TEXTS.body(3 + index)}</hp:t>`)).join('\n  ')}
+</hs:sec>`
+
+export function createObjectLayoutHwpx(directory: string, fileName = 'han-flow-object-layout.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  zip.addFile('Contents/section0.xml', Buffer.from(objectLayoutSection))
+  zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}

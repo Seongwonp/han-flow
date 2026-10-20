@@ -590,8 +590,9 @@ function decodeParagraph(
   const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
   const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
   const measuredLayoutHeight = lineSegments.length ? Math.max(...ends) - Math.min(...starts) : 0
-  // 본문 최상위 문단의 용지·쪽 기준 개체와 글 앞·뒤 개체는 문단 흐름 밖(`object_position.ts`)이라 높이에 넣지 않는다.
-  const flowContent = topLevel ? content.filter((item) => !contentOutOfFlow(item)) : content
+  // 용지·쪽 기준 개체와 글 앞·뒤 개체는 문단 흐름 밖(`object_position.ts`)이라 높이에 넣지 않는다. 표 셀·글상자·머리말 안 개체도
+  // 그 칸 기준 원본 위치에 그린다(각주 안 개체만 줄 흐름 안에 남고 측정이 높이를 바로잡는다).
+  const flowContent = content.filter((item) => !contentOutOfFlow(item))
   const tableLayoutHeight = flowContent.reduce(
     (maximum, item) => item.type === 'table' ? Math.max(maximum, item.height ?? 0) : maximum,
     0
