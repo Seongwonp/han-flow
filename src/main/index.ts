@@ -1423,6 +1423,17 @@ function captureVisualState(window: BrowserWindow): void {
       documentFormat: document.querySelector('.viewer-pages')?.dataset.documentFormat,
       mountedPages: document.querySelectorAll('.viewer-page').length,
       pageSizes: Array.from(document.querySelectorAll('.viewer-page')).map((page) => ({ width: page.clientWidth, height: page.clientHeight })),
+      // HWPX 쪽 상자(CSS px, 배율 제외)와 본문 여백(padding). 구역마다 용지 크기·방향·여백이 다르면 쪽마다 그 구역 값이다.
+      pageBoxes: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
+        const style = getComputedStyle(page)
+        const px = (value) => Math.round(parseFloat(value) * 10) / 10
+        return {
+          page: Number(page.dataset.pageIndex) + 1,
+          width: px(style.width),
+          height: px(style.height),
+          padding: { top: px(style.paddingTop), right: px(style.paddingRight), bottom: px(style.paddingBottom), left: px(style.paddingLeft) }
+        }
+      }),
       documentLoading: document.querySelector('.viewer-pages')?.dataset.documentLoading === 'true',
       // scripts/pdf_text_count.mjs와 같은 규칙: code point 단위, 공백·사설 영역(\\p{Co}) 글자 제외.
       pageTextCounts: Array.from(document.querySelectorAll('.viewer-page')).map((page) => Number(page.dataset.textCharacters || 0) || (page.innerText.match(/[^\\s\\p{Co}]/gu) || []).length),
@@ -1547,7 +1558,8 @@ function captureVisualState(window: BrowserWindow): void {
           if (!rects.length) return null
           const top = Math.min(...rects.map((rect) => rect.top))
           const bottom = Math.max(...rects.map((rect) => rect.bottom))
-          return { y: round((top - pageBox.top) / scale), bottom: round((bottom - pageBox.top) / scale), overlap: rects.some(overlaps) }
+          const left = Math.min(...rects.map((rect) => rect.left))
+          return { y: round((top - pageBox.top) / scale), bottom: round((bottom - pageBox.top) / scale), x: round((left - pageBox.left) / scale), overlap: rects.some(overlaps) }
         }
         return {
           page: Number(page.dataset.pageIndex) + 1,

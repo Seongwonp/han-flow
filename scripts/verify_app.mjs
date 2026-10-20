@@ -465,6 +465,7 @@ try {
     positionedObjects: state.positionedObjects,
     lineSplits: state.lineSplits?.length ? state.lineSplits : undefined,
     pageDecorations: state.pageDecorations?.some((item) => item.pageNumber || item.header || item.footer) ? state.pageDecorations : undefined,
+    pageBoxes: state.pageBoxes?.length ? state.pageBoxes : undefined,
     errorCode: expectedError ? state.errorCode : undefined,
     windowTitle: state.windowTitle,
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
@@ -498,7 +499,8 @@ try {
       reopenedPositionedObjects: savedState?.positionedObjects,
       reopenedLineSplits: savedState?.lineSplits?.length ? savedState.lineSplits : undefined,
       reopenedPageDecorations: savedState?.pageDecorations,
-      reopenedColumnLayouts: savedState?.columnLayouts?.length ? savedState.columnLayouts : undefined
+      reopenedColumnLayouts: savedState?.columnLayouts?.length ? savedState.columnLayouts : undefined,
+      reopenedPageBoxes: savedState?.pageBoxes?.length ? savedState.pageBoxes : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {
       journalsBeforeKill: state.crashReport?.journalsBeforeKill,

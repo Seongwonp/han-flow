@@ -1,5 +1,8 @@
 import { FixedPageDescriptor } from '../document/fixed_page_document'
 
+/** 가상화에 쓰는 쪽 높이(CSS px). HWP 고정 쪽과 구역마다 쪽 크기가 다른 HWPX 쪽이 함께 쓴다. */
+export type VirtualPageBox = Pick<FixedPageDescriptor, 'height'>
+
 export interface FixedPageVirtualRange {
   start: number
   end: number
@@ -7,7 +10,7 @@ export interface FixedPageVirtualRange {
   bottomSpacer: number
 }
 
-export function fixedPageOffsets(pages: FixedPageDescriptor[], gap = 24): number[] {
+export function fixedPageOffsets(pages: readonly VirtualPageBox[], gap = 24): number[] {
   const offsets = [0]
   for (const page of pages) {
     offsets.push(offsets[offsets.length - 1] + page.height + gap)
@@ -15,7 +18,7 @@ export function fixedPageOffsets(pages: FixedPageDescriptor[], gap = 24): number
   return offsets
 }
 
-function firstPageEndingAfter(offsets: number[], pages: FixedPageDescriptor[], position: number): number {
+function firstPageEndingAfter(offsets: number[], pages: readonly VirtualPageBox[], position: number): number {
   let low = 0
   let high = pages.length
   while (low < high) {
@@ -27,7 +30,7 @@ function firstPageEndingAfter(offsets: number[], pages: FixedPageDescriptor[], p
 }
 
 export function fixedPageVirtualRange(
-  pages: FixedPageDescriptor[],
+  pages: readonly VirtualPageBox[],
   scrollTop: number,
   viewportHeight: number,
   zoom: number,

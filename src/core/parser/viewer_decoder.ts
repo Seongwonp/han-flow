@@ -1078,7 +1078,7 @@ export function decodeViewerHeader(nodes: OrderedXmlNode[]): ViewerHeaderProject
   return decodeHeader(nodes)
 }
 
-/** 첫 `hp:pagePr`가 정하는 쪽 크기와 자리 표시 선언 높이 한도. */
+/** `hp:pagePr` 하나가 정하는 쪽 설정과 자리 표시 선언 높이 한도. */
 export interface ViewerPageGeometry {
   page: ViewerDocument['page']
   objectHeightLimit?: number
@@ -1088,11 +1088,26 @@ export interface ViewerPageGeometry {
  * 쪽 크기와 쪽 본문 여백. 한/글은 위에서부터 위쪽 여백(`top`)·머리말 여백(`header`)·본문, 아래에서부터 아래쪽 여백(`bottom`)·꼬리말
  * 여백(`footer`)·본문 순서로 용지를 나눈다. `margin.top`·`margin.bottom`은 본문 영역 여백(위쪽 + 머리말, 아래쪽 + 꼬리말)이고,
  * `headerOffset`·`footerOffset`은 머리말·꼬리말 띠 높이다(`pageDecorationLayout`). 용지보다 크면 띠를 0으로 본다.
+ *
+ * - 용지 방향: 한/글은 가로 방향(`landscape="NARROWLY"`)이어도 `width`·`height`에 세로 용지 크기를 쓰고(줄 배치 폭은 돌린 용지 기준)
+ *   세로 방향은 `WIDELY`다. 가로 방향이면 긴 쪽을 너비로 돌린다. 여백은 돌린 용지의 위·아래·왼쪽·오른쪽 그대로다.
+ * - 제본 여백(`hp:margin gutter`): `gutterType`이 `LEFT_ONLY`면 왼쪽, `TOP_BOTTOM`이면 위쪽 여백에 더한다. `LEFT_RIGHT`(맞쪽)는
+ *   홀수 쪽 왼쪽에 더하고 짝수 쪽은 왼쪽·오른쪽 여백을 바꾼다(`mirrorMargins`, `viewerPageFrameAt`).
  */
 export function viewerPageGeometry(pagePr: OrderedXmlNode | undefined): ViewerPageGeometry {
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
   const paper = box(margin)
-  const height = num(pagePr?.attributes.height)
+  const declaredWidth = num(pagePr?.attributes.width)
+  const declaredHeight = num(pagePr?.attributes.height)
+  const landscape = pagePr?.attributes.landscape === 'NARROWLY'
+  const width = landscape ? Math.max(declaredWidth, declaredHeight) : declaredWidth
+  const height = landscape ? Math.min(declaredWidth, declaredHeight) : declaredHeight
+  const gutter = Math.max(num(margin?.attributes.gutter), 0)
+  const gutterType = pagePr?.attributes.gutterType ?? 'LEFT_ONLY'
+  if (gutter > 0) {
+    if (gutterType === 'TOP_BOTTOM') paper.top += gutter
+    else paper.left += gutter
+  }
   let header = Math.max(num(margin?.attributes.header), 0)
   let footer = Math.max(num(margin?.attributes.footer), 0)
   if (height > 0 && paper.top + header + paper.bottom + footer >= height) {
@@ -1103,13 +1118,21 @@ export function viewerPageGeometry(pagePr: OrderedXmlNode | undefined): ViewerPa
   // pagination(`pagination.ts`)과 같은 쪽 본문 높이. 자리 표시가 한 쪽을 넘지 않게 선언 높이를 줄이는 한도로 쓴다.
   const bodyHeight = height - bodyMargin.top - bodyMargin.bottom
   return {
-    page: { width: num(pagePr?.attributes.width), height, margin: bodyMargin, headerOffset: header, footerOffset: footer },
+    page: {
+      width,
+      height,
+      margin: bodyMargin,
+      headerOffset: header,
+      footerOffset: footer,
+      ...(landscape ? { landscape: true } : {}),
+      ...(gutterType === 'LEFT_RIGHT' ? { mirrorMargins: true } : {})
+    },
     objectHeightLimit: bodyHeight > 0 ? Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined
   }
 }
 
 /**
- * section XML 하나의 문서 수준 입력: 문서 순서 첫 `hp:pagePr`(쪽 크기는 이 값이 있는 첫 section이 정한다)와,
+ * section XML 하나의 문서 수준 입력: section 안 첫 `hp:pagePr`(이 구역의 쪽 크기, 없으면 앞 구역 것을 잇는다)와,
  * header에서 온 값을 읽는 문단 참조(`paraPrIDRef`는 목록 번호·글머리표, `styleIDRef`는 빈 문단 caret 글자 모양).
  * 속성이 없는 문단은 '0'을 쓰므로 '0'은 항상 넣는다. 증분 projection이 header 변경의 영향 범위를 정하는 데 쓴다.
  */
@@ -1142,14 +1165,15 @@ export interface DecodedViewerSection {
 
 /**
  * section XML 하나를 해석한다. 결과는 이 section의 XML, header projection(`styleCharacterIds`·문단 style의 `heading`),
- * 쪽 크기에서 온 `objectHeightLimit`에만 달려 있다. 각주 번호·목록 번호·개체 순번·`hp:t`·문단 순번은 모두 section 안에서 센다.
+ * 이 구역의 쪽 설정(`geometry`, 쪽 크기와 그에서 온 `objectHeightLimit`)에만 달려 있다. 각주 번호·목록 번호·개체 순번·`hp:t`·문단 순번은 모두 section 안에서 센다.
  */
 export function decodeViewerSection(
   path: string,
   nodes: OrderedXmlNode[],
   header: ViewerHeaderProjection,
-  objectHeightLimit: number | undefined
+  geometry: ViewerPageGeometry
 ): DecodedViewerSection {
+  const { objectHeightLimit } = geometry
   const sectionIndex = Number(path.match(/section(\d+)\.xml$/)?.[1] ?? 0)
   const root = nodes.find((node) => node.name === 'hs:sec')
   const footnoteSettings = decodeFootnoteSettings(root)
@@ -1177,6 +1201,7 @@ export function decodeViewerSection(
     : []
   const section: ViewerSection = {
     id: `section-${sectionIndex}`,
+    page: geometry.page,
     blocks: [...blocks, ...noteListBlocks(context.notes, `s${sectionIndex}:notes`)],
     pageNumber: decodePageNumber(nodes),
     columnLayout: columns.section,
@@ -1216,9 +1241,26 @@ export async function decodeViewerResources(
   return Object.fromEntries(resourceEntries)
 }
 
-/** 첫 `hp:pagePr`가 있는 section(문서 순서)의 쪽 크기. */
+/** 첫 `hp:pagePr`가 있는 section(문서 순서)의 쪽 크기. 문서 `page`(구역 쪽 설정이 없는 모델이 쓰는 값)다. */
 export function documentPageGeometry(pagePrs: ReadonlyArray<OrderedXmlNode | undefined>): ViewerPageGeometry {
   return viewerPageGeometry(pagePrs.find((pagePr) => pagePr !== undefined))
+}
+
+/**
+ * section마다의 쪽 설정. `hp:pagePr`가 없는 section은 앞 section 것을 잇고, 앞에 하나도 없으면 문서 첫 `hp:pagePr`를 쓴다.
+ * 같은 `hp:pagePr` node에서 온 section은 같은 object를 쓴다.
+ */
+export function sectionPageGeometries(pagePrs: ReadonlyArray<OrderedXmlNode | undefined>): ViewerPageGeometry[] {
+  const first = documentPageGeometry(pagePrs)
+  let current = first
+  let currentNode = pagePrs.find((pagePr) => pagePr !== undefined)
+  return pagePrs.map((pagePr) => {
+    if (pagePr && pagePr !== currentNode) {
+      currentNode = pagePr
+      current = viewerPageGeometry(pagePr)
+    }
+    return current
+  })
 }
 
 /** 조각을 `decodeViewerDocument`와 같은 모양(같은 key 순서)의 문서로 모은다. */
@@ -1247,7 +1289,9 @@ export async function decodeViewerDocument(reader: HwpxReadablePackage, knownInd
   const resourcePaths = options.resourcePaths ?? index.resourcePaths
   const header = decodeViewerHeader(await reader.readOrderedXml(index.headerPath))
   const sectionXml = await Promise.all(sectionPaths.map(async (path) => ({ path, nodes: await reader.readOrderedXml(path) })))
-  const geometry = documentPageGeometry(sectionXml.map(({ nodes }) => viewerSectionInputs(nodes).pagePr))
-  const sections = sectionXml.map(({ path, nodes }) => decodeViewerSection(path, nodes, header, geometry.objectHeightLimit))
+  const pagePrs = sectionXml.map(({ nodes }) => viewerSectionInputs(nodes).pagePr)
+  const geometries = sectionPageGeometries(pagePrs)
+  const geometry = geometries[0] ?? documentPageGeometry(pagePrs)
+  const sections = sectionXml.map(({ path, nodes }, position) => decodeViewerSection(path, nodes, header, geometries[position]))
   return assembleViewerDocument(geometry, header, await decodeViewerResources(reader, resourcePaths), sections)
 }

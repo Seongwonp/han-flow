@@ -1046,3 +1046,94 @@ export function createEquationHwpx(directory: string, fileName = 'han-flow-equat
   zip.writeZip(path)
   return path
 }
+
+/**
+ * 구역마다 쪽 크기·방향·여백이 다른 합성 문서(직접 작성, 개인정보 없음). 구역 0은 A4 세로(2쪽), 구역 1은 A4 가로(1쪽, 한/글처럼
+ * `landscape="NARROWLY"`에 세로 용지 크기를 쓴다), 구역 2는 B5 세로에 맞쪽 제본 여백(`gutterType="LEFT_RIGHT"`, 2쪽, 두 단)이다.
+ * 가로 구역에는 세로 본문보다 넓은 표와 용지 오른쪽 아래 기준 글상자를 둔다. verify:matrix가 쪽마다 쪽 상자 크기·본문 여백·쪽 번호
+ * 자리와 PDF 쪽마다 용지 크기를 확인하고, 문단을 고쳐 저장한 뒤 다시 열어도 같아야 한다.
+ */
+export const SECTION_PAGE_SETUPS = [
+  { width: 59528, height: 84188, landscape: 'WIDELY', gutterType: 'LEFT_ONLY', left: 8504, right: 8504, top: 5668, bottom: 4252, header: 4252, footer: 4252, gutter: 0 },
+  { width: 59528, height: 84188, landscape: 'NARROWLY', gutterType: 'LEFT_ONLY', left: 5669, right: 5669, top: 4252, bottom: 4252, header: 2835, footer: 2835, gutter: 0 },
+  { width: 51591, height: 72850, landscape: 'WIDELY', gutterType: 'LEFT_RIGHT', left: 4252, right: 2835, top: 4252, bottom: 2835, header: 2835, footer: 2835, gutter: 1417 }
+] as const
+export const SECTION_PAGE_TEXTS = {
+  portrait: (index: number) => `세로 구역 문단 ${index + 1}`,
+  portraitSecond: '세로 구역 둘째 쪽',
+  landscape: '가로 구역 첫 문단',
+  landscapeHeader: '가로 구역 머리말',
+  wideCell: (column: number) => `가로 넓은 표 칸 ${column + 1}`,
+  corner: '용지 오른쪽 아래',
+  b5: (page: number, column: number) => `B5 구역 ${page + 1}쪽 ${column + 1}단`
+} as const
+const hwpUnitToPoints = (value: number) => value * 72 / 7200
+/** 쪽마다 기대 값(HWPUNIT, 용지 기준). 화면 쪽 순서는 구역 0(2쪽)·구역 1(1쪽)·구역 2(2쪽)다. */
+export const SECTION_PAGE_EXPECTED = (() => {
+  const pages = [0, 0, 1, 2, 2].map((sectionIndex, pageIndex) => {
+    const setup = SECTION_PAGE_SETUPS[sectionIndex]
+    const landscape = setup.landscape === 'NARROWLY'
+    const width = landscape ? setup.height : setup.width
+    const height = landscape ? setup.width : setup.height
+    const left = setup.left + setup.gutter
+    // 맞쪽 제본의 짝수 쪽(문서 쪽 순서)은 왼쪽·오른쪽 여백을 바꾼다.
+    const mirrored = setup.gutterType === 'LEFT_RIGHT' && (pageIndex + 1) % 2 === 0
+    return {
+      page: pageIndex + 1,
+      sectionIndex,
+      width,
+      height,
+      padding: {
+        top: setup.top + setup.header,
+        bottom: setup.bottom + setup.footer,
+        left: mirrored ? setup.right : left,
+        right: mirrored ? left : setup.right
+      },
+      /** 쪽 번호 상자 아래 끝: 꼬리말 띠 아래 끝(용지 높이 - 아래쪽 여백). */
+      pageNumberBottom: height - setup.bottom,
+      /** 머리말 띠 위 끝(위쪽 여백). */
+      headerTop: setup.top,
+      /** PDF 용지 크기(pt). */
+      pdf: { widthPoints: hwpUnitToPoints(width), heightPoints: hwpUnitToPoints(height) }
+    }
+  })
+  const landscape = SECTION_PAGE_SETUPS[1]
+  return {
+    pages,
+    /** 가로 구역 용지 오른쪽 아래 기준 글상자(용지 기준). */
+    corner: { page: 3, x: landscape.height - 2000 - 12000, y: landscape.width - 2000 - 4000, width: 12000, height: 4000 }
+  }
+})()
+const sectionPageSecPr = (setup: (typeof SECTION_PAGE_SETUPS)[number], extra = '') =>
+  `<hp:secPr><hp:pagePr landscape="${setup.landscape}" width="${setup.width}" height="${setup.height}" gutterType="${setup.gutterType}"><hp:margin header="${setup.header}" footer="${setup.footer}" gutter="${setup.gutter}" left="${setup.left}" right="${setup.right}" top="${setup.top}" bottom="${setup.bottom}"/></hp:pagePr></hp:secPr>${extra}`
+const sectionPageParagraph = (runs: string, pageBreak = false, columnBreak = false) =>
+  `<hp:p paraPrIDRef="0"${pageBreak ? ' pageBreak="1"' : ''}${columnBreak ? ' columnBreak="1"' : ''}><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+const sectionPageWideTable = `<hp:tbl id="section-page-wide" rowCnt="1" colCnt="2" pageBreak="CELL" repeatHeader="0"><hp:sz width="70000" height="2000"/><hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/><hp:tr>${[0, 1].map((column) => `<hp:tc borderFillIDRef="1" header="0"><hp:cellAddr colAddr="${column}" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="35000" height="2000"/><hp:cellMargin left="141" right="141" top="141" bottom="141"/><hp:subList vertAlign="CENTER"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${SECTION_PAGE_TEXTS.wideCell(column)}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p></hp:subList></hp:tc>`).join('')}</hp:tr></hp:tbl>`
+const SECTION_XML_HEAD = '<?xml version="1.0" encoding="UTF-8"?>\n<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">'
+const sectionPageSections = [
+  `${SECTION_XML_HEAD}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${sectionPageSecPr(SECTION_PAGE_SETUPS[0])}<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl><hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>구역 쪽 머리말</hp:t></hp:run></hp:p></hp:subList></hp:header></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:t>${SECTION_PAGE_TEXTS.portrait(0)}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${Array.from({ length: 3 }, (_, index) => sectionPageParagraph(`<hp:t>${SECTION_PAGE_TEXTS.portrait(index + 1)}</hp:t>`)).join('\n  ')}
+  ${sectionPageParagraph(`<hp:t>${SECTION_PAGE_TEXTS.portraitSecond}</hp:t>`, true)}
+</hs:sec>`,
+  `${SECTION_XML_HEAD}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${sectionPageSecPr(SECTION_PAGE_SETUPS[1])}<hp:ctrl><hp:header id="2" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${SECTION_PAGE_TEXTS.landscapeHeader}</hp:t></hp:run></hp:p></hp:subList></hp:header></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:t>${SECTION_PAGE_TEXTS.landscape}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${sectionPageParagraph(`${floatingTextBox(9801, 'IN_FRONT_OF_TEXT', 12000, 4000, floatingPos('PAPER', 'PAPER', 'BOTTOM', 'RIGHT', 2000, 2000), SECTION_PAGE_TEXTS.corner)}${sectionPageWideTable}`)}
+</hs:sec>`,
+  `${SECTION_XML_HEAD}
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${sectionPageSecPr(SECTION_PAGE_SETUPS[2], '<hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="1000"/></hp:ctrl>')}</hp:run><hp:run charPrIDRef="0"><hp:t>${SECTION_PAGE_TEXTS.b5(0, 0)}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${sectionPageParagraph(`<hp:t>${SECTION_PAGE_TEXTS.b5(0, 1)}</hp:t>`, false, true)}
+  ${sectionPageParagraph(`<hp:t>${SECTION_PAGE_TEXTS.b5(1, 0)}</hp:t>`, true)}
+  ${sectionPageParagraph(`<hp:t>${SECTION_PAGE_TEXTS.b5(1, 1)}</hp:t>`, false, true)}
+</hs:sec>`
+]
+
+export function createSectionPageHwpx(directory: string, fileName = 'han-flow-section-page.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  sectionPageSections.forEach((section, index) => zip.addFile(`Contents/section${index}.xml`, Buffer.from(section)))
+  zip.writeZip(path)
+  return path
+}
