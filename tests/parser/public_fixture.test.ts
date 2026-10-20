@@ -49,7 +49,8 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
     expect(document.page).toEqual({
       width: 59528,
       height: 84189,
-      margin: { left: 5669, right: 5669, top: 5669, bottom: 5669 },
+      // 쪽 본문 여백: 위쪽 + 머리말 여백, 아래쪽 + 꼬리말 여백(한/글 본문 영역).
+      margin: { left: 5669, right: 5669, top: 5969, bottom: 5969 },
       headerOffset: 300,
       footerOffset: 300
     })
@@ -61,7 +62,7 @@ describe('공개 synthetic HWPX 회귀 fixture', () => {
 
   test('스타일·표·이미지를 해석하고 표를 반복 헤더와 함께 나눈다', async () => {
     const document = await decodeViewerDocument(await HwpxPackageReader.open(fixture))
-    expect(document.page).toEqual({ width: 10000, height: 10000, margin: { left: 1000, right: 1000, top: 1000, bottom: 1000 }, headerOffset: 300, footerOffset: 300 })
+    expect(document.page).toEqual({ width: 10000, height: 10000, margin: { left: 1000, right: 1000, top: 1300, bottom: 1300 }, headerOffset: 300, footerOffset: 300 })
     expect(document.sections[0].pageNumber).toEqual({ position: 'BOTTOM_CENTER', formatType: 'DIGIT', sideChar: '-', start: undefined, hiddenOnFirstPage: false })
     expect(document.sections[0].headers[0].paragraphs[0].content).toContainEqual(expect.objectContaining({ type: 'text', text: '공개 머리말', charStyleId: '0' }))
     expect(document.sections[0].footers[0].paragraphs[0].content).toContainEqual(expect.objectContaining({ type: 'text', text: '공개 꼬리말', charStyleId: '0' }))

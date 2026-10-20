@@ -1,5 +1,5 @@
 import { ViewerParagraph, ViewerTableCell, ViewerTableRow } from '../../src/core/document/viewer_document'
-import { findSplittableCell, preservesParagraphOrder, splitCellParagraphs, tableSupportsCellSplitting } from '../../src/core/layout/cell_fragment'
+import { cellHeightLimit, cellMinimumHeight, findSplittableCell, preservesParagraphOrder, splitCellParagraphs, tableSupportsCellSplitting } from '../../src/core/layout/cell_fragment'
 
 const paragraph = (id: string, layoutHeight: number): ViewerParagraph => ({
   id, paraStyleId: '0', pageBreak: false, layoutHeight, content: []
@@ -81,5 +81,16 @@ describe('표 셀 문단 분할', () => {
     const valid = splitCellParagraphs(cell(paragraphs), 2200, heights)!
     expect(preservesParagraphOrder(paragraphs, { ...valid, tail: valid.tail.slice(1) })).toBe(false)
     expect(preservesParagraphOrder(paragraphs, { ...valid, tail: [valid.head[0], ...valid.tail] })).toBe(false)
+  })
+})
+
+describe('셀 최소 높이 한도', () => {
+  test('되풀이 머리글 행이 있으면 쪽 본문 높이에서 머리글 선언 높이를 빼고 테두리·표 아래 줄 간격 자리를 남긴다', () => {
+    const cell = (height: number, header = false) => ({ row: 0, column: 0, rowSpan: 1, columnSpan: 1, width: 1000, height, margin: { top: 0, right: 0, bottom: 0, left: 0 }, header, paragraphs: [] })
+    const rows = [{ cells: [cell(2000, true)] }, { cells: [cell(30200)] }]
+    expect(cellHeightLimit({ repeatHeader: true, rows }, 18400)).toBe(Math.floor(16400 * 0.9))
+    expect(cellHeightLimit({ repeatHeader: false, rows }, 18400)).toBe(Math.floor(18400 * 0.9))
+    expect(cellHeightLimit({ repeatHeader: true, rows }, undefined)).toBeUndefined()
+    expect(cellMinimumHeight(rows[1].cells[0], cellHeightLimit({ repeatHeader: true, rows }, 18400))).toBe(Math.floor(16400 * 0.9))
   })
 })

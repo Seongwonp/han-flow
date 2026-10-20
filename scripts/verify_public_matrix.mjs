@@ -226,6 +226,49 @@ function columnLayoutFailures(result, expected, label = 'column-layout') {
   return failures
 }
 
+// 쪽 꾸밈·개체 회전·줄 단위 쪽 나눔 E2E(createPageFlowHwpx): 쪽 번호가 본문 밖 꼬리말 띠 아래 끝에 있고 본문과 겹치지 않으며 머리말은
+// 머리말 띠 안에 있어야 한다. 90도 회전 그림의 화면 상자는 가로·세로가 바뀌고, 겹친 글상자는 원본 쌓임 순서(zOrder)대로 쌓인다.
+// 긴 문단은 쪽 아래에서 줄 단위로 나뉘어 다음 쪽 처음에 이어지고, 배분 다단의 긴 문단은 두 단에 줄 단위로 나뉜다. 나뉜 문단의 앞
+// 조각을 고쳐 저장한 뒤 다시 열어도 같은 쪽 나눔이어야 한다.
+const PAGE_FLOW_EDIT_TEXT = '줄나눔편집'
+
+/** 쪽 사이(앞 조각 쪽 → 다음 쪽)와 같은 쪽 다단(같은 쪽 앞·뒤 조각)으로 나뉜 문단이 있는지. */
+function lineSplitShape(splits = []) {
+  const heads = splits.filter((item) => item.part?.startsWith('head'))
+  const across = heads.some((head) => splits.some((item) => item.part?.startsWith('rest') && item.source === head.source && item.page === head.page + 1))
+  const samePage = heads.some((head) => splits.some((item) => item.part?.startsWith('rest') && item.source === head.source && item.page === head.page))
+  return { across, samePage }
+}
+
+function pageFlowFailures(result, expected, label = 'page-flow') {
+  const failures = []
+  const decorations = result?.pageDecorations ?? []
+  if (!(result?.totalPages >= 2) || decorations.length !== result.totalPages) failures.push(`${label}: 쪽 꾸밈 상태가 쪽마다 없음(${result?.totalPages}쪽, ${decorations.length})`)
+  for (const page of decorations) {
+    const number = page.pageNumber
+    if (!number) {
+      failures.push(`${label}: ${page.page}쪽 쪽 번호가 없음`)
+      continue
+    }
+    if (number.overlap) failures.push(`${label}: ${page.page}쪽 쪽 번호가 본문과 겹침`)
+    if (Math.abs(number.bottom - hwpToPx(expected.pageNumberBottom)) > FLOATING_TOLERANCE_PX) failures.push(`${label}: ${page.page}쪽 쪽 번호 아래 끝 ${number.bottom}px(기대 ${hwpToPx(expected.pageNumberBottom).toFixed(1)}px)`)
+    if (number.y < hwpToPx(expected.bodyBottom) - 1) failures.push(`${label}: ${page.page}쪽 쪽 번호가 본문 아래 끝보다 위(${number.y}px)`)
+    if (!page.header || page.header.y < hwpToPx(expected.headerTop) - 1 || page.header.bottom > hwpToPx(expected.bodyTop) + 1) failures.push(`${label}: ${page.page}쪽 머리말이 머리말 띠 밖(${JSON.stringify(page.header)})`)
+    if (!page.footer || page.footer.y < hwpToPx(expected.bodyBottom) - 1) failures.push(`${label}: ${page.page}쪽 꼬리말이 꼬리말 띠 밖(${JSON.stringify(page.footer)})`)
+  }
+  const objects = result?.positionedObjects ?? []
+  const rotated = objects.find((item) => item.kind === 'image' && item.rotation === '90')
+  failures.push(...floatingBoxFailures(`${label} 90도 회전 그림`, rotated, expected.rotatedPicture))
+  const boxes = objects.filter((item) => item.kind === 'text-box').sort((left, right) => left.x - right.x)
+  if (boxes.length !== 2 || !(boxes[0].zIndex > boxes[1].zIndex)) failures.push(`${label}: 겹친 글상자가 zOrder대로 쌓이지 않음(${JSON.stringify(boxes.map(({ x, zIndex }) => ({ x, zIndex })))})`)
+  const shape = lineSplitShape(result?.lineSplits)
+  if (!shape.across) failures.push(`${label}: 쪽 사이에서 줄 단위로 나뉜 문단이 없음(${JSON.stringify(result?.lineSplits)})`)
+  if (!shape.samePage) failures.push(`${label}: 배분 다단에서 줄 단위로 나뉜 문단이 없음`)
+  const lastColumns = (result?.columnLayouts ?? []).find((page) => page.page === result.totalPages)?.regions?.[0]?.columns ?? []
+  if (lastColumns.length !== 2 || lastColumns.some((column) => !column.text)) failures.push(`${label}: 배분 다단 두 단이 모두 채워지지 않음`)
+  return failures
+}
+
 const LONG_KOREAN_FILE_STEM = '2026년도 지식재산처 발명의 날 서포터스 발족식 개최 계획 및 홍보활동 추진 결과 보고서 최종본 수정 반영 검토 완료 배포용 사본 지역별 의견 수렴 결과 첨부 포함 최종 확정본'
 
 const directory = await mkdtemp(join(tmpdir(), 'han-flow-public-matrix-'))
@@ -340,6 +383,15 @@ try {
     HAN_FLOW_VERIFY_EDIT_SAVE: '1'
   })
 
+  const pageFlowPath = generator.createPageFlowHwpx(directory, 'han-flow-page-flow.hwpx')
+  const pageFlowView = await verify(pageFlowPath, 500)
+  pdfResults.push({ fixtureId: 'page-flow', ...await verifyPdf(pageFlowPath) })
+  const pageFlowEdit = await verify(pageFlowPath, 500, false, {
+    HAN_FLOW_VERIFY_EDIT_TEXT: PAGE_FLOW_EDIT_TEXT,
+    HAN_FLOW_VERIFY_EDIT_TARGET: 'line-split',
+    HAN_FLOW_VERIFY_EDIT_SAVE: '1'
+  })
+
   const editScopePath = generator.createEditScopeHwpx(directory, 'han-flow-edit-scope.hwpx')
   const editScopeResults = []
   for (const scope of EDIT_SCOPE_CASES) {
@@ -415,6 +467,12 @@ try {
       ? undefined
       : 'column-layout 편집: 입력 글자가 2단 영역 둘째 단에 없음',
     ...columnLayoutFailures({ ...columnEdit, columnLayouts: columnEdit.saveAs?.reopenedColumnLayouts, positionedObjects: columnEdit.saveAs?.reopenedPositionedObjects, totalPages: columnEdit.saveAs?.reopenedPages }, generator.COLUMN_LAYOUT_EXPECTED, 'column-layout 저장본'),
+    pageFlowView.passed ? undefined : `page-flow: ${pageFlowView.failures.join(', ')}`,
+    ...pageFlowFailures(pageFlowView, generator.PAGE_FLOW_EXPECTED),
+    pageFlowEdit.passed ? undefined : `page-flow 편집: ${pageFlowEdit.failures.join(', ')}`,
+    pageFlowEdit.editingProbe?.surface === 'line-split' ? undefined : `page-flow 편집: 줄 단위로 나뉜 문단 앞 조각을 고치지 않음(${pageFlowEdit.editingProbe?.surface})`,
+    pageFlowEdit.saveAs?.reopenedTextPresent ? undefined : 'page-flow 편집: 저장본에 입력 글자가 없음',
+    ...pageFlowFailures({ ...pageFlowEdit, totalPages: pageFlowEdit.saveAs?.reopenedPages, pageDecorations: pageFlowEdit.saveAs?.reopenedPageDecorations, positionedObjects: pageFlowEdit.saveAs?.reopenedPositionedObjects, lineSplits: pageFlowEdit.saveAs?.reopenedLineSplits, columnLayouts: pageFlowEdit.saveAs?.reopenedColumnLayouts }, generator.PAGE_FLOW_EXPECTED, 'page-flow 저장본'),
     longFootnoteEdit.passed ? undefined : `footnote-long 편집: ${longFootnoteEdit.failures.join(', ')}`,
     longFootnoteEdit.saveAs?.reopenedTextPresent ? undefined : 'footnote-long 편집: 저장본에 입력 글자가 없음',
     longFootnoteEdit.editingProbe?.noteKind === 'footnote' ? undefined : `footnote-long 편집: 쪽 아래 각주가 아닌 칸을 고침(${longFootnoteEdit.editingProbe?.noteKind})`,
@@ -499,6 +557,13 @@ try {
       totalPages: columnView.totalPages,
       columnLayouts: columnView.columnLayouts,
       edit: { passed: columnEdit.passed, reopenedPages: columnEdit.saveAs?.reopenedPages, reopenedTextPresent: columnEdit.saveAs?.reopenedTextPresent }
+    },
+    pageFlow: {
+      passed: pageFlowView.passed,
+      totalPages: pageFlowView.totalPages,
+      lineSplits: pageFlowView.lineSplits,
+      pageNumbers: pageFlowView.pageDecorations?.map(({ page, pageNumber }) => ({ page, ...pageNumber })),
+      edit: { passed: pageFlowEdit.passed, surface: pageFlowEdit.editingProbe?.surface, reopenedPages: pageFlowEdit.saveAs?.reopenedPages, reopenedTextPresent: pageFlowEdit.saveAs?.reopenedTextPresent }
     },
     longFootnoteEdit: {
       passed: longFootnoteEdit.passed,

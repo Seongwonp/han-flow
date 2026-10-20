@@ -9,14 +9,13 @@ import type { BoxSpacing, HwpUnit, ViewerContent, ViewerObjectPosition, ViewerPa
  */
 
 /**
- * 용지 크기와 쪽 여백(`ViewerDocument.page`). Han-Flow 쪽 본문은 위쪽·아래쪽 여백 안쪽이다. 한/글은 본문을 위쪽 여백에 머리말
- * 여백(`headerOffset`)을 더한 자리에서 시작하므로, 용지 기준 세로 위치는 그 차이만큼 옮겨 본문 글과의 관계를 맞춘다(`objectY`).
+ * 용지 크기와 쪽 본문 여백(`ViewerDocument.page`). `margin.top`·`margin.bottom`은 한/글 본문 영역 여백(위쪽 여백 + 머리말 여백,
+ * 아래쪽 여백 + 꼬리말 여백)이라 쪽 기준(`PAGE`)·용지 기준(`PAPER`) 위치가 한/글과 같은 용지 자리에 놓인다.
  */
 export interface PageFrame {
   width: HwpUnit
   height: HwpUnit
   margin: BoxSpacing
-  headerOffset?: HwpUnit
 }
 
 /** 개체를 둔 문단이 놓인 단과 문단의 가로 범위(용지 기준). 문단 범위는 문단 왼쪽·오른쪽 여백 안쪽이다. */
@@ -115,8 +114,7 @@ export function objectX(position: ViewerObjectPosition, page: PageFrame, frame: 
 
 /**
  * 개체 위쪽 끝(용지 기준). 문단 기준(`PARA`)이면 `paraTop`(문단 위 끝)에서 `vertOffset`만큼 아래이고 맞춤은 위로 본다(한/글은
- * 문단 기준에 위 맞춤만 쓴다). 쪽 기준(`PAGE`)은 Han-Flow 쪽 본문 기준이다. 용지 기준(`PAPER`)은 한/글 본문 영역(위쪽 여백 +
- * 머리말 여백 아래) 안이면 머리말 여백만큼 위로 옮겨 Han-Flow 본문 글과 같은 관계에 둔다(그 위 머리말·여백 자리는 그대로).
+ * 문단 기준에 위 맞춤만 쓴다). 쪽 기준(`PAGE`)은 쪽 본문 영역, 용지 기준(`PAPER`)은 용지 전체 기준이다.
  * `flowWithText`면 쪽 본문 안으로 제한한다. 안쪽·바깥쪽 세로 맞춤은 위·아래로 본다.
  */
 export function objectY(position: ViewerObjectPosition, page: PageFrame, paraTop = page.margin.top): HwpUnit {
@@ -128,8 +126,6 @@ export function objectY(position: ViewerObjectPosition, page: PageFrame, paraTop
     ? 'END'
     : position.vertAlign === 'CENTER' ? 'CENTER' : 'START'
   let y = aligned(start, extent, position.height, align, position.vertOffset)
-  const header = Math.max(page.headerOffset ?? 0, 0)
-  if (position.vertRelTo === 'PAPER' && header > 0 && y >= bodyTop + header) y -= header
   if (position.flowWithText && position.height <= bodyHeight) y = Math.min(Math.max(y, bodyTop), bodyTop + bodyHeight - position.height)
   return clampToPaper(y, position.height, page.height)
 }

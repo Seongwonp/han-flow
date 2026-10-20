@@ -8,7 +8,9 @@ import {
   footnoteAreaHeight,
   noteCursorY,
   noteFragmentPieces,
+  NoteTextPosition,
   sectionFootnoteSettings,
+  sliceNoteParagraph,
   ViewerNoteMetrics,
   ViewerPageFootnote
 } from './footnote_layout'
@@ -56,6 +58,23 @@ export interface LayoutMeasurements {
    * `tableRowHeights`는 영역 첫 단 너비로 잰 값이고, 다른 너비 단에 놓는 block은 여기 값을 먼저 쓴다.
    */
   columnHeights?: Record<string, { blockHeights: Record<string, number>; tableRowHeights: Record<string, number> }>
+  /**
+   * 본문 최상위 글자 문단(block id)마다 화면에서 잰 줄 경계(문단 위 끝 기준 `y`, 위에서부터). 문단이 쪽(단) 아래에 다 들어가지 않으면
+   * 이 경계에서 줄 단위로 나눈다(`lineSplitBlock`). 영역 첫 단 너비로 잰 값이라 너비가 다른 단에서는 쓰지 않는다. 모든 문단을 재지 않고
+   * pagination이 나누려 한 문단(`SectionPagination.wantedLineBreaks`)만 renderer가 재서 더한다(한 줄 문단은 빈 배열).
+   */
+  lineBreaks?: Record<string, ParagraphLineBreak[]>
+}
+
+/** 쪽 사이에서 줄 단위로 나눌 수 있는 문단인지(글자 run만 든 문단). 측정 DOM도 같은 문단만 줄 경계를 잰다. */
+export function lineSplittable(block: ViewerParagraph): boolean {
+  return block.content.length > 0 && block.content.every((item) => item.type === 'text') && !block.breakSetting?.keepLines
+}
+
+/** 문단 줄 경계: 문단 위 끝에서 잰 새 줄 위 끝(HWPUNIT)과 그 줄이 시작하는 글자 위치. */
+export interface ParagraphLineBreak {
+  y: number
+  position: NoteTextPosition
 }
 
 /** 쪽의 다단 영역(위에서부터). 영역 정보가 없는 쪽은 `columns`(없으면 본문 전체)를 영역 하나로 본다. */
@@ -181,6 +200,108 @@ export function fragmentTableBlock(block: ViewerParagraph, firstCapacity: number
   }))
 }
 
+/**
+ * 줄 단위로 나눈 문단 조각. `from`·`to`는 줄 경계 index다(-1은 문단 처음, `breaks.length`는 문단 끝). 조각 글자는 경계 글자
+ * 위치로 자르고 편집 anchor를 지운다(`sliceNoteParagraph`, 앞 조각은 편집 중 원본 문단을 잘라 그린다). 조각 높이는 줄 경계 차이다.
+ */
+export function lineSplitBlock(source: ViewerParagraph, breaks: readonly ParagraphLineBreak[], from: number, to: number, sourceHeight: number): ViewerParagraph {
+  const start = from >= 0 ? breaks[from] : undefined
+  const end = to < breaks.length ? breaks[to] : undefined
+  const top = start?.y ?? 0
+  const sliced = sliceNoteParagraph(source, start?.position, end?.position)
+  const { columnBreak: _columnBreak, columnLayout: _columnLayout, breakSetting: _breakSetting, ...rest } = sliced
+  return {
+    ...rest,
+    id: `${source.id}@line${from + 1}`,
+    pageBreak: false,
+    layoutHeight: Math.max((end?.y ?? sourceHeight) - top, 0),
+    lineSplit: {
+      part: start ? 'rest' : 'head',
+      source,
+      continues: Boolean(end),
+      from,
+      to,
+      ...(start ? {} : { clipHeight: end?.y ?? sourceHeight })
+    }
+  }
+}
+
+/**
+ * 줄 경계 `from` 뒤에서 높이 `capacity` 안에 들어가는 가장 늦은 경계. 조각과 남은 줄이 모두 `minLines`줄 이상이어야 한다(외톨이줄
+ * 보호는 2). 없으면 undefined.
+ */
+export function chooseLineBreak(breaks: readonly ParagraphLineBreak[], from: number, capacity: number, minLines: number): number | undefined {
+  const top = from >= 0 ? breaks[from].y : 0
+  let chosen: number | undefined
+  for (let index = from + 1; index < breaks.length; index += 1) {
+    if (breaks[index].y - top > capacity + 0.5) break
+    if (index - from >= minLines && breaks.length - index >= minLines) chosen = index
+  }
+  return chosen
+}
+
+/**
+ * 배분 다단의 높이 맞춤 단위: 문단(또는 앞 쪽에서 이어진 조각) 전체(`lines` 없음)이거나, 같은 원본 문단의 줄 경계 `from`~`to` 사이
+ * 줄들(`lines`).
+ */
+export interface BalanceUnit {
+  block: ViewerParagraph
+  height: number
+  lines?: { source: ViewerParagraph; from: number; to: number; sourceHeight: number }
+}
+
+/**
+ * 영역 block을 줄 단위 배분 단위로 편다. 측정한 줄 경계가 있고 문단 보호(`keepLines`)가 아닌 글자 문단은 줄마다(외톨이줄 보호면
+ * 처음 두 줄과 끝 두 줄은 한 단위) 나누고, 그 밖의 block은 한 단위다. `heightOf`는 원본 문단·block 높이다.
+ */
+export function balanceUnits(blocks: readonly ViewerParagraph[], lineBreaks: Record<string, ParagraphLineBreak[]>, heightOf: (block: ViewerParagraph) => number): BalanceUnit[] {
+  const units: BalanceUnit[] = []
+  for (const block of blocks) {
+    const source = block.lineSplit?.source ?? block
+    const breaks = source.breakSetting?.keepLines ? undefined : lineBreaks[source.id]
+    if (!breaks?.length) {
+      units.push({ block, height: heightOf(block) })
+      continue
+    }
+    const sourceHeight = heightOf(source)
+    const from = block.lineSplit?.from ?? -1
+    const to = block.lineSplit?.to ?? breaks.length
+    let cuts = Array.from({ length: to - from + 1 }, (_, index) => from + index)
+    if (source.breakSetting?.widowOrphan) {
+      // 문단 처음 두 줄과 끝 두 줄은 떼지 않는다(그 사이 경계만 남긴다).
+      cuts = cuts.filter((cut, index) => index === 0 || index === cuts.length - 1 || (cut >= 1 && cut <= breaks.length - 2))
+    }
+    const y = (cut: number) => cut < 0 ? 0 : cut >= breaks.length ? sourceHeight : breaks[cut].y
+    for (let index = 0; index + 1 < cuts.length; index += 1) {
+      units.push({ block, height: Math.max(y(cuts[index + 1]) - y(cuts[index]), 0), lines: { source, from: cuts[index], to: cuts[index + 1], sourceHeight } })
+    }
+  }
+  return units
+}
+
+/** 한 단에 든 배분 단위를 block으로 되돌린다. 같은 원본 문단의 이어진 줄들은 한 조각(문단 전체면 원본 문단 그대로)이다. */
+export function joinBalanceUnits(units: readonly BalanceUnit[], lineBreaks: Record<string, ParagraphLineBreak[]>): ViewerParagraph[] {
+  const blocks: ViewerParagraph[] = []
+  for (let index = 0; index < units.length;) {
+    const lines = units[index].lines
+    if (!lines) {
+      blocks.push(units[index].block)
+      index += 1
+      continue
+    }
+    let end = index + 1
+    while (end < units.length && units[end].lines?.source === lines.source && units[end].lines!.from === units[end - 1].lines!.to) end += 1
+    const breaks = lineBreaks[lines.source.id]
+    const to = units[end - 1].lines!.to
+    const block = units[index].block
+    if (block.lineSplit ? block.lineSplit.from === lines.from && block.lineSplit.to === to : lines.from < 0 && to >= breaks.length) blocks.push(block)
+    else if (lines.from < 0 && to >= breaks.length) blocks.push(lines.source)
+    else blocks.push(lineSplitBlock(lines.source, breaks, lines.from, to, lines.sourceHeight))
+    index = end
+  }
+  return blocks
+}
+
 export function paginateDocument(document: ViewerDocument): ViewerParagraph[][] {
   return paginateViewerDocument(document).map((page) => page.blocks)
 }
@@ -249,7 +370,9 @@ export function paginateViewerSection(
   sectionIndex: number,
   availableHeight: number,
   measurements?: LayoutMeasurements,
-  page?: PageFrame
+  page?: PageFrame,
+  /** 줄 단위로 나누려 했지만 줄 경계를 아직 재지 않은 block id를 모은다(renderer가 재서 `lineBreaks`에 더한다). */
+  wantedLineBreaks?: Set<string>
 ): ViewerPage[] {
   const pages: ViewerPage[] = []
   const settings = sectionFootnoteSettings(section.footnoteSettings)
@@ -300,6 +423,7 @@ export function paginateViewerSection(
     if (!merged) {
       merged = {
         ...measurements,
+        lineBreaks: undefined,
         blockHeights: { ...measurements.blockHeights, ...variant.blockHeights },
         tableRowHeights: { ...measurements.tableRowHeights, ...variant.tableRowHeights }
       }
@@ -385,9 +509,22 @@ export function paginateViewerSection(
     const blocks = target.columns.flat()
     if (!blocks.length) return
     const layout = target.layout
-    const starts = balancedColumnStarts(blocks.length, layout.count, (column, block) => heightIn(blocks[block], layout, column))
     const bandsDuring = bandsHeight - target.startBands
-    target.columns = starts.map((start, column) => blocks.slice(start, starts[column + 1] ?? blocks.length))
+    if (measurements && uniformColumns(layout)) {
+      for (const block of blocks) {
+        const source = block.lineSplit?.source ?? block
+        if (lineSplittable(source) && !measurements.lineBreaks?.[source.id]) wantedLineBreaks?.add(source.id)
+      }
+    }
+    if (uniformColumns(layout) && measurements?.lineBreaks) {
+      // 줄 단위 배분: 측정한 줄 경계가 있는 글자 문단은 줄(외톨이줄 보호면 처음·끝 두 줄은 묶음)을, 그 밖은 문단을 한 단위로 맞춘다.
+      const units = balanceUnits(blocks, measurements.lineBreaks, (block) => heightIn(block, layout, 0))
+      const starts = balancedColumnStarts(units.length, layout.count, (_column, unit) => units[unit].height)
+      target.columns = starts.map((start, column) => joinBalanceUnits(units.slice(start, starts[column + 1] ?? units.length), measurements.lineBreaks!))
+    } else {
+      const starts = balancedColumnStarts(blocks.length, layout.count, (column, block) => heightIn(blocks[block], layout, column))
+      target.columns = starts.map((start, column) => blocks.slice(start, starts[column + 1] ?? blocks.length))
+    }
     target.ends = target.columns.map((column, index) =>
       target.top + bandsDuring + column.reduce((sum, block) => sum + heightIn(block, layout, index), 0))
   }
@@ -470,8 +607,58 @@ export function paginateViewerSection(
     while (pending.length) advanceFlow()
   }
 
+  /** 영역 단 너비가 모두 첫 단과 같은지(줄 경계는 첫 단 너비로 잰 값이다). */
+  const uniformColumns = (layout: ViewerColumnLayout | undefined) =>
+    !layout || !measurements?.columnHeights || bodyWidth === undefined || new Set(viewerColumnWidths(bodyWidth, layout).widths.map(columnWidthKey)).size === 1
+
+  /**
+   * 글자 문단을 쪽(단) 아래에서 줄 단위로 나눈다. 문단 전체가 지금 단에 들어가거나 나눌 수 없으면(측정한 줄 경계 없음, 문단 보호,
+   * 지나지 않은 개체 띠, 너비가 다른 단) false를 돌려 문단 단위 흐름에 맡긴다. 앞 조각과 남은 줄은 외톨이줄 보호면 2줄 이상이다.
+   * 들어갈 줄이 없으면 다음 단·쪽으로 넘기고, 빈 단에도 들어가지 않으면 들어가는 만큼(최소 한 줄) 놓는다.
+   */
+  const placeLineSplit = (block: ViewerParagraph): boolean => {
+    if (!measurements || !lineSplittable(block) || !uniformColumns(region().layout)) return false
+    if (simpleFlow && mergedBands.some((band) => band.bottom > usedHeight)) return false
+    const total = blockHeight(block)
+    if (usedHeight + total + noteArea() <= availableHeight) return false
+    const breaks = measurements.lineBreaks?.[block.id]
+    if (!breaks) wantedLineBreaks?.add(block.id)
+    if (!breaks?.length) return false
+    const minLines = block.breakSetting?.widowOrphan ? 2 : 1
+    const place = (from: number, to: number) => {
+      const piece = from < 0 && to >= breaks.length ? block : lineSplitBlock(block, breaks, from, to, total)
+      const height = piece === block ? total : piece.layoutHeight
+      currentColumn().push(piece)
+      if (simpleFlow) pageFlow.push({ height, kind: 'text' })
+      usedHeight += height
+    }
+    let from = -1
+    for (let guard = 0; guard <= breaks.length + 4096; guard += 1) {
+      const top = from >= 0 ? breaks[from].y : 0
+      const capacity = availableHeight - usedHeight - noteArea()
+      if (total - top <= capacity + 0.5) break
+      const blank = !currentColumn().length && !columnNotes().length
+      let index = chooseLineBreak(breaks, from, capacity, minLines)
+      if (index === undefined) {
+        if (!blank) {
+          advanceFlow()
+          spilled = Boolean(region().layout)
+          continue
+        }
+        index = chooseLineBreak(breaks, from, capacity, 1) ?? (from + 1 < breaks.length ? from + 1 : undefined)
+        if (index === undefined) break
+      }
+      place(from, index)
+      advanceFlow()
+      spilled = Boolean(region().layout)
+      from = index
+    }
+    place(from, breaks.length)
+    return true
+  }
+
   resetPage(flowLayout(section.columnLayout))
-  section.blocks.forEach((originalBlock) => {
+  section.blocks.forEach((originalBlock, blockIndex) => {
     const sourceFlowRestart = Boolean(measurements && !previousBlockFragmented && currentColumn().length && originalBlock.layoutTop !== undefined && previousLayoutTop !== undefined && originalBlock.layoutTop < previousLayoutTop)
     const multiColumn = Boolean(region().layout)
     if (originalBlock.columnLayout) {
@@ -479,7 +666,7 @@ export function paginateViewerSection(
       if (originalBlock.pageBreak || sourceFlowRestart) flush()
       startRegion(flowLayout(originalBlock.columnLayout), true)
       spilled = false
-    } else if (originalBlock.pageBreak) {
+    } else if (originalBlock.pageBreak || originalBlock.breakSetting?.pageBreakBefore) {
       flush()
       spilled = false
     } else if (originalBlock.columnBreak && multiColumn) breakColumn()
@@ -491,6 +678,21 @@ export function paginateViewerSection(
     } else if (sourceFlowRestart && multiColumn) breakColumn()
     else if (sourceFlowRestart) flush()
     advanceWhileNotesPending()
+    if (placeLineSplit(originalBlock)) {
+      previousBlockFragmented = false
+      if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutLastTop ?? originalBlock.layoutTop
+      return
+    }
+    // 다음 문단과 함께(`keepWithNext`): 다음 문단 첫 줄(나눌 수 없으면 문단 전체)이 이 문단과 같은 단에 들어가지 않으면 이 문단을
+    // 먼저 다음 단·쪽으로 넘긴다(빈 단이거나 둘이 빈 단에도 들어가지 않으면 그대로 둔다).
+    const next = section.blocks[blockIndex + 1]
+    if (originalBlock.breakSetting?.keepWithNext && next && !next.pageBreak && !next.breakSetting?.pageBreakBefore && currentColumn().length && !region().layout) {
+      const nextLines = next.breakSetting?.keepLines ? undefined : measurementsAt(region().layout, columnIndex)?.lineBreaks?.[next.id]
+      if (!nextLines && measurements && lineSplittable(next)) wantedLineBreaks?.add(next.id)
+      const together = blockHeight(originalBlock) + (nextLines?.[next.breakSetting?.widowOrphan ? 1 : 0]?.y ?? blockHeight(next))
+      const bandsBelow = mergedBands.some((band) => band.bottom > usedHeight)
+      if (!bandsBelow && together <= availableHeight - noteArea() && usedHeight + together + noteArea() > availableHeight) advanceFlow()
+    }
     // 한 단 흐름에서 표 첫 조각은 아직 지나지 않은 띠를 건너뛴다고 보고 그 높이만큼 덜 채운다.
     const bandsAhead = simpleFlow ? mergedBands.reduce((sum, band) => sum + Math.max(band.bottom - Math.max(band.top, usedHeight), 0), 0) : 0
     const fragments = fragmentTableBlock(originalBlock, availableHeight - usedHeight - bandsAhead - noteArea(), availableHeight, measurementsAt(region().layout, columnIndex))
@@ -565,7 +767,7 @@ export function paginateViewerSection(
       fillNotes()
     })
     previousBlockFragmented = fragments.length > 1
-    if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutTop
+    if (originalBlock.layoutTop !== undefined) previousLayoutTop = originalBlock.layoutLastTop ?? originalBlock.layoutTop
   })
   while (pending.length) flush()
   if (region().layout?.type === 'BALANCED_NEWSPAPER') {
@@ -646,10 +848,12 @@ export interface SectionPagination {
   /** 용지·쪽 기준 개체 위치를 정한 쪽 크기·여백(값으로 비교한다). */
   pageKey: string
   pages: ViewerPage[]
+  /** 줄 단위로 나누려 했지만 `measurements.lineBreaks`에 줄 경계가 없는 block id. renderer가 재서 측정값에 더하면 다시 나눈다. */
+  wantedLineBreaks?: string[]
 }
 
 function pageFrameKey(page: PageFrame): string {
-  return [page.width, page.height, page.margin.top, page.margin.right, page.margin.bottom, page.margin.left, page.headerOffset ?? 0].join(',')
+  return [page.width, page.height, page.margin.top, page.margin.right, page.margin.bottom, page.margin.left].join(',')
 }
 
 /**
@@ -678,13 +882,16 @@ export function paginateViewerSectionsIncremental(
       reused += 1
       return cached
     }
+    const wanted = new Set<string>()
+    const pages = paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page, wanted)
     return {
       section,
       sectionIndex,
       availableHeight,
       measurements,
       pageKey,
-      pages: paginateViewerSection(section, sectionIndex, availableHeight, measurements, document.page)
+      pages,
+      ...(wanted.size ? { wantedLineBreaks: [...wanted] } : {})
     }
   })
   return { pages: sections.flatMap((section) => section.pages), sections, reused }

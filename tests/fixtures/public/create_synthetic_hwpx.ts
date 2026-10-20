@@ -644,14 +644,17 @@ export const FLOATING_OBJECT_TEXTS = {
   body: (index: number) => `본문 ${index + 1}번 문단입니다. 원본 위치에 놓인 개체를 피해 흘러야 하는 글을 두 줄 넘게 이어 쓰려고 일부러 길게 적었습니다. 화면과 PDF의 글자 수가 같아야 합니다.`
 } as const
 export const FLOATING_OBJECT_PAGE = { width: 59528, height: 84188, left: 5669, right: 5669, top: 5669, bottom: 4252, header: 2835, footer: 2835 } as const
-/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준, Han-Flow 쪽 본문은 위쪽 여백에서 시작). */
+/** 쪽 본문 위 끝·아래 끝(용지 기준). 한/글처럼 위쪽 여백 + 머리말 여백 아래에서 시작해 꼬리말 여백 + 아래쪽 여백 위에서 끝난다. */
+const FLOATING_BODY_TOP = FLOATING_OBJECT_PAGE.top + FLOATING_OBJECT_PAGE.header
+const FLOATING_BODY_BOTTOM = FLOATING_OBJECT_PAGE.height - FLOATING_OBJECT_PAGE.bottom - FLOATING_OBJECT_PAGE.footer
+/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준). */
 export const FLOATING_OBJECT_EXPECTED = {
-  // 용지 기준(왼쪽 30000, 위 40000)은 한/글 본문(위쪽 여백 + 머리말 여백) 아래라 머리말 여백만큼 위로 옮긴다.
-  textBox: { page: 1, x: 30000, y: 40000 - 2835, width: 20000, height: 6000 },
+  // 용지 기준(왼쪽 30000, 위 40000).
+  textBox: { page: 1, x: 30000, y: 40000, width: 20000, height: 6000 },
   // 쪽 본문 오른쪽 아래에서 안쪽으로 가로 1000·세로 2000.
-  picture: { page: 1, x: 59528 - 5669 - 14000 - 1000, y: 84188 - 4252 - 9000 - 2000, width: 14000, height: 9000 },
+  picture: { page: 1, x: 59528 - 5669 - 14000 - 1000, y: FLOATING_BODY_BOTTOM - 9000 - 2000, width: 14000, height: 9000 },
   // 쪽 본문 위 가운데.
-  table: { x: 5669 + (59528 - 5669 * 2 - 30000) / 2, y: 5669, width: 30000 }
+  table: { x: 5669 + (59528 - 5669 * 2 - 30000) / 2, y: FLOATING_BODY_TOP, width: 30000 }
 } as const
 
 const floatingPos = (vertRelTo: string, horzRelTo: string, vertAlign: string, horzAlign: string, vertOffset: number, horzOffset: number) =>
@@ -832,20 +835,20 @@ export const OBJECT_LAYOUT_TEXTS = {
   body: (index: number) => `개체 배치 본문 ${index + 1}번 문단입니다. 쪽 기준 글 옆 배치 그림의 왼쪽 빈 곳으로 줄이 좁아져 흘러야 하는 글을 여러 줄 이어 쓰려고 일부러 길게 적었습니다.`
 } as const
 const OBJECT_LAYOUT_TABLE = { width: 40000, height: 12000, cellWidth: 20000, cellMargin: 500 } as const
-/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준, Han-Flow 쪽 본문은 위쪽 여백에서 시작). */
+/** 화면에서 기대하는 개체 상자(HWPUNIT, 용지 왼쪽 위 기준, 쪽 본문은 위쪽 여백 + 머리말 여백 아래에서 시작). */
 export const OBJECT_LAYOUT_EXPECTED = {
   header: { x: 3000, y: 1000, width: 2000, height: 1000 },
-  table: { x: 5669, y: 5669, width: OBJECT_LAYOUT_TABLE.width, height: OBJECT_LAYOUT_TABLE.height },
+  table: { x: 5669, y: FLOATING_BODY_TOP, width: OBJECT_LAYOUT_TABLE.width, height: OBJECT_LAYOUT_TABLE.height },
   // 셀(안쪽 여백 포함)을 용지로, 안쪽 여백 안을 쪽 본문으로 본다.
   cellPicture: {
     x: 5669 + OBJECT_LAYOUT_TABLE.cellWidth - OBJECT_LAYOUT_TABLE.cellMargin - 3000,
-    y: 5669 + OBJECT_LAYOUT_TABLE.height - OBJECT_LAYOUT_TABLE.cellMargin - 2000,
+    y: FLOATING_BODY_TOP + OBJECT_LAYOUT_TABLE.height - OBJECT_LAYOUT_TABLE.cellMargin - 2000,
     width: 3000,
     height: 2000
   },
-  squarePicture: { x: 59528 - 5669 - 15000, y: 5669 + 18000, width: 15000, height: 12000 },
-  // 글상자(용지 기준 세로 60000 → 머리말 여백만큼 위) 테두리(57)·안쪽 여백(283) 안에서 (1000, 1000).
-  textBoxPicture: { x: 30000 + 57 + 283 + 1000, y: 60000 - 2835 + 57 + 283 + 1000, width: 2000, height: 2000 }
+  squarePicture: { x: 59528 - 5669 - 15000, y: FLOATING_BODY_TOP + 18000, width: 15000, height: 12000 },
+  // 글상자(용지 기준 세로 60000) 테두리(57)·안쪽 여백(283) 안에서 (1000, 1000).
+  textBoxPicture: { x: 30000 + 57 + 283 + 1000, y: 60000 + 57 + 283 + 1000, width: 2000, height: 2000 }
 } as const
 const layoutPicture = (id: number, wrap: string, width: number, height: number, pos: string) =>
   `<hp:pic id="${id}" zOrder="${id}" numberingType="PICTURE" textWrap="${wrap}" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="${width}" height="${height}"/><hp:curSz width="${width}" height="${height}"/><hc:img binaryItemIDRef="image1"/><hp:sz width="${width}" widthRelTo="ABSOLUTE" height="${height}" heightRelTo="ABSOLUTE" protect="0"/>${pos}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`
@@ -866,6 +869,69 @@ export function createObjectLayoutHwpx(directory: string, fileName = 'han-flow-o
   addMimetype(zip)
   zip.addFile('Contents/header.xml', Buffer.from(header))
   zip.addFile('Contents/section0.xml', Buffer.from(objectLayoutSection))
+  zip.addFile('BinData/image1.png', solidPng)
+  zip.writeZip(path)
+  return path
+}
+
+/**
+ * 쪽 꾸밈·개체 회전·줄 단위 쪽 나눔 합성 문서(직접 작성, 개인정보 없음). A4(`FLOATING_OBJECT_PAGE`와 같은 여백, 머리말·꼬리말 여백 2835).
+ * - 구역 1: 머리말·꼬리말·아래 가운데 쪽 번호. 용지 기준 글 앞 그림(8000×2000, 90도 회전), 서로 겹친 글 앞 글상자 둘(zOrder 20·10,
+ *   문서 순서는 반대), 본문 문단 뒤 한 쪽보다 긴 문단 하나 → 쪽 사이에서 줄 단위로 나뉘어야 한다.
+ * - 구역 2: 배분 다단(`BALANCED_NEWSPAPER`) 2단에 긴 문단 하나 → 두 단에 줄 단위로 나뉘어 높이를 맞춰야 한다.
+ * verify:matrix가 쪽 번호가 꼬리말 띠 아래 끝(본문 밖)에 있고 본문과 겹치지 않는지, 회전 그림 상자, 쌓임 순서, 줄 단위 조각의 쪽,
+ * 화면/PDF 글자 수와 나뉜 문단 앞 조각 편집→Save As→재열기를 본다.
+ */
+export const PAGE_FLOW_TEXTS = {
+  title: '쪽 흐름 시험 문서',
+  header: '쪽 흐름 머리말',
+  footer: '쪽 흐름 꼬리말',
+  front: '위 글상자',
+  back: '아래 글상자',
+  body: (index: number) => `쪽 흐름 본문 ${index + 1}번 문단입니다. 쪽 아래를 채우려고 두 줄 넘게 이어 쓴 글입니다. 화면과 PDF의 글자 수가 같아야 합니다.`,
+  long: (index: number) => `긴 문단 ${index + 1}번째 문장은 쪽 아래에서 줄 단위로 나뉘어 다음 쪽 처음으로 이어져야 합니다.`,
+  column: (index: number) => `배분 다단 ${index + 1}번째 문장은 두 단에 줄 단위로 나뉘어 높이가 맞아야 합니다.`
+} as const
+export const PAGE_FLOW_LONG_SENTENCES = 45
+export const PAGE_FLOW_COLUMN_SENTENCES = 14
+/** 화면에서 기대하는 상자(HWPUNIT, 용지 왼쪽 위 기준). */
+export const PAGE_FLOW_EXPECTED = {
+  /** 쪽 번호 상자 아래 끝: 꼬리말 띠 아래 끝(용지 높이 - 아래쪽 여백). 본문 아래 끝은 그보다 꼬리말 여백만큼 위다. */
+  pageNumberBottom: FLOATING_OBJECT_PAGE.height - FLOATING_OBJECT_PAGE.bottom,
+  bodyBottom: FLOATING_BODY_BOTTOM,
+  /** 머리말 띠 위 끝(위쪽 여백)과 본문 위 끝. */
+  headerTop: FLOATING_OBJECT_PAGE.top,
+  bodyTop: FLOATING_BODY_TOP,
+  /** 90도 회전 그림: 회전 중심(상자 가운데)은 그대로이고 화면 상자는 가로·세로가 바뀐다. */
+  rotatedPicture: { page: 1, x: 30000 + 4000 - 1000, y: 15000 + 1000 - 4000, width: 2000, height: 8000 }
+} as const
+const pageFlowParagraph = (runs: string) =>
+  `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${runs}</hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>`
+const pageFlowTextBox = (id: number, zOrder: number, x: number, y: number, text: string, color: string) =>
+  `<hp:rect id="${id}" zOrder="${zOrder}" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" ratio="0"><hp:offset x="0" y="0"/><hp:orgSz width="12000" height="4000"/><hp:curSz width="12000" height="4000"/><hp:lineShape color="#1F4E79" width="57" style="SOLID"/><hc:fillBrush><hc:winBrush faceColor="${color}" hatchColor="#000000" alpha="0"/></hc:fillBrush><hp:drawText lastWidth="12000" name="" editable="0"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${text}</hp:t></hp:run></hp:p></hp:subList><hp:textMargin left="283" right="283" top="283" bottom="283"/></hp:drawText><hp:sz width="12000" widthRelTo="ABSOLUTE" height="4000" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', y, x)}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:rect>`
+const pageFlowRotatedPicture = `<hp:pic id="9702" zOrder="30" numberingType="PICTURE" textWrap="IN_FRONT_OF_TEXT" textFlow="BOTH_SIDES" lock="0" reverse="0"><hp:offset x="0" y="0"/><hp:orgSz width="8000" height="2000"/><hp:curSz width="8000" height="2000"/><hp:flip horizontal="0" vertical="0"/><hp:rotationInfo angle="90" centerX="4000" centerY="1000" rotateimage="1"/><hc:img binaryItemIDRef="image1"/><hp:sz width="8000" widthRelTo="ABSOLUTE" height="2000" heightRelTo="ABSOLUTE" protect="0"/>${floatingPos('PAPER', 'PAPER', 'TOP', 'LEFT', 15000, 30000)}<hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>`
+const pageFlowSecPr = `<hp:secPr><hp:pagePr width="${FLOATING_OBJECT_PAGE.width}" height="${FLOATING_OBJECT_PAGE.height}"><hp:margin left="${FLOATING_OBJECT_PAGE.left}" right="${FLOATING_OBJECT_PAGE.right}" top="${FLOATING_OBJECT_PAGE.top}" bottom="${FLOATING_OBJECT_PAGE.bottom}" header="${FLOATING_OBJECT_PAGE.header}" footer="${FLOATING_OBJECT_PAGE.footer}"/></hp:pagePr></hp:secPr>`
+const pageFlowSections = [
+  `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  <hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${pageFlowSecPr}<hp:ctrl><hp:pageNum pos="BOTTOM_CENTER" formatType="DIGIT" sideChar="-"/></hp:ctrl><hp:ctrl><hp:header id="1" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${PAGE_FLOW_TEXTS.header}</hp:t></hp:run></hp:p></hp:subList></hp:header></hp:ctrl><hp:ctrl><hp:footer id="2" applyPageType="BOTH"><hp:subList textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="TOP"><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>${PAGE_FLOW_TEXTS.footer}</hp:t></hp:run></hp:p></hp:subList></hp:footer></hp:ctrl></hp:run><hp:run charPrIDRef="0"><hp:t>${PAGE_FLOW_TEXTS.title}</hp:t></hp:run><hp:linesegarray><hp:lineseg vertpos="0" vertsize="1000"/></hp:linesegarray></hp:p>
+  ${pageFlowParagraph(`${pageFlowRotatedPicture}${pageFlowTextBox(9703, 20, 6000, 30000, PAGE_FLOW_TEXTS.front, '#EAF1FB')}${pageFlowTextBox(9704, 10, 9000, 32000, PAGE_FLOW_TEXTS.back, '#FBEAEA')}<hp:t>${PAGE_FLOW_TEXTS.body(0)}</hp:t>`)}
+  ${Array.from({ length: 13 }, (_, index) => pageFlowParagraph(`<hp:t>${PAGE_FLOW_TEXTS.body(index + 1)}</hp:t>`)).join('\n  ')}
+  ${pageFlowParagraph(`<hp:t>${Array.from({ length: PAGE_FLOW_LONG_SENTENCES }, (_, index) => PAGE_FLOW_TEXTS.long(index)).join(' ')}</hp:t>`)}
+  ${pageFlowParagraph(`<hp:t>${PAGE_FLOW_TEXTS.body(14)}</hp:t>`)}
+</hs:sec>`,
+  `<?xml version="1.0" encoding="UTF-8"?>
+<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core">
+  ${pageFlowParagraph(`<hp:ctrl><hp:colPr id="" type="BALANCED_NEWSPAPER" layout="LEFT" colCount="2" sameSz="1" sameGap="1500"/></hp:ctrl><hp:t>${Array.from({ length: PAGE_FLOW_COLUMN_SENTENCES }, (_, index) => PAGE_FLOW_TEXTS.column(index)).join(' ')}</hp:t>`)}
+</hs:sec>`
+]
+
+export function createPageFlowHwpx(directory: string, fileName = 'han-flow-page-flow.hwpx'): string {
+  const path = join(directory, fileName)
+  const zip = new AdmZip(undefined, { noSort: true })
+  addMimetype(zip)
+  zip.addFile('Contents/header.xml', Buffer.from(header))
+  pageFlowSections.forEach((section, index) => zip.addFile(`Contents/section${index}.xml`, Buffer.from(section)))
   zip.addFile('BinData/image1.png', solidPng)
   zip.writeZip(path)
   return path

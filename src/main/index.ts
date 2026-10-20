@@ -329,7 +329,7 @@ function captureVisualState(window: BrowserWindow): void {
   const editMode = testValue('HAN_FLOW_VISUAL_EDIT_MODE') ?? 'composition'
   const editCellEnabled = testValue('HAN_FLOW_VISUAL_EDIT_CELL') === '1'
   // 문단 편집 E2E 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
-  // column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단·표 셀.
+  // column(2단 영역 둘째 단의 본문 문단), line-split(쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각). 없으면 본문 문단·표 셀.
   const editTarget = testValue('HAN_FLOW_VISUAL_EDIT_TARGET')
   const editTargetLabels: Record<string, string> = {
     'table-caret': 'HWPX 표 앞뒤 글자 편집',
@@ -338,7 +338,8 @@ function captureVisualState(window: BrowserWindow): void {
     endnote: 'HWPX 각주·미주 편집',
     header: 'HWPX 머리말 편집',
     footer: 'HWPX 꼬리말 편집',
-    column: 'HWPX 문단 편집'
+    column: 'HWPX 문단 편집',
+    'line-split': 'HWPX 문단 편집'
   }
   // 같은 입력 칸 이름을 쓰는 대상 가운데 고를 칸(표 앞·뒤 caret, 각주·미주 목록)의 조상 selector.
   const editTargetScopes: Record<string, string> = {
@@ -346,7 +347,9 @@ function captureVisualState(window: BrowserWindow): void {
     'table-caret-after': '.viewer-table-caret-after',
     note: '[data-note-kind="footnote"]',
     endnote: '[data-note-kind="endnote"]',
-    column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]'
+    column: '.viewer-column-flow[data-column-count="2"] > .viewer-column[data-column-index="1"]',
+    // 쪽 사이에서 줄 단위로 나뉜 문단의 앞 조각(편집 중 원본 문단을 조각 높이로 잘라 둔 입력 칸).
+    'line-split': '.viewer-line-split-clip'
   }
   const editTargetScope = editTarget ? editTargetScopes[editTarget] : undefined
   const decorationTarget = editTarget === 'header' || editTarget === 'footer'
@@ -1229,7 +1232,10 @@ function captureVisualState(window: BrowserWindow): void {
         const page = element.closest('.viewer-page')
         const pageBox = page.getBoundingClientRect()
         const scale = pageBox.width / (page.offsetWidth || pageBox.width || 1) || 1
+        // 회전·대칭한 개체는 감싼 상자(.viewer-object-transform) 안에 있다. 상자 위치·크기는 돌린 뒤 화면 상자다.
         const target = element.firstElementChild ?? element
+        const transformed = target.classList.contains('viewer-object-transform')
+        const content = transformed ? target.firstElementChild ?? target : target
         const box = target.getBoundingClientRect()
         const round = (value) => Math.round(value * 10) / 10
         // 자리 차지·글 옆 배치 개체가 비운 자리(감싼 상자)에 개체 밖 본문 글이 들어왔는지. 글 앞·뒤 개체와 본문 자리를 비우지 않는
@@ -1261,11 +1267,68 @@ function captureVisualState(window: BrowserWindow): void {
           container: container ?? (element.parentElement?.closest('td') ? 'cell' : element.parentElement?.closest('.viewer-object-body') ? 'text-box' : undefined),
           textOverlap,
           ...(sideWrap ? { textBeside } : {}),
-          kind: target.dataset?.objectKind ?? (target.tagName === 'IMG' ? 'image' : target.tagName === 'TABLE' ? 'table' : target.tagName.toLowerCase()),
+          kind: content.dataset?.objectKind ?? (content.tagName === 'IMG' ? 'image' : content.tagName === 'TABLE' ? 'table' : content.tagName.toLowerCase()),
+          ...(transformed ? { rotation: target.dataset.objectRotation } : {}),
+          zIndex: Number(getComputedStyle(element).zIndex) || 0,
           x: round((box.left - pageBox.left) / scale),
           y: round((box.top - pageBox.top) / scale),
           width: round(box.width / scale),
           height: round(box.height / scale)
+        }
+      }),
+      // 쪽 사이에서 줄 단위로 나눈 문단 조각(쪽, 조각 종류, 원본 문단 id, 글자 수). 편집 중 앞 조각은 원본 문단을 잘라 둔 'head-edit'다.
+      lineSplits: Array.from(document.querySelectorAll('.viewer-page [data-line-split], .viewer-page .viewer-line-split-clip')).map((element) => ({
+        page: Number(element.closest('.viewer-page').dataset.pageIndex) + 1,
+        part: element.classList.contains('viewer-line-split-clip') ? 'head-edit' : element.dataset.lineSplit,
+        source: element.dataset.lineSplitSource,
+        characters: (element.textContent.match(/[^\s\p{Co}]/gu) || []).length
+      })),
+      // 쪽 번호·머리말·꼬리말 상자(용지 기준 CSS px, 배율 제외)와 그 상자에 들어온 본문 글·그림(머리말·꼬리말·각주 밖)이 있는지.
+      // 쪽 번호는 본문 밖 꼬리말·머리말 띠에 놓여 본문과 겹치지 않아야 한다.
+      pageDecorations: Array.from(document.querySelectorAll('.viewer-page:not(.viewer-fixed-page)')).map((page) => {
+        const pageBox = page.getBoundingClientRect()
+        const scale = pageBox.width / (page.offsetWidth || pageBox.width || 1) || 1
+        const round = (value) => Math.round(value * 10) / 10
+        const decorationSelector = '.viewer-header, .viewer-footer, .viewer-page-number, [data-object-container="header"], [data-object-container="footer"]'
+        const bodyRects = []
+        const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT)
+        const range = document.createRange()
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim() || node.parentElement?.closest(decorationSelector + ', .viewer-footnotes')) continue
+          // 편집 중 줄 단위로 나뉜 문단 앞 조각은 원본 문단 전체를 잘라 둔다(잘려 안 보이는 줄은 빼고 본다).
+          const clip = node.parentElement?.closest('.viewer-line-split-clip')?.getBoundingClientRect()
+          range.selectNodeContents(node)
+          for (const rect of range.getClientRects()) {
+            if (!(rect.width > 0 && rect.height > 0)) continue
+            if (clip && (rect.top >= clip.bottom - 1 || rect.bottom <= clip.top + 1)) continue
+            bodyRects.push(rect)
+          }
+        }
+        for (const element of page.querySelectorAll('img, svg')) {
+          if (element.closest(decorationSelector + ', .viewer-footnotes')) continue
+          const rect = element.getBoundingClientRect()
+          if (rect.width > 0 && rect.height > 0) bodyRects.push(rect)
+        }
+        const overlaps = (box) => bodyRects.some((rect) => rect.left < box.right - 1 && rect.right > box.left + 1 && rect.top < box.bottom - 1 && rect.bottom > box.top + 1)
+        const describe = (element) => {
+          if (!element) return null
+          const box = element.getBoundingClientRect()
+          return { y: round((box.top - pageBox.top) / scale), bottom: round((box.bottom - pageBox.top) / scale), x: round((box.left - pageBox.left) / scale), width: round(box.width / scale), overlap: box.height > 0 && overlaps(box) }
+        }
+        const content = (element) => {
+          if (!element || !element.textContent?.trim()) return null
+          range.selectNodeContents(element)
+          const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0)
+          if (!rects.length) return null
+          const top = Math.min(...rects.map((rect) => rect.top))
+          const bottom = Math.max(...rects.map((rect) => rect.bottom))
+          return { y: round((top - pageBox.top) / scale), bottom: round((bottom - pageBox.top) / scale), overlap: rects.some(overlaps) }
+        }
+        return {
+          page: Number(page.dataset.pageIndex) + 1,
+          pageNumber: describe(page.querySelector('.viewer-page-number')),
+          header: content(page.querySelector('.viewer-header')),
+          footer: content(page.querySelector('.viewer-footer'))
         }
       }),
       recoveredObjectCharacters: Array.from(document.querySelectorAll('.viewer-page .viewer-object-body, .viewer-page .viewer-object-fallback, .viewer-page .viewer-note-body, .viewer-page ruby'))

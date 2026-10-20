@@ -36,7 +36,15 @@ export interface ViewerParseTimings {
 export interface BoxSpacing { top: HwpUnit; right: HwpUnit; bottom: HwpUnit; left: HwpUnit }
 export interface ViewerDiagnostic { source: string; message: string; code?: string }
 export interface ViewerCharStyle { id: string; height: HwpUnit; color: string; bold: boolean; italic: boolean; underline: boolean; strikeout: boolean; fontId?: string; fontFamily?: string }
-export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; indent?: HwpUnit; margin: BoxSpacing; tabPrId?: string; heading?: ViewerHeadingStyle }
+export interface ViewerParaStyle { id: string; align?: string; lineSpacing?: number; indent?: HwpUnit; margin: BoxSpacing; tabPrId?: string; heading?: ViewerHeadingStyle; breakSetting?: ViewerBreakSetting }
+/**
+ * 문단 나눔 설정(OWPML `hh:breakSetting`). 켜진 것만 true로 둔다.
+ * - `widowOrphan`: 외톨이줄 보호. 쪽을 넘어 나눌 때 앞·뒤 조각에 줄을 둘 이상 둔다.
+ * - `keepWithNext`: 다음 문단과 함께. 다음 문단 첫 줄이 같은 쪽에 들어가지 않으면 이 문단을 다음 쪽으로 넘긴다.
+ * - `keepLines`: 문단 보호. 문단을 쪽 사이에서 나누지 않는다.
+ * - `pageBreakBefore`: 문단 앞에서 항상 쪽을 나눈다.
+ */
+export interface ViewerBreakSetting { widowOrphan?: boolean; keepWithNext?: boolean; keepLines?: boolean; pageBreakBefore?: boolean }
 export interface ViewerHeadingStyle { type: string; idRef: string; level: number; bullet?: string; numberPattern?: string; numberFormat?: string }
 export interface ViewerBorder { type: string; widthMm: number; color: string }
 export interface ViewerCellStyle { id: string; backgroundColor?: string; left: ViewerBorder; right: ViewerBorder; top: ViewerBorder; bottom: ViewerBorder }
@@ -97,8 +105,18 @@ export interface ViewerParagraph {
    * 구역의 첫 다단 정의는 `ViewerSection.columnLayout`에 둔다.
    */
   columnLayout?: ViewerColumnLayout
+  /** 원본 줄 배치(`hp:lineseg`) 첫 줄의 세로 위치. 앞 문단보다 위로 되돌아가면 한/글은 새 쪽(단)에서 시작했다. */
   layoutTop?: HwpUnit
+  /** 원본 줄 배치 마지막 줄의 세로 위치(첫 줄과 다를 때만). 한/글이 문단을 쪽 사이에서 나눴으면 첫 줄보다 작다. */
+  layoutLastTop?: HwpUnit
   layoutHeight: HwpUnit
+  /**
+   * 쪽(단) 사이에서 줄 단위로 나눈 문단 조각(pagination이 만든다). `source`는 원본 문단, `head`는 앞 줄들(편집 중에는 원본 문단 전체를
+   * `clipHeight`로 잘라 그 자리에서 입력), `rest`는 이어지는 줄들(편집 anchor 없는 읽기 전용 글자)이다. `continues`면 뒤 조각이 더 있다.
+   */
+  lineSplit?: ViewerLineSplit
+  /** 본문 최상위 문단의 문단 나눔 설정(문단 모양 `hh:breakSetting`, 켜진 것이 있을 때만). pagination이 쓴다. */
+  breakSetting?: ViewerBreakSetting
   marker?: string
   content: ViewerContent[]
   /**
@@ -106,6 +124,15 @@ export interface ViewerParagraph {
    * 편집 코어와 같은 규칙(`editing/paragraph_structure.ts`)으로 decoder가 채운다. 글자 입력 가능 여부와는 관계없다.
    */
   structureBlock?: ParagraphStructureBlock
+}
+export interface ViewerLineSplit {
+  part: 'head' | 'rest'
+  source: ViewerParagraph
+  continues: boolean
+  /** 원본 문단 줄 경계 index 범위(-1은 문단 처음, 경계 수는 문단 끝). */
+  from: number
+  to: number
+  clipHeight?: HwpUnit
 }
 export type ViewerContent = ViewerText | ViewerTable | ViewerImage | ViewerObjectPlaceholder | ViewerNoteList
 export interface ViewerSourceAnchor { sectionPath: string; textNodeId: string }
@@ -115,6 +142,19 @@ export interface ViewerText {
   charStyleId: string
   sourceAnchor?: ViewerSourceAnchor
 }
+/**
+ * 개체 회전과 대칭(OWPML `hp:rotationInfo angle`·`centerX`·`centerY`, `hp:flip horizontal`·`vertical`). `rotation`은 도 단위 시계
+ * 방향(-180 초과 180 이하로 맞춤), `originX`·`originY`는 회전 중심을 개체 상자 폭·높이 비율(0~1)로 나타낸다(원본 중심이 상자 밖이거나
+ * 없으면 0.5). 그리기만 바꾸고 자리(배치 상자·띠·줄 높이)는 회전 전 상자 그대로다.
+ */
+export interface ViewerObjectTransform {
+  rotation: number
+  flipHorizontal: boolean
+  flipVertical: boolean
+  originX: number
+  originY: number
+}
+
 export interface ViewerImage {
   type: 'image'
   resourceId?: string
@@ -124,6 +164,8 @@ export interface ViewerImage {
   fitted?: { declared: { width: HwpUnit; height: HwpUnit }; scale: number }
   /** 글자처럼 취급하지 않는 그림(`hp:pos treatAsChar="0"`)의 원본 위치. 없으면 줄 안에 놓는다. */
   position?: ViewerObjectPosition
+  /** 회전·대칭. 없으면 그대로 그린다. */
+  transform?: ViewerObjectTransform
 }
 
 /** 개체와 본문 글의 배치 관계(OWPML `textWrap`). */
@@ -196,6 +238,8 @@ export interface ViewerObjectPlaceholder {
   size?: { width: HwpUnit; height: HwpUnit }
   /** 화면에 보이는 한국어 이름(예: "수식"). */
   label: string
+  /** 도형·글상자·자리 표시 상자의 회전·대칭. 없으면 그대로 그린다. */
+  transform?: ViewerObjectTransform
   /** 원본에서 읽은 대체 text(수식 script, 단추 caption, 덧말 본말 등). */
   fallbackText?: string
   /** 덧말(`hp:dutmal`)의 덧말 text와 위치. */

@@ -49,10 +49,10 @@ describe('표 선언 높이·칸 안 원본 위치 개체·쪽 기준 글 옆 �
     const cell = table().rows[0].cells[1]
     const split: ViewerTable = { ...table(), rows: [{ cells: [{ ...cell, splitBottom: true }] }] }
     expect(renderQuietly(createElement(TableView, { table: split, document }))).not.toContain('box-sizing:border-box')
-    // 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄인다.
+    // 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이의 90%로 줄인다(테두리·표 아래 줄 간격 자리).
     const bodyHeight = document.page.height - document.page.margin.top - document.page.margin.bottom
     const tall: ViewerTable = { ...table(), rows: [{ cells: [{ ...cell, height: bodyHeight * 2 }] }] }
-    expect(renderQuietly(createElement(TableView, { table: tall, document }))).toContain(`height:${px(bodyHeight)};box-sizing:border-box`)
+    expect(renderQuietly(createElement(TableView, { table: tall, document }))).toContain(`height:${px(Math.floor(bodyHeight * 0.9))};box-sizing:border-box`)
   })
 
   test('셀 안 쪽 기준 그림은 셀을 용지로 보고 셀 안쪽 여백 안 오른쪽 아래 끝에 그리고 셀 글 흐름에서 띠를 비운다', () => {
@@ -102,8 +102,8 @@ describe('표 선언 높이·칸 안 원본 위치 개체·쪽 기준 글 옆 �
     const expected = OBJECT_LAYOUT_EXPECTED.squarePicture
     const bodyWidth = frame.columnWidth
     const band = pages[0].bands?.find((item) => item.wrap)
-    expect(band).toEqual({ top: expected.y - 5669, bottom: expected.y - 5669 + expected.height, wrap: { float: 'right', width: 59528 - 5669 - expected.x } })
-    const spacers = renderQuietly(createElement(PageBandSpacers, { bands: pages[0].bands, bodyHeight: document.page.height - 5669 - 4252 }))
+    expect(band).toEqual({ top: expected.y - document.page.margin.top, bottom: expected.y - document.page.margin.top + expected.height, wrap: { float: 'right', width: 59528 - 5669 - expected.x } })
+    const spacers = renderQuietly(createElement(PageBandSpacers, { bands: pages[0].bands, bodyHeight: document.page.height - document.page.margin.top - document.page.margin.bottom }))
     expect(spacers).toContain(`data-band-wrap="right" style="float:right;clear:both;width:${px(band!.wrap!.width)};height:${px(expected.height)}"`)
     expect(band!.wrap!.width).toBeLessThan(bodyWidth / 2)
     const paragraph = document.sections[0].blocks.find((block) => block.content.some((item) => item.type === 'image' && item.position?.wrap === 'SQUARE'))!

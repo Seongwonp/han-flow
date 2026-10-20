@@ -16,7 +16,7 @@ const editMode = process.env.HAN_FLOW_VERIFY_EDIT_MODE
 const editCell = process.env.HAN_FLOW_VERIFY_EDIT_CELL === '1'
 // 편집 대상: table-caret·table-caret-after(표 앞·뒤 글자), note·endnote(각주·미주 본문), header·footer(머리말·꼬리말),
 // column(2단 영역 둘째 단의 본문 문단). 없으면 본문 문단(또는 표 셀).
-const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column']
+const EDIT_TARGETS = ['table-caret', 'table-caret-after', 'note', 'endnote', 'header', 'footer', 'column', 'line-split']
 const editTarget = process.env.HAN_FLOW_VERIFY_EDIT_TARGET
 const styleProbe = process.env.HAN_FLOW_VERIFY_STYLE === '1'
 const tableStructureProbe = process.env.HAN_FLOW_VERIFY_TABLE_STRUCTURE === '1'
@@ -76,6 +76,11 @@ function sourceObjects(path) {
 /** 본문 글이 들어온 자리 차지·글 옆 배치 개체(`쪽:배치/배치 방식/종류`). */
 function overlappingObjects(state) {
   return (state.positionedObjects ?? []).filter((item) => item.textOverlap).map((item) => `${item.page}쪽 ${item.placement}/${item.wrap}/${item.kind}`)
+}
+
+/** 본문 글·그림과 겹친 쪽 번호가 있는 쪽(쪽 번호는 본문 밖 머리말·꼬리말 띠에 놓여야 한다). */
+function pageNumberOverlapPages(state) {
+  return (state.pageDecorations ?? []).filter((item) => item.pageNumber?.overlap).map((item) => item.page)
 }
 
 /** 쪽 넘김 개체 census 시간 한도. 넘기면 확인한 쪽 수와 함께 실패로 알린다(합성 15,003쪽 문서는 이 안에 끝난다). */
@@ -282,6 +287,7 @@ try {
     state.footnotePlacement?.mismatched?.length ? `각주가 번호 표시와 다른 쪽에 있음: ${state.footnotePlacement.mismatched.join(', ')}` : undefined,
     // 원본 위치 개체(자리 차지·글 옆 배치)가 비운 자리에 본문 글이 들어오면 개체와 글이 겹쳐 보인다.
     overlappingObjects(state).length ? `본문 글과 겹치는 자리 차지 개체: ${overlappingObjects(state).join(', ')}` : undefined,
+    pageNumberOverlapPages(state).length ? `본문과 겹치는 쪽 번호: ${pageNumberOverlapPages(state).join(', ')}쪽` : undefined,
     incompleteImages ? `decode 실패 이미지: ${incompleteImages}` : undefined,
     source.error ? `원본 개체 검사 실패: ${source.error}` : undefined,
     objectCensus.failure,
@@ -409,6 +415,8 @@ try {
     columnLayouts: state.columnLayouts?.length ? state.columnLayouts : undefined,
     footnotePlacement: state.footnotePlacement,
     positionedObjects: state.positionedObjects,
+    lineSplits: state.lineSplits?.length ? state.lineSplits : undefined,
+    pageDecorations: state.pageDecorations?.some((item) => item.pageNumber || item.header || item.footer) ? state.pageDecorations : undefined,
     errorCode: expectedError ? state.errorCode : undefined,
     windowTitle: state.windowTitle,
     deviceScale: deviceScale ? Number(deviceScale) : undefined,
@@ -439,6 +447,8 @@ try {
       reopenedPlaceholderCounts: editTarget ? savedState?.placeholderCounts : undefined,
       reopenedFootnotePlacement: editTarget ? savedState?.footnotePlacement : undefined,
       reopenedPositionedObjects: savedState?.positionedObjects,
+      reopenedLineSplits: savedState?.lineSplits?.length ? savedState.lineSplits : undefined,
+      reopenedPageDecorations: savedState?.pageDecorations,
       reopenedColumnLayouts: savedState?.columnLayouts?.length ? savedState.columnLayouts : undefined
     } : undefined,
     crashRecovery: crashRecovery ? {

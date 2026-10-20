@@ -203,7 +203,9 @@ describe('DOM 측정 마커', () => {
     expect(markup).toContain('padding-bottom:0')
     expect(markup).toContain('border-top:none')
     expect(markup).toContain('border-bottom:none')
-    expect(markup).not.toContain('min-height:')
+    // 셀(td)에는 선언 높이·최소 높이가 없다(문단의 빈 줄 최소 높이는 셀 높이가 아니다).
+    const cellTag = markup.match(/<td[^>]*>/)?.[0] ?? ''
+    expect(cellTag).not.toMatch(/[";]\s*(?:min-)?height:/)
   })
 
   test('head와 tail 조각은 바깥 경계만 유지한다', () => {

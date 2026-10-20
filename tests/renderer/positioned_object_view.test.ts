@@ -83,14 +83,15 @@ describe('원본 위치 개체 renderer', () => {
     const expected = FLOATING_OBJECT_EXPECTED.textBox
     expect(layer).toContain('data-object-placement="page" data-object-wrap="IN_FRONT_OF_TEXT"')
     expect(layer).toContain(`left:${px(expected.x)};top:${px(expected.y)}`)
-    expect(layer).toContain('z-index:1;pointer-events:none')
+    // 원본 쌓임 순서(zOrder 9501)대로 글 위에 둔다.
+    expect(layer).toContain('z-index:9502;pointer-events:none')
     expect(layer).toContain(FLOATING_OBJECT_TEXTS.textBoxInner)
   })
 
-  test('글 뒤 도형은 본문 글 아래(z-index -1)에 원본 선·면 색으로 그린다', () => {
+  test('글 뒤 도형은 본문 글 아래(음수 z-index)에 원본 선·면 색으로 그린다', () => {
     const paragraph = blockWith((item) => item.content.some((content) => content.type === 'object-placeholder' && content.position?.wrap === 'BEHIND_TEXT'))
     const layer = renderQuietly(createElement(PageObjectLayer, { blocks: [paragraph], frameOf: () => frame, document }))
-    expect(layer).toContain('z-index:-1')
+    expect(layer).toContain('z-index:-9999')
     expect(layer).toContain('data-object-kind="shape"')
     expect(layer).toContain('fill="#F2F2F2"')
     expect(layer).toContain('stroke="#999999"')

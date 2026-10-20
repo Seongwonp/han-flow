@@ -1,4 +1,4 @@
-import { ViewerBorder, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
+import { ViewerBorder, ViewerBreakSetting, ViewerCellStyle, ViewerCharStyle, ViewerColumnLayout, ViewerContent, ViewerDiagnostic, ViewerDocument, DEFAULT_FOOTNOTE_SETTINGS, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerImage, ViewerNote, ViewerObjectFlow, ViewerObjectKind, ViewerObjectPlaceholder, ViewerObjectPosition, ViewerObjectTransform, ViewerShapeStyle, ViewerTextWrap, ViewerPageNumber, ViewerParagraph, ViewerParaStyle, ViewerSection, ViewerTable, ViewerTableCell } from '../document/viewer_document'
 import { footnoteMarker } from '../document/note_number'
 import { countObjectPlaceholders, OBJECT_KIND_LABELS, OBJECT_KIND_ORDER, OBJECT_PAGE_HEIGHT_RATIO } from '../document/object_placeholder'
 import {
@@ -242,6 +242,34 @@ function objectPosition(
   }
 }
 
+/**
+ * 개체 회전·대칭(`hp:rotationInfo`·`hp:flip`). 회전이 0이고 대칭이 없으면 undefined. 회전 중심은 `hp:curSz`(없으면 `hp:sz`) 기준
+ * 비율로 바꾸고, 상자 밖이면 가운데로 본다.
+ */
+export function objectTransform(node: OrderedXmlNode): ViewerObjectTransform | undefined {
+  const rotationInfo = child(node, 'hp:rotationInfo')
+  const flip = child(node, 'hp:flip')
+  const angle = num(rotationInfo?.attributes.angle)
+  let rotation = Number.isFinite(angle) ? angle % 360 : 0
+  if (rotation > 180) rotation -= 360
+  if (rotation <= -180) rotation += 360
+  const flipHorizontal = flip?.attributes.horizontal === '1'
+  const flipVertical = flip?.attributes.vertical === '1'
+  if (!rotation && !flipHorizontal && !flipVertical) return undefined
+  const size = child(node, 'hp:curSz') ?? child(node, 'hp:sz')
+  const ratio = (center: string | undefined, extent: number) => {
+    const value = num(center) / extent
+    return center !== undefined && extent > 0 && Number.isFinite(value) && value >= 0 && value <= 1 ? Math.round(value * 1000) / 1000 : 0.5
+  }
+  return {
+    rotation,
+    flipHorizontal,
+    flipVertical,
+    originX: ratio(rotationInfo?.attributes.centerX, num(size?.attributes.width)),
+    originY: ratio(rotationInfo?.attributes.centerY, num(size?.attributes.height))
+  }
+}
+
 const SHAPE_STROKE_NONE = new Set(['NONE', ''])
 
 /** 도형·글상자의 선·채우기·꼭짓점(`hp:lineShape`·`hc:fillBrush`·`hc:startPt`/`hc:endPt`·`hc:pt`). 그릴 것이 없으면 undefined. */
@@ -326,6 +354,7 @@ function placeholder(
   const { size, fitted } = fitObjectSize(declaredSize(node), context.objectHeightLimit)
   const position = objectPosition(node, size, context.objectHeightLimit)
   const shape = SHAPE_ELEMENTS.has(node.name) ? shapeStyle(node, position ?? size) : undefined
+  const transform = objectTransform(node)
   return {
     type: 'object-placeholder',
     kind,
@@ -337,6 +366,7 @@ function placeholder(
     ...(fitted ? { fitted } : {}),
     ...(position ? { position } : {}),
     ...(shape ? { shape } : {}),
+    ...(transform ? { transform } : {}),
     ...extra
   }
 }
@@ -589,7 +619,14 @@ function decodeParagraph(
   const lineSegments = children(child(node, 'hp:linesegarray') ?? node, 'hp:lineseg')
   const starts = lineSegments.map((segment) => num(segment.attributes.vertpos))
   const ends = lineSegments.map((segment) => num(segment.attributes.vertpos) + num(segment.attributes.vertsize))
-  const measuredLayoutHeight = lineSegments.length ? Math.max(...ends) - Math.min(...starts) : 0
+  // 한/글이 쪽 사이에서 나눈 문단은 뒤 줄의 세로 위치가 처음으로 되돌아간다. 쪽마다 이어진 줄 묶음 높이를 더한다.
+  let measuredLayoutHeight = 0
+  let runStart = 0
+  for (let index = 1; index <= lineSegments.length; index += 1) {
+    if (index < lineSegments.length && starts[index] >= starts[index - 1]) continue
+    measuredLayoutHeight += Math.max(...ends.slice(runStart, index)) - Math.min(...starts.slice(runStart, index))
+    runStart = index
+  }
   // 용지·쪽 기준 개체와 글 앞·뒤 개체는 문단 흐름 밖(`object_position.ts`)이라 높이에 넣지 않는다. 표 셀·글상자·머리말 안 개체도
   // 그 칸 기준 원본 위치에 그린다(각주 안 개체만 줄 흐름 안에 남고 측정이 높이를 바로잡는다).
   const flowContent = content.filter((item) => !contentOutOfFlow(item))
@@ -602,7 +639,8 @@ function decodeParagraph(
     tableLayoutHeight,
     objectLayoutHeight(flowContent)
   )
-  const layoutTop = lineSegments.length ? Math.min(...starts) : undefined
+  const layoutTop = lineSegments.length ? starts[0] : undefined
+  const layoutLastTop = lineSegments.length > 1 && starts[starts.length - 1] !== starts[0] ? starts[starts.length - 1] : undefined
   const structureBlock = paragraphStructureViolation(node, orderedParagraphStructureAccess)?.block
   return {
     id,
@@ -610,6 +648,7 @@ function decodeParagraph(
     pageBreak: node.attributes.pageBreak === '1',
     ...(node.attributes.columnBreak === '1' ? { columnBreak: true } : {}),
     layoutTop,
+    ...(layoutLastTop !== undefined ? { layoutLastTop } : {}),
     layoutHeight,
     content,
     ...(structureBlock ? { structureBlock } : {})
@@ -628,13 +667,15 @@ function decodeImage(node: OrderedXmlNode, context: Pick<DecodeContext, 'objectH
   const width = fittedSize?.width
   const height = fittedSize?.height
   const position = objectPosition(node, fittedSize ?? declaredSize(node), context.objectHeightLimit)
+  const transform = objectTransform(node)
   return {
     type: 'image',
     resourceId: resource?.attributes.binaryItemIDRef,
     width,
     height,
     ...(fitted ? { fitted } : {}),
-    ...(position ? { position } : {})
+    ...(position ? { position } : {}),
+    ...(transform ? { transform } : {})
   }
 }
 
@@ -884,6 +925,11 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
     const level = num(heading?.attributes.level)
     const idRef = heading?.attributes.idRef ?? '0'
     const numbering = numberings[idRef]?.[level]
+    const breakNode = descendants(style, 'hh:breakSetting')[0]
+    const breakSetting: ViewerBreakSetting = {}
+    for (const name of ['widowOrphan', 'keepWithNext', 'keepLines', 'pageBreakBefore'] as const) {
+      if (breakNode?.attributes[name] === '1') breakSetting[name] = true
+    }
     paraStyles[style.attributes.id] = {
       id: style.attributes.id,
       align: child(style, 'hh:align')?.attributes.horizontal,
@@ -891,7 +937,8 @@ function decodeHeader(nodes: OrderedXmlNode[]) {
       indent: getValue('hc:intent'),
       margin: { left: getValue('hc:left'), right: getValue('hc:right'), top: getValue('hc:prev'), bottom: getValue('hc:next') },
       tabPrId: style.attributes.tabPrIDRef,
-      heading: heading ? { type: heading.attributes.type ?? 'NONE', idRef, level, bullet: bullets[idRef], numberPattern: numbering?.pattern, numberFormat: numbering?.format } : undefined
+      heading: heading ? { type: heading.attributes.type ?? 'NONE', idRef, level, bullet: bullets[idRef], numberPattern: numbering?.pattern, numberFormat: numbering?.format } : undefined,
+      ...(Object.keys(breakSetting).length ? { breakSetting } : {})
     }
   })
   const border = (node?: OrderedXmlNode): ViewerBorder => ({
@@ -1001,12 +1048,26 @@ export interface ViewerPageGeometry {
   objectHeightLimit?: number
 }
 
+/**
+ * 쪽 크기와 쪽 본문 여백. 한/글은 위에서부터 위쪽 여백(`top`)·머리말 여백(`header`)·본문, 아래에서부터 아래쪽 여백(`bottom`)·꼬리말
+ * 여백(`footer`)·본문 순서로 용지를 나눈다. `margin.top`·`margin.bottom`은 본문 영역 여백(위쪽 + 머리말, 아래쪽 + 꼬리말)이고,
+ * `headerOffset`·`footerOffset`은 머리말·꼬리말 띠 높이다(`pageDecorationLayout`). 용지보다 크면 띠를 0으로 본다.
+ */
 export function viewerPageGeometry(pagePr: OrderedXmlNode | undefined): ViewerPageGeometry {
   const margin = pagePr ? child(pagePr, 'hp:margin') : undefined
+  const paper = box(margin)
+  const height = num(pagePr?.attributes.height)
+  let header = Math.max(num(margin?.attributes.header), 0)
+  let footer = Math.max(num(margin?.attributes.footer), 0)
+  if (height > 0 && paper.top + header + paper.bottom + footer >= height) {
+    header = 0
+    footer = 0
+  }
+  const bodyMargin = { ...paper, top: paper.top + header, bottom: paper.bottom + footer }
   // pagination(`pagination.ts`)과 같은 쪽 본문 높이. 자리 표시가 한 쪽을 넘지 않게 선언 높이를 줄이는 한도로 쓴다.
-  const bodyHeight = num(pagePr?.attributes.height) - num(margin?.attributes.top) - num(margin?.attributes.bottom)
+  const bodyHeight = height - bodyMargin.top - bodyMargin.bottom
   return {
-    page: { width: num(pagePr?.attributes.width), height: num(pagePr?.attributes.height), margin: box(margin), headerOffset: num(margin?.attributes.header), footerOffset: num(margin?.attributes.footer) },
+    page: { width: num(pagePr?.attributes.width), height, margin: bodyMargin, headerOffset: header, footerOffset: footer },
     objectHeightLimit: bodyHeight > 0 ? Math.floor(bodyHeight * OBJECT_PAGE_HEIGHT_RATIO) : undefined
   }
 }
@@ -1072,7 +1133,8 @@ export function decodeViewerSection(
         paragraphNodes.map((p, index) => {
           const paragraph = decodeParagraph(p, `s${sectionIndex}:p${index}`, context, true)
           const columnLayout = columns.paragraphs.get(index)
-          return columnLayout ? { ...paragraph, columnLayout } : paragraph
+          const breakSetting = header.paraStyles[paragraph.paraStyleId]?.breakSetting
+          return columnLayout || breakSetting ? { ...paragraph, ...(columnLayout ? { columnLayout } : {}), ...(breakSetting ? { breakSetting } : {}) } : paragraph
         }),
         header.paraStyles
       )

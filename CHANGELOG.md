@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### 쪽 번호·머리말 자리, 개체 회전·쌓임 순서, 본문 줄 단위 쪽 나눔
+
+- 쪽 본문을 한/글 본문 영역(위쪽 여백 + 머리말 여백 ~ 아래쪽 여백 + 꼬리말 여백)으로 바꾸고(`viewerPageGeometry`), 쪽 번호(`hp:pageNum`)는 본문 밖 꼬리말 띠 아래 끝(위쪽 위치는 머리말 띠 위 끝, 띠가 0이면 여백 가운데, 안쪽·바깥쪽은 홀짝 쪽)에, 머리말·꼬리말은 각 띠 위 끝에 둠(`pageDecorationLayout`·`pageNumberAnchor`·`PageNumberView`). 사용자 문서 doc5-d04 1쪽 쪽 번호가 맨 아래 로고와 겹치던 문제를 고침. 용지 기준 개체를 머리말 여백만큼 올리던 보정은 없앰
+- 쪽 수를 지키려고 줄 높이를 한/글에 맞춤: 문단 요소 글자 크기를 가장 작은 글자 run으로(기본 16px strut가 10pt 줄을 20% 키우던 문제), 빈 문단은 그 글자 크기 한 줄, 표 셀 첫 줄 위·마지막 줄 아래 반 줄 간격 제거, 표만 든 문단은 표 아래 줄 간격과 표 옆 공백 접기(편집 중 공백뿐인 표 앞·뒤 글자는 흐름 밖 caret 칸)
+- 그림·도형·글상자·자리 표시의 회전(`hp:rotationInfo`)·대칭(`hp:flip`)을 그림(자리는 회전 전 상자), 원본 쌓임 순서(`zOrder`)를 쪽 안 z-index로 씀. 겹침 허용 안 함 자리 밀기는 하지 않음
+- 글자 run만 든 본문 문단을 쪽(단) 아래에서 화면에서 잰 줄 경계로 나눠 다음 쪽(단)에 이음(`measureParagraphLineBreaks`·`placeLineSplit`). 외톨이줄 보호·문단 보호·다음 문단과 함께(한 단)·문단 앞 쪽 나눔(`hh:breakSetting`)을 따르고, 편집 중에는 앞 조각이 원본 문단을 잘라 입력받음(입력 칸은 하나). 한/글이 나눈 문단(줄 배치가 되돌아감)이 새 쪽을 강제하지 않게 원본 쪽 시작 판정을 첫 줄·마지막 줄로 바꿈. 배분 다단 높이 맞춤도 줄 단위(단 너비가 같을 때)
+- 양쪽 흐름(`BOTH_SIDES`) 줄 나눔은 CSS 줄 상자가 float 양옆 두 조각을 만들 수 없어 보류하고 넓은 쪽 근사를 유지(문서화)
+- verify_app에 `pageDecorations`(쪽 번호가 본문과 겹치면 실패)·`lineSplits`·개체 `rotation`·`zIndex`와 편집 대상 `line-split`을, verify:matrix에 합성 fixture `createPageFlowHwpx`(쪽 번호·머리말·꼬리말 자리, 90도 회전 그림, 쌓임 순서, 쪽 사이·배분 다단 줄 단위 조각, 화면/PDF, 나뉜 문단 편집→Save As→재열기)를 추가. 단위 test(`page_number`·`line_split`·`object_transform`·`page_decoration_view`)
+- 줄 경계는 pagination이 나누려 한 문단만 재고(`wantedLineBreaks`·`measureWantedLineBreaks`) 측정 style 표지별 cache로 글자가 그대로인 문단은 다시 찾지 않으며, 편집 중 앞 조각은 원본 문단과 같은 key·같은 요소를 잘라 그려 입력 칸을 다시 만들지 않음. 되풀이 머리글이 있는 표의 쪽보다 높은 선언 셀 높이는 (쪽 본문 - 머리글)의 90%로 줄임(`cellHeightLimit`). 꼬리말은 용지 아래 끝에 붙인 최소 높이 상자라 긴 꼬리말이 용지 밖으로 나가지 않음
+- 사용자 문서 5종 verify_app·verify_pdf·편집 저장 통과, 쪽 수(2·3·1·1·2)·화면/PDF 글자 수 변경 없음. doc5-d04 1쪽 쪽 번호가 로고 아래 꼬리말 자리로 내려가 겹치지 않고(`pageDecorations` 겹침 없음), doc2 1쪽 빨간 타원이 계속 작성자 줄과 그 아래 줄을 감쌈. 공개 합성 large-progressive는 줄 높이(10pt 160% 줄이 16px 바탕보다 작아짐)·줄 단위 쪽 나눔으로 15,004 → 12,414쪽. 한 글자 입력 input→DOM p50/p95(같은 컨테이너 번갈아): large-progressive 변경 전 40.8/78.8ms → 변경 뒤 53.7/105.9ms(이 문서는 쪽 본문이 줄 4개 남짓이라 모든 쪽 끝에서 문단이 나뉘어 입력으로 줄이 늘 때마다 뒤 쪽이 모두 다시 흐름), 실제 문서 doc5-d04 26.9/38.7 → 27.1/36.3ms(변화 없음)
+
 ### 표 셀 선언 높이·글 옆 배치·칸 안 원본 위치 개체
 
 - HWPX 표 셀을 한/글처럼 선언 높이(`hp:cellSz height`, 안쪽 여백 포함)를 최소 높이로 그림. 예전 `td`의 `min-height`는 표 칸에 듣지 않아 내용 높이로 그려졌음. `td` `height` + `border-box`(행 최소 높이)로 바꾸고 내용이 길면 늘어남. 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄이고 쪽을 넘어 나뉜 조각 셀은 내용 높이(`cellMinimumHeight`). 사용자 문서 doc2 1쪽의 용지 기준 빨간 타원이 표 아래 빈 곳이 아니라 표 안 작성자 줄을 감쌈(PDF 그림 비교)

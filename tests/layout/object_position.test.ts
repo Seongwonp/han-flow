@@ -135,14 +135,10 @@ describe('세로 위치(vertRelTo × vertAlign)', () => {
     expect(paragraphObjectOffset(position({ vertOffset: 300 }), true)).toBe(300)
   })
 
-  test('용지 기준 위치는 한/글 본문 영역(위쪽 여백 + 머리말 여백 아래) 안이면 머리말 여백만큼 위로 옮겨 본문 글과 맞춘다', () => {
-    const withHeader: PageFrame = { ...page, headerOffset: 3600 }
-    // 한/글 본문 위 끝(6000 + 3600) 아래: Han-Flow 본문 위 끝(6000)에서 같은 거리.
-    expect(objectY(position({ vertRelTo: 'PAPER', vertOffset: 10315 }), withHeader)).toBe(6715)
-    expect(objectY(position({ vertRelTo: 'PAPER', vertAlign: 'BOTTOM', vertOffset: 500 }), withHeader)).toBe(84188 - 4000 - 500 - 3600)
-    // 머리말·위쪽 여백 자리와 쪽 기준 위치는 그대로다.
-    expect(objectY(position({ vertRelTo: 'PAPER', vertOffset: 2000 }), withHeader)).toBe(2000)
-    expect(objectY(position({ vertRelTo: 'PAGE', vertOffset: 100 }), withHeader)).toBe(6100)
+  test('용지 기준 위치는 용지 위 끝, 쪽 기준 위치는 쪽 본문 영역(머리말 여백 포함) 기준이다', () => {
+    expect(objectY(position({ vertRelTo: 'PAPER', vertOffset: 10315 }), page)).toBe(10315)
+    expect(objectY(position({ vertRelTo: 'PAPER', vertAlign: 'BOTTOM', vertOffset: 500 }), page)).toBe(84188 - 4000 - 500)
+    expect(objectY(position({ vertRelTo: 'PAGE', vertOffset: 100 }), page)).toBe(6100)
   })
 
   test('본문 안으로 제한(flowWithText)하면 쪽 본문 밖 위치를 본문 안으로 옮긴다', () => {

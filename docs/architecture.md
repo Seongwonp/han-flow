@@ -344,8 +344,8 @@ anchor의 입력 칸이 있으므로 renderer는 마지막으로 focus를 받은
 
 viewer decoder(`src/core/parser/viewer_decoder.ts`)는 run 자식 가운데 글자(`hp:t`·탭·줄바꿈), 표, 그림만
 그대로 모델로 옮긴다. 그 밖의 개체는 버리지 않고 `object-placeholder` content로 같은 문단 content 위치에 남긴다.
-글자처럼 취급하지 않는 본문 개체는 원본 위치에 그린다(아래 "원본 위치 개체"). 회전과 개체 자체의 그림(수식 조판, 차트·OLE 그리기)은
-재현하지 않으며, 상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
+글자처럼 취급하지 않는 본문 개체는 원본 위치에 그린다(아래 "원본 위치 개체"). 회전·대칭은 그리기에만 적용하고 개체 자체의 그림(수식 조판,
+차트·OLE 그리기)은 재현하지 않으며, 상자 크기는 선언 크기를 참고하되 쪽보다 크면 줄인다(아래). 각주 본문은 번호 표시가 놓인 쪽 아래(아래 "쪽 아래 각주"), 미주 본문은 구역 끝 목록에 둔다.
 
 | 원본 element | kind | 화면 |
 | --- | --- | --- |
@@ -431,15 +431,26 @@ renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 
 | `page` | 용지·쪽 기준 | 쪽 layer(`PageObjectLayer`, `.viewer-page` 기준 절대 위치) | 글 앞·뒤가 아니면 개체 띠(`pageObjectBand`, 바깥 여백 포함)를 비운다(아래 "쪽 띠") |
 
 - 글 옆 배치의 흐를 쪽(`wrapTextSide`, 2026-10-20): 개체 왼쪽·오른쪽 빈 폭(문단 범위 기준, 바깥 여백 뺀 값)과 `textFlow`로 정한다.
-  `LEFT_ONLY`·`RIGHT_ONLY`는 그쪽, `LARGEST_ONLY`는 넓은 쪽이고, `BOTH_SIDES`도 넓은 쪽으로 근사한다(CSS 줄 상자는 한 줄을 float
-  양옆 두 조각으로 나누지 못한다. 한쪽 끝에 붙은 개체는 한/글도 한쪽에만 흐르므로 같다). 빈 폭이 `WRAP_MIN_TEXT_WIDTH`(2835, 약 1cm)보다
+  `LEFT_ONLY`·`RIGHT_ONLY`는 그쪽, `LARGEST_ONLY`는 넓은 쪽이고, `BOTH_SIDES`도 넓은 쪽으로 근사한다(CSS 줄 상자는 왼쪽 float와 오른쪽
+  float 사이 빈 곳 하나에만 놓이므로 한 줄을 개체 양옆 두 조각으로 나누지 못하고, `shape-outside`도 float 한쪽 모양만 바꾼다. Chromium에는
+  CSS Exclusions(`wrap-flow: both`)가 없다. 줄을 JS로 직접 나눠 그리면 편집 입력 칸이 한 문단에 둘이 되고 PDF 글자 순서·측정 DOM도 바뀌어야
+  해서 2026-10-20 검토 뒤 보류했다. 한쪽 끝에 붙은 개체는 한/글도 한쪽에만 흐르므로 같다). 빈 폭이 `WRAP_MIN_TEXT_WIDTH`(2835, 약 1cm)보다
   좁은 쪽에는 흘리지 않는다. `TIGHT`·`THROUGH`는 개체 상자를 쓰는 `SQUARE`다.
 
 - 위치 계산(`objectX`·`objectY`): 기준 영역 안에서 왼쪽·위 맞춤은 offset만큼 안쪽, 오른쪽·아래 맞춤은 끝에서 offset만큼 안쪽, 가운데는
   가운데에서 offset만큼 오른쪽·아래다. 안쪽·바깥쪽 가로 맞춤은 홀수 쪽(1쪽부터)에서 왼쪽·오른쪽, 짝수 쪽에서 반대이고 세로는 위·아래로
   본다. 문단 기준 세로는 문단 위 끝 + offset이며 흐름 안(`band`·`wrap`)은 음수 offset을 0으로 둔다. `flowWithText`면 쪽 본문 안으로,
-  모든 개체는 용지 안으로 옮긴다(쪽 overflow·PDF 잘림 방지). 용지 기준 세로 위치는 한/글 본문 영역(위쪽 여백 + 머리말 여백 아래) 안이면
-  머리말 여백만큼 위로 옮긴다. Han-Flow 쪽 본문이 위쪽 여백에서 시작하기 때문이다(쪽 크기 모델은 바꾸지 않는다).
+  모든 개체는 용지 안으로 옮긴다(쪽 overflow·PDF 잘림 방지). 쪽 본문은 한/글 본문 영역(아래 "쪽 본문·머리말·꼬리말·쪽 번호")이라
+  용지·쪽 기준 위치를 옮기지 않는다(2026-10-20 전에는 본문이 위쪽 여백에서 시작해 용지 기준 위치를 머리말 여백만큼 올렸다).
+- 회전·대칭(2026-10-20): decoder `objectTransform`이 `hp:rotationInfo angle`(도, -180 초과 180 이하로 맞춤)·`centerX`·`centerY`(상자
+  비율, 상자 밖이면 가운데)와 `hp:flip`을 그림(`ViewerImage.transform`)·자리 표시(`ViewerObjectPlaceholder.transform`, 도형·글상자 포함)에
+  붙인다. renderer는 원본 위치 개체를 감싼 `.viewer-object-transform`(`data-object-rotation`), 줄 안 그림·자리 표시는 요소 자체에 CSS
+  `rotate() scaleX(-1) scaleY(-1)`(제 좌표에서 대칭한 뒤 시계 방향 회전, rhwp SVG와 같은 결과)을 건다. transform은 layout 상자를 바꾸지
+  않으므로 자리·띠·글 옆 흐름·측정은 회전 전 상자다.
+- 쌓임 순서(2026-10-20): `objectZIndex`가 `zOrder`(0~9997로 자름)를 글 앞 개체는 `1 + zOrder`, 글 뒤 개체는 `zOrder - 9999`(언제나
+  음수)로 바꾼다. `.viewer-page`가 stacking context라 문단 안·쪽 layer·칸 layer 개체가 같은 쪽 안에서 원본 순서로 쌓인다(머리말·꼬리말
+  칸은 `z-index: 1`이라 그 안 문단 기준 개체는 칸 안에서만). 표 앞·뒤 caret은 `z-index: 10001`. 겹침 허용 안 함(`allowOverlap="0"`)의
+  자리 밀기는 하지 않는다.
 - 쪽 띠: pagination(`paginateViewerSection`의 `page` 인자)은 block을 놓을 때 그 block의 용지·쪽 기준 개체 띠를 그 쪽 띠 목록에
   더한다. 결과는 `ViewerPage.bands`(쪽 본문 기준, 합친 띠)다.
   - 다단이 없는 구역(`simpleFlow`, 2026-10-20): 쪽 위 block을 위에서부터 띠 사이로 흘린 끝 위치(`flowBlockEnd`)를 사용 높이로 쓴다.
@@ -458,7 +469,7 @@ renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 
   float(띠 위까지)와 폭 전체 float(띠 높이), 아래 끝에 닿은 폭 전체 띠는 pagination이 덜 채우므로 DOM이 없다. 글 옆 띠는 위·아래
   끝에 닿아도 개체 쪽 끝에서 `wrap.width`만큼의 좁은 float(`data-band-wrap`)로 두고, 그때는 모든 띠 float가 `clear: both`다. 다단이면
   단마다 같은 띠를 두고, 한 쪽에 다단 영역이 여럿이면 띠를 영역 기준으로 옮기고 자른다. 측정 DOM에는 쪽 기준 개체와 띠가 없어 문단
-  높이가 쪽과 무관하다. section pagination cache는 쪽 크기·여백·머리말 여백 값도 비교한다.
+  높이가 쪽과 무관하다. section pagination cache는 쪽 크기·본문 여백 값도 비교한다.
 - 칸 안 개체(2026-10-20): 표 셀·글상자 문단은 `containerObjectFrame`으로 칸을 가상 용지로 받는다. 표 셀은 셀(안쪽 여백 포함, 높이는
   선언 높이)을 용지로, 안쪽 여백 안을 쪽 본문·단으로 보고 글상자는 안쪽 여백 안 글 영역(`.viewer-object-body`)을 용지로 본다. 칸에는
   쪽 번호가 없어 안쪽·바깥쪽 맞춤은 홀수 쪽이다. 문단 기준 개체는 본문처럼 칸 안 문단에 `band`·`wrap`·`overlay`로 그리고, 용지·쪽
@@ -487,6 +498,60 @@ renderer는 `ParagraphView`에 `objectFrame`(용지·단·쪽 번호)을 넘길 
   위치를 `columnLayouts`로 낸다. verify:matrix는 `createColumnLayoutHwpx`의 글자가 기대한 쪽·영역·단에 있고 단 범위·구분선·단 기준
   그림이 `COLUMN_LAYOUT_EXPECTED`와 1.5px 안에서 같은지, 화면/PDF 글자 수와 둘째 단 문단 편집(`HAN_FLOW_VERIFY_EDIT_TARGET=column`)
   →Save As→재열기 뒤 같은 배치인지 본다.
+
+### 쪽 본문·머리말·꼬리말·쪽 번호 (2026-10-20)
+
+한/글은 위에서부터 위쪽 여백(`hp:margin top`)·머리말 띠(`header`)·본문, 아래에서부터 아래쪽 여백(`bottom`)·꼬리말 띠(`footer`)·본문
+순서로 용지를 나눈다(rhwp `PageAreas`와 사용자 문서 줄 배치로 확인: doc5-d04 둘째 구역 마지막 줄 끝 75464 / 본문 높이 75686). decoder
+`viewerPageGeometry`는 `ViewerDocument.page.margin.top`·`bottom`을 본문 여백(위쪽 + 머리말, 아래쪽 + 꼬리말)으로, `headerOffset`·
+`footerOffset`을 띠 높이로 읽는다(여백 합이 용지보다 크면 띠 0). 그래서 pagination·쪽 DOM padding·각주 영역·원본 위치 개체는 모두 한/글
+본문 영역을 쓴다. `page_number.ts`의 `pageDecorationLayout`이 머리말 띠(위쪽 여백 아래)·꼬리말 띠(본문 아래)를, `pageNumberPlacement`·
+`pageNumberAnchor`가 쪽 번호 자리를 정한다: 아래쪽은 꼬리말 띠 아래 끝(띠가 0이면 아래쪽 여백 가운데, rhwp `footer_page_number_y`와
+같은 기준), 위쪽은 머리말 띠 위 끝(띠가 0이면 위쪽 여백 가운데), 가로는 본문 왼쪽·가운데·오른쪽, `INSIDE_*`·`OUTSIDE_*`는 표시
+번호 홀짝, `NONE`은 그리지 않는다. renderer `PageNumberView`는 그 점에 맞춰 `translate`로 상자를 놓고, `HeaderFooterView`는 띠 위
+끝에서 글을 시작한다(꼬리말은 용지 아래 끝에 붙인 최소 높이 상자라 띠와 아래쪽 여백보다 긴 글은 위로 늘어나 용지 밖으로 나가지 않는다). 쪽 크기·여백은 여전히 문서 첫 `hp:pagePr` 하나다.
+
+줄 높이 바탕(2026-10-20): CSS 줄 상자는 문단 요소 글자 크기 × 줄 간격(strut)보다 낮아지지 않는다. 문단 요소가 기본 16px를 물려받으면
+10pt 160% 줄이 한/글(1000 + 600)보다 20% 커지므로, `paragraphStrutCss`가 문단 글자 run 가운데 가장 작은 글자 모양을 문단 요소에 준다.
+글자만 든 문단(빈 문단 포함)은 `min-height: 줄 간격 em`(그 글자 크기 한 줄), 표 셀 첫·마지막 문단은 반 줄 간격(`(줄 간격 - 1) / 2 em`)을
+위·아래 margin에서 빼 셀 높이가 한/글(안쪽 여백 + 글자 높이)과 같고(`cellEdges`), 표만 든 본문 문단(표 옆 글자는 공백뿐)은 표 아래에
+`(줄 간격 - 1) em` padding을 두고 공백을 접는다(한/글 줄 배치 `vertsize + spacing`). 편집 중 공백뿐인 표 앞·뒤 글자도 흐름 밖 caret
+칸에 둔다. 측정 DOM도 같은 문단 요소를 쓰므로 두 pass가 같은 높이를 본다.
+
+E2E: verify_app은 쪽마다 쪽 번호·머리말·꼬리말 상자와 그 상자에 본문 글·그림이 들어왔는지(`pageDecorations`, 편집 중 잘린 줄은 뺌)를
+내고, 쪽 번호가 본문과 겹치면 실패로 본다.
+
+### 본문 줄 단위 쪽 나눔 (2026-10-20)
+
+- 측정: 줄 경계는 pagination이 나누려 한 문단만 잰다. `paginateViewerSection`이 쪽(단)에 다 들어가지 않는 글자 문단(`lineSplittable`)의
+  줄 경계가 측정값에 없으면 id를 모으고(`SectionPagination.wantedLineBreaks`, 다음 문단과 함께·배분 다단도 요청), renderer layout effect가
+  측정 DOM에서 그 문단만 각주와 같은 방식(`measureParagraphLineBreaks`: text node `getClientRects` 줄 조각 + 새 줄 시작 글자 이분 탐색 + 화면
+  PUA 대체 offset 되돌림)으로 재서(`measureWantedLineBreaks`) 그 section 측정값의 `lineBreaks[block id]`(`{ y: 문단 위 끝 기준 HWPUNIT,
+  position: { content, offset } }[]`, 한 줄이면 빈 배열)에 더한다. 그 section만 다시 나눈다. 편집으로 section을 다시 잴 때는 앞 측정에서 잰
+  문단을 함께 재고, 측정 style 표지마다 문단 id·모양·글자·측정 상자 크기를 key로 한 cache(최대 5만 개)에서 글자가 그대로인 문단은 다시
+  찾지 않는다(작은 쪽마다 문단이 나뉘는 합성 문서에서 입력마다 수백 문단을 다시 재던 비용).
+- pagination(`placeLineSplit`): block이 지금 단에 다 들어가지 않으면 남은 높이 안 가장 늦은 경계(`chooseLineBreak`)에서 나눠 앞 조각을
+  놓고 다음 단·쪽으로 가 나머지를 잇는다(한 쪽보다 길면 되풀이). 외톨이줄 보호(`breakSetting.widowOrphan`)면 앞 조각·남은 줄 모두 2줄
+  이상, 들어갈 줄이 없으면 다음 단·쪽으로 넘기고, 빈 단에도 들어가지 않으면 들어가는 만큼(최소 한 줄) 놓는다. 나누지 않는 경우: 줄 경계
+  없음(측정 전·글자 run 밖 content가 든 문단), 문단 보호(`keepLines`), 아직 지나지 않은 쪽 기준 개체 띠(한 단 흐름), 단 너비가 다른 다단
+  (줄 경계는 첫 단 너비로 잰 값). `keepWithNext`(한 단 구역)는 다음 문단 첫 줄(외톨이줄 보호면 두 줄, 나눌 수 없으면 전체)이 같은 쪽에
+  들어가지 않으면 이 문단을 먼저 넘기고, `pageBreakBefore`는 문단 `pageBreak`처럼 쪽을 나눈다. decoder는 `hh:breakSetting`을
+  `ViewerParaStyle.breakSetting`과 본문 최상위 문단 `ViewerParagraph.breakSetting`에 둔다.
+- 원본 줄 배치: 한/글이 쪽 사이에서 나눈 문단은 뒤 줄 `vertpos`가 처음으로 되돌아간다. `layoutTop`은 첫 줄, `layoutLastTop`은 마지막 줄
+  세로 위치이고 원본 쪽 시작 판정은 "이 문단 첫 줄 < 앞 문단 마지막 줄"이라 나뉜 문단 자체는 새 쪽을 강제하지 않는다. 무측정 높이
+  (`layoutHeight`)는 되돌아간 줄 묶음 높이를 더한다.
+- 조각(`lineSplitBlock`): `ViewerParagraph.lineSplit`(`part: head|rest`, `source`, `continues`, 경계 index `from`·`to`, 앞 조각
+  `clipHeight`)과 `sliceNoteParagraph`로 자른 글자(편집 anchor 없음), id `${원본 id}@line${from + 1}`, `layoutHeight` = 경계 차이. 보기·
+  PDF·측정은 조각 글자만 그리고, 뒤 조각은 첫 줄 들여쓰기·문단 위 간격을, 이어지는 조각은 문단 아래 간격을 빼며 양쪽 맞춤이면
+  `text-align-last: justify`다. 편집 중 앞 조각은 `ParagraphView`가 원본 문단 전체를 같은 문단 요소의 높이 `clipHeight`(`border-box`, `overflow: hidden`,
+  `.viewer-line-split-clip`)로 잘라 그 자리에서 입력받는다(쪽 아래 각주 앞 조각과 같은 방식, 같은 `hp:t` 입력 칸은 문서에 하나). 쪽 DOM에서 앞
+  조각은 원본 문단과 같은 React key라 입력 중 문단이 쪽 끝에서 나뉘거나 합쳐져도 입력 칸을 새로 만들지 않는다.
+- 배분 다단(`balance`): 단 너비가 같고 줄 경계가 있으면 영역 block을 줄 단위(`balanceUnits`: 외톨이줄 보호면 처음·끝 두 줄은 한 단위,
+  문단 보호·줄 경계 없는 block은 통째)로 펴서 `balancedColumnStarts`로 나누고 같은 문단의 이어진 줄을 다시 조각으로 묶는다
+  (`joinBalanceUnits`, 전체면 원본 문단). 너비가 다른 다단은 예전처럼 문단 단위다.
+- E2E: verify_app `lineSplits`(쪽·조각·원본 id·글자 수), 편집 대상 `line-split`. verify:matrix `createPageFlowHwpx`가 쪽 번호 자리·겹침,
+  머리말·꼬리말 띠, 90도 회전 그림 상자(`PAGE_FLOW_EXPECTED`, 1.5px), 겹친 글상자 쌓임 순서, 쪽 사이·배분 다단의 줄 단위 조각, 화면/PDF 글자
+  수, 나뉜 문단 앞 조각 편집→Save As→재열기를 본다.
 
 ### Decoder worker
 
@@ -711,7 +776,7 @@ layout도 JSON parse 전에 같은 크기 상한을 적용하고 run·문자·�
 - HWP 첫 페이지 SVG를 먼저 생성하고 짧은 유휴 구간 뒤 나머지 페이지를 순차 생성
 - HWP SVG의 실행 요소·event attribute·외부 resource를 거부한 뒤 blob image로 표시
 - SVG image가 표시된 뒤 React text layer를 붙여 검색(macOS `⌘F`, 그 밖 `Ctrl+F`)·선택·접근성 제공
-- `pageNum`을 본문 흐름과 분리된 쪽 번호 decoration으로 표시
+- `pageNum`을 본문 밖 머리말·꼬리말 띠의 쪽 번호 decoration으로 표시(위 "쪽 본문·머리말·꼬리말·쪽 번호")
 - 구역별 `header/footer`를 페이지 위·아래 decoration으로 표시하고 `BOTH/EVEN/ODD` 선택
 - 폰트 대체, 페이지 overflow, 로딩 시간 진단
 - 시스템 함초롬체의 한글·영문 family 별칭 해석(글꼴 파일은 번들하지 않음)
@@ -744,7 +809,7 @@ layout도 JSON parse 전에 같은 크기 상한을 적용하고 run·문자·�
 
 표 셀은 한/글처럼 선언 높이(`hp:cellSz height`, 안쪽 여백 포함)를 최소 높이로 그린다(2026-10-20, `cellMinimumHeight`). 표 칸에는
 `min-height`가 듣지 않으므로 `td`의 `height`(행 최소 높이로 쓰인다)와 `box-sizing: border-box`를 쓰고, 내용이 길면 행이 늘어난다.
-한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이로 줄인다(내용이 짧은 행이 쪽을 넘치지 않게). 무측정 첫 pagination은 원래 선언
+한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이에서 되풀이 머리글 행 높이를 뺀 값의 90%(`cellHeightLimit`, 표 테두리·표 아래 줄 간격 자리)로 줄인다(내용이 짧은 행이 쪽을 넘치지 않게). 무측정 첫 pagination은 원래 선언
 높이를 행 높이로 쓰고(`declaredRowHeight`), 측정 DOM의 행 높이(`tableRowHeights`)도 같은 셀 높이를 재므로 두 pass가 같은 높이를 본다.
 내용은 남은 자리에 들어가지만 선언 높이가 들어가지 않는 행은 `findSplittableCell`이 넘치는 셀을 찾지 못해 나누지 않고 다음 쪽으로 간다.
 

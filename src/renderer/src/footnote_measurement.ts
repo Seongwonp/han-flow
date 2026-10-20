@@ -1,6 +1,7 @@
 import { ViewerNote, ViewerParagraph } from '../../core/document/viewer_document'
 import { hancomPuaDisplayText } from '../../core/document/hancom_pua_display'
-import { NoteBreak, ViewerNoteMetrics } from '../../core/layout/footnote_layout'
+import { NoteBreak, NoteTextPosition, ViewerNoteMetrics } from '../../core/layout/footnote_layout'
+import type { ParagraphLineBreak } from '../../core/layout/pagination'
 import { cssPxToHwpUnit } from '../../core/layout/hwp_unit'
 
 /**
@@ -80,6 +81,19 @@ function paragraphLineBreaks(element: HTMLElement, paragraph: ViewerParagraph, p
     previous = fragment
   }
   return breaks
+}
+
+/**
+ * 본문 최상위 문단의 줄 경계(문단 위 끝 기준 `y`, HWPUNIT)와 그 줄이 시작하는 글자 위치. pagination이 문단을 쪽(단) 사이에서 줄
+ * 단위로 나눌 때 쓴다(`ParagraphLineBreak`). 글자 run만 든 문단만 잰다(그 밖은 빈 배열).
+ */
+export function measureParagraphLineBreaks(element: HTMLElement, paragraph: ViewerParagraph): ParagraphLineBreak[] {
+  if (!splittableParagraph(paragraph) || typeof element.ownerDocument?.createRange !== 'function') return []
+  const box = element.getBoundingClientRect()
+  const height = cssPxToHwpUnit(box.height)
+  return paragraphLineBreaks(element, paragraph, 0, box.top)
+    .filter((item): item is NoteBreak & { position: NoteTextPosition } => Boolean(item.position) && item.y > 0 && item.y < height)
+    .map(({ y, position }) => ({ y, position }))
 }
 
 /**

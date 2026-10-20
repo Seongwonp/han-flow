@@ -80,6 +80,25 @@ export function preservesParagraphOrder(original: readonly ViewerParagraph[], sp
  * 높이로 그리고 길면 내용만큼 늘어난다. 쪽을 넘어 나뉜 조각 셀(`splitTop`·`splitBottom`)은 내용 높이만 쓴다(`fragmentHeight`).
  * 한 쪽 본문보다 높은 선언 높이는 쪽 본문 높이(`limit`)로 줄인다. 내용이 짧은 행이 한 쪽보다 높아 넘치지 않게 하려는 것이다.
  */
+/**
+ * 쪽 본문보다 높게 선언한 셀을 줄일 때 쪽 본문(되풀이 머리글 뺀 높이)에 곱하는 비율. 줄인 행과 함께 같은 쪽에 놓이는 표 테두리와
+ * 표만 든 문단의 표 아래 줄 간격이 쪽 아래로 넘치지 않게 조금 남긴다.
+ */
+export const CELL_HEIGHT_PAGE_RATIO = 0.9
+
+/**
+ * 셀 최소 높이 한도: 쪽 본문 높이에서 쪽마다 되풀이되는 머리글 행(`repeatHeader`)의 선언 높이를 뺀 값의 `CELL_HEIGHT_PAGE_RATIO`.
+ * 되풀이 머리글과 줄인 행이 함께 다음 쪽에 놓여도 넘치지 않게 한다.
+ */
+export function cellHeightLimit(table: Pick<ViewerTable, 'repeatHeader' | 'rows'>, pageBodyHeight: number | undefined): number | undefined {
+  if (pageBodyHeight === undefined) return undefined
+  const header = table.repeatHeader
+    ? table.rows.filter((row) => row.cells.some((cell) => cell.header)).reduce((sum, row) => sum + Math.max(...row.cells.map((cell) => cell.height), 0), 0)
+    : 0
+  const available = header > 0 && header < pageBodyHeight ? pageBodyHeight - header : pageBodyHeight
+  return Math.floor(available * CELL_HEIGHT_PAGE_RATIO)
+}
+
 export function cellMinimumHeight(cell: Pick<ViewerTableCell, 'height' | 'splitTop' | 'splitBottom'>, limit?: number): number | undefined {
   if (cell.splitTop || cell.splitBottom || !(cell.height > 0)) return undefined
   return limit !== undefined && limit > 0 ? Math.min(cell.height, limit) : cell.height

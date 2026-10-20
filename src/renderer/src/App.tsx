@@ -1,6 +1,6 @@
 import { CSSProperties, DragEvent, memo, ReactNode, RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, WheelEvent } from 'react'
 import { DocumentImportBackgroundError, DocumentImportComplete, DocumentImportResult } from '../../core/document/document_import'
-import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
+import { BoxSpacing, isObjectPlaceholder, paragraphFootnotes, viewerColumnContentWidth, ViewerCellStyle, ViewerCharStyle, ViewerContent, ViewerDocument, ViewerFootnoteSettings, ViewerHeaderFooter, ViewerNote, ViewerNoteList, ViewerObjectPlaceholder, ViewerObjectTransform, ViewerPageNumber, ViewerParagraph, ViewerResource, ViewerSection, ViewerSourceAnchor, ViewerTable, ViewerTableCell, ViewerText } from '../../core/document/viewer_document'
 import { FixedPageDescriptor, FixedPageTextLayout } from '../../core/document/fixed_page_document'
 import { applyViewerDocumentPatchIfCurrent } from '../../core/document/viewer_document_patch'
 import { EditingActionResult, EditingResolveDirtyResult, EditingSaveAsDialogResult, EditingStartResult } from '../../core/editing/editing_contract'
@@ -29,11 +29,11 @@ import type { ParagraphAlignment } from '../../core/editing/style_patch'
 import { cssPxToHwpUnit, hwpUnitToCssPx, hwpUnitToInches } from '../../core/layout/hwp_unit'
 import { fixedPageOffsets, fixedPageVirtualRange } from '../../core/layout/fixed_page_virtualization'
 import { cssFontFamilyName, KOREAN_SANS_STACK, resolveDocumentFonts } from '../../core/fonts/font_resolver'
-import { LayoutMeasurements, pageColumnRegions, paginateViewerSectionsIncremental, SectionPagination, ViewerColumnRegion } from '../../core/layout/pagination'
+import { LayoutMeasurements, pageColumnRegions, paginateViewerSectionsIncremental, ParagraphLineBreak, SectionPagination, ViewerColumnRegion } from '../../core/layout/pagination'
 import { footnoteLineLength, footnoteLineThickness, sectionFootnoteSettings, ViewerNoteMetrics, ViewerPageFootnote } from '../../core/layout/footnote_layout'
-import { measureNoteElement } from './footnote_measurement'
+import { measureNoteElement, measureParagraphLineBreaks } from './footnote_measurement'
 import { paragraphIndentBox } from '../../core/layout/paragraph_indent'
-import { cellMinimumHeight } from '../../core/layout/cell_fragment'
+import { cellHeightLimit, cellMinimumHeight } from '../../core/layout/cell_fragment'
 import {
   contentPlacement,
   HorizontalFrame,
@@ -51,7 +51,7 @@ import {
   blockObjectBands
 } from '../../core/layout/object_position'
 import { columnMeasurementGroups, ColumnMeasurementGroup, columnRects, columnSeparators, columnWidthKey } from '../../core/layout/column_layout'
-import { formatPageNumber, pageNumberPosition } from '../../core/layout/page_number'
+import { formatPageNumber, pageNumberAnchor, pageDecorationLayout, pageNumberPlacement, pageNumberPosition } from '../../core/layout/page_number'
 import { resolvePageDecorations } from '../../core/layout/page_decorations'
 import { pinchZoom, stepZoom } from '../../core/layout/zoom'
 import { waitForFixedPagePrintReady } from './pdf_print_readiness'
@@ -110,6 +110,28 @@ function textCss(item: Extract<ViewerContent, { type: 'text' }>, document: Viewe
     textDecorationLine: [style?.underline && 'underline', style?.strikeout && 'line-through'].filter(Boolean).join(' ') || 'none',
     color: style?.color
   }
+}
+
+/**
+ * 문단 줄 상자의 바탕(strut) 글자. CSS 줄 상자는 문단 요소 글자 크기 × 줄 간격(strut)보다 낮아지지 않으므로, 문단 요소가 기본
+ * 글자 크기(16px)를 물려받으면 그보다 작은 글자(예: 10pt 160%)의 줄이 한/글 줄 높이(글자 높이 + 줄 간격)보다 커진다. 글자 run 가운데
+ * 가장 작은 글자 모양을 문단 요소에 주어 줄 높이가 run 글자만으로 정해지게 한다. 빈 문단은 그 run(합성 caret text 포함)의 글자 모양이라
+ * 한/글처럼 그 글자 크기의 한 줄 높이를 차지한다. 글자 run이 없으면(표·그림만 든 문단) undefined.
+ */
+export function paragraphStrutCss(paragraph: ViewerParagraph, document: ViewerRenderStyles): CSSProperties | undefined {
+  let smallest: Extract<ViewerContent, { type: 'text' }> | undefined
+  let smallestHeight = Infinity
+  for (const item of paragraph.content) {
+    if (item.type !== 'text') continue
+    const height = document.charStyles[item.charStyleId]?.height
+    if (height !== undefined && height > 0 && height < smallestHeight) {
+      smallest = item
+      smallestHeight = height
+    }
+  }
+  if (!smallest) return undefined
+  const { fontFamily, fontSize } = textCss(smallest, document)
+  return { fontFamily, fontSize }
 }
 
 export function cellFragmentKey(tableId: string, cell: ViewerTableCell): string {
@@ -198,7 +220,8 @@ export function Content({
       className="viewer-image"
       src={resourceDataUrl(resource)}
       data-object-fitted={item.fitted ? item.fitted.scale.toFixed(3) : undefined}
-      style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined }}
+      data-object-rotation={item.transform ? objectTransformLabel(item.transform) : undefined}
+      style={{ width: item.width ? hwpUnitToCssPx(item.width) : undefined, height: item.height ? hwpUnitToCssPx(item.height) : undefined, ...objectTransformCss(item.transform) }}
     />
   }
   if (item.type === 'object-placeholder') return <ObjectPlaceholderView item={item} document={document} />
@@ -283,6 +306,8 @@ export function ObjectPlaceholderView({ item, document, positioned = false }: {
       ? { minWidth: hwpUnitToCssPx(item.size!.width), minHeight: hwpUnitToCssPx(item.size!.height) }
       : { width: hwpUnitToCssPx(item.size!.width), minHeight: hwpUnitToCssPx(item.size!.height) }
     : {}
+  // 원본 위치 상자는 감싼 `PositionedObjectBody`가 돌린다. 줄 안 상자는 여기서 돌린다.
+  if (!positioned && item.flow !== 'marker') Object.assign(style, objectTransformCss(item.transform))
   const markerText = item.flow === 'marker' && item.paragraphs ? paragraphsPlainText(item.paragraphs) : ''
   // 글상자처럼 되살린 문단이 있으면 이름표를 모서리에 겹쳐 두어 상자가 선언 크기보다 커지지 않게 한다.
   const hasBody = item.flow !== 'marker' && Boolean(item.paragraphs?.length)
@@ -326,9 +351,32 @@ export function paragraphHorizontalFrame(frame: ObjectFrame, marginLeft: number,
   }
 }
 
-/** 글 뒤 개체는 본문 글 아래(쪽 배경 위), 나머지는 본문 글 위에 그린다. 쪽(`.viewer-page`)이 stacking context다. */
-function objectZIndex(item: PositionedContent): number {
-  return item.position.wrap === 'BEHIND_TEXT' ? -1 : 1
+/** 개체 쌓임 순서(`zOrder`)를 CSS z-index로 바꿀 때 쓰는 범위. 글 앞 개체는 1 ~ 이 값, 글 뒤 개체는 -(이 값 + 1) ~ -2다. */
+export const OBJECT_Z_ORDER_RANGE = 9998
+
+/**
+ * 글 뒤 개체는 본문 글 아래(쪽 배경 위), 나머지는 본문 글 위에 그린다. 쪽(`.viewer-page`)이 stacking context라 쪽 안 개체끼리는
+ * 원본 쌓임 순서(`zOrder`, 큰 값이 위)를 z-index로 그대로 비교한다(문단 안·쪽 layer·칸 layer 개체 사이에서도). 표 앞·뒤 caret처럼
+ * 편집 UI는 이 범위 위에 둔다(`.viewer-table-caret`).
+ */
+export function objectZIndex(item: PositionedContent): number {
+  const order = Math.min(Math.max(Math.trunc(item.position.zOrder) || 0, 0), OBJECT_Z_ORDER_RANGE - 1)
+  return item.position.wrap === 'BEHIND_TEXT' ? order - OBJECT_Z_ORDER_RANGE - 1 : order + 1
+}
+
+/**
+ * 회전·대칭(`ViewerObjectTransform`)을 CSS transform으로 바꾼다. 한/글처럼 개체를 제 좌표에서 먼저 대칭하고 회전 중심(`originX`·
+ * `originY`)으로 시계 방향 회전한다. 자리(layout 상자)는 바꾸지 않는다.
+ */
+export function objectTransformCss(transform: ViewerObjectTransform | undefined): CSSProperties | undefined {
+  if (!transform) return undefined
+  const parts = [
+    transform.rotation ? `rotate(${transform.rotation}deg)` : '',
+    transform.flipHorizontal ? 'scaleX(-1)' : '',
+    transform.flipVertical ? 'scaleY(-1)' : ''
+  ].filter(Boolean)
+  if (!parts.length) return undefined
+  return { transform: parts.join(' '), transformOrigin: `${transform.originX * 100}% ${transform.originY * 100}%` }
 }
 
 /**
@@ -443,6 +491,25 @@ function ContainerBody({ item, document, bodyRef }: {
 
 /** 원본 위치 개체의 내용(그림·표·글상자·도형·자리 표시). 크기는 감싼 상자(`positionedBoxSize`)가 정한다. */
 function PositionedObjectBody({ item, document, measurable, editing }: {
+  item: PositionedContent
+  document: ViewerRenderStyles
+  measurable: boolean
+  editing?: ParagraphEditingProps
+}) {
+  const transform = item.type === 'table' ? undefined : item.transform
+  const body = <PositionedObjectContent item={item} document={document} measurable={measurable} editing={editing} />
+  // 회전·대칭은 그리기만 바꾼다. 감싼 상자(자리·띠)는 회전 전 크기 그대로다.
+  return transform && objectTransformCss(transform)
+    ? <div className="viewer-object-transform" data-object-rotation={objectTransformLabel(transform)} style={{ width: '100%', height: '100%', ...objectTransformCss(transform) }}>{body}</div>
+    : body
+}
+
+/** E2E·접근성용 회전·대칭 요약(예: `30`, `-90 flip-h`). */
+function objectTransformLabel(transform: ViewerObjectTransform): string {
+  return [String(transform.rotation), transform.flipHorizontal ? 'flip-h' : '', transform.flipVertical ? 'flip-v' : ''].filter(Boolean).join(' ')
+}
+
+function PositionedObjectContent({ item, document, measurable, editing }: {
   item: PositionedContent
   document: ViewerRenderStyles
   measurable: boolean
@@ -932,20 +999,44 @@ export function isEditableTextParagraph(
   )
 }
 
-export function ParagraphView({
+type ParagraphViewProps = Parameters<typeof ParagraphBody>[0]
+
+/**
+ * 문단 하나. 쪽 사이에서 줄 단위로 나눈 앞 조각(`lineSplit.part === 'head'`)은 편집 중에 원본 문단 전체를 조각 높이로 잘라 그 자리에서
+ * 입력받는다(쪽 아래 각주의 앞 조각과 같은 방식). 그래서 나뉜 문단의 입력 칸은 문서 전체에 하나다. 보기·PDF·측정은 조각 글자만 그린다.
+ */
+export function ParagraphView(props: ParagraphViewProps) {
+  const split = props.paragraph.lineSplit
+  if (split?.part === 'head' && props.editing && !props.measurable) return <ParagraphBody {...props} paragraph={split.source} clipHeight={split.clipHeight ?? 0} />
+  return <ParagraphBody {...props} />
+}
+
+function ParagraphBody({
   paragraph,
   document,
   measurable = false,
   editing,
   availableWidth,
-  objectFrame
+  objectFrame,
+  cellEdges,
+  clipHeight
 }: {
   paragraph: ViewerParagraph
+  /**
+   * 편집 중 줄 단위로 나뉜 앞 조각 자리에 원본 문단 전체를 그릴 때의 조각 높이(HWPUNIT). 문단 상자를 이 높이로 잘라 뒤쪽 줄을 숨긴다
+   * (같은 문단 요소라 나뉘거나 합쳐져도 입력 칸이 그대로다).
+   */
+  clipHeight?: number
   document: ViewerRenderStyles
   measurable?: boolean
   editing?: ParagraphEditingProps
   /** 문단이 놓이는 칸(표 셀)의 안쪽 폭(HWPUNIT). 내어쓰기 폭을 이 안으로 줄인다. */
   availableWidth?: number
+  /**
+   * 표 셀 안 첫·마지막 문단인지. 한/글 셀 높이는 첫 줄 위와 마지막 줄 아래 줄 간격을 넣지 않으므로(셀 선언 높이 = 안쪽 여백 + 글자
+   * 높이), CSS 줄 상자가 줄 위·아래로 나눠 두는 반 줄 간격(half-leading)을 셀 첫 줄 위·마지막 줄 아래에서 뺀다(글자만 든 문단).
+   */
+  cellEdges?: { first: boolean; last: boolean }
   /**
    * 문단이 놓인 쪽·단(표 셀·글상자면 칸 기준 가상 용지). 있으면 글자처럼 취급하지 않는 개체를 원본 위치로 그린다(문단 기준 개체는
    * 문단 앞에 모아 그리고, 용지·쪽 기준 개체는 쪽 layer `PageObjectLayer`·칸 layer `ContainerObjectLayer`가 그리므로 여기서는 뺀다).
@@ -972,6 +1063,43 @@ export function ParagraphView({
     marginBottom: hwpUnitToCssPx(style?.margin.bottom ?? 0),
     textIndent: hwpUnitToCssPx(indentBox.textIndent),
     lineHeight: style?.lineSpacing ? Math.max(style.lineSpacing / 100, 1) : 1.5
+  }
+  // 줄 단위로 나눈 조각: 이어지는 조각은 첫 줄 들여쓰기·문단 위 간격이 없고, 뒤가 이어지는 조각은 문단 아래 간격이 없으며 양쪽
+  // 맞춤이면 마지막 줄도 양쪽 맞춤이다(원본 문단에서는 가운데 줄이다).
+  if (paragraph.lineSplit) {
+    if (paragraph.lineSplit.part === 'rest') {
+      css.marginTop = 0
+      css.textIndent = 0
+    }
+    if (paragraph.lineSplit.continues) {
+      css.marginBottom = 0
+      if (style?.align === 'JUSTIFY') css.textAlignLast = 'justify'
+    }
+  }
+  if (clipHeight !== undefined) {
+    css.height = hwpUnitToCssPx(clipHeight)
+    css.boxSizing = 'border-box'
+    css.overflow = 'hidden'
+    css.marginBottom = 0
+  }
+  const strut = paragraphStrutCss(paragraph, document)
+  if (strut) {
+    Object.assign(css, strut)
+    // 글자만 든 문단(빈 문단 포함)은 글자가 없어도 그 글자 크기의 한 줄(줄 간격 포함)을 차지한다(한/글 빈 줄 높이).
+    if (paragraph.content.every((item) => item.type === 'text')) {
+      css.minHeight = `${css.lineHeight}em`
+      const halfLeading = Math.round((Number(css.lineHeight) - 1) / 2 * 1000) / 1000
+      if (cellEdges && halfLeading > 0) {
+        if (cellEdges.first) css.marginTop = `calc(${css.marginTop}px - ${halfLeading}em)`
+        if (cellEdges.last) css.marginBottom = `calc(${css.marginBottom}px - ${halfLeading}em)`
+      }
+    } else if (paragraph.content.every((item) => (item.type === 'text' && !item.text.trim()) || (item.type === 'table' && !positionedContent(item)))) {
+      // 표만 든 문단: 한/글은 표 줄 아래에 그 문단 글자 크기의 줄 간격(글자 높이 × (줄 간격 - 100%))을 둔다. 표 옆 빈칸(`<hp:t> </hp:t>`)은
+      // 한/글에서 표와 같은 줄이므로 표 아래 빈 줄을 만들지 않게 공백을 접는다.
+      const spacing = Math.round((Number(css.lineHeight) - 1) * 1000) / 1000
+      if (spacing > 0) css.paddingBottom = `${spacing}em`
+      css.whiteSpace = 'normal'
+    }
   }
   // 표만 든 본문 문단: 표는 셀 편집과 함께 그대로 그리고, 표 앞·뒤 글자(합성 caret 포함)만 문단 입력 surface로 받는다.
   const tableTexts = !measurable && editing?.allowTableParagraph ? tableParagraphTexts(paragraph) : undefined
@@ -1032,8 +1160,10 @@ export function ParagraphView({
     ref={paragraphRef}
     onMouseUp={() => syncEditorSelection()}
     onKeyUp={() => syncEditorSelection(true)}
-    className="viewer-paragraph"
+    className={clipHeight !== undefined ? 'viewer-paragraph viewer-line-split-clip' : 'viewer-paragraph'}
     data-measure-block-id={measurable ? paragraph.id : undefined}
+    data-line-split={paragraph.lineSplit ? `${paragraph.lineSplit.part}${paragraph.lineSplit.continues ? '-continues' : ''}` : undefined}
+    data-line-split-source={paragraph.lineSplit?.source.id ?? (clipHeight !== undefined ? paragraph.id : undefined)}
     data-paragraph-structure-block={activeEditing && structureBlocked ? structureGate.split : undefined}
     style={tableTexts || hasOverlayObject || hasWrapObject
       ? { ...css, ...(tableTexts || hasOverlayObject ? { position: 'relative' as const } : {}), ...(hasWrapObject ? { display: 'flow-root' } : {}) }
@@ -1149,9 +1279,9 @@ export function ParagraphView({
         if (moved) activeEditing.onEditorSelectionChange(moved)
       }}
     />
-      // 아직 글자가 없는 표 앞·뒤 caret은 흐름 밖의 좁은 입력 칸으로 두어 편집 모드에서도 쪽 배치가 보기 모드와 같게 한다.
-      // 글자를 넣으면 projection이 그 글자를 표 앞·뒤 흐름 안에 다시 그린다.
-      if (tableTexts && !editableText.text) {
+      // 아직 글자가 없는(공백만 든) 표 앞·뒤 caret은 흐름 밖의 좁은 입력 칸으로 두어 편집 모드에서도 쪽 배치가 보기 모드(표 옆
+      // 공백은 접는다)와 같게 한다. 글자를 넣으면 projection이 그 글자를 표 앞·뒤 흐름 안에 다시 그린다.
+      if (tableTexts && !editableText.text.trim()) {
         const side = paragraph.content.indexOf(item) < paragraph.content.findIndex((content) => content.type === 'table') ? 'before' : 'after'
         return <span
           key={`${paragraph.id}:caret:${editableText.sourceAnchor!.textNodeId}`}
@@ -1247,11 +1377,57 @@ function measureHeights(elements: Iterable<HTMLElement>, key: (element: HTMLElem
   return Object.fromEntries(Array.from(elements, (item) => [key(item), cssPxToHwpUnit(item.getBoundingClientRect().height)]))
 }
 
-function measureSectionElement(element: Element, section: ViewerSection): LayoutMeasurements {
+/**
+ * 측정 DOM section에서 본문 최상위 문단 `ids`의 줄 경계를 잰다(한 줄 문단은 빈 배열). 모든 문단을 재지 않고 pagination이 나누려 한
+ * 문단만 잰다(`SectionPagination.wantedLineBreaks`).
+ */
+/**
+ * 측정 style 표지(`styles`)마다 문단 줄 경계 cache. key는 문단 id·문단 모양·글자 run(글자 모양·글자)과 측정 상자 크기라, 편집으로 section을
+ * 다시 잴 때 글자가 그대로인 문단은 줄 경계를 다시 찾지 않는다(쪽마다 나뉘는 작은 쪽 문서에서 입력마다 수백 문단을 다시 재지 않게).
+ */
+const lineBreakCaches = new WeakMap<object, Map<string, ParagraphLineBreak[]>>()
+const LINE_BREAK_CACHE_LIMIT = 50_000
+
+function lineBreakKey(block: ViewerParagraph, item: HTMLElement): string {
+  const box = item.getBoundingClientRect()
+  return [block.id, block.paraStyleId, box.width.toFixed(2), box.height.toFixed(2), ...block.content.map((content) => content.type === 'text' ? `${content.charStyleId}:${content.text}` : content.type)].join('\u0001')
+}
+
+function measureLineBreaks(element: Element, section: ViewerSection, ids: Iterable<string>, styles: object, blockElements?: readonly HTMLElement[]): Record<string, ParagraphLineBreak[]> {
+  const wanted = new Set(ids)
+  const result: Record<string, ParagraphLineBreak[]> = {}
+  if (!wanted.size) return result
+  let cache = lineBreakCaches.get(styles)
+  if (!cache) {
+    cache = new Map()
+    lineBreakCaches.set(styles, cache)
+  }
+  const blocks = new Map(section.blocks.map((block) => [block.id, block]))
+  const variants = Array.from(element.querySelectorAll<HTMLElement>('[data-measure-variant]'))
+  const elements = blockElements ?? Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).filter((item) => !variants.length || !item.closest('[data-measure-variant]'))
+  for (const item of elements) {
+    const id = item.dataset.measureBlockId!
+    const block = wanted.has(id) ? blocks.get(id) : undefined
+    if (!block) continue
+    const key = lineBreakKey(block, item)
+    let breaks = cache.get(key)
+    if (!breaks) {
+      breaks = measureParagraphLineBreaks(item, block)
+      // 오래 편집해도 cache가 끝없이 커지지 않게 한도를 넘으면 비운다.
+      if (cache.size >= LINE_BREAK_CACHE_LIMIT) cache.clear()
+      cache.set(key, breaks)
+    }
+    result[id] = breaks
+  }
+  return result
+}
+
+function measureSectionElement(element: Element, section: ViewerSection, lineBreakIds: Iterable<string> = [], styles: object = section): LayoutMeasurements {
   // 서로 다른 너비 단으로 한 번 더 그린 묶음(`data-measure-variant`)은 단 너비별 높이(`columnHeights`)로 따로 모은다.
   const variants = Array.from(element.querySelectorAll<HTMLElement>('[data-measure-variant]'))
   const outsideVariants = (item: HTMLElement) => !variants.length || !item.closest('[data-measure-variant]')
-  const blockHeights = measureHeights(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).filter(outsideVariants), (item) => item.dataset.measureBlockId!)
+  const blockElements = Array.from(element.querySelectorAll<HTMLElement>('[data-measure-block-id]')).filter(outsideVariants)
+  const blockHeights = measureHeights(blockElements, (item) => item.dataset.measureBlockId!)
   const tableRowHeights = measureHeights(Array.from(element.querySelectorAll<HTMLElement>('[data-measure-row-id]')).filter(outsideVariants), (item) => item.dataset.measureRowId!)
   let columnHeights: LayoutMeasurements['columnHeights']
   for (const variant of variants) {
@@ -1261,15 +1437,18 @@ function measureSectionElement(element: Element, section: ViewerSection): Layout
     Object.assign(entry.blockHeights, measureHeights(variant.querySelectorAll<HTMLElement>('[data-measure-block-id]'), (item) => item.dataset.measureBlockId!))
     Object.assign(entry.tableRowHeights, measureHeights(variant.querySelectorAll<HTMLElement>('[data-measure-row-id]'), (item) => item.dataset.measureRowId!))
   }
+  // 앞 측정에서 줄 단위로 나누려 한 문단의 줄 경계를 다시 잰다(나머지는 pagination이 요청할 때 `measureWantedLineBreaks`).
+  const measuredBreaks = measureLineBreaks(element, section, lineBreakIds, styles, blockElements)
+  const lineBreaks = Object.keys(measuredBreaks).length ? measuredBreaks : undefined
   const footnotes = sectionFootnotes(section)
-  if (!footnotes.length) return { blockHeights, tableRowHeights, ...(columnHeights ? { columnHeights } : {}) }
+  if (!footnotes.length) return { blockHeights, tableRowHeights, ...(columnHeights ? { columnHeights } : {}), ...(lineBreaks ? { lineBreaks } : {}) }
   const notes = new Map(footnotes.map((note) => [note.sourcePath, note]))
   const noteMetrics: Record<string, ViewerNoteMetrics> = {}
   element.querySelectorAll<HTMLElement>('[data-measure-note]').forEach((item) => {
     const note = notes.get(item.dataset.measureNote!)
     if (note) noteMetrics[note.sourcePath] = measureNoteElement(item, note)
   })
-  return { blockHeights, tableRowHeights, noteMetrics, ...(columnHeights ? { columnHeights } : {}) }
+  return { blockHeights, tableRowHeights, noteMetrics, ...(columnHeights ? { columnHeights } : {}), ...(lineBreaks ? { lineBreaks } : {}) }
 }
 
 /**
@@ -1289,9 +1468,55 @@ export function measureDocumentLayout(
       const cached = previous?.sections[index]
       if (cached && cached.section === section) return cached
       const element = container.children[index]
-      return element ? { section, measurements: measureSectionElement(element, section) } : undefined
+      // 앞 측정에서 줄 경계를 잰 문단은 다시 잴 때도 함께 잰다(편집 중 같은 쪽 끝 문단을 다시 요청하지 않게).
+      const lineBreakIds = Object.keys(reuse?.sections[index]?.measurements.lineBreaks ?? {})
+      return element ? { section, measurements: measureSectionElement(element, section, lineBreakIds, styles) } : undefined
     })
   }
+}
+
+/**
+ * pagination이 줄 단위로 나누려 했지만 줄 경계가 없는 문단(`wanted`: section 위치 → block id)을 재서 그 section 측정값에 더한 새 측정
+ * 묶음. 더할 것이 없으면 undefined. 측정값 object가 바뀐 section만 다시 나눈다.
+ */
+export function measureWantedLineBreaks(
+  current: DocumentLayoutMeasurements,
+  wanted: ReadonlyMap<number, readonly string[]>,
+  container: Element
+): DocumentLayoutMeasurements | undefined {
+  let changed = false
+  const sections = current.sections.map((entry, index) => {
+    const ids = wanted.get(index)?.filter((id) => !entry?.measurements.lineBreaks?.[id])
+    const element = container.children[index]
+    if (!entry || !ids?.length || !element) return entry
+    const measured = measureLineBreaks(element, entry.section, ids, current.styles)
+    if (!Object.keys(measured).length) return entry
+    changed = true
+    return { section: entry.section, measurements: { ...entry.measurements, lineBreaks: { ...entry.measurements.lineBreaks, ...measured } } }
+  })
+  return changed ? { ...current, sections } : undefined
+}
+
+/**
+ * 쪽 번호. 본문 안이 아니라 머리말·꼬리말 띠(위쪽·아래쪽 여백 쪽)에 놓는다(`pageNumberAnchor`). 가로는 쪽 본문 왼쪽·가운데·오른쪽,
+ * 안쪽·바깥쪽은 표시 번호의 홀짝으로 정한다.
+ */
+export function PageNumberView({ page, pageNumber, pageNumberIndex, text }: {
+  page: ViewerDocument['page']
+  pageNumber: ViewerPageNumber
+  pageNumberIndex: number
+  text: string
+}) {
+  const placement = pageNumberPlacement(pageNumber.position, (pageNumber.start ?? 1) + pageNumberIndex)
+  if (!placement) return null
+  const anchor = pageNumberAnchor(page, placement)
+  const translateX = anchor.align === 'center' ? '-50%' : anchor.align === 'right' ? '-100%' : '0'
+  const translateY = anchor.edge === 'middle' ? '-50%' : anchor.edge === 'bottom' ? '-100%' : '0'
+  return <span
+    className={`viewer-page-number viewer-page-number-${pageNumberPosition(pageNumber.position)}`}
+    data-page-number-position={pageNumber.position}
+    style={{ left: hwpUnitToCssPx(anchor.x), top: hwpUnitToCssPx(anchor.y), transform: `translate(${translateX}, ${translateY})` }}
+  >{text}</span>
 }
 
 /**
@@ -1303,6 +1528,7 @@ export function HeaderFooterView({ control, kind, document, offset, editing, act
   control?: ViewerHeaderFooter
   kind: 'header' | 'footer'
   document: ViewerRenderStyles
+  /** 머리말·꼬리말 띠 위 끝(용지 위 끝에서 잰 HWPUNIT, `pageDecorationLayout`). 글은 띠 위 끝에서 시작한다. */
   offset: number
   editing?: ParagraphEditingProps
   active?: boolean
@@ -1324,7 +1550,11 @@ export function HeaderFooterView({ control, kind, document, offset, editing, act
     className={`viewer-${kind}`}
     data-header-footer-id={control.id}
     onFocusCapture={controlEditing ? onActivate : undefined}
-    style={{ [kind === 'header' ? 'top' : 'bottom']: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}
+    // 꼬리말은 띠 위 끝에서 시작하되 용지 아래 끝에 붙인 상자의 최소 높이로 둔다. 글이 띠와 아래쪽 여백보다 길면 위로 늘어나 용지
+    // 밖(쪽 overflow·PDF 잘림)으로 나가지 않는다.
+    style={kind === 'header'
+      ? { top: hwpUnitToCssPx(offset), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }
+      : { bottom: 0, minHeight: hwpUnitToCssPx(Math.max(document.page.height - offset, 0)), left: hwpUnitToCssPx(document.page.margin.left), right: hwpUnitToCssPx(document.page.margin.right) }}
   >
     {control.paragraphs.map((paragraph) => <ParagraphView key={paragraph.id} paragraph={paragraph} document={document} editing={controlEditing} objectFrame={objectFrame} />)}
   </div>{objectFrame && <PageObjectLayer blocks={control.paragraphs} frameOf={() => objectFrame} document={document} container={kind} />}</>
@@ -1352,7 +1582,7 @@ export function TableView({
   const fallback = (table.width ?? 0) / Math.max(table.columnCount, 1)
   const resolvedWidths = columnWidths.map((width) => width || fallback)
   const totalWidth = resolvedWidths.reduce((sum, width) => sum + width, 0)
-  const pageBodyHeight = document.page ? document.page.height - document.page.margin.top - document.page.margin.bottom : undefined
+  const pageBodyHeight = cellHeightLimit(table, document.page ? document.page.height - document.page.margin.top - document.page.margin.bottom : undefined)
   return <table className="viewer-table" style={{ width: table.width ? hwpUnitToCssPx(table.width) : '100%' }}><colgroup>{resolvedWidths.map((width, index) => <col key={index} style={{ width: `${(width / totalWidth) * 100}%` }} />)}</colgroup><tbody>{table.rows.map((row, rowIndex) => <tr data-measure-row-id={measurable ? `${table.id}:r${row.cells[0]?.row ?? rowIndex}` : undefined} key={`${table.id}:r${rowIndex}`}>{row.cells.map((cell) => {
     const style = cell.borderFillId ? document.cellStyles[cell.borderFillId] : undefined
     const fragmented = cell.splitTop || cell.splitBottom
@@ -1411,6 +1641,7 @@ export function TableView({
       measurable={measurable}
       objectFrame={cellFrame}
       availableWidth={Math.max(0, cell.width - cell.margin.left - cell.margin.right)}
+      cellEdges={fragmented ? undefined : { first: paragraphIndex === 0, last: paragraphIndex === cell.paragraphs.length - 1 }}
       editing={
         cellMode === 'structure' && editing
           ? {
@@ -1729,6 +1960,19 @@ export default function App() {
     return { pages: result?.pages ?? [], layoutMs: performance.now() - startedAt }
   }, [effectiveDocument, layoutMeasurements])
   const pages = pagination.pages
+  // 쪽 끝에서 줄 단위로 나누려 한 문단의 줄 경계를 재서 더한다(그 section만 다시 나눈다). 모든 문단의 줄 경계를 재면 편집마다 측정이 길어진다.
+  useLayoutEffect(() => {
+    const container = measurementRef.current
+    const current = layoutMeasurementsRef.current
+    if (!container || !current) return
+    const wanted = new Map<number, string[]>()
+    sectionPaginationCache.current.forEach((section, index) => {
+      if (section.wantedLineBreaks?.length && current.sections[index]?.section === section.section) wanted.set(index, section.wantedLineBreaks)
+    })
+    if (!wanted.size) return
+    const next = measureWantedLineBreaks(current, wanted, container)
+    if (next) setLayoutMeasurements(next)
+  }, [pagination])
   // 머리말·꼬리말 입력 칸은 쪽마다 같은 anchor로 되풀이된다. 마지막으로 focus를 받은 쪽의 것만 selection을 복원한다.
   const [activeDecorationPage, setActiveDecorationPage] = useState<number>()
   const decorations = useMemo(() => effectiveDocument ? resolvePageDecorations(effectiveDocument, pages) : [], [effectiveDocument, pages])
@@ -3067,12 +3311,14 @@ export default function App() {
             const rect = regionRects[regionIndex]?.[columnIndex] ?? { left: 0, width: bodyWidth }
             return { page: pageFrame, columnLeft: pageFrame.margin.left + rect.left, columnWidth: rect.width, pageNumber: index + 1 }
           }
-          // 머리말·꼬리말은 단과 관계없이 쪽 본문 폭에 놓인다.
+          // 머리말·꼬리말은 단과 관계없이 쪽 본문 폭에, 본문 위·아래 머리말·꼬리말 띠(`pageDecorationLayout`)에 놓인다.
+          const decorationLayout = pageDecorationLayout(pageFrame)
           const decorationFrame: ObjectFrame = { page: pageFrame, columnLeft: pageFrame.margin.left, columnWidth: bodyWidth, pageNumber: index + 1 }
           const renderParagraphs = (paragraphs: typeof page.blocks, regionIndex = 0, columnIndex = 0) => {
             const objectFrame = objectFrameOf(regionIndex, columnIndex)
+            // 줄 단위로 나뉜 앞 조각은 원본 문단과 같은 key라, 편집 중 문단이 쪽 끝에서 나뉘거나 다시 합쳐져도 입력 칸을 새로 만들지 않는다.
             return paragraphs.map((paragraph) => <ParagraphView
-              key={paragraph.id}
+              key={paragraph.lineSplit?.part === 'head' ? paragraph.lineSplit.source.id : paragraph.id}
               paragraph={paragraph}
               document={renderStyles!}
               editing={pageEditing}
@@ -3127,7 +3373,7 @@ export default function App() {
                 right: hwpUnitToCssPx(effectiveDocument.page.margin.right),
                 bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom)
               })}</>
-          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={effectiveDocument.page.headerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={effectiveDocument.page.footerOffset} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{pageNumber && decoration.pageNumber && <span className={`viewer-page-number viewer-page-number-${pageNumberPosition(decoration.pageNumber.position)}`} style={{ bottom: hwpUnitToCssPx(effectiveDocument.page.margin.bottom) }}>{pageNumber}</span>}</article>
+          return <article className="viewer-page" data-page-index={index} key={index} style={{ width: hwpUnitToCssPx(effectiveDocument.page.width), height: pageHeight, padding: `${hwpUnitToCssPx(effectiveDocument.page.margin.top)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.right)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.bottom)}px ${hwpUnitToCssPx(effectiveDocument.page.margin.left)}px` }}><HeaderFooterView control={decoration.header} kind="header" document={renderStyles!} offset={decorationLayout.header.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{body}<PageObjectLayer blocks={page.blocks} regions={regions} frameOf={objectFrameOf} document={renderStyles!} editing={pageEditing} /><HeaderFooterView control={decoration.footer} kind="footer" document={renderStyles!} offset={decorationLayout.footer.top} editing={pageEditing} active={activeDecorationPage === index} onActivate={() => setActiveDecorationPage(index)} objectFrame={decorationFrame} />{pageNumber && decoration.pageNumber && <PageNumberView page={effectiveDocument.page} pageNumber={decoration.pageNumber} pageNumberIndex={decoration.pageNumberIndex} text={pageNumber} />}</article>
         })}
       </ViewerPageStack>}
       {fixedDocument && !loading && !error && <ViewerPageStack
